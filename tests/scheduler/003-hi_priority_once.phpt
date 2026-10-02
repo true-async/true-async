@@ -1,7 +1,5 @@
 --TEST--
 asHiPriority() puts the coroutine's next enqueue at the front of the run queue, once (D20, D35)
---XFAIL--
-Not implemented yet: S3.6 of dev/PLAN.md
 --FILE--
 <?php
 use function Async\spawn;

@@ -1,7 +1,5 @@
 --TEST--
 Basic suspend functionality - verify suspend yields control properly
---XFAIL--
-Not implemented yet: S3.6 of dev/PLAN.md
 --FILE--
 <?php
 

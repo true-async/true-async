@@ -1,7 +1,5 @@
 --TEST--
 Coroutine: GC handler basic functionality
---XFAIL--
-Not implemented yet: S3.7 of dev/PLAN.md
 --FILE--
 <?php
 

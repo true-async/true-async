@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-02 · Active: S3.6
+Updated: 2026-10-02 · Active: S3.7
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -238,49 +238,27 @@ section 14); a step that finds a test needs more moves it on with a note.
         4 more (the drain and the callable release around a bailout), fixed (DECISIONS 2026-10-02). `gc/013`, `014`, `022` wait for await (XFAIL), 15 tests of
         later steps pass early (S3.md section 14); until S3.7 an automatic GC over objects with
         `__destruct` hangs (Sage).
-- [ ] S3.15 Health fixes, extension (health check 2026-10-02, `dev/HEALTH.md`; numbered after the stage, run before S3.6 or between steps as Edmond orders): `test_trace` becomes a
-      field of `test_finish_t`; `async_ce_awaitable` and `async_ce_completable` static; the finish
-      handler functions take `zend_coroutine_t *` and sit in the slots, the two forwarders in
-      `scheduler.c` go; S3.md "As built" on the scheduler-context flag follows DECISIONS 2026-10-02;
-      `dev/INDEX.md` lists `src/`, the build files and every tool. Done ahead with Edmond's answers:
-      the notify stops at the first throw, P1.4 and its gate, the P1.1 and P2.2 gate fields.
-      done: the S3 list passes as before; `check-gates.py` and `check-lists.py` clean
-      tier: T1 · role: —
-- [ ] S3.16 Health tests: own tests for the refusals of `true_async.c` (extension off, async off, scheduler
-      context, no current coroutine), enqueue of a finished or running coroutine, finalize moving
-      what finish handlers threw into the exit exception; `tools/test.py` fails the coverage lane
-      when `lcov --summary` gives no number.
-      done: the new tests pass on dbg, asan and win; those lines covered on `pocs-dbg-cov`
-      tier: T1 · role: —
-- [ ] S3.17 Circular buffer cut to what S3 uses (DECISIONS 2026-10-01): `circular_buffer_clean`,
-      `_new`, `_destroy`, the explicit count of `circular_buffer_realloc` and the persistent allocator
-      go; `circular_buffer_ctor` returns void; the `internal/012`-`017` hooks drive the production
-      paths; a DECISIONS line names the changed internal tests.
-      done: `internal/*` pass on dbg and asan
-      tier: T2 · role: Critic
-- [ ] S3.18 Health fixes, core (`async-core`, one topic per commit, then a core update by `WORKFLOW.md`):
-      `active_coroutine_count` removed; `shutdown_destructors` is the iterator's entry itself; the
-      `zend_fibers.h` ownership comment corrected; uncalled surface removed (`call_on_main_stack`,
-      `coroutine_from_object`, `ZEND_COROUTINE_F_OBJ_REF`, `ZEND_ASYNC_GET_EXCEPTION_CE`,
-      `zend_async_is_enabled`, empty `internal_globals_dtor`) with the RFC text and
-      `ZEND_ASYNC_API_VERSION`; tests 034, 036, 055-059 get the reason of their departure from
-      upstream (a parked fiber is collected only at the scheduler's shutdown) and the RFC's
-      "Backward Incompatible Changes" its fourth item (Edmond, 2026-10-02, DECISIONS); the finish
-      handler contract in `zend_async_API.h` and the RFC reads "at most once: a handler that throws
-      ends the notify", as the notify now does (DECISIONS 2026-10-02); a fault seam
-      in the test scheduler for enqueue and spawn failures.
-      done: `ext/test_scheduler/tests` equal per test on dbg and ASAN; `CORE_REF` and "Pinned core" moved
-      tier: T2 · role: Critic
-- [ ] S3.6 Suspend: `suspend()` by 4.2 with the tick (microtasks), yield, the context pool (D23),
+- [x] S3.6 Suspend: `suspend()` by 4.2 with the tick (microtasks), yield, the context pool (D23),
       direct switches.
       done: the S3.6 tests pass, `scheduler/003` included; own test: a yield with nobody ahead
       tier: T2 · role: —
+      handoff: done 2026-10-02 on core `82df2fc6ccc`: dbg 93 PASS, 81 XFAIL; asan 80 PASS, 14 SKIP, 80 XFAIL.
+        `Async\suspend()`, the suspend slot (4.2 without the U5 `zend_try`: no records before S3.7,
+        and TrueAsync's tick has none), the defer slot and the tick in suspend, in each context's
+        loop and in the drain; the suspend location and `getTrace()`; a bailout while main is
+        parked goes to main's stack (U4); a refusal inside an unadopted Fiber until S3.9. Own tests
+        `scheduler/010`-`013`, `internal/019`. Critic and Sage: 4 bugs fixed (a drop with no bailout
+        address, a dangling current coroutine in the tick, a yield inside a Fiber, a stale main entry),
+        latent cases recorded in `dev/handoff.md`. Ten tests of later steps
+        pass early, `bailout/012` goes back to S3.10 and `edge_cases/014` hangs until S3.8 (S3.md
+        section 14); run-tests fails a test the timeout killed (DECISIONS 2026-10-02). The Sage's
+        GC probe (12 000 cyclic objects with `__destruct`) ends now, in main and in a coroutine.
 - [ ] S3.7 Await and GC: the wait model (4.1, U1-U6, the debug asserts of 4.4), the await slot, the
       GC rules of section 7, awaiting info; the `changed:` ports of `gc/005` and `gc/011` (moved from
       S3.4: their output under the eager scheduler start is known only by running them).
       done: the S3.7 tests pass; own tests of layer 2 (two waiters, two wakes in one tick, a target
         destroyed with records linked and its waiter woken with an error (moved from S3.5), a
-        script with 12 000 cyclic objects with `__destruct` ends (it hangs since S3.5), a wait refused in scheduler context, GC while an exception
+        script with 12 000 cyclic objects with `__destruct` ends (it hung in S3.5, ends since S3.6), a wait refused in scheduler context, GC while an exception
         unwinds, a waiter's record left behind a finish handler that throws (S3.md 4.6)); blind tests from section 4 by `test-author` pass
       tier: T2 · role: Critic
 - [ ] S3.8 Cancellation and exit paths: `cancel`, `protect` (D7), unhandled exceptions as the exit
@@ -315,6 +293,39 @@ section 14); a step that finds a test needs more moves it on with a note.
       recorded with the reason; the open finding on the runner's secret filter closed.
       done: every checklist item has an outcome in `dev/SECURITY.md`
       tier: T2 · role: —
+- [ ] S3.15 Health fixes, extension (health check 2026-10-02, `dev/HEALTH.md`; S3.15-S3.18 run after S3.14, Edmond 2026-10-02): `test_trace` becomes a
+      field of `test_finish_t`; `async_ce_awaitable` and `async_ce_completable` static; the finish
+      handler functions take `zend_coroutine_t *` and sit in the slots, the two forwarders in
+      `scheduler.c` go; S3.md "As built" on the scheduler-context flag follows DECISIONS 2026-10-02;
+      `dev/INDEX.md` lists `src/`, the build files and every tool. Done ahead with Edmond's answers:
+      the notify stops at the first throw, P1.4 and its gate, the P1.1 and P2.2 gate fields.
+      done: the S3 list passes as before; `check-gates.py` and `check-lists.py` clean
+      tier: T1 · role: —
+- [ ] S3.16 Health tests: own tests for the refusals of `true_async.c` (extension off, async off, scheduler
+      context, no current coroutine), enqueue of a finished or running coroutine, finalize moving
+      what finish handlers threw into the exit exception; `tools/test.py` fails the coverage lane
+      when `lcov --summary` gives no number.
+      done: the new tests pass on dbg, asan and win; those lines covered on `pocs-dbg-cov`
+      tier: T1 · role: —
+- [ ] S3.17 Circular buffer cut to what S3 uses (DECISIONS 2026-10-01): `circular_buffer_clean`,
+      `_new`, `_destroy`, the explicit count of `circular_buffer_realloc` and the persistent allocator
+      go; `circular_buffer_ctor` returns void; the `internal/012`-`017` hooks drive the production
+      paths; a DECISIONS line names the changed internal tests.
+      done: `internal/*` pass on dbg and asan
+      tier: T2 · role: Critic
+- [ ] S3.18 Health fixes, core (`async-core`, one topic per commit, then a core update by `WORKFLOW.md`):
+      `active_coroutine_count` removed; `shutdown_destructors` is the iterator's entry itself; the
+      `zend_fibers.h` ownership comment corrected; uncalled surface removed (`call_on_main_stack`,
+      `coroutine_from_object`, `ZEND_COROUTINE_F_OBJ_REF`, `ZEND_ASYNC_GET_EXCEPTION_CE`,
+      `zend_async_is_enabled`, empty `internal_globals_dtor`) with the RFC text and
+      `ZEND_ASYNC_API_VERSION`; tests 034, 036, 055-059 get the reason of their departure from
+      upstream (a parked fiber is collected only at the scheduler's shutdown) and the RFC's
+      "Backward Incompatible Changes" its fourth item (Edmond, 2026-10-02, DECISIONS); the finish
+      handler contract in `zend_async_API.h` and the RFC reads "at most once: a handler that throws
+      ends the notify", as the notify now does (DECISIONS 2026-10-02); a fault seam
+      in the test scheduler for enqueue and spawn failures.
+      done: `ext/test_scheduler/tests` equal per test on dbg and ASAN; `CORE_REF` and "Pinned core" moved
+      tier: T2 · role: Critic
 
 ## S4 — Reactor on Poll, Poll additions and Ring  [ ]
 

@@ -626,10 +626,69 @@ static ZEND_FUNCTION(buffer_scenario)
 	test_run_scenario(name, buffer_scenarios, sizeof(buffer_scenarios) / sizeof(buffer_scenarios[0]), return_value);
 }
 
+/* A microtask that prints its label and the scheduler-context flag when the tick runs it, throws
+ * for "throw", is cancelled before any tick for "cancel", and prints its release. */
+typedef struct
+{
+	zend_async_microtask_t microtask; /* first: the core's release frees the block through it */
+	char label;
+	bool throws;
+} test_microtask_t;
+
+static void test_microtask_handler(zend_async_microtask_t *microtask)
+{
+	const test_microtask_t *test_microtask = (test_microtask_t *) microtask;
+
+	php_printf("microtask %c sched=%d\n", test_microtask->label, (int) ZEND_ASYNC_IN_SCHEDULER_CONTEXT);
+
+	if (test_microtask->throws) {
+		zend_throw_exception_ex(NULL, 0, "microtask %c", test_microtask->label);
+	}
+}
+
+static void test_microtask_dtor(zend_async_microtask_t *microtask)
+{
+	php_printf("released %c\n", ((test_microtask_t *) microtask)->label);
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_defer, 0, 1, IS_VOID, 0)
+	ZEND_ARG_TYPE_INFO(0, label, IS_STRING, 0)
+	ZEND_ARG_TYPE_INFO(0, action, IS_STRING, 0)
+ZEND_END_ARG_INFO()
+
+static ZEND_FUNCTION(defer)
+{
+	zend_string *label;
+	zend_string *action = NULL;
+
+	ZEND_PARSE_PARAMETERS_START(1, 2)
+		Z_PARAM_STR(label)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_STR(action)
+	ZEND_PARSE_PARAMETERS_END();
+
+	test_microtask_t *test_microtask = ecalloc(1, sizeof(test_microtask_t));
+
+	test_microtask->microtask.handler = test_microtask_handler;
+	test_microtask->microtask.dtor = test_microtask_dtor;
+	test_microtask->microtask.ref_count = 1;
+	test_microtask->label = ZSTR_LEN(label) > 0 ? ZSTR_VAL(label)[0] : '?';
+	test_microtask->throws = action != NULL && zend_string_equals_literal(action, "throw");
+
+	if (action != NULL && zend_string_equals_literal(action, "cancel")) {
+		ZEND_ASYNC_MICROTASK_CANCEL(&test_microtask->microtask);
+	}
+
+	if (UNEXPECTED(!ZEND_ASYNC_DEFER(&test_microtask->microtask))) {
+		ZEND_ASYNC_MICROTASK_RELEASE(&test_microtask->microtask);
+	}
+}
+
 /* clang-format off */
 const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\callbacks_scenario", ZEND_FN(callbacks_scenario), arginfo_callbacks_scenario, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\buffer_scenario", ZEND_FN(buffer_scenario), arginfo_callbacks_scenario, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\defer", ZEND_FN(defer), arginfo_defer, 0, NULL, NULL)
 	ZEND_FE_END
 };
 /* clang-format on */

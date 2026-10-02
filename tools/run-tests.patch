@@ -39,9 +39,16 @@
      }
      if ($stat["exitcode"] > 128 && $stat["exitcode"] < 160) {
          $data .= "\nTermsig=" . ($stat["exitcode"] - 128) . "\n";
-@@ -2886,6 +2902,10 @@
+@@ -2885,7 +2901,17 @@
+ 
          $wanted_re = null;
      }
++    /* true_async runner: a test the timeout killed never passes, even when a trailing %A takes
++     * whatever output it left; such a pass would also lift the XFAIL of a step still to come. */
++    if ($passed && str_contains($output, '** ERROR: process timed out **')) {
++        $passed = false;
++    }
++
      if (!$passed && !$retried && error_may_be_retried($test, $output)) {
 +        /* true_async runner: a retry discards the first attempt, and a test that passes on it
 +         * would leave only a WARN behind. */

@@ -23,7 +23,7 @@
 struct _async_fiber_context_s
 {
 	zend_fiber_context context;
-	zend_execute_data *execute_data; /* the frame a parked coroutine waits in; NULL while it runs */
+	zend_execute_data *execute_data; /* the parked frame, stored by suspend(); stale while it runs */
 };
 
 /* Registers the scheduler slots with the core; MINIT, once the extension is enabled. False when the

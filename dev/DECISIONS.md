@@ -159,3 +159,24 @@ someone will propose again.
   an automatic collection over objects with `__destruct` does not end; nothing short of the
   parking `suspend()` and await fixes it. Why: Critic judged the reason real; the Sage found the
   hang and no S3.5 fix.
+- 2026-10-02 S3.15-S3.18 (the health check's fixes) run after S3.14, at the end of S3. Why: Edmond.
+- 2026-10-02 The suspend slot has no `zend_try` around the tick (4.2, U5): S3.6 links no wait
+  record, and TrueAsync's tick (`scheduler.c:1517-1612`) has none. Why: P1.4; U5 comes back to
+  Edmond with the records of S3.7 if it still needs a `zend_try`.
+- 2026-10-02 A bailout in a coroutine while main is parked goes to main's stack with the bailout
+  flag (ts.c); the from_main call drops the queue before main finishes, skipping a yielded main's
+  own entry. Why: a stale entry would outlive the main it points to, and the context's catch has
+  no bailout address left for a destructor that bails out again (Sage).
+- 2026-10-02 `bailout/012` carries `--XFAIL--` for S3.10 again (S3.md section 14). Why: it passed
+  in S3.5 only because `suspend()` threw; its yielded coroutine needs the bailout drain of S3.10.
+- 2026-10-02 run-tests (`tools/run-tests.patch`) never passes a test the timeout killed. Why:
+  `edge_cases/014` hangs until S3.8, and its trailing `%A` took the timeout as a pass.
+- 2026-10-02 `Async\suspend()` and the suspend slot refuse inside a Fiber the scheduler did not
+  adopt (`EG(current_fiber_context)` is not the coroutine's context), until S3.9 adopts every
+  Fiber; test `scheduler/013`, which S3.9 changes. Why: Critic; the yield parked the Fiber's stack
+  as main's, and main later resumed inside `Fiber::start()`.
+- 2026-10-02 `Async\suspend()` does nothing while async is off, as TrueAsync (`async.c:227-229`);
+  `spawn` and the others still refuse. Why: P2.2; a yield has nothing to give up there.
+- 2026-10-02 A stack that cannot be taken in `suspend()` finishes the next coroutine unrun with
+  that exception as its outcome, as the drain does, not 4.2 step 3's abort plus exit exception.
+  Why: the suspender did nothing wrong; the coroutine that got no stack owns the failure.

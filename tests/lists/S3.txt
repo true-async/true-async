@@ -181,6 +181,7 @@ internal/015-buffer_ptr.phpt  own:cbcaf40485517a6f11fe6bd1ee0933a153312a034ec9fd
 internal/016-buffer_front_full.phpt  own:5a39a9685b1e674fbeb454e041b3a0f918ebd8e11d3ae5dcec191c430234f942
 internal/017-buffer_zeroed.phpt  own:07b66f6b2eba3669d5e7551f3c458b725f61a96b9c9810129652b4c8cfc0e079
 internal/018-callbacks_scheduler_context.phpt  own:4922597ad53583a7e05d5a245506ea7219ed1c436f4bd90ce42e6a16da5f8e56
+internal/019-microtask_tick.phpt  own:e3e749ae7632cfe8e355d635fdc88cca17694fccffd5d78e1256e009b9c3c749
 
 # classes: own tests of the S3.4 classes (Awaitable refuses foreign classes: section 13, bug 10)
 classes/001-awaitable_user_class.phpt  own:6c394d09952d247b4567fb247ff84de4c38ac1702b94fba3c3a5945660fa20e2
@@ -201,3 +202,7 @@ scheduler/006-bailout_drops_exit_exception.phpt  own:06de68c0620db228b28e38d7fba
 scheduler/007-no_stack_with_exception_handler.phpt  own:05659c262b05b8200c88fc76bc2d27585aa35b7302a16f43877d2ad8b39399b5
 scheduler/008-callable_release_bails_out.phpt  own:36c0c355abce733e75ee39bf4f46b87aed847f9de0d6883eb999293bb487e99c  skip-on:*-asan(USE_ZEND_ALLOC=0)
 scheduler/009-callable_release_throws.phpt  own:2fb8fb96601bc35051c36994e8865c47525c5e34bce7c2b0946a2e54c4d924b9
+scheduler/010-yield_nobody_ahead.phpt  own:2ec32cceb422f73380820eef1d1a58f42c3dfd69df8128a64dffce21fde548e2
+scheduler/011-bailout_while_main_yields.phpt  own:eaafc13cec8a48fc36a82ae4fd0ec8451fdd762334e2830f1b02c559260bcef7  skip-on:*-asan(USE_ZEND_ALLOC=0)
+scheduler/012-suspend_location_and_trace.phpt  own:1569a29929ce7f0824449e83c3a00fdd5cfd4918b9877c46663efb232ad4fe04
+scheduler/013-suspend_in_unadopted_fiber.phpt  own:6479c4fd939c9728cb6c348cee07ce8917016ee464c1f9eba4ede2a903effaa0

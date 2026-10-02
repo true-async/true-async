@@ -1,9 +1,12 @@
 /* This is a generated file, edit true_async.stub.php instead.
- * Stub hash: f8aca8104b2bfcc498fd63eaa47bb362b15ee1a3 */
+ * Stub hash: 7cbc877e8d5509d27e3370f8d99e2f36dd9a97ab */
 
 ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_Async_spawn, 0, 1, Async\\Coroutine, 0)
 	ZEND_ARG_TYPE_INFO(0, task, IS_CALLABLE, 0)
 	ZEND_ARG_VARIADIC_TYPE_INFO(0, args, IS_MIXED, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_Async_suspend, 0, 0, IS_VOID, 0)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_Async_current_coroutine, 0, 0, Async\\Coroutine, 0)
@@ -22,11 +25,13 @@ ZEND_END_ARG_INFO()
 #define arginfo_class_Async_Completable_isCancelled arginfo_class_Async_Completable_isCompleted
 
 ZEND_FUNCTION(Async_spawn);
+ZEND_FUNCTION(Async_suspend);
 ZEND_FUNCTION(Async_current_coroutine);
 ZEND_FUNCTION(Async_get_coroutines);
 
 static const zend_function_entry ext_functions[] = {
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "spawn"), zif_Async_spawn, arginfo_Async_spawn, 0, NULL, NULL)
+	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "suspend"), zif_Async_suspend, arginfo_Async_suspend, 0, NULL, NULL)
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "current_coroutine"), zif_Async_current_coroutine, arginfo_Async_current_coroutine, 0, NULL, NULL)
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "get_coroutines"), zif_Async_get_coroutines, arginfo_Async_get_coroutines, 0, NULL, NULL)
 	ZEND_FE_END

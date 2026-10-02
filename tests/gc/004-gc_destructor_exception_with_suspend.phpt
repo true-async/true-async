@@ -1,7 +1,5 @@
 --TEST--
 GC 004: Exception handling with suspend in destructor
---XFAIL--
-Not implemented yet: S3.7 of dev/PLAN.md
 --FILE--
 <?php
 

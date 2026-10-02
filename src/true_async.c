@@ -208,6 +208,33 @@ ZEND_FUNCTION(Async_spawn)
 	RETURN_OBJ_COPY(&coroutine->std);
 }
 
+/* A yield (S3.md 4.1, async.c:223-235): refused before the enqueue, so a refusal leaves the coroutine
+ * running; otherwise it goes to the back of the run queue and parks there until its turn (D6). With
+ * async off it does nothing, as in TrueAsync. */
+ZEND_FUNCTION(Async_suspend)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	if (UNEXPECTED(!ZEND_ASYNC_IS_ACTIVE)) {
+		return;
+	}
+
+	THROW_IF_UNAVAILABLE();
+
+	async_coroutine_t *coroutine = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
+
+	/* D14: where switching is blocked, as the Fiber methods refuse; and inside a Fiber the scheduler
+	 * did not adopt (until S3.9), whose stack is not the coroutine's. */
+	if (UNEXPECTED(coroutine == NULL || zend_fiber_switch_blocked() ||
+				   EG(current_fiber_context) != &coroutine->fiber_context->context)) {
+		zend_throw_error(NULL, "Cannot switch coroutines in the current execution context");
+		RETURN_THROWS();
+	}
+
+	async_scheduler_enqueue(&coroutine->coroutine, NULL, false);
+	ZEND_ASYNC_SUSPEND();
+}
+
 ZEND_FUNCTION(Async_current_coroutine)
 {
 	THROW_IF_UNAVAILABLE();

@@ -1,7 +1,5 @@
 --TEST--
 Suspend with spawn integration - test suspend in combination with spawned coroutines
---XFAIL--
-Not implemented yet: S3.6 of dev/PLAN.md
 --FILE--
 <?php
 

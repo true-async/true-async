@@ -16,6 +16,7 @@
 
 #include "php.h"
 #include "php_true_async.h"
+#include "Zend/zend_builtin_functions.h"
 #include "coroutine.h"
 #include "exceptions.h"
 #include "coroutine_arginfo.h"
@@ -154,9 +155,7 @@ static HashTable *coroutine_object_gc(zend_object *object, zval **table, int *nu
 /// Running and finishing
 ///////////////////////////////////////////////////////////////////
 
-/* The request's exit exception (S3.md section 6): a later one takes the earlier as its previous.
- * Takes a reference. */
-static void exit_exception_add(zend_object *exception)
+void async_exit_exception_add(zend_object *exception)
 {
 	if (UNEXPECTED(ZEND_ASYNC_EXIT_EXCEPTION != NULL)) {
 		zend_exception_set_previous(exception, ZEND_ASYNC_EXIT_EXCEPTION);
@@ -233,9 +232,11 @@ void async_coroutine_execute(async_coroutine_t *coroutine)
 
 	async_coroutine_finalize(coroutine);
 
+	/* Finished and maybe freed: not current for the tick that follows, nor for the bailout's drop
+	 * (TrueAsync, coroutine.c:567). */
+	ZEND_ASYNC_CURRENT_COROUTINE = NULL;
+
 	if (UNEXPECTED(is_bailout)) {
-		/* Finished and maybe freed: not current for the bailout's drop (TrueAsync, coroutine.c:567). */
-		ZEND_ASYNC_CURRENT_COROUTINE = NULL;
 		zend_bailout();
 	}
 }
@@ -294,7 +295,7 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 					ZEND_COROUTINE_IS_FIBER(zend_coroutine)))) {
 		zend_coroutine->flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
 		GC_ADDREF(exception);
-		exit_exception_add(exception);
+		async_exit_exception_add(exception);
 	}
 
 	/* What the waiters and finish handlers threw ends the request too. */
@@ -302,7 +303,7 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 		zend_object *thrown = EG(exception);
 		GC_ADDREF(thrown);
 		zend_clear_exception();
-		exit_exception_add(thrown);
+		async_exit_exception_add(thrown);
 	}
 
 	if (exception != NULL) {
@@ -463,19 +464,60 @@ ZEND_METHOD(Async_Coroutine, isCompleted)
 	RETURN_BOOL((THIS_FLAGS & ZEND_COROUTINE_STATUS_MASK) == ZEND_COROUTINE_STATUS_FINISHED);
 }
 
-/* The methods of later steps of dev/PLAN.md: the suspend location with S3.6, getAwaitingInfo with
- * S3.7. */
-#define COROUTINE_METHOD_PENDING(name) \
-	ZEND_METHOD(Async_Coroutine, name) \
-	{ \
-		ZEND_PARSE_PARAMETERS_NONE(); \
-		zend_throw_error(NULL, "Async\\Coroutine::%s() is not implemented yet", #name); \
+/* The innermost user frame of a parked coroutine (S3.md section 2), or NULL: one that never ran,
+ * runs or finished, or one the core parked with no PHP code on its stack (the GC's). */
+static zend_execute_data *coroutine_suspend_frame(async_coroutine_t *coroutine)
+{
+	zend_execute_data *execute_data = ZEND_ASYNC_COROUTINE_EXECUTE_DATA(&coroutine->coroutine);
+
+	while (execute_data != NULL && (execute_data->func == NULL || !ZEND_USER_CODE(execute_data->func->type))) {
+		execute_data = execute_data->prev_execute_data;
 	}
 
-COROUTINE_METHOD_PENDING(getSuspendFileAndLine)
-COROUTINE_METHOD_PENDING(getSuspendLocation)
-COROUTINE_METHOD_PENDING(getAwaitingInfo)
+	return execute_data;
+}
 
+ZEND_METHOD(Async_Coroutine, getSuspendFileAndLine)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	const zend_execute_data *suspend_frame = coroutine_suspend_frame(THIS_COROUTINE);
+
+	array_init_size(return_value, 2);
+
+	if (suspend_frame == NULL) {
+		add_next_index_null(return_value);
+		add_next_index_long(return_value, 0);
+		return;
+	}
+
+	add_next_index_str(return_value, zend_string_copy(suspend_frame->func->op_array.filename));
+	add_next_index_long(return_value, suspend_frame->opline->lineno);
+}
+
+ZEND_METHOD(Async_Coroutine, getSuspendLocation)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	const zend_execute_data *suspend_frame = coroutine_suspend_frame(THIS_COROUTINE);
+
+	if (suspend_frame == NULL) {
+		RETURN_STRING("unknown");
+	}
+
+	RETURN_STR(zend_strpprintf(
+			0, "%s:%" PRIu32, ZSTR_VAL(suspend_frame->func->op_array.filename), suspend_frame->opline->lineno));
+}
+
+/* The getAwaitingInfo of S3.7 of dev/PLAN.md. */
+ZEND_METHOD(Async_Coroutine, getAwaitingInfo)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	zend_throw_error(NULL, "Async\\Coroutine::getAwaitingInfo() is not implemented yet");
+}
+
+/* The backtrace of the parked stack: the engine walks it from the parked frame as if it ran. */
 ZEND_METHOD(Async_Coroutine, getTrace)
 {
 	zend_long options = DEBUG_BACKTRACE_PROVIDE_OBJECT, limit = 0;
@@ -486,7 +528,17 @@ ZEND_METHOD(Async_Coroutine, getTrace)
 		Z_PARAM_LONG(limit)
 	ZEND_PARSE_PARAMETERS_END();
 
-	zend_throw_error(NULL, "Async\\Coroutine::getTrace() is not implemented yet");
+	zend_execute_data *parked_frame = ZEND_ASYNC_COROUTINE_EXECUTE_DATA(&THIS_COROUTINE->coroutine);
+
+	if (parked_frame == NULL) {
+		RETURN_NULL();
+	}
+
+	zend_execute_data *current_execute_data = EG(current_execute_data);
+
+	EG(current_execute_data) = parked_frame;
+	zend_fetch_debug_backtrace(return_value, 0, (int) options, (int) limit);
+	EG(current_execute_data) = current_execute_data;
 }
 
 ZEND_METHOD(Async_Coroutine, cancel)
