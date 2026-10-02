@@ -84,26 +84,6 @@ bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callba
 	return true;
 }
 
-/* The loop of async_callbacks_notify(), out of line: `pending` changes after its setjmp, so it must
- * live in memory, not in a register a longjmp restores. */
-static zend_never_inline void async_callbacks_run(async_awaitable_t *target,
-												  async_callbacks_vector_t *vector,
-												  void *result,
-												  zend_object *exception,
-												  zend_object **pending)
-{
-	/* data, length and the cursor are reread every step: a callback may add, remove, grow, or
-	 * free the vector (which restarts the cursor on an empty vector). */
-	while (vector->cursor < vector->length) {
-		async_event_callback_t *callback = async_callbacks_slots(vector)[vector->cursor++];
-		callback->callback(target, callback, result, exception);
-
-		if (UNEXPECTED(EG(exception) != NULL)) {
-			async_exception_save_fast(&EG(exception), pending);
-		}
-	}
-}
-
 /* Puts the exceptions back into EG(exception). An exception pending at entry gets its frame back
  * as zend_objects_destroy_object() does around a destructor (zend_objects.c:158-177). */
 static void async_callbacks_exception_back(zend_object **pending,
@@ -145,8 +125,7 @@ bool async_callbacks_notify(async_awaitable_t *target,
 	 * pending at entry. */
 	zend_object *pending = NULL;
 	const zend_op *opline_before_exception = NULL;
-	/* The frame that had an exception pending at entry; NULL without one. A bailout clears
-	 * EG(current_execute_data), so the catch below uses this copy. */
+	/* The frame that had an exception pending at entry; NULL without one. */
 	zend_execute_data *const execute_data = EG(exception) != NULL ? EG(current_execute_data) : NULL;
 
 	if (execute_data != NULL) {
@@ -160,20 +139,17 @@ bool async_callbacks_notify(async_awaitable_t *target,
 
 	async_exception_save_fast(&EG(exception), &pending);
 
-	/* A bailout out of a callback leaves the vector unmarked and the flag as found, so a later
-	 * notify of the vector runs. */
-	zend_try
-	{
-		async_callbacks_run(target, vector, result, exception, &pending);
+	/* data, length and the cursor are reread every step: a callback may add, remove, grow, or
+	 * free the vector (which restarts the cursor on an empty vector). A bailout out of a callback
+	 * leaves the vector marked: the request is going down, and no later notify of it is needed. */
+	while (vector->cursor < vector->length) {
+		async_event_callback_t *callback = async_callbacks_slots(vector)[vector->cursor++];
+		callback->callback(target, callback, result, exception);
+
+		if (UNEXPECTED(EG(exception) != NULL)) {
+			async_exception_save_fast(&EG(exception), &pending);
+		}
 	}
-	zend_catch
-	{
-		vector->capacity &= ~ASYNC_CALLBACKS_F_NOTIFYING;
-		ZEND_ASYNC_IN_SCHEDULER_CONTEXT = in_scheduler_context;
-		async_callbacks_exception_back(&pending, execute_data, opline_before_exception);
-		zend_bailout();
-	}
-	zend_end_try();
 
 	vector->capacity &= ~ASYNC_CALLBACKS_F_NOTIFYING;
 	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = in_scheduler_context;

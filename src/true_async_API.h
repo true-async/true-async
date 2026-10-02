@@ -167,7 +167,7 @@ bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callba
  * those added meanwhile, in scheduler
  * context (ZEND_ASYNC_IN_SCHEDULER_CONTEXT). Every callback runs even after one throws; the
  * exceptions are chained over the one pending at entry and left in EG(exception). A bailout out of
- * a callback passes through and leaves the vector ready for another notify. The caller holds a
+ * a callback leaves the vector marked, refusing later notifies (as the fork). The caller holds a
  * reference to `target` for the call (S3.5's finalize does); a teardown of the vector from a
  * callback ends the notify. Returns false, running nothing, when the vector is already being
  * notified further up the stack. */

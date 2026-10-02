@@ -319,7 +319,8 @@ static void scenario_throw_all(smart_str *trace)
 }
 
 /* T holds A B; A notifies F inside zend_try, and F's W bails out. A's catch swallows it: T goes on
- * with B, F can be notified again, and the scheduler-context flag is back to its value before T. */
+ * with B, F stays marked and refuses the next notify, and the scheduler-context flag is back to its
+ * value before T. */
 static void scenario_bailout_caught(smart_str *trace)
 {
 	test_target_t outer = { ASYNC_AWAITABLE_F_EVENT };
@@ -380,42 +381,6 @@ static void scenario_free_add(smart_str *trace)
 	a.other = &p;
 	async_callbacks_add(&target.callbacks, &a.base);
 	async_callbacks_add(&target.callbacks, &b.base);
-	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
-	async_callbacks_free((async_awaitable_t *) &target, &target.callbacks);
-}
-
-/* The notify enters with exception "entry"; A throws "a", B bails out, and the hook catches the
- * bailout: "a" is pending with "entry" under it, and T can be notified again. */
-static void scenario_bailout_pending(smart_str *trace)
-{
-	test_target_t target = { ASYNC_AWAITABLE_F_EVENT };
-	test_callback_t a, b;
-	zend_execute_data *execute_data = EG(current_execute_data);
-	const bool unclean_shutdown = CG(unclean_shutdown);
-
-	test_callback_init(&a, 'A', trace);
-	test_callback_init(&b, 'B', trace);
-	a.action = action_throw;
-	b.action = action_bailout_once;
-	async_callbacks_add(&target.callbacks, &a.base);
-	async_callbacks_add(&target.callbacks, &b.base);
-	zend_throw_exception(NULL, "entry", 0);
-
-	zend_try
-	{
-		async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
-	}
-	zend_catch
-	{
-		EG(current_execute_data) = execute_data;
-		CG(unclean_shutdown) = unclean_shutdown;
-		smart_str_appends(trace, "(caught)");
-	}
-	zend_end_try();
-
-	test_trace_exception(trace);
-	a.action = NULL;
-	smart_str_appends(trace, " again:");
 	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
 	async_callbacks_free((async_awaitable_t *) &target, &target.callbacks);
 }
@@ -522,7 +487,7 @@ static const test_scenario_t test_scenarios[] = {
 	{ "finish-ids", scenario_finish_ids },   { "finish-keep", scenario_finish_keep },
 	{ "throw-all", scenario_throw_all },     { "bailout-caught", scenario_bailout_caught },
 	{ "sched-kept", scenario_sched_kept },   { "free-during", scenario_free_during },
-	{ "free-add", scenario_free_add },       { "bailout-pending", scenario_bailout_pending },
+	{ "free-add", scenario_free_add },
 };
 
 static void test_buffer_push(circular_buffer_t *buffer, const zend_long from, const zend_long to)

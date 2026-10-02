@@ -92,3 +92,8 @@ someone will propose again.
 - 2026-10-02 `async_finish_handler_add/remove` take the coroutine, not a vector: a finish handler
   removes itself from its coroutine's vector, so a caller cannot hand it another one. Why: Critic on
   the cursor rework.
+- 2026-10-02 No `zend_try` in `async_callbacks_notify()`: a bailout out of a callback leaves the
+  vector marked and its later notifies refused, as in the fork. `tests/internal/011-callbacks_bailout_caught.phpt`
+  expects the refusal; `internal/021`, added the same day for the recovery, is removed. Why: Edmond,
+  one `setjmp` per notify (+3.7 to 6.7 ns measured) is too much for loops; TrueAsync had none, and
+  its `bailout_all_coroutines()` unwinds every waiter directly.
