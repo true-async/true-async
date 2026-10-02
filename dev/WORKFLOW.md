@@ -84,6 +84,12 @@ without ior (`dev/PLAN.md`, S3.2); Edmond accepted it on 2026-10-02.
   what the diff shows. No attribution trailers.
 - Only finished changes reach `main`: draft commits are squashed into the commit they complete
   before the push. Held by discipline, no gate.
+- One plan step is one commit and one push. The `dev/PLAN.md`, `dev/handoff.md`, `dev/DECISIONS.md`
+  and README roadmap edits of the step go into that commit, not into commits of their own. The
+  Critic and the Sage read the local commit before the push; their fixes are amended into it.
+  A handoff for a new thread goes into the next step's commit, or alone only when the thread
+  stops mid-step. Edmond, 2026-10-02: main had three times more commits than changes. Held by
+  discipline, no gate.
 - Finished commits are pushed to `main` without asking Edmond for an OK on the diff (Edmond,
   2026-10-02). Held by discipline, no gate.
 - `CHANGELOG.md` at the root, Keep a Changelog 1.1.0: every user-visible change gets a line under
