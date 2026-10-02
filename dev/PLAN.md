@@ -175,10 +175,10 @@ Tier: T2. Roles: Critic on S3.1, Critic after S3.4, security pass (S3.5).
         (auto mode refused building ior in the cloud container): S1 suites per test equal to
         `834811f2d88` on debug and ASAN, except the seven new test_scheduler tests 068-074, all
         PASS; 18 hooks and 3 poll tests SKIP in both (Ring and ior absent). Left: the ior half
-        (Ring tests, `IOR_BACKEND=threads`), then move `CORE_REF` and "Pinned core" to it; the RFC
-        text in true-async/php-async-core-rfc (`scheduler_rfc.md` and `scheduler_rfc.dokuwiki.txt`)
-        brought in line with items 1 and 7: what "started" means (the lifecycle, lines 126-171) and
-        enqueue of a FINISHED coroutine (lines 246-262).
+        (Ring tests, `IOR_BACKEND=threads`), then move `CORE_REF` and "Pinned core" to it.
+      RFC text 2026-10-02: true-async/php-async-core-rfc `f1e64a8`, both `scheduler_rfc.md` and
+        `.dokuwiki.txt`: the *started* attribute (item 1) and enqueue of a finished coroutine
+        refused with an `Error` (item 7).
 - [ ] S3.3 All 21 slots, internal context init and destroy; `Async\spawn`, `await`, `suspend`,
       `Coroutine` and its methods, `DeadlockError`.
 - [ ] S3.4 Shutdown windows without IO: shutdown functions, destructors, output handlers.

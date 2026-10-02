@@ -67,8 +67,7 @@ Written 2026-10-02. Active step: **S3.2** (in progress), the core update after t
 
 1. Close the ior half of the core update (Edmond decides how), then move `CORE_REF` and "Pinned
    core" to `8a29d63edcf` and check CI green.
-2. The scheduler RFC text in line with items 1 and 7 (`dev/PLAN.md`, S3.2).
-3. S3.3.
+2. S3.3. The scheduler RFC text for items 1 and 7 is done (php-async-core-rfc `f1e64a8`).
 
 ## How to run
 
