@@ -126,6 +126,13 @@ Base: 82fd6d6
       from `/proc/self/environ`, tests through bash) for mutants to switch on at all; facts in the
       note, section 6. The coverage lane (`pocs-dbg-cov`, 14 of 14 `src/` lines) came with it:
       the layer table had it from S2 and no step owned it. Hand mutants not needed.
+- [x] S2.6 Actions on Node 24 in every project repository (GitHub forces Node 20 actions onto
+      Node 24 and warns).
+      handoff: true-async `ci.yml` upload-artifact v4 to v7 (`de2e015`, run 37001631753 green, no
+      annotations); the site's `deploy.yml` checkout and setup-node v7, upload-pages-artifact and
+      deploy-pages v5 (`c5d30eb`, deployed, no Node 20 warning). true-async-doc,
+      php-async-core-rfc and claude-skills have no workflows; true-async/php-src carries only
+      upstream's workflows, and every job of theirs in the fork is skipped (no warning to fix).
 
 Test layers: `dev/plans/S2.md`, section 4.
 
