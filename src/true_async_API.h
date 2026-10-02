@@ -125,6 +125,7 @@ typedef struct
 
 	uint32_t length;
 	uint32_t capacity; /* bit 31: a notify is iterating this vector */
+	uint32_t cursor;   /* that notify's next callback; meaningless without bit 31 */
 } async_callbacks_vector_t;
 
 #define ASYNC_CALLBACKS_F_NOTIFYING (1u << 31)
@@ -163,11 +164,12 @@ static zend_always_inline void async_callbacks_add(async_callbacks_vector_t *vec
 bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callback_t *callback);
 
 /* Runs the vector's callbacks in order, each once, including those added meanwhile, in scheduler
- * context (ZEND_ASYNC_IN_SCHEDULER_CONTEXT). Every callback runs even after one throws; the exceptions are chained over
- * the one pending at entry and left in EG(exception). The caller holds a reference to `target` for
- * the call (S3.5's finalize does); a teardown of the vector from a callback ends the notify.
- * Returns false, running nothing, when the vector is already being notified further up the
- * stack. */
+ * context (ZEND_ASYNC_IN_SCHEDULER_CONTEXT). Every callback runs even after one throws; the
+ * exceptions are chained over the one pending at entry and left in EG(exception). A bailout out of
+ * a callback passes through and leaves the vector ready for another notify. The caller holds a
+ * reference to `target` for the call (S3.5's finalize does); a teardown of the vector from a
+ * callback ends the notify. Returns false, running nothing, when the vector is already being
+ * notified further up the stack. */
 bool async_callbacks_notify(async_awaitable_t *target,
 							async_callbacks_vector_t *vector,
 							void *result,
@@ -177,11 +179,6 @@ bool async_callbacks_notify(async_awaitable_t *target,
  * array. A wait record still linked here breaks invariant F (section 4): asserted, and its target
  * cleared. */
 void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *vector);
-
-/* Forgets every notify cut short by a bailout, so later notifies of those vectors run and fibers
- * switch again. Called at the start of the scheduler's bailout handling and at request end; a
- * vector freed meanwhile has left its frame already. */
-void async_callbacks_bailout_reset(void);
 
 ///////////////////////////////////////////////////////////////////
 /// Finish handlers

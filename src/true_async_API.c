@@ -17,6 +17,7 @@
 #include "php.h"
 #include "php_true_async.h"
 #include "true_async_API.h"
+#include "coroutine.h"
 
 /* First heap array of a vector that outgrows its inline element: 4 slots, 32 B. */
 #define ASYNC_CALLBACKS_FIRST_CAPACITY 4
@@ -50,62 +51,16 @@ void async_callbacks_reserve(async_callbacks_vector_t *vector, const uint32_t co
 	vector->capacity = new_capacity | (vector->capacity & ASYNC_CALLBACKS_F_NOTIFYING);
 }
 
-/* The frame of the notify iterating `vector`; NULL when none is (a bit left by a cut-short notify
- * that async_callbacks_bailout_reset() has not cleared yet). */
-static async_notify_frame_t *async_notify_frame_of(const async_callbacks_vector_t *vector)
-{
-	for (uint32_t depth = ASYNC_G(notify_depth); depth > 0; depth--) {
-		async_notify_frame_t *frame = &ASYNC_G(notify_stack)[depth - 1];
-
-		if (frame->vector == vector) {
-			return frame;
-		}
-	}
-
-	return NULL;
-}
-
-/* Drops the frames above `depth`, left by notifies a bailout cut short: clears the bit each of
- * them set and puts back the scheduler-context flag the lowest of them found. */
-static void async_notify_drop_frames(const uint32_t depth)
-{
-	if (ASYNC_G(notify_depth) <= depth) {
-		return;
-	}
-
-	for (uint32_t top = ASYNC_G(notify_depth); top > depth; top--) {
-		async_callbacks_vector_t *vector = ASYNC_G(notify_stack)[top - 1].vector;
-
-		if (vector != NULL) {
-			vector->capacity &= ~ASYNC_CALLBACKS_F_NOTIFYING;
-		}
-	}
-
-	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = ASYNC_G(notify_stack)[depth].in_scheduler_context;
-	ASYNC_G(notify_depth) = depth;
-}
-
 bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callback_t *callback)
 {
 	async_event_callback_t **slots = async_callbacks_slots(vector);
-	uint32_t *cursor = NULL;
+	const bool notifying = (vector->capacity & ASYNC_CALLBACKS_F_NOTIFYING) != 0;
 	uint32_t index = vector->length;
 
-	if (vector->capacity & ASYNC_CALLBACKS_F_NOTIFYING) {
-		async_notify_frame_t *frame = async_notify_frame_of(vector);
-		ZEND_ASSERT(frame != NULL && "a notify bit without its frame");
-
-		if (EXPECTED(frame != NULL)) {
-			cursor = &frame->cursor;
-
-			/* A callback removing itself sits just behind the cursor. */
-			if (*cursor > 0 && slots[*cursor - 1] == callback) {
-				index = *cursor - 1;
-			}
-		}
-	}
-
-	if (index == vector->length) {
+	/* A callback removing itself during the notify sits just behind the cursor. */
+	if (notifying && vector->cursor > 0 && slots[vector->cursor - 1] == callback) {
+		index = vector->cursor - 1;
+	} else {
 		for (index = 0; index < vector->length && slots[index] != callback; index++) {
 		}
 
@@ -116,10 +71,10 @@ bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callba
 
 	const uint32_t last = --vector->length;
 
-	if (cursor != NULL && index < *cursor) {
+	if (notifying && index < vector->cursor) {
 		/* Already run: the last run element takes its place and the last element fills the gap,
 		 * so the cursor moves back by one and still points at the first pending callback. */
-		const uint32_t last_run = --*cursor;
+		const uint32_t last_run = --vector->cursor;
 		slots[index] = slots[last_run];
 		slots[last_run] = slots[last];
 	} else {
@@ -142,24 +97,12 @@ bool async_callbacks_notify(async_awaitable_t *target,
 		return true;
 	}
 
-	const uint32_t depth = ASYNC_G(notify_depth);
-
-	if (UNEXPECTED(depth == ASYNC_NOTIFY_DEPTH_MAX)) {
-		zend_error_noreturn(E_ERROR, "Async: callbacks notified more than %d levels deep", ASYNC_NOTIFY_DEPTH_MAX);
-	}
-
-	/* The frame lives in the globals, not on this C stack, so a bailout out of a callback leaves
-	 * nothing dangling: async_callbacks_bailout_reset() can still read it. */
-	async_notify_frame_t *frame = &ASYNC_G(notify_stack)[depth];
-	frame->vector = vector;
-	frame->cursor = 0;
-	frame->in_scheduler_context = ZEND_ASYNC_IN_SCHEDULER_CONTEXT;
-	ASYNC_G(notify_depth) = depth + 1;
 	vector->capacity |= ASYNC_CALLBACKS_F_NOTIFYING;
+	vector->cursor = 0;
 
-	/* Frames are LIFO only while no callback switches fibers. Callbacks run in scheduler context
-	 * (S3.md 4.6): suspend and the Fiber methods refuse there, and a GC run defers to the next tick
-	 * instead of parking this coroutine mid-notify. */
+	/* Callbacks run in scheduler context (S3.md 4.6): suspend and the Fiber methods refuse there,
+	 * and a GC run defers to the next tick instead of parking the notify halfway. */
+	const bool in_scheduler_context = ZEND_ASYNC_IN_SCHEDULER_CONTEXT;
 	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
 
 	/* Every callback runs, whatever an earlier one threw: a finish handler fires exactly once
@@ -171,28 +114,32 @@ bool async_callbacks_notify(async_awaitable_t *target,
 	const bool entered_with_exception = EG(exception) != NULL;
 	async_exception_save_fast(&EG(exception), &pending);
 
-	/* data, length and the cursor are reread every step: a callback may add, remove or grow. */
-	while (frame->vector != NULL && frame->cursor < vector->length) {
-		async_event_callback_t *callback = async_callbacks_slots(vector)[frame->cursor++];
-		callback->callback(target, callback, result, exception);
+	/* A bailout out of a callback leaves the vector unmarked and the flag as found, so a later
+	 * notify of the vector runs. */
+	zend_try
+	{
+		/* data, length and the cursor are reread every step: a callback may add, remove, grow, or
+		 * free the vector (length 0 ends the loop). */
+		while (vector->cursor < vector->length) {
+			async_event_callback_t *callback = async_callbacks_slots(vector)[vector->cursor++];
+			callback->callback(target, callback, result, exception);
 
-		if (UNEXPECTED(ASYNC_G(notify_depth) != depth + 1)) {
-			async_notify_drop_frames(depth + 1);
-		}
-
-		if (UNEXPECTED(EG(exception) != NULL)) {
-			async_exception_save_fast(&EG(exception), &pending);
+			if (UNEXPECTED(EG(exception) != NULL)) {
+				async_exception_save_fast(&EG(exception), &pending);
+			}
 		}
 	}
-
-	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = frame->in_scheduler_context;
-
-	/* NULL: the vector was freed by its own notify (async_callbacks_free()). */
-	if (frame->vector != NULL) {
+	zend_catch
+	{
 		vector->capacity &= ~ASYNC_CALLBACKS_F_NOTIFYING;
+		ZEND_ASYNC_IN_SCHEDULER_CONTEXT = in_scheduler_context;
+		async_exception_restore_fast(&EG(exception), &pending);
+		zend_bailout();
 	}
+	zend_end_try();
 
-	ASYNC_G(notify_depth) = depth;
+	vector->capacity &= ~ASYNC_CALLBACKS_F_NOTIFYING;
+	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = in_scheduler_context;
 
 	/* The VM resumes the entry exception from where it was raised; a callback's throw while it was
 	 * aside overwrote the opline. */
@@ -207,16 +154,6 @@ bool async_callbacks_notify(async_awaitable_t *target,
 
 void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *vector)
 {
-	if (UNEXPECTED(vector->capacity & ASYNC_CALLBACKS_F_NOTIFYING)) {
-		/* Freed by a callback of its own notify, or after a bailout cut that notify short: the frame
-		 * forgets the vector, so neither the notify nor async_callbacks_bailout_reset() touches it. */
-		async_notify_frame_t *frame = async_notify_frame_of(vector);
-
-		if (frame != NULL) {
-			frame->vector = NULL;
-		}
-	}
-
 	async_event_callback_t **slots = async_callbacks_slots(vector);
 
 	for (uint32_t i = 0; i < vector->length; i++) {
@@ -236,14 +173,11 @@ void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *v
 		efree(vector->data);
 	}
 
+	/* Freed by a callback of its own notify: the bit stays until that notify ends, which length 0
+	 * makes it do at once. The caller of the notify keeps the owner alive (see the header). */
 	vector->single = NULL;
 	vector->length = 0;
-	vector->capacity = 0;
-}
-
-void async_callbacks_bailout_reset(void)
-{
-	async_notify_drop_frames(0);
+	vector->capacity &= ASYNC_CALLBACKS_F_NOTIFYING;
 }
 
 static void async_finish_handler_call(async_awaitable_t *target,
@@ -256,8 +190,8 @@ static void async_finish_handler_call(async_awaitable_t *target,
 	async_finish_handler_callback_t *entry = (async_finish_handler_callback_t *) callback;
 	zend_coroutine_t *coroutine = (zend_coroutine_t *) target;
 	const bool is_bailout = (coroutine->flags & ASYNC_COROUTINE_F_BAILOUT) != 0 || ASYNC_G(bailing_out);
-	/* The notify running this entry; frames above it, if any, are gone when the handler returns. */
-	async_notify_frame_t *frame = &ASYNC_G(notify_stack)[ASYNC_G(notify_depth) - 1];
+	/* Finish handlers are added only to a coroutine of this extension. */
+	async_callbacks_vector_t *vector = &((async_coroutine_t *) target)->callbacks;
 
 	/* While the handler runs, a removal by id or the vector's teardown only unlinks the entry;
 	 * freeing it stays here. */
@@ -274,8 +208,7 @@ static void async_finish_handler_call(async_awaitable_t *target,
 		return;
 	}
 
-	ZEND_ASSERT(frame->vector != NULL);
-	async_callbacks_remove(frame->vector, callback);
+	async_callbacks_remove(vector, callback);
 	efree(entry);
 }
 

@@ -109,15 +109,6 @@ static PHP_MSHUTDOWN_FUNCTION(true_async)
 	return SUCCESS;
 }
 
-/* A bailout out of a callback leaves its notify marked as running; the vectors are still alive
- * here, before the request frees them. */
-static PHP_RSHUTDOWN_FUNCTION(true_async)
-{
-	async_callbacks_bailout_reset();
-
-	return SUCCESS;
-}
-
 static PHP_MINFO_FUNCTION(true_async)
 {
 	php_info_print_table_start();
@@ -136,7 +127,7 @@ zend_module_entry true_async_module_entry = {
 	PHP_MINIT(true_async),
 	PHP_MSHUTDOWN(true_async),
 	NULL,
-	PHP_RSHUTDOWN(true_async),
+	NULL,
 	PHP_MINFO(true_async),
 	PHP_TRUE_ASYNC_VERSION,
 	PHP_MODULE_GLOBALS(true_async),

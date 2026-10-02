@@ -25,7 +25,7 @@ static zend_object_handlers coroutine_handlers;
 
 static zend_object *coroutine_object_create(zend_class_entry *class_entry)
 {
-	/* 280 B: a class without properties takes the inline properties slot off the size. */
+	/* 288 B: a class without properties takes the inline properties slot off the size. */
 	async_coroutine_t *coroutine = zend_object_alloc(sizeof(async_coroutine_t), class_entry);
 
 	ZVAL_UNDEF(&coroutine->coroutine.result);

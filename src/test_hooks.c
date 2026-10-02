@@ -29,6 +29,7 @@
 #include "zend_smart_str.h"
 #include "php_true_async.h"
 #include "test_hooks.h"
+#include "coroutine.h"
 #include "src/internal/circular_buffer.h"
 
 /* A stand-in awaitable: the flags word and a vector, as the event header will have. */
@@ -116,6 +117,11 @@ static void action_bailout_once(test_callback_t *self, async_awaitable_t *target
 	if (self->runs == 1) {
 		zend_bailout();
 	}
+}
+
+static void action_free_vector(test_callback_t *self, async_awaitable_t *target)
+{
+	async_callbacks_free(target, self->other_vector);
 }
 
 /* zend_bailout() clears the current frame and marks the shutdown unclean; the catch puts both
@@ -256,7 +262,7 @@ static void scenario_nested_same(smart_str *trace)
 }
 
 /* T holds R A B; R has run when A notifies F, whose W removes R from T. The removal corrects T's
- * cursor, not F's (the top frame): T goes on with B, and F with X. */
+ * cursor, not F's (the inner notify): T goes on with B, and F with X. */
 static void scenario_nested_other(smart_str *trace)
 {
 	test_target_t outer = { ASYNC_AWAITABLE_F_EVENT };
@@ -305,9 +311,8 @@ static void scenario_throw_all(smart_str *trace)
 	async_callbacks_free((async_awaitable_t *) &target, &target.callbacks);
 }
 
-/* T holds A B; A notifies F inside zend_try, and F's W bails out. A's catch swallows it: T drops
- * F's frame and goes on with B, F can be notified again, and the scheduler-context flag is back to
- * its value before T. */
+/* T holds A B; A notifies F inside zend_try, and F's W bails out. A's catch swallows it: T goes on
+ * with B, F can be notified again, and the scheduler-context flag is back to its value before T. */
 static void scenario_bailout_caught(smart_str *trace)
 {
 	test_target_t outer = { ASYNC_AWAITABLE_F_EVENT };
@@ -327,9 +332,31 @@ static void scenario_bailout_caught(smart_str *trace)
 	async_callbacks_notify((async_awaitable_t *) &outer, &outer.callbacks, NULL, NULL);
 	smart_str_appends(trace, " again:");
 	async_callbacks_notify((async_awaitable_t *) &inner, &inner.callbacks, NULL, NULL);
-	smart_str_append_printf(trace, " depth=%u sched=%d", ASYNC_G(notify_depth), (int) ZEND_ASYNC_IN_SCHEDULER_CONTEXT);
+	smart_str_append_printf(trace, " sched=%d", (int) ZEND_ASYNC_IN_SCHEDULER_CONTEXT);
 	async_callbacks_free((async_awaitable_t *) &outer, &outer.callbacks);
 	async_callbacks_free((async_awaitable_t *) &inner, &inner.callbacks);
+}
+
+/* T holds A B C; A tears T's vector down: the notify ends without B and C, and the vector takes
+ * new callbacks and notifies again. */
+static void scenario_free_during(smart_str *trace)
+{
+	test_target_t target = { ASYNC_AWAITABLE_F_EVENT };
+	test_callback_t callbacks[3];
+
+	for (int i = 0; i < 3; i++) {
+		test_callback_init(&callbacks[i], (char) ('A' + i), trace);
+	}
+
+	callbacks[0].action = action_free_vector;
+	callbacks[0].other_vector = &target.callbacks;
+	test_vector_fill(&target.callbacks, callbacks, 3);
+	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
+	smart_str_appends(trace, " then:");
+	callbacks[1].runs = 0;
+	async_callbacks_add(&target.callbacks, &callbacks[1].base);
+	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
+	async_callbacks_free((async_awaitable_t *) &target, &target.callbacks);
 }
 
 /* A notify entered in scheduler context leaves the flag set; one entered outside clears it. */
@@ -377,23 +404,22 @@ static bool finish_handler_named(zend_coroutine_t *coroutine, zend_coroutine_t *
  * positional handle would have removed C on the second call (B shifted into A's slot). */
 static void scenario_finish_ids(smart_str *trace)
 {
-	zend_coroutine_t coroutine = { 0 };
-	async_callbacks_vector_t vector = { 0 };
+	async_coroutine_t coroutine = { 0 };
 	test_finish_t handlers[3] = { { 'A' }, { 'B' }, { 'C' } };
 	uint32_t ids[3];
 
 	ASYNC_G(test_trace) = trace;
 
 	for (int i = 0; i < 3; i++) {
-		ids[i] = async_finish_handler_add(&vector, finish_handler_named, NULL, &handlers[i]);
+		ids[i] = async_finish_handler_add(&coroutine.callbacks, finish_handler_named, NULL, &handlers[i]);
 	}
 
-	smart_str_append_printf(trace, "removed A=%d ", async_finish_handler_remove(&vector, ids[0]));
-	smart_str_append_printf(trace, "B=%d ", async_finish_handler_remove(&vector, ids[1]));
-	smart_str_append_printf(trace, "again A=%d ran:", async_finish_handler_remove(&vector, ids[0]));
-	async_callbacks_notify((async_awaitable_t *) &coroutine, &vector, NULL, NULL);
-	smart_str_append_printf(trace, " left=%u", vector.length);
-	async_callbacks_free((async_awaitable_t *) &coroutine, &vector);
+	smart_str_append_printf(trace, "removed A=%d ", async_finish_handler_remove(&coroutine.callbacks, ids[0]));
+	smart_str_append_printf(trace, "B=%d ", async_finish_handler_remove(&coroutine.callbacks, ids[1]));
+	smart_str_append_printf(trace, "again A=%d ran:", async_finish_handler_remove(&coroutine.callbacks, ids[0]));
+	async_callbacks_notify((async_awaitable_t *) &coroutine, &coroutine.callbacks, NULL, NULL);
+	smart_str_append_printf(trace, " left=%u", coroutine.callbacks.length);
+	async_callbacks_free((async_awaitable_t *) &coroutine, &coroutine.callbacks);
 	ASYNC_G(test_trace) = NULL;
 }
 
@@ -401,25 +427,24 @@ static void scenario_finish_ids(smart_str *trace)
  * freed once, and only A runs on the second notify. */
 static void scenario_finish_keep(smart_str *trace)
 {
-	zend_coroutine_t coroutine = { 0 };
-	async_callbacks_vector_t vector = { 0 };
-	test_finish_t handlers[3] = { { 'A', true }, { 'B', false }, { 'C', false, &vector } };
+	async_coroutine_t coroutine = { 0 };
+	test_finish_t handlers[3] = { { 'A', true }, { 'B', false }, { 'C', false, &coroutine.callbacks } };
 
 	ASYNC_G(test_trace) = trace;
 
 	for (int i = 0; i < 3; i++) {
-		const uint32_t id = async_finish_handler_add(&vector, finish_handler_named, NULL, &handlers[i]);
+		const uint32_t id = async_finish_handler_add(&coroutine.callbacks, finish_handler_named, NULL, &handlers[i]);
 
 		if (i == 2) {
 			handlers[i].remove_id = id;
 		}
 	}
 
-	async_callbacks_notify((async_awaitable_t *) &coroutine, &vector, NULL, NULL);
-	smart_str_append_printf(trace, " left=%u again:", vector.length);
-	async_callbacks_notify((async_awaitable_t *) &coroutine, &vector, NULL, NULL);
-	smart_str_append_printf(trace, " left=%u", vector.length);
-	async_callbacks_free((async_awaitable_t *) &coroutine, &vector);
+	async_callbacks_notify((async_awaitable_t *) &coroutine, &coroutine.callbacks, NULL, NULL);
+	smart_str_append_printf(trace, " left=%u again:", coroutine.callbacks.length);
+	async_callbacks_notify((async_awaitable_t *) &coroutine, &coroutine.callbacks, NULL, NULL);
+	smart_str_append_printf(trace, " left=%u", coroutine.callbacks.length);
+	async_callbacks_free((async_awaitable_t *) &coroutine, &coroutine.callbacks);
 	ASYNC_G(test_trace) = NULL;
 }
 
@@ -435,7 +460,7 @@ static const test_scenario_t test_scenarios[] = {
 	{ "nested-same", scenario_nested_same }, { "nested-other", scenario_nested_other },
 	{ "finish-ids", scenario_finish_ids },   { "finish-keep", scenario_finish_keep },
 	{ "throw-all", scenario_throw_all },     { "bailout-caught", scenario_bailout_caught },
-	{ "sched-kept", scenario_sched_kept },
+	{ "sched-kept", scenario_sched_kept },   { "free-during", scenario_free_during },
 };
 
 static void test_buffer_push(circular_buffer_t *buffer, const zend_long from, const zend_long to)

@@ -217,8 +217,9 @@ section 14); a step that finds a test needs more moves it on with a note.
         on all three (runs 37002982898, 37004144080, 37005572624). Critic: 7 findings, all fixed
         (GC walked the embedded `internal_context` as an array; `new Async\Coroutine` refused;
         `true_async.enable=On`); the seven test changes accepted. Notify callbacks run in
-        scheduler context instead of `zend_fiber_switch_block()` (Edmond). Open: Edmond questions
-        the notify frame stack; a cursor in the vector is proposed, waiting for his answer.
+        scheduler context instead of `zend_fiber_switch_block()` (Edmond). Then, on Edmond's call,
+        the notify cursor moved into the vector (coroutine 304 B); `async_callbacks_bailout_reset()`
+        is gone, so S3.3's obligation to call it lapses.
 - [ ] S3.5 Spawn and run: the 21 slots, launch, run queue, enqueue (4.3), in-place run, call 1
       from main, RINIT and RSHUTDOWN, `spawn`, `current_coroutine`, `get_coroutines`, state methods;
       wait unlink stubbed.

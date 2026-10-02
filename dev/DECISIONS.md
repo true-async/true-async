@@ -84,3 +84,8 @@ someone will propose again.
   fiber switching; `tests/internal/011-callbacks_bailout_caught.phpt` checks the flag instead of the
   switch block. Why: Edmond, the extension never calls `zend_fiber_switch_block()`; S3.md 4.6
   already closes such windows with the flag.
+- 2026-10-02 The notify cursor is a field of `async_callbacks_vector_t` (vector 24 B, coroutine
+  304 B, same 320 B bin); the global notify frame array, its lookup, its depth limit and
+  `async_callbacks_bailout_reset()` are gone. A bailout out of a callback is handled by the
+  notify's own `zend_try`. `tests/internal/011-callbacks_bailout_caught.phpt` no longer prints the
+  frame depth. Why: Edmond; saving 8 B had cost a chain, a global array and a switch block.
