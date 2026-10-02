@@ -166,10 +166,10 @@ zend_result circular_buffer_push(circular_buffer_t *buffer, const void *value, c
 	ZEND_ASSERT(buffer->data != NULL && value != NULL);
 
 	if (should_resize) {
-		if (circular_buffer_resize_for_push(buffer) == FAILURE) {
+		if (UNEXPECTED(circular_buffer_resize_for_push(buffer) == FAILURE)) {
 			return FAILURE;
 		}
-	} else if (circular_buffer_is_full(buffer)) {
+	} else if (UNEXPECTED(circular_buffer_is_full(buffer))) {
 		zend_error(E_WARNING, "Cannot push into full circular buffer");
 		return FAILURE;
 	}
@@ -185,10 +185,10 @@ zend_result circular_buffer_push_front(circular_buffer_t *buffer, const void *va
 	ZEND_ASSERT(buffer->data != NULL && value != NULL);
 
 	if (should_resize) {
-		if (circular_buffer_resize_for_push(buffer) == FAILURE) {
+		if (UNEXPECTED(circular_buffer_resize_for_push(buffer) == FAILURE)) {
 			return FAILURE;
 		}
-	} else if (circular_buffer_is_full(buffer)) {
+	} else if (UNEXPECTED(circular_buffer_is_full(buffer))) {
 		return circular_buffer_push(buffer, value, false);
 	}
 
@@ -202,7 +202,7 @@ zend_result circular_buffer_pop(circular_buffer_t *buffer, void *value)
 {
 	ZEND_ASSERT(buffer->data != NULL && value != NULL);
 
-	if (circular_buffer_is_empty(buffer)) {
+	if (UNEXPECTED(circular_buffer_is_empty(buffer))) {
 		zend_error(E_WARNING, "Cannot pop from empty circular buffer");
 		return FAILURE;
 	}
@@ -226,7 +226,7 @@ bool circular_buffer_is_full(const circular_buffer_t *buffer)
 size_t circular_buffer_count(const circular_buffer_t *buffer)
 {
 	/* A buffer never constructed (a scheduler queue read before the scheduler allocates it). */
-	if (buffer->capacity == 0) {
+	if (UNEXPECTED(buffer->capacity == 0)) {
 		return 0;
 	}
 

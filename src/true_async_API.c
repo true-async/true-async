@@ -27,7 +27,7 @@ void async_callbacks_reserve(async_callbacks_vector_t *vector, const uint32_t co
 	const uint32_t capacity = ASYNC_CALLBACKS_CAPACITY(vector);
 	const uint32_t needed = vector->length + count;
 
-	if (needed <= (capacity == 0 ? 1 : capacity)) {
+	if (EXPECTED(needed <= (capacity == 0 ? 1 : capacity))) {
 		return;
 	}
 
@@ -64,7 +64,7 @@ bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callba
 		for (index = 0; index < vector->length && slots[index] != callback; index++) {
 		}
 
-		if (index == vector->length) {
+		if (UNEXPECTED(index == vector->length)) {
 			return false;
 		}
 	}
@@ -134,7 +134,7 @@ void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *v
 	for (uint32_t i = 0; i < vector->length; i++) {
 		async_event_callback_t *callback = slots[i];
 
-		if (callback->flags & ASYNC_CALLBACK_F_RECORD) {
+		if (UNEXPECTED(callback->flags & ASYNC_CALLBACK_F_RECORD)) {
 			/* Invariant F (section 4): a waiter unlinks before its target goes. Until the teardown
 			 * wakes such a waiter with an error (S3.7), its later unlink at least finds no target. */
 			ZEND_ASSERT(0 && "a wait record outlived its frame's link");
@@ -161,18 +161,18 @@ static void async_finish_handler_call(async_awaitable_t *target,
 {
 	ZEND_ASSERT(ASYNC_AWAITABLE_IS_COROUTINE(target));
 
-	async_finish_handler_callback_t *entry = (async_finish_handler_callback_t *) callback;
+	async_finish_handler_callback_t *finish_handler = (async_finish_handler_callback_t *) callback;
 	zend_coroutine_t *coroutine = (zend_coroutine_t *) target;
-	const zend_coroutine_finish_handler_fn handler = entry->handler;
-	zend_coroutine_t *waiter = entry->waiter;
-	void *data = entry->data;
+	const zend_coroutine_finish_handler_fn handler = finish_handler->handler;
+	zend_coroutine_t *waiter = finish_handler->waiter;
+	void *data = finish_handler->data;
 
 	/* Fires once: the entry goes before the handler runs, so the handler may add or remove others.
 	 * Finish handlers are added only to a coroutine of this extension. */
 	const bool removed = async_callbacks_remove(&((async_coroutine_t *) target)->callbacks, callback);
 	ZEND_ASSERT(removed && "a finish handler outside its coroutine's vector");
 	(void) removed;
-	efree(entry);
+	efree(finish_handler);
 
 	handler(coroutine, waiter, data, (coroutine->flags & ASYNC_COROUTINE_F_BAILOUT) != 0);
 }
@@ -191,23 +191,23 @@ uint32_t async_finish_handler_add(async_coroutine_t *coroutine,
 	async_callbacks_vector_t *vector = &coroutine->callbacks;
 	async_callbacks_reserve(vector, 1);
 
-	async_finish_handler_callback_t *entry = emalloc(sizeof(async_finish_handler_callback_t));
-	entry->base.flags = 0;
-	entry->base.callback = async_finish_handler_call;
-	entry->base.dispose = async_finish_handler_dispose;
-	entry->handler = handler;
-	entry->waiter = waiter;
-	entry->data = data;
+	async_finish_handler_callback_t *finish_handler = emalloc(sizeof(async_finish_handler_callback_t));
+	finish_handler->base.flags = 0;
+	finish_handler->base.callback = async_finish_handler_call;
+	finish_handler->base.dispose = async_finish_handler_dispose;
+	finish_handler->handler = handler;
+	finish_handler->waiter = waiter;
+	finish_handler->data = data;
 
 	/* One counter per thread; 0 is the RFC's "nothing added". */
 	if (UNEXPECTED(++ASYNC_G(handler_id_seq) == 0)) {
 		ASYNC_G(handler_id_seq) = 1;
 	}
 
-	entry->handler_id = ASYNC_G(handler_id_seq);
-	async_callbacks_push_reserved(vector, &entry->base);
+	finish_handler->handler_id = ASYNC_G(handler_id_seq);
+	async_callbacks_push_reserved(vector, &finish_handler->base);
 
-	return entry->handler_id;
+	return finish_handler->handler_id;
 }
 
 bool async_finish_handler_remove(async_coroutine_t *coroutine, const uint32_t handler_id)

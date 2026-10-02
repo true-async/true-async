@@ -158,7 +158,7 @@ static HashTable *coroutine_object_gc(zend_object *object, zval **table, int *nu
  * Takes a reference. */
 static void exit_exception_add(zend_object *exception)
 {
-	if (ZEND_ASYNC_EXIT_EXCEPTION != NULL) {
+	if (UNEXPECTED(ZEND_ASYNC_EXIT_EXCEPTION != NULL)) {
 		zend_exception_set_previous(exception, ZEND_ASYNC_EXIT_EXCEPTION);
 	}
 
@@ -176,19 +176,19 @@ static void coroutine_take_exception(async_coroutine_t *coroutine)
 	GC_ADDREF(exception);
 	zend_clear_exception();
 
-	if (zend_is_graceful_exit(exception) || zend_is_unwind_exit(exception)) {
+	if (UNEXPECTED(zend_is_graceful_exit(exception) || zend_is_unwind_exit(exception))) {
 		OBJ_RELEASE(exception);
 		return;
 	}
 
 	zend_object *outcome = coroutine->coroutine.exception;
 
-	if (outcome != NULL && instanceof_function(exception->ce, async_ce_cancellation)) {
+	if (UNEXPECTED(outcome != NULL && instanceof_function(exception->ce, async_ce_cancellation))) {
 		OBJ_RELEASE(exception);
 		return;
 	}
 
-	if (outcome != NULL) {
+	if (UNEXPECTED(outcome != NULL)) {
 		zend_exception_set_previous(exception, outcome);
 	}
 
@@ -197,39 +197,39 @@ static void coroutine_take_exception(async_coroutine_t *coroutine)
 
 void async_coroutine_execute(async_coroutine_t *coroutine)
 {
-	zend_coroutine_t *base = &coroutine->coroutine;
+	zend_coroutine_t *zend_coroutine = &coroutine->coroutine;
 
-	ZEND_ASSERT(base == ZEND_ASYNC_CURRENT_COROUTINE && ZEND_COROUTINE_IS_RUNNING(base));
-	ZEND_ASSERT((base->fcall != NULL) != (base->internal_entry != NULL));
+	ZEND_ASSERT(zend_coroutine == ZEND_ASYNC_CURRENT_COROUTINE && ZEND_COROUTINE_IS_RUNNING(zend_coroutine));
+	ZEND_ASSERT((zend_coroutine->fcall != NULL) != (zend_coroutine->internal_entry != NULL));
 
-	ZEND_COROUTINE_SET_STARTED(base);
+	ZEND_COROUTINE_SET_STARTED(zend_coroutine);
 
 	zend_try
 	{
-		if (base->internal_entry != NULL) {
-			base->internal_entry();
+		if (UNEXPECTED(zend_coroutine->internal_entry != NULL)) {
+			zend_coroutine->internal_entry();
 		} else {
-			base->fcall->fci.retval = &base->result;
-			zend_call_function(&base->fcall->fci, &base->fcall->fci_cache);
-			base->fcall->fci.retval = NULL;
+			zend_coroutine->fcall->fci.retval = &zend_coroutine->result;
+			zend_call_function(&zend_coroutine->fcall->fci, &zend_coroutine->fcall->fci_cache);
+			zend_coroutine->fcall->fci.retval = NULL;
 
 			/* The callable goes with the run, as in TrueAsync: a finished coroutine holds no
 			 * closure. Unset before the release, which runs destructors that may bail out; what
 			 * they throw is the coroutine's outcome. */
 			zval function_name;
-			ZVAL_COPY_VALUE(&function_name, &base->fcall->fci.function_name);
-			ZVAL_UNDEF(&base->fcall->fci.function_name);
+			ZVAL_COPY_VALUE(&function_name, &zend_coroutine->fcall->fci.function_name);
+			ZVAL_UNDEF(&zend_coroutine->fcall->fci.function_name);
 			zval_ptr_dtor(&function_name);
 		}
 	}
 	zend_catch
 	{
-		base->flags |= ASYNC_COROUTINE_F_BAILOUT;
+		zend_coroutine->flags |= ASYNC_COROUTINE_F_BAILOUT;
 	}
 	zend_end_try();
 
 	/* Read before finalize, which may free the coroutine. */
-	const bool is_bailout = (base->flags & ASYNC_COROUTINE_F_BAILOUT) != 0;
+	const bool is_bailout = (zend_coroutine->flags & ASYNC_COROUTINE_F_BAILOUT) != 0;
 
 	async_coroutine_finalize(coroutine);
 
@@ -242,23 +242,23 @@ void async_coroutine_execute(async_coroutine_t *coroutine)
 
 void async_coroutine_finalize(async_coroutine_t *coroutine)
 {
-	zend_coroutine_t *base = &coroutine->coroutine;
-	const bool is_bailout = (base->flags & ASYNC_COROUTINE_F_BAILOUT) != 0;
+	zend_coroutine_t *zend_coroutine = &coroutine->coroutine;
+	const bool is_bailout = (zend_coroutine->flags & ASYNC_COROUTINE_F_BAILOUT) != 0;
 
 	ZEND_ASSERT(coroutine->waker.wait == NULL && "a coroutine finishes with no wait linked");
 
-	if (EG(exception) != NULL) {
+	if (UNEXPECTED(EG(exception) != NULL)) {
 		coroutine_take_exception(coroutine);
 	}
 
-	ZEND_COROUTINE_SET_STATUS(base, ZEND_COROUTINE_STATUS_FINISHED);
+	ZEND_COROUTINE_SET_STATUS(zend_coroutine, ZEND_COROUTINE_STATUS_FINISHED);
 
 	/* The context stays with the loop that ran the body; main's copy is its caller's to free. */
 	coroutine->fiber_context = NULL;
 
 	/* The notify may drop every other reference to the object, and a finish handler may clear the
 	 * exception (R:84): both live until the end of this function. */
-	zend_object *exception = base->exception;
+	zend_object *exception = zend_coroutine->exception;
 
 	GC_ADDREF(&coroutine->std);
 
@@ -266,20 +266,21 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 		GC_ADDREF(exception);
 	}
 
-	base->flags &= ~ASYNC_COROUTINE_F_EXCEPTION_HANDLED;
-	async_callbacks_notify((async_awaitable_t *) coroutine, &coroutine->callbacks, &base->result, exception);
+	zend_coroutine->flags &= ~ASYNC_COROUTINE_F_EXCEPTION_HANDLED;
+	async_callbacks_notify((async_awaitable_t *) coroutine, &coroutine->callbacks, &zend_coroutine->result, exception);
 
 	/* Observed: a waiter took the exception, or a finish handler cleared it. */
-	if (exception != NULL && ((base->flags & ASYNC_COROUTINE_F_EXCEPTION_HANDLED) || base->exception == NULL)) {
-		base->flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
+	if (exception != NULL &&
+		((zend_coroutine->flags & ASYNC_COROUTINE_F_EXCEPTION_HANDLED) || zend_coroutine->exception == NULL)) {
+		zend_coroutine->flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
 	}
 
 	async_callbacks_free((async_awaitable_t *) coroutine, &coroutine->callbacks);
 
-	if (base->extended_dispose != NULL) {
-		const zend_coroutine_dispose_fn dispose = base->extended_dispose;
-		base->extended_dispose = NULL;
-		dispose(base);
+	if (zend_coroutine->extended_dispose != NULL) {
+		const zend_coroutine_dispose_fn dispose = zend_coroutine->extended_dispose;
+		zend_coroutine->extended_dispose = NULL;
+		dispose(zend_coroutine);
 	}
 
 	zend_hash_index_del(&ASYNC_G(coroutines), coroutine->std.handle);
@@ -287,10 +288,11 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 	/* Nobody can observe the exception when only the scheduler's reference and this function's are
 	 * left, or for main and a fiber, which nobody awaits through the object: it ends the request. A
 	 * cancellation is the scheduler's own doing; after a bailout the request ends anyway. */
-	if (exception != NULL && !is_bailout && !(base->flags & ASYNC_COROUTINE_F_EXC_CAUGHT) &&
-		!instanceof_function(exception->ce, async_ce_cancellation) &&
-		(GC_REFCOUNT(&coroutine->std) <= 2 || ZEND_COROUTINE_IS_MAIN(base) || ZEND_COROUTINE_IS_FIBER(base))) {
-		base->flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
+	if (UNEXPECTED(exception != NULL && !is_bailout && !(zend_coroutine->flags & ASYNC_COROUTINE_F_EXC_CAUGHT) &&
+				   !instanceof_function(exception->ce, async_ce_cancellation) &&
+				   (GC_REFCOUNT(&coroutine->std) <= 2 || ZEND_COROUTINE_IS_MAIN(zend_coroutine) ||
+					ZEND_COROUTINE_IS_FIBER(zend_coroutine)))) {
+		zend_coroutine->flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
 		GC_ADDREF(exception);
 		exit_exception_add(exception);
 	}

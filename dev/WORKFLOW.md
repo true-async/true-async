@@ -72,7 +72,14 @@ without ior (`dev/PLAN.md`, S3.2); Edmond accepted it on 2026-10-02.
 
 - A name states the role of the value: no one-letter or clipped variable names (`c`, `x`, `ce`, `rec`,
   `cb`) but `coroutine`, `awaitable`, `cancellation`, `records`, `callback`. A loop index `i` is the one
-  exception. Edmond, 2026-10-02. Held by discipline, no gate.
+  exception. A name also says which object it holds, not its place in a type hierarchy: not `base`,
+  `entry` or `obj`; the name itself is the author's choice. Edmond, 2026-10-02. Held by discipline, no
+  gate.
+- Branch hints as in the core and TrueAsync: an `if` whose condition is an error or a rare case is wrapped
+  whole in `UNEXPECTED()` (`if (UNEXPECTED(EG(exception) != NULL))`, `FAILURE`, a bailout, NULL from a
+  lookup or from an allocator that can return it; `emalloc` never does), the clearly frequent path in
+  `EXPECTED()`. A condition whose sides are about equally likely, or that depends on the configuration,
+  stays bare. Edmond, 2026-10-02. Held by discipline, no gate.
 
 ## Commits
 

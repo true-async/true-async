@@ -61,7 +61,8 @@ static bool scheduler_registered = false;
  * this covers both. */
 static int awaitable_gets_implemented(zend_class_entry *interface, zend_class_entry *class_entry)
 {
-	if (class_entry->type == ZEND_INTERNAL_CLASS && class_entry->info.internal.module == &true_async_module_entry) {
+	if (EXPECTED(class_entry->type == ZEND_INTERNAL_CLASS &&
+				 class_entry->info.internal.module == &true_async_module_entry)) {
 		return SUCCESS;
 	}
 
@@ -100,18 +101,18 @@ static PHP_MINIT_FUNCTION(true_async)
 
 	/* Registered here, not in the module entry, so an extension that is disabled, or whose scheduler
 	 * the core refused, has no Async\ functions. */
-	if (!scheduler_registered) {
+	if (UNEXPECTED(!scheduler_registered)) {
 		return SUCCESS;
 	}
 
-	if (zend_register_functions(NULL, ext_functions, NULL, type) == FAILURE) {
+	if (UNEXPECTED(zend_register_functions(NULL, ext_functions, NULL, type) == FAILURE)) {
 		return FAILURE;
 	}
 
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	/* A second table beside TRUE_ASYNC_FUNCTIONS: the mull lane builds the known-answer functions
 	 * and the hooks together. */
-	if (zend_register_functions(NULL, true_async_test_hooks_functions, NULL, type) == FAILURE) {
+	if (UNEXPECTED(zend_register_functions(NULL, true_async_test_hooks_functions, NULL, type) == FAILURE)) {
 		return FAILURE;
 	}
 #endif

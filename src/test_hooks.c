@@ -62,11 +62,11 @@ test_callback_fire(async_awaitable_t *target, async_event_callback_t *callback, 
 	self->runs++;
 
 	/* Each callback runs with no exception pending, in scheduler context. */
-	if (EG(exception) != NULL) {
+	if (UNEXPECTED(EG(exception) != NULL)) {
 		smart_str_appendc(self->trace, '?');
 	}
 
-	if (!ZEND_ASYNC_IN_SCHEDULER_CONTEXT) {
+	if (UNEXPECTED(!ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) {
 		smart_str_appendc(self->trace, '!');
 	}
 
@@ -148,9 +148,9 @@ static void test_trace_exception(smart_str *trace)
 
 	for (zend_object *exception = EG(exception); exception != NULL;) {
 		zval rv;
-		zend_class_entry *base = zend_get_exception_base(exception);
-		zval *message = zend_read_property_ex(base, exception, ZSTR_KNOWN(ZEND_STR_MESSAGE), true, &rv);
-		zval *previous = zend_read_property_ex(base, exception, ZSTR_KNOWN(ZEND_STR_PREVIOUS), true, &rv);
+		zend_class_entry *exception_class = zend_get_exception_base(exception);
+		zval *message = zend_read_property_ex(exception_class, exception, ZSTR_KNOWN(ZEND_STR_MESSAGE), true, &rv);
+		zval *previous = zend_read_property_ex(exception_class, exception, ZSTR_KNOWN(ZEND_STR_PREVIOUS), true, &rv);
 
 		smart_str_append(trace, Z_STR_P(message));
 		exception = Z_TYPE_P(previous) == IS_OBJECT ? Z_OBJ_P(previous) : NULL;

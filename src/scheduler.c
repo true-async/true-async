@@ -63,9 +63,10 @@ static void fiber_context_cleanup(zend_fiber_context *context)
 static async_fiber_context_t *fiber_context_create(void)
 {
 	async_fiber_context_t *fiber_context = ecalloc(1, sizeof(async_fiber_context_t));
+	const zend_result result =
+			zend_fiber_init_context(&fiber_context->context, async_ce_coroutine, fiber_entry, EG(fiber_stack_size));
 
-	if (zend_fiber_init_context(&fiber_context->context, async_ce_coroutine, fiber_entry, EG(fiber_stack_size)) ==
-		FAILURE) {
+	if (UNEXPECTED(result == FAILURE)) {
 		efree(fiber_context);
 		return NULL;
 	}
@@ -124,7 +125,7 @@ static zend_always_inline async_coroutine_t *run_queue_pop(void)
 {
 	async_coroutine_t *coroutine = NULL;
 
-	if (circular_buffer_pop_ptr(&ASYNC_G(run_queue), (void **) &coroutine) == SUCCESS) {
+	if (EXPECTED(circular_buffer_pop_ptr(&ASYNC_G(run_queue), (void **) &coroutine) == SUCCESS)) {
 		return coroutine;
 	}
 
@@ -170,7 +171,7 @@ static zend_fiber_context *fiber_loop(async_fiber_context_t *fiber_context)
 		async_coroutine_t *coroutine = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
 
 		/* The pool's teardown, on the OS stack, wakes a parked context with no current coroutine. */
-		if (coroutine == NULL) {
+		if (UNEXPECTED(coroutine == NULL)) {
 			return scheduler_idle_context();
 		}
 
@@ -283,7 +284,7 @@ static void main_coroutine_finish(async_coroutine_t *coroutine, const bool is_ba
 	coroutine->fiber_context = NULL;
 	ZEND_ASYNC_MAIN_COROUTINE = NULL;
 
-	if (is_bailout) {
+	if (UNEXPECTED(is_bailout)) {
 		coroutine->coroutine.flags |= ASYNC_COROUTINE_F_BAILOUT;
 	}
 
@@ -314,7 +315,7 @@ static bool scheduler_drain(void)
 			}
 		}
 
-		if (switch_to(&coroutine->fiber_context->context) & ZEND_FIBER_TRANSFER_FLAG_BAILOUT) {
+		if (UNEXPECTED(switch_to(&coroutine->fiber_context->context) & ZEND_FIBER_TRANSFER_FLAG_BAILOUT)) {
 			return true;
 		}
 	}
@@ -350,15 +351,15 @@ static bool scheduler_main_suspend(const bool is_bailout)
 	bool bailout = is_bailout;
 
 	/* A bailout out of the previous call's drain ends main before this call. */
-	if (main_coroutine != NULL) {
+	if (EXPECTED(main_coroutine != NULL)) {
 		main_coroutine_finish(main_coroutine, is_bailout);
 	}
 
-	if (!bailout) {
+	if (EXPECTED(!bailout)) {
 		bailout = scheduler_drain();
 	}
 
-	if (bailout) {
+	if (UNEXPECTED(bailout)) {
 		scheduler_drop_queue();
 	}
 
@@ -370,8 +371,8 @@ static bool scheduler_main_suspend(const bool is_bailout)
 
 	/* The bailout's own error is what the request reports; the exit exception is dropped, as in
 	 * TrueAsync. */
-	if (bailout) {
-		if (ZEND_ASYNC_EXIT_EXCEPTION != NULL) {
+	if (UNEXPECTED(bailout)) {
+		if (UNEXPECTED(ZEND_ASYNC_EXIT_EXCEPTION != NULL)) {
 			OBJ_RELEASE(ZEND_ASYNC_EXIT_EXCEPTION);
 			ZEND_ASYNC_EXIT_EXCEPTION = NULL;
 		}
@@ -380,11 +381,11 @@ static bool scheduler_main_suspend(const bool is_bailout)
 	}
 
 	/* main.c prints only EG(exception): the exit exception goes there. */
-	if (ZEND_ASYNC_EXIT_EXCEPTION != NULL) {
+	if (UNEXPECTED(ZEND_ASYNC_EXIT_EXCEPTION != NULL)) {
 		zend_object *exit_exception = ZEND_ASYNC_EXIT_EXCEPTION;
 		ZEND_ASYNC_EXIT_EXCEPTION = NULL;
 
-		if (EG(exception) != NULL) {
+		if (UNEXPECTED(EG(exception) != NULL)) {
 			zend_exception_set_previous(EG(exception), exit_exception);
 		} else {
 			EG(exception) = exit_exception;
@@ -462,11 +463,11 @@ static zend_always_inline void run_queue_push(async_coroutine_t *coroutine)
 	ZEND_COROUTINE_SET_STATUS(&coroutine->coroutine, ZEND_COROUTINE_STATUS_QUEUED);
 }
 
-bool async_scheduler_enqueue(zend_coroutine_t *base, zend_object *error, const bool transfer_error)
+bool async_scheduler_enqueue(zend_coroutine_t *zend_coroutine, zend_object *error, const bool transfer_error)
 {
-	async_coroutine_t *coroutine = (async_coroutine_t *) base;
+	async_coroutine_t *coroutine = (async_coroutine_t *) zend_coroutine;
 
-	if (UNEXPECTED(ZEND_COROUTINE_IS_FINISHED(base))) {
+	if (UNEXPECTED(ZEND_COROUTINE_IS_FINISHED(zend_coroutine))) {
 		if (error != NULL && transfer_error) {
 			OBJ_RELEASE(error);
 		}
@@ -475,7 +476,7 @@ bool async_scheduler_enqueue(zend_coroutine_t *base, zend_object *error, const b
 		return false;
 	}
 
-	if (error != NULL) {
+	if (UNEXPECTED(error != NULL)) {
 		if (!transfer_error) {
 			GC_ADDREF(error);
 		}
@@ -485,17 +486,17 @@ bool async_scheduler_enqueue(zend_coroutine_t *base, zend_object *error, const b
 
 	/* The current coroutine woken inside its own tick (U2): it is SUSPENDED or QUEUED there, and a
 	 * push by the status would switch into the running context later. */
-	if (base == ZEND_ASYNC_CURRENT_COROUTINE && ZEND_ASYNC_IN_SCHEDULER_CONTEXT) {
+	if (UNEXPECTED(zend_coroutine == ZEND_ASYNC_CURRENT_COROUTINE && ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) {
 		async_wait_unlink(coroutine);
 
-		if (ZEND_COROUTINE_IS_SUSPENDED(base)) {
-			ZEND_COROUTINE_SET_STATUS(base, ZEND_COROUTINE_STATUS_RUNNING);
+		if (ZEND_COROUTINE_IS_SUSPENDED(zend_coroutine)) {
+			ZEND_COROUTINE_SET_STATUS(zend_coroutine, ZEND_COROUTINE_STATUS_RUNNING);
 		}
 
 		return true;
 	}
 
-	switch (ZEND_COROUTINE_STATUS(base)) {
+	switch (ZEND_COROUTINE_STATUS(zend_coroutine)) {
 		case ZEND_COROUTINE_STATUS_CREATED:
 			/* The registry holds every enqueued coroutine until it finishes; the scope hook of
 			 * S9 goes here. */
@@ -510,7 +511,7 @@ bool async_scheduler_enqueue(zend_coroutine_t *base, zend_object *error, const b
 			return true;
 		case ZEND_COROUTINE_STATUS_RUNNING:
 			/* The yield of Async\suspend(): the current coroutine goes to the back of the queue. */
-			if (base == ZEND_ASYNC_CURRENT_COROUTINE) {
+			if (zend_coroutine == ZEND_ASYNC_CURRENT_COROUTINE) {
 				run_queue_push(coroutine);
 				return true;
 			}
@@ -641,12 +642,12 @@ static zend_coroutine_t *scheduler_coroutine_from_object(zend_object *object)
 }
 
 /* The frame of a parked coroutine: started, not running, not finished (a yield is QUEUED). */
-static zend_execute_data *scheduler_coroutine_execute_data(zend_coroutine_t *base)
+static zend_execute_data *scheduler_coroutine_execute_data(zend_coroutine_t *zend_coroutine)
 {
-	async_coroutine_t *coroutine = (async_coroutine_t *) base;
-	const zend_coroutine_status status = ZEND_COROUTINE_STATUS(base);
+	async_coroutine_t *coroutine = (async_coroutine_t *) zend_coroutine;
+	const zend_coroutine_status status = ZEND_COROUTINE_STATUS(zend_coroutine);
 
-	if (!ZEND_COROUTINE_IS_STARTED(base) || coroutine->fiber_context == NULL ||
+	if (!ZEND_COROUTINE_IS_STARTED(zend_coroutine) || coroutine->fiber_context == NULL ||
 		(status != ZEND_COROUTINE_STATUS_QUEUED && status != ZEND_COROUTINE_STATUS_SUSPENDED)) {
 		return NULL;
 	}
@@ -740,7 +741,7 @@ void async_scheduler_request_shutdown(void)
 	circular_buffer_dtor(&ASYNC_G(run_queue));
 	circular_buffer_dtor(&ASYNC_G(fiber_context_pool));
 
-	if (ZEND_ASYNC_EXIT_EXCEPTION != NULL) {
+	if (UNEXPECTED(ZEND_ASYNC_EXIT_EXCEPTION != NULL)) {
 		OBJ_RELEASE(ZEND_ASYNC_EXIT_EXCEPTION);
 		ZEND_ASYNC_EXIT_EXCEPTION = NULL;
 	}
