@@ -180,3 +180,8 @@ someone will propose again.
 - 2026-10-02 A stack that cannot be taken in `suspend()` finishes the next coroutine unrun with
   that exception as its outcome, as the drain does, not 4.2 step 3's abort plus exit exception.
   Why: the suspender did nothing wrong; the coroutine that got no stack owns the failure.
+- 2026-10-02 The extension never reads `zend_fiber_switch_blocked()` either: `Async\suspend()` and
+  the suspend slot no longer refuse on it, and `tools/check-gates.py` forbids it in `src/`. A window
+  the extension must close is closed by `ZEND_ASYNC_IN_SCHEDULER_CONTEXT`, as TrueAsync; the core's
+  own switch-block windows (pcntl dispatch, ticks, IO-hooks lock) stay open, as in TrueAsync.
+  Withdraws D14, which Edmond says was Claude's error, not his decision. Why: Edmond.

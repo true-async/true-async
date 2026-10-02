@@ -40,7 +40,7 @@ FORBIDDEN = [
     ('the fork waker status', r'waker->status|\bZEND_ASYNC_WAKER_(?:NO_STATUS|WAITING|QUEUED|IGNORED|RESULT)\b'),
     ('the fork yield flag', r'\bF_YIELD\b|\bIS_YIELD\b'),
     ('a fork wait structure', r'\b(?:triggered_events|inline_triggers|current_iterator|resume_when|resumed_coroutines)\b'),
-    ('a fiber switch ban (P1.4: the scheduler-context flag)', r'\bzend_fiber_switch_(?:un)?block\s*\('),
+    ('a fiber switch ban or its check (P1.4: the scheduler-context flag)', r'\bzend_fiber_switch_(?:un)?block(?:ed|ing)?\b'),
 ]
 
 # (file, flag it must pass to the compiler), looked for outside comments.

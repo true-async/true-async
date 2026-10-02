@@ -22,7 +22,7 @@ can see goes here; tests, tools and CI are in the git history.
   `isRunning()`, `isSuspended()` (false for the running coroutine), `isCancelled()`,
   `isCancellationRequested()`, `isCompleted()`.
 - `Async\suspend()`: the current coroutine, main included, yields to the coroutines queued ahead of
-  it and runs again in its turn; refused in the scheduler's own work and where fiber switching is
-  blocked.
+  it and runs again in its turn; refused in the scheduler's own work and inside a Fiber the
+  scheduler has not adopted.
 - `Async\Coroutine::getSuspendFileAndLine()`, `getSuspendLocation()` and `getTrace()` for a
   coroutine parked in `suspend()`.

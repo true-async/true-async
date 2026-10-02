@@ -30,7 +30,7 @@
    zend_gc.c:2181-2197; enqueue needs no switch) and returns 0 without awaiting; the collection runs at the next
    tick. The root still lands in the buffer (zend_gc.c:724-735). Side effect to settle in S3.2:
    gc_adjust_threshold(0) raises the threshold by a step (:681-692). Core change on async-core.
-14. (2026-10-02) Question 7.2: Async\suspend() and Async\await() where switching is blocked throw Error, checked by
+14. (2026-10-02) WITHDRAWN 2026-10-02: Edmond says this was not his decision but Claude's error; the extension never reads zend_fiber_switch_blocked(). Question 7.2: Async\suspend() and Async\await() where switching is blocked throw Error, checked by
    the extension through ZEND_API zend_fiber_switch_blocked() (zend_fibers.c:412), as the Fiber methods do
    (:1314, 1370, 1397, 1421, 1464). No core change.
 15. (2026-10-02) Questions 7.3 and 7.4 dropped: no rule for from_main and the block counter, no reset hook.

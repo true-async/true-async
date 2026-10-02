@@ -157,7 +157,7 @@ static uint8_t switch_to(zend_fiber_context *context)
 /* Where control goes when a context has nothing to run: the drain on the OS stack. While main lives
  * the queue is never empty here: a yielded main waits in it, and a main parked otherwise is woken by
  * the deadlock resolution (S3.8). */
-static zend_fiber_context *scheduler_idle_context(void)
+static zend_fiber_context *drain_context(void)
 {
 	ZEND_ASSERT(ZEND_ASYNC_MAIN_COROUTINE == NULL && "a context went idle while main was alive");
 
@@ -196,36 +196,36 @@ static void scheduler_tick(void)
 
 /* Runs coroutines on this context until it has nothing to run and the pool does not keep it.
  * Returns the context to switch to as this one ends: the next coroutine's, or the drain. */
-static zend_fiber_context *fiber_loop(async_fiber_context_t *fiber_context)
+static zend_fiber_context *run_coroutines(async_fiber_context_t *fiber_context)
 {
 	for (;;) {
 		async_coroutine_t *coroutine = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
 
 		/* The pool's teardown, on the OS stack, wakes a parked context with no current coroutine. */
 		if (UNEXPECTED(coroutine == NULL)) {
-			return scheduler_idle_context();
+			return drain_context();
 		}
 
 		ZEND_ASSERT(coroutine->fiber_context == fiber_context);
 		async_coroutine_execute(coroutine);
 		scheduler_tick();
 
-		async_coroutine_t *next = run_queue_pop();
+		async_coroutine_t *next_coroutine = run_queue_pop();
 
 		/* The in-place run: a coroutine that never ran takes this context, with no switch. */
-		if (next != NULL && next->fiber_context == NULL) {
-			next->fiber_context = fiber_context;
-			make_current(next);
+		if (next_coroutine != NULL && next_coroutine->fiber_context == NULL) {
+			next_coroutine->fiber_context = fiber_context;
+			make_current(next_coroutine);
 			continue;
 		}
 
 		zend_fiber_context *target = NULL;
 
-		if (next != NULL) {
-			target = &next->fiber_context->context;
-			make_current(next);
+		if (next_coroutine != NULL) {
+			target = &next_coroutine->fiber_context->context;
+			make_current(next_coroutine);
 		} else {
-			target = scheduler_idle_context();
+			target = drain_context();
 			ZEND_ASYNC_CURRENT_COROUTINE = NULL;
 		}
 
@@ -260,7 +260,7 @@ static ZEND_STACK_ALIGNED void fiber_entry(zend_fiber_transfer *transfer)
 		EG(current_execute_data) = NULL;
 		zend_fiber_vm_stack_start(&fiber_context->context, &root_function);
 
-		target = fiber_loop(fiber_context);
+		target = run_coroutines(fiber_context);
 	}
 	zend_catch
 	{
@@ -603,7 +603,7 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 		return false;
 	}
 
-	/* A park from the tick would leave the tick halfway (4.6); D14 for a blocked switch. */
+	/* A park from the tick would leave the tick halfway (4.6). */
 	if (UNEXPECTED(ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) {
 		async_wait_unlink(coroutine);
 		zend_throw_error(NULL, "A coroutine cannot be stopped from the Scheduler context");
@@ -612,7 +612,7 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 
 	/* Inside a Fiber the scheduler did not adopt (until S3.9) the stack is the Fiber's: parking it as
 	 * this coroutine would resume the coroutine inside the Fiber later. */
-	if (UNEXPECTED(zend_fiber_switch_blocked() || EG(current_fiber_context) != &coroutine->fiber_context->context)) {
+	if (UNEXPECTED(EG(current_fiber_context) != &coroutine->fiber_context->context)) {
 		async_wait_unlink(coroutine);
 		zend_throw_error(NULL, "Cannot switch coroutines in the current execution context");
 		return false;
@@ -634,31 +634,31 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 
 	/* Whoever switches back here has made this coroutine current and RUNNING. */
 	while (!ZEND_COROUTINE_IS_RUNNING(zend_coroutine)) {
-		async_coroutine_t *next = run_queue_pop();
+		async_coroutine_t *next_coroutine = run_queue_pop();
 
 		/* The deadlock resolution (S3.8) wakes every parked coroutine before this point. */
-		ZEND_ASSERT(next != NULL && "a suspend found nobody to run");
+		ZEND_ASSERT(next_coroutine != NULL && "a suspend found nobody to run");
 
 		/* A yield with nobody ahead (B3). */
-		if (next == coroutine) {
+		if (next_coroutine == coroutine) {
 			ZEND_COROUTINE_SET_STATUS(zend_coroutine, ZEND_COROUTINE_STATUS_RUNNING);
 			break;
 		}
 
-		if (next->fiber_context == NULL) {
-			next->fiber_context = fiber_context_take();
+		if (next_coroutine->fiber_context == NULL) {
+			next_coroutine->fiber_context = fiber_context_take();
 
 			/* No stack for it: it finishes unrun with that exception as its outcome, as in the drain. */
-			if (UNEXPECTED(next->fiber_context == NULL)) {
-				async_coroutine_finalize(next);
+			if (UNEXPECTED(next_coroutine->fiber_context == NULL)) {
+				async_coroutine_finalize(next_coroutine);
 				continue;
 			}
 		}
 
-		make_current(next);
+		make_current(next_coroutine);
 
 		/* Only a parked main gets a bailout here (fiber_entry); it is re-raised on main's stack (U4). */
-		if (UNEXPECTED(switch_to(&next->fiber_context->context) & ZEND_FIBER_TRANSFER_FLAG_BAILOUT)) {
+		if (UNEXPECTED(switch_to(&next_coroutine->fiber_context->context) & ZEND_FIBER_TRANSFER_FLAG_BAILOUT)) {
 			async_wait_unlink(coroutine);
 			zend_bailout();
 		}

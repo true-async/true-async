@@ -223,10 +223,8 @@ ZEND_FUNCTION(Async_suspend)
 
 	async_coroutine_t *coroutine = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
 
-	/* D14: where switching is blocked, as the Fiber methods refuse; and inside a Fiber the scheduler
-	 * did not adopt (until S3.9), whose stack is not the coroutine's. */
-	if (UNEXPECTED(coroutine == NULL || zend_fiber_switch_blocked() ||
-				   EG(current_fiber_context) != &coroutine->fiber_context->context)) {
+	/* Inside a Fiber the scheduler did not adopt (until S3.9) the stack is not the coroutine's. */
+	if (UNEXPECTED(coroutine == NULL || EG(current_fiber_context) != &coroutine->fiber_context->context)) {
 		zend_throw_error(NULL, "Cannot switch coroutines in the current execution context");
 		RETURN_THROWS();
 	}

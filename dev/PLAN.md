@@ -153,7 +153,7 @@ section 14); a step that finds a test needs more moves it on with a note.
 
 - [x] S3.1 Design note: coroutine object and methods (classes from TrueAsync), run queue, idle point before the deadlock
       and end-of-main decisions, cancellation, end-of-main and bailout policy, GC destructor
-      coroutine, `zend_fiber_switch_blocked()` honoured in suspend, EH_THROW window saved per
+      coroutine, `zend_fiber_switch_blocked()` honoured in suspend (withdrawn 2026-10-02), EH_THROW window saved per
       coroutine, the wait-graph edge every wait registers. Frozen list with one exclusion reason per excluded test (needs component X,
       needs a core change, needs a fixture, platform), and the core-dependency table (extension
       fix, RFC change, upstream fix, drop).

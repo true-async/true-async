@@ -21,10 +21,11 @@ below); the table at the end shows where each of them went.
 - **P1.4 TrueAsync's solution over a new mechanism.** Before a global, a counter, a `zend_try`, an
   extra function or field, find how TrueAsync (true-async/php-async and its core) solves the same
   thing and do the same; a mechanism it lacks needs a recorded reason. Fiber switches are never
-  forbidden with `zend_fiber_switch_block()`: the scheduler-context flag does it. No `zend_try` or
+  forbidden with `zend_fiber_switch_block()`, and `zend_fiber_switch_blocked()` is never read: the
+  scheduler-context flag does it. No `zend_try` or
   global counter on a hot path without Edmond's word. Why: Edmond, 2026-10-02, after the notify
   rework (`DECISIONS.md` 2026-10-02). Flips: Edmond's word, recorded in `DECISIONS.md`. Gate:
-  `tools/check-gates.py` forbids `zend_fiber_switch_block()` and `zend_fiber_switch_unblock()` in
+  `tools/check-gates.py` forbids `zend_fiber_switch_block()`, `_unblock()` and `_blocked()` in
   `src/`; the rest is held by the Critic, who compares each change with TrueAsync.
 
 ## P2. Compatibility
