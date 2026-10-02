@@ -18,6 +18,9 @@ STAGE_FILE = re.compile(r'^S(\d+)\.txt$')
 SKIP_ON = re.compile(r'^skip-on:([^()]+)\((.+)\)$')
 SHA256 = re.compile(r'^[0-9a-f]{64}$')
 CHANGED = re.compile(r'^changed:(\d{4}-\d{2}-\d{2}):([0-9a-f]{64})$')
+# A test of the active stage that cannot pass yet carries run-tests' own --XFAIL-- section; it is
+# not part of the listed hash, so a ported test keeps the reference's bytes everywhere else.
+XFAIL_SECTION = re.compile(rb'^--XFAIL--\r?\n.*?(?=^--[A-Z_]+--\r?$)', re.M | re.S)
 
 
 @dataclass
@@ -40,6 +43,15 @@ class Entry:
     def expected_sha256(self):
         """Hash the file must have: the changed one when the test was changed on purpose."""
         return self.changed[1] if self.changed else self.sha256
+
+
+def without_xfail(data):
+    """Test file bytes with the --XFAIL-- section removed."""
+    return XFAIL_SECTION.sub(b'', data, count=1)
+
+
+def has_xfail(path):
+    return XFAIL_SECTION.search(path.read_bytes()) is not None
 
 
 class ListError(Exception):

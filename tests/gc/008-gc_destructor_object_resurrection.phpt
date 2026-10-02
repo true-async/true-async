@@ -1,5 +1,7 @@
 --TEST--
 GC 008: Object resurrection through suspended destructor
+--XFAIL--
+Not implemented yet: S3.7 of dev/PLAN.md
 --FILE--
 <?php
 

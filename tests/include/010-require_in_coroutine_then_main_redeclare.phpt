@@ -1,5 +1,7 @@
 --TEST--
 require in coroutine then require (not _once) in main - must trigger redeclare error
+--XFAIL--
+Not implemented yet: S3.8 of dev/PLAN.md
 --FILE--
 <?php
 

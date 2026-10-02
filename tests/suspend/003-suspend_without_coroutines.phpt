@@ -1,5 +1,7 @@
 --TEST--
 Suspend without coroutines - test optimization path when no coroutines exist
+--XFAIL--
+Not implemented yet: S3.6 of dev/PLAN.md
 --FILE--
 <?php
 

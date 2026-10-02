@@ -1,5 +1,7 @@
 --TEST--
 Cancellation of coroutine during protected operation with exception handling
+--XFAIL--
+Not implemented yet: S3.8 of dev/PLAN.md
 --FILE--
 <?php
 

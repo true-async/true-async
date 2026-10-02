@@ -1,5 +1,7 @@
 --TEST--
 Deadlock occurs when a coroutine continues execution after being cancelled.
+--XFAIL--
+Not implemented yet: S3.8 of dev/PLAN.md
 --INI--
 async.debug_deadlock=0
 --FILE--

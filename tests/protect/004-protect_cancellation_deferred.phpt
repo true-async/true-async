@@ -1,5 +1,7 @@
 --TEST--
 Async\protect: cancellation is deferred during protected block
+--XFAIL--
+Not implemented yet: S3.8 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -18,10 +18,6 @@ env:
   # async-core-io in true-async/php-src and ior, as pinned in dev/WORKFLOW.md ("Pinned core").
   CORE_REF: 8a29d63edcfefb0a049155e32475182fb2d828cf
   IOR_REF: 2fb12e8ce012b8753258034de008266152742c13
-  # The last closed stage of dev/PLAN.md: its lists and the earlier ones gate the lanes. The active
-  # stage's list runs in a step of its own that reports without failing the job; the commit that
-  # closes a stage raises this number.
-  CLOSED_STAGE: 2
 
 jobs:
   lists:
@@ -96,12 +92,6 @@ jobs:
       - name: Test
         env:
           TRUE_ASYNC_CORE_SRC: ${{ runner.temp }}/core-src
-        run: python3 tools/test.py --lane pocs-${{ matrix.tree }} --stage "$CLOSED_STAGE"
-
-      - name: Test the active stage
-        continue-on-error: true
-        env:
-          TRUE_ASYNC_CORE_SRC: ${{ runner.temp }}/core-src
         run: python3 tools/test.py --lane pocs-${{ matrix.tree }}
 
       - name: Keep the results
@@ -146,7 +136,7 @@ jobs:
         run: python3 tools/mull.py --known-answer
 
       - name: Coverage
-        run: python3 tools/test.py --lane pocs-dbg-cov --stage "$CLOSED_STAGE"
+        run: python3 tools/test.py --lane pocs-dbg-cov
 
       - name: Keep the results
         if: always()
@@ -207,16 +197,6 @@ jobs:
           TRUE_ASYNC_WIN_BUILD: C:\obj\Release_TS
         run: |
           for /d %%d in (C:\build-cache\deps-*) do copy /y %%d\bin\*.dll C:\obj\Release_TS\ > nul
-          set TRUE_ASYNC_CORE_SRC=%GITHUB_WORKSPACE%\php-src
-          python tools\test.py --lane pocs-win --stage %CLOSED_STAGE%
-
-      - name: Test the active stage
-        continue-on-error: true
-        working-directory: true-async
-        shell: cmd
-        env:
-          TRUE_ASYNC_WIN_BUILD: C:\obj\Release_TS
-        run: |
           set TRUE_ASYNC_CORE_SRC=%GITHUB_WORKSPACE%\php-src
           python tools\test.py --lane pocs-win
 

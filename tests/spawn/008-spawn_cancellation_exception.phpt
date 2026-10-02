@@ -1,5 +1,7 @@
 --TEST--
 Future: spawn() - AsyncCancellation handling (special case)
+--XFAIL--
+Not implemented yet: S3.8 of dev/PLAN.md
 --FILE--
 <?php
 

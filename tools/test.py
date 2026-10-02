@@ -318,11 +318,15 @@ def verdict(lane, entries, left_out, output):
         name = f'tests/{entry.path}'
         status = statuses.get(name, 'MISSING')
         counts[status] = counts.get(status, 0) + 1
-        allowed = {'PASS'} | ({'SKIP'} if skip_allowed(lane, entry) else set())
+        # An unfinished test expects XFAIL; once it passes run-tests reports WARN, and its
+        # --XFAIL-- section goes in the commit that makes it pass.
+        xfail = lists.has_xfail(TESTS / entry.path)
+        allowed = {'XFAIL' if xfail else 'PASS'} | ({'SKIP'} if skip_allowed(lane, entry) else set())
 
         if status not in allowed:
             wrong += 1
-            print(f'{status:7} {name}')
+            hint = ' (passes: remove its --XFAIL-- section)' if status == 'WARN' and xfail else ''
+            print(f'{status:7} {name}{hint}')
         elif name in retried:
             print(f'RETRY   {name} (passed on a retry; first attempt in {output})')
 

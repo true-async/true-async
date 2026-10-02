@@ -1,5 +1,7 @@
 --TEST--
 await() - coroutine throws exception
+--XFAIL--
+Not implemented yet: S3.7 of dev/PLAN.md
 --FILE--
 <?php
 

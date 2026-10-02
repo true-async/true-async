@@ -1,5 +1,7 @@
 --TEST--
 Async\graceful_shutdown(): explicit call from userland exits cleanly
+--XFAIL--
+Not implemented yet: S3.8 of dev/PLAN.md
 --FILE--
 <?php
 

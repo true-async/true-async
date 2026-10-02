@@ -1,5 +1,7 @@
 --TEST--
 Coroutine: getId() - basic usage
+--XFAIL--
+Not implemented yet: S3.5 of dev/PLAN.md
 --FILE--
 <?php
 

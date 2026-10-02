@@ -1,5 +1,7 @@
 --TEST--
 include nonexistent file inside coroutine - warning handling
+--XFAIL--
+Not implemented yet: S3.7 of dev/PLAN.md
 --FILE--
 <?php
 

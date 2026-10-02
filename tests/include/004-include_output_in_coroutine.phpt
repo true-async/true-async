@@ -1,5 +1,7 @@
 --TEST--
 include with echo output inside coroutine
+--XFAIL--
+Not implemented yet: S3.7 of dev/PLAN.md
 --FILE--
 <?php
 

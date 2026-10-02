@@ -1,5 +1,7 @@
 --TEST--
 require_once from multiple coroutines - no redeclare error
+--XFAIL--
+Not implemented yet: S3.7 of dev/PLAN.md
 --FILE--
 <?php
 

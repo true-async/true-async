@@ -1,5 +1,7 @@
 --TEST--
 Nested fibers in separate coroutines (symmetric switching)
+--XFAIL--
+Not implemented yet: S3.9 of dev/PLAN.md
 --FILE--
 <?php
 

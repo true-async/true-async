@@ -1,5 +1,7 @@
 --TEST--
 Future: spawn() - multiple coroutines execution order
+--XFAIL--
+Not implemented yet: S3.5 of dev/PLAN.md
 --FILE--
 <?php
 

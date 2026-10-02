@@ -1,5 +1,7 @@
 --TEST--
 Deadlock - The coroutine not only continues execution but also performs a suspend.
+--XFAIL--
+Not implemented yet: S3.8 of dev/PLAN.md
 --INI--
 async.debug_deadlock=0
 --FILE--

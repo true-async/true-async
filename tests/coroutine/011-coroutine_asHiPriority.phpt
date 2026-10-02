@@ -1,5 +1,7 @@
 --TEST--
 Coroutine: asHiPriority() - returns same coroutine (TODO implementation)
+--XFAIL--
+Not implemented yet: S3.5 of dev/PLAN.md
 --FILE--
 <?php
 

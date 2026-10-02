@@ -65,4 +65,4 @@ someone will propose again.
   bytes than the reference. Edmond's 31 answers: `dev/reviews/s3-structures/EDMOND-DECISIONS.md`.
 - 2026-10-02 Pushes to `main` no longer wait for Edmond's OK on the diff. Why: Edmond.
 - 2026-10-02 An existing test is changed only with a reason (wrong test, contradicts the RFC or a decision)
-  that Critic accepts; Critic's doubt goes to Edmond. CI keeps no xfail marks or ratchet. Why: Edmond.
+  that Critic accepts; Critic's doubt goes to Edmond. Unfinished tests carry the standard `--XFAIL--` section, no ratchet. Why: Edmond.

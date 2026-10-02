@@ -1,5 +1,7 @@
 --TEST--
 CompositeException: addException() and getExceptions() direct usage
+--XFAIL--
+Not implemented yet: S3.4 of dev/PLAN.md
 --FILE--
 <?php
 

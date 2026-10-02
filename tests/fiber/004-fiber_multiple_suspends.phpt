@@ -1,5 +1,7 @@
 --TEST--
 Multiple suspend/resume cycles
+--XFAIL--
+Not implemented yet: S3.9 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -1,5 +1,7 @@
 --TEST--
 require inside nested coroutines
+--XFAIL--
+Not implemented yet: S3.7 of dev/PLAN.md
 --FILE--
 <?php
 

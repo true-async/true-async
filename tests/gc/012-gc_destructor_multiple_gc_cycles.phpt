@@ -1,5 +1,7 @@
 --TEST--
 GC 006: Multiple GC cycles with suspended destructors
+--XFAIL--
+Not implemented yet: S3.7 of dev/PLAN.md
 --FILE--
 <?php
 

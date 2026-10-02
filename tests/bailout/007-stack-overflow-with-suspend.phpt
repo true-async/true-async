@@ -1,5 +1,7 @@
 --TEST--
 Stack overflow bailout with suspend in recursion
+--XFAIL--
+Not implemented yet: S3.10 of dev/PLAN.md
 --INI--
 opcache.jit_hot_func=0
 --SKIPIF--

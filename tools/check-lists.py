@@ -32,6 +32,11 @@ def sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def listed_sha256(path):
+    """Hash of the file without the --XFAIL-- section that an unfinished test carries."""
+    return hashlib.sha256(lists.without_xfail(path.read_bytes())).hexdigest()
+
+
 def git(*args):
     return subprocess.run(['git', *args], cwd=ROOT, stdout=subprocess.PIPE, text=True, check=True).stdout
 
@@ -55,7 +60,7 @@ def check_entry(entry, reference_tests, decisions):
         error(f'{entry.path}: listed in {entry.list_file.name}, file missing')
         return
 
-    if sha256(local) != entry.expected_sha256():
+    if entry.expected_sha256() not in (sha256(local), listed_sha256(local)):
         error(f'{entry.path}: content differs from the hash in {entry.list_file.name}')
 
     if entry.form != 'ref':

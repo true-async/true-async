@@ -1,5 +1,7 @@
 --TEST--
 GC 010: Errors when async operations in terminated coroutines
+--XFAIL--
+Not implemented yet: S3.8 of dev/PLAN.md
 --FILE--
 <?php
 

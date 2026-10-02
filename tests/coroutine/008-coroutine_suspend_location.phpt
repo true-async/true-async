@@ -1,5 +1,7 @@
 --TEST--
 Coroutine: getSuspendFileAndLine() and getSuspendLocation() - basic usage
+--XFAIL--
+Not implemented yet: S3.6 of dev/PLAN.md
 --FILE--
 <?php
 

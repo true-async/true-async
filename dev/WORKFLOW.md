@@ -45,8 +45,9 @@ How work is done in this repository and in the core branch it builds on.
 CI pins the same core and ior in `.github/workflows/ci.yml` (`CORE_REF`, `IOR_REF`): a core update
 changes both places.
 
-CI gates the lanes on the lists up to `CLOSED_STAGE` in the same file; the active stage's list runs
-in a step that reports without failing the job. The commit that closes a stage raises the number.
+A listed test that cannot pass yet carries run-tests' `--XFAIL--` section naming the plan step that
+makes it pass; the runner expects XFAIL for it, and a pass (run-tests' WARN) fails the lane until
+the section is removed in that step's commit. `check-lists.py` hashes a test without the section.
 
 Newer heads not yet taken: IO hooks `608927ebe09` (2026-10-02). The pinned branch was compared
 without ior (`dev/PLAN.md`, S3.2); Edmond accepted it on 2026-10-02.

@@ -1,5 +1,7 @@
 --TEST--
 Fiber garbage collection when suspended
+--XFAIL--
+Not implemented yet: S3.9 of dev/PLAN.md
 --FILE--
 <?php
 

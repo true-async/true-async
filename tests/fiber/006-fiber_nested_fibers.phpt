@@ -1,5 +1,7 @@
 --TEST--
 Nested Fibers (Fiber inside Fiber)
+--XFAIL--
+Not implemented yet: S3.9 of dev/PLAN.md
 --FILE--
 <?php
 

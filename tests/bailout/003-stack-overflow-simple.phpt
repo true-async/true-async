@@ -1,5 +1,7 @@
 --TEST--
 Stack overflow bailout in simple async operation
+--XFAIL--
+Not implemented yet: S3.10 of dev/PLAN.md
 --SKIPIF--
 <?php
 $zend_mm_enabled = getenv("USE_ZEND_ALLOC");

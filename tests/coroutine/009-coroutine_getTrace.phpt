@@ -1,5 +1,7 @@
 --TEST--
 Coroutine: getTrace() - returns null for non-suspended coroutine
+--XFAIL--
+Not implemented yet: S3.7 of dev/PLAN.md
 --FILE--
 <?php
 

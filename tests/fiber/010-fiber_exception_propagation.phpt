@@ -1,5 +1,7 @@
 --TEST--
 Exception propagation from Fiber to coroutine
+--XFAIL--
+Not implemented yet: S3.9 of dev/PLAN.md
 --FILE--
 <?php
 
