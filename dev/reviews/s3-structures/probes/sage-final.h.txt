@@ -1,0 +1,33 @@
+#include "zend.h"
+#include "zend_API.h"
+#include "zend_async_API.h"
+typedef struct _async_awaitable_s { uint32_t flags; } async_awaitable_t;
+typedef struct _async_event_s async_event_t;
+typedef struct _async_coroutine_s async_coroutine_t;
+typedef struct _async_event_callback_s async_event_callback_t;
+typedef void (*async_event_callback_fn)(async_awaitable_t *, async_event_callback_t *, void *, zend_object *);
+typedef void (*async_event_callback_dispose_fn)(async_event_callback_t *, async_awaitable_t *);
+struct _async_event_callback_s { uint32_t ref_count; uint32_t flags; async_event_callback_fn callback; async_event_callback_dispose_fn dispose; };
+typedef struct { async_event_callback_t base; async_coroutine_t *coroutine; async_awaitable_t *event; } async_coroutine_event_callback_t;
+typedef struct { async_event_callback_t base; zend_coroutine_finish_handler_fn handler; zend_coroutine_t *waiter; void *data; uint32_t handler_id; } async_finish_handler_callback_t;
+typedef struct { union { async_event_callback_t **data; async_event_callback_t *single; }; uint32_t length; uint32_t capacity; } async_callbacks_vector_t;
+typedef struct { uint32_t length; uint32_t capacity; void *data; bool in_execution; } async_coroutine_switch_handlers_vector_t;
+typedef struct { zend_coroutine_switch_handler_fn handler; uint32_t handler_id; } async_coroutine_switch_handler_t;
+typedef struct _async_event_methods_s { void *m[8]; } async_event_methods_t;
+struct _async_event_s { uint32_t flags; union { uint32_t ref_count; uint32_t object_offset; }; const async_event_methods_t *methods; async_callbacks_vector_t callbacks; };
+#define ASYNC_WAKER_INLINE_SLOTS 2
+typedef struct { zend_object *error; zval result; async_coroutine_event_callback_t inline_callbacks[ASYNC_WAKER_INLINE_SLOTS]; async_callbacks_vector_t callbacks; } async_waker_t;
+typedef struct _async_fiber_context_s async_fiber_context_t;
+typedef struct _async_scope_s async_scope_t;
+struct _async_coroutine_s {
+	zend_coroutine_t coroutine;
+	async_fiber_context_t *fiber_context;
+	async_callbacks_vector_t callbacks;
+	async_waker_t waker;
+	async_scope_t *scope;
+	zend_object *deferred_cancellation;
+	HashTable *finally_handlers;
+	async_coroutine_switch_handlers_vector_t *switch_handlers;
+	zend_object std;
+};
+typedef struct { zend_coroutine_t coroutine; async_fiber_context_t *fiber_context; async_callbacks_vector_t callbacks; async_waker_t waker; async_scope_t *scope; zend_object *deferred_cancellation; HashTable *finally_handlers; async_coroutine_switch_handlers_vector_t *switch_handlers; zend_fcall_t fcall_storage; zend_object std; } v_o6_t;

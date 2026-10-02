@@ -1,0 +1,10 @@
+#include <stdint.h>
+#include <stddef.h>
+typedef struct { uint32_t flags; } aw_t;
+typedef struct { void **data; uint32_t length, capacity; } vec_t;
+typedef struct { uint32_t flags, ref; const void *methods; vec_t callbacks; } ev_t;
+typedef struct { char rfc[144]; void *fiber; vec_t waiters; } co_t;
+/* Polarity A: bit 31 = 1 -> event */
+vec_t *waiters_A(aw_t *a){ return (a->flags & (1u<<31)) ? &((ev_t*)a)->callbacks : &((co_t*)a)->waiters; }
+/* Polarity B: bit 31 = 1 -> coroutine */
+vec_t *waiters_B(aw_t *a){ return (a->flags & (1u<<31)) ? &((co_t*)a)->waiters : &((ev_t*)a)->callbacks; }

@@ -1,0 +1,9 @@
+ARG_ENABLE("true-async", "true_async extension: coroutines on the PHP scheduler API", "no");
+
+if (PHP_TRUE_ASYNC != "no") {
+	// Subdirectory paths take backslashes: ADD_SOURCES splits on them, and a forward slash
+	// leaves the .obj outside src\, where the linker does not look.
+	EXTENSION("true_async", "src\\true_async.c", PHP_TRUE_ASYNC_SHARED, "/DZEND_ENABLE_STATIC_TSRMLS_CACHE=1");
+	// src\*.c include php_true_async.h from the extension root.
+	ADD_FLAG("CFLAGS_TRUE_ASYNC", "/I " + configure_module_dirname);
+}

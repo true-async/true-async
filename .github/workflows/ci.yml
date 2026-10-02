@@ -1,0 +1,208 @@
+name: CI
+
+# Lanes and gates: dev/plans/S2.md, sections 2, 3 and 5.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+
+# The workflow only reads the repository; no job needs a write token.
+permissions:
+  contents: read
+
+env:
+  # async-core-io in true-async/php-src and ior, as pinned in dev/WORKFLOW.md ("Pinned core").
+  CORE_REF: 834811f2d88bb0f90d23678f68f33a43f675464c
+  IOR_REF: 2fb12e8ce012b8753258034de008266152742c13
+
+jobs:
+  lists:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # check-lists.py finds the commit that froze each list.
+          fetch-depth: 0
+
+      - name: Reference checkout
+        run: |
+          ref=$(cat tests/lists/REFERENCE)
+          git init -q "$RUNNER_TEMP/php-async"
+          git -C "$RUNNER_TEMP/php-async" fetch -q --depth 1 https://github.com/true-async/php-async.git "$ref"
+          git -C "$RUNNER_TEMP/php-async" checkout -q FETCH_HEAD
+
+      - name: Check the lists
+        run: python3 tools/check-lists.py --reference "$RUNNER_TEMP/php-async"
+
+      - name: Check the C formatting
+        run: |
+          sudo apt-get install -y -q --no-install-recommends clang-format-18
+          tools/format.sh --check
+
+      - name: Check the README roadmap
+        run: python3 tools/roadmap.py --check
+
+  linux:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        tree: [dbg, asan]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends autoconf bison re2c pkg-config cmake \
+            libxml2-dev libsqlite3-dev libcurl4-openssl-dev libssl-dev liburing-dev
+
+      - name: Restore the core
+        id: core
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/ta-prefix/pocs-${{ matrix.tree }}
+          key: core-${{ matrix.tree }}-${{ env.CORE_REF }}-${{ env.IOR_REF }}-${{ hashFiles('tools/ci/build-core.sh') }}
+
+      - name: Build the core
+        if: steps.core.outputs.cache-hit != 'true'
+        run: tools/ci/build-core.sh ${{ matrix.tree }} "$CORE_REF" "$IOR_REF"
+
+      - name: Save the core
+        if: steps.core.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ~/ta-prefix/pocs-${{ matrix.tree }}
+          key: ${{ steps.core.outputs.cache-primary-key }}
+
+      # The installed prefix lacks the LeakSanitizer suppressions and the php-src helpers that
+      # some ported tests include; they come from the same revision.
+      - name: Core sources for the tests
+        run: |
+          git init -q "$RUNNER_TEMP/core-src"
+          cd "$RUNNER_TEMP/core-src"
+          git sparse-checkout set --no-cone /.github/ /ext/curl/tests/ /ext/ftp/tests/ /sapi/cli/tests/
+          git fetch -q --depth 1 --filter=blob:none https://github.com/true-async/php-src.git "$CORE_REF"
+          git checkout -q FETCH_HEAD
+
+      - name: Test
+        env:
+          TRUE_ASYNC_CORE_SRC: ${{ runner.temp }}/core-src
+        run: python3 tools/test.py --lane pocs-${{ matrix.tree }}
+
+      - name: Keep the results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-pocs-${{ matrix.tree }}
+          path: results/
+
+  mutants-coverage:
+    # Runs after linux, which leaves the debug core in the cache, even when a linux lane failed.
+    needs: linux
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    env:
+      MULL_DEB: Mull-18-0.34.1-LLVM-18.1.3-ubuntu-amd64-24.04.deb
+      MULL_SHA256: 983ea9c84ecab621414d5442a66c1a1ce4127491b79d42fd5e2fd6fe01d02699
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends autoconf bison re2c pkg-config cmake \
+            libxml2-dev libsqlite3-dev libcurl4-openssl-dev libssl-dev liburing-dev clang-18 lcov
+          curl -sSLo "$RUNNER_TEMP/$MULL_DEB" "https://github.com/mull-project/mull/releases/download/0.34.1/$MULL_DEB"
+          echo "$MULL_SHA256  $RUNNER_TEMP/$MULL_DEB" | sha256sum -c -
+          sudo apt-get install -y -q "$RUNNER_TEMP/$MULL_DEB"
+
+      - name: Restore the core
+        id: core
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/ta-prefix/pocs-dbg
+          key: core-dbg-${{ env.CORE_REF }}-${{ env.IOR_REF }}-${{ hashFiles('tools/ci/build-core.sh') }}
+
+      - name: Build the core
+        if: steps.core.outputs.cache-hit != 'true'
+        run: tools/ci/build-core.sh dbg "$CORE_REF" "$IOR_REF"
+
+      - name: Mutation known-answer check
+        run: python3 tools/mull.py --known-answer
+
+      - name: Coverage
+        run: python3 tools/test.py --lane pocs-dbg-cov
+
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-mutants-coverage
+          path: results/
+
+  windows:
+    # As php-src's own WINDOWS job for PHP 8.6+ (.github/matrix.php): the whole PHP is built with
+    # the extension copied into ext/true_async (dev/plans/S2.md, section 1).
+    runs-on: windows-2025-vs2026
+    env:
+      PHP_BUILD_CACHE_BASE_DIR: C:\build-cache
+      PHP_BUILD_OBJ_DIR: C:\obj
+      PHP_BUILD_CACHE_SDK_DIR: C:\build-cache\sdk
+      PHP_BUILD_SDK_BRANCH: php-sdk-2.8.4
+      PHP_BUILD_CRT: vs18
+      PLATFORM: x64
+      THREAD_SAFE: '1'
+      INTRINSICS: AVX2
+      ADD_CONF: --enable-true-async=shared
+    steps:
+      - name: git config
+        run: git config --global core.autocrlf false && git config --global core.eol lf
+
+      - uses: actions/checkout@v5
+        with:
+          path: true-async
+
+      - uses: actions/checkout@v5
+        with:
+          repository: true-async/php-src
+          ref: ${{ env.CORE_REF }}
+          path: php-src
+
+      - name: Copy the extension into ext/true_async
+        shell: pwsh
+        run: |
+          robocopy true-async php-src\ext\true_async /E /XD .git .github _build results /NFL /NDL /NJH /NJS
+          if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE }
+          exit 0
+
+      - name: Build ior
+        uses: ./php-src/.github/actions/build-ior-windows
+        with:
+          arch: x64
+
+      - name: Build
+        working-directory: php-src
+        shell: cmd
+        run: .github\scripts\windows\build.bat
+
+      - name: Test
+        working-directory: true-async
+        shell: cmd
+        env:
+          TRUE_ASYNC_WIN_BUILD: C:\obj\Release_TS
+        run: |
+          for /d %%d in (C:\build-cache\deps-*) do copy /y %%d\bin\*.dll C:\obj\Release_TS\ > nul
+          set TRUE_ASYNC_CORE_SRC=%GITHUB_WORKSPACE%\php-src
+          python tools\test.py --lane pocs-win
+
+      - name: Keep the results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-pocs-win
+          path: true-async/results/

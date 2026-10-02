@@ -1,0 +1,3 @@
+# S2: tests written here; no reference tests yet.
+module/001-registration.phpt  own:16f4601443d97825fcc1cec51b754cd32ff881b41fb42f90bb875b9096aca3b7
+module/002-info.phpt  own:82fb55950ac780d5950261e16c22e1e49d4fcd09c8d03bc8c8eba01cf99e40cd

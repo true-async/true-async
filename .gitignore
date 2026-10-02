@@ -1,0 +1,52 @@
+# Lane builds and run results (dev/plans/S2.md)
+/_build/
+/results/
+
+# phpize output in the source directory
+/build/
+/autom4te.cache/
+/acinclude.m4
+/aclocal.m4
+/config.guess
+/config.h
+/config.h.in
+/config.h.in~
+/config.log
+/config.nice
+/config.status
+/config.sub
+/configure
+/configure~
+/configure.ac
+/install-sh
+/libtool
+/ltmain.sh
+/Makefile
+/Makefile.fragments
+/Makefile.global
+/Makefile.objects
+/missing
+/mkinstalldirs
+/modules/
+/run-tests.php
+*.la
+*.lo
+*.o
+*.dep
+.libs/
+
+# run-tests artifacts
+tests/**/*.diff
+tests/**/*.exp
+tests/**/*.log
+tests/**/*.out
+tests/**/*.sh
+tools/mull/*.diff
+tools/mull/*.exp
+tools/mull/*.log
+tools/mull/*.out
+tools/mull/*.php
+tools/mull/*.sh
+
+# Python
+__pycache__/

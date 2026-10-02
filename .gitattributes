@@ -1,0 +1,4 @@
+* text=auto eol=lf
+
+# Ported tests are compared byte for byte with the reference (dev/plans/S2.md, section 3).
+/tests/** -text

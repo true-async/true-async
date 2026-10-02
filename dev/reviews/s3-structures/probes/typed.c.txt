@@ -1,0 +1,6 @@
+#include <stdint.h>
+#include <stdbool.h>
+typedef struct { uint32_t flags; } ev_t;
+typedef struct { uint32_t flags; } co_t;
+static inline bool ev_is_closed(const ev_t *e){ return e->flags & 1; }
+bool f(co_t *c){ return ev_is_closed(c); }

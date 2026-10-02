@@ -1,0 +1,21 @@
+/* Replays the fork's callback-vector iteration (fork zend_async_API.c:1654-1740)
+ * and the proposed tombstone variant. Scenario: callbacks A,B,C,D on one event;
+ * B's handler removes A (an earlier, already-called entry). */
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+#define N 8
+typedef struct { char name; int remove_on_call; } cb_t;
+static cb_t *vec[N]; static uint32_t len; static uint32_t *cur_it;
+static char trace[64]; static int tn;
+/* fork: zend_async_callbacks_remove + adjust_iterator */
+static void fork_remove(cb_t *cb){ for(uint32_t i=0;i<len;i++) if(vec[i]==cb){ if(cur_it && *cur_it>i) (*cur_it)--; vec[i]=vec[--len]; return; } }
+static cb_t A={'A',-1},B={'B',0},C={'C',-1},D={'D',-1};
+static void fork_notify(void){ uint32_t i=0; cur_it=&i; while(i<len){ cb_t *cb=vec[i]; i++; trace[tn++]=cb->name; if(cb->remove_on_call>=0) fork_remove(&A); } cur_it=NULL; }
+/* proposed: tombstones while notifying, compaction after */
+static int notifying;
+static void new_remove(cb_t *cb){ for(uint32_t i=0;i<len;i++) if(vec[i]==cb){ if(notifying) vec[i]=NULL; else vec[i]=vec[--len]; return; } }
+static void new_notify(void){ notifying=1; for(uint32_t i=0;i<len;i++){ cb_t *cb=vec[i]; if(!cb) continue; trace[tn++]=cb->name; if(cb->remove_on_call>=0) new_remove(&A);} notifying=0; uint32_t w=0; for(uint32_t r=0;r<len;r++) if(vec[r]) vec[w++]=vec[r]; len=w; }
+static void reset(void){ vec[0]=&A;vec[1]=&B;vec[2]=&C;vec[3]=&D;len=4;tn=0;memset(trace,0,sizeof trace);}
+int main(void){ reset(); fork_notify(); printf("fork:     called %s, left %u\n", trace, len);
+ reset(); new_notify(); printf("proposed: called %s, left %u\n", trace, len); return 0; }

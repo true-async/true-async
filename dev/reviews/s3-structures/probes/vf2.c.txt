@@ -1,0 +1,72 @@
+/* Randomised check of the proposed callbacks vector (SBO of one + tombstones while
+ * notifying, swap-removal otherwise) against the fork's iterator-adjust scheme
+ * (fork zend_async_API.c:1654-1740). Property per notify: every callback present at
+ * the start and not removed before its turn is called exactly once; a callback removed
+ * before its turn is not called; nothing is called twice; afterwards the vector holds
+ * exactly the live set. Callbacks pushed during a notify are allowed but not required
+ * to run (both schemes run them). */
+#include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#define F_NOTIFY (1u<<31)
+#define MAXCB 64
+typedef struct { void **data_or_single; uint32_t length, capacity; } vec_t;  /* capacity==0 (masked): single mode */
+static vec_t v; static int alive[MAXCB*8], called[MAXCB*8], removed_before_turn[MAXCB*8], present_at_start[MAXCB*8];
+static int next_id;
+static uint32_t cap(void){ return v.capacity & ~F_NOTIFY; }
+static void **base(void){ return cap() ? v.data_or_single : (void**)&v.data_or_single; }
+static void push(intptr_t id){
+	if (cap()==0 && v.length==0){ v.data_or_single=(void*)id; v.length=1; return; }
+	if (cap()==0){ void *s=v.data_or_single; void **d=malloc(4*sizeof(void*)); d[0]=s; v.data_or_single=(void*)d; v.capacity=(v.capacity&F_NOTIFY)|4; }
+	else if (v.length==cap()){ v.data_or_single=realloc(v.data_or_single, 2*cap()*sizeof(void*)); v.capacity=(v.capacity&F_NOTIFY)|(2*cap()); }
+	base()[v.length++]=(void*)id;
+}
+static void rm(intptr_t id){ void **b=base(); for(uint32_t i=0;i<v.length;i++) if(b[i]==(void*)id){ if(v.capacity&F_NOTIFY) b[i]=NULL; else { b[i]=b[--v.length]; } return; } }
+static void handler(intptr_t id);
+static void notify(void){ v.capacity|=F_NOTIFY; for(uint32_t i=0;i<v.length;i++){ void *p=base()[i]; if(!p) continue; handler((intptr_t)p);} v.capacity&=~F_NOTIFY;
+	void **b=base(); uint32_t w=0; for(uint32_t r=0;r<v.length;r++) if(b[r]) b[w++]=b[r]; v.length=w; }
+/* fork scheme on a plain array */
+static void *fa[MAXCB*8]; static uint32_t flen; static uint32_t *fcur; static int use_fork;
+static void fpush(intptr_t id){ fa[flen++]=(void*)id; }
+static void frm(intptr_t id){ for(uint32_t i=0;i<flen;i++) if(fa[i]==(void*)id){ if(fcur && *fcur>i) (*fcur)--; fa[i]=fa[--flen]; return; } }
+static void fnotify(void){ uint32_t i=0; fcur=&i; while(i<flen){ void *p=fa[i]; i++; handler((intptr_t)p);} fcur=NULL; }
+static int bad_dup, bad_missed, bad_called_removed, bad_final;
+static void handler(intptr_t id){
+	if (called[id]) bad_dup++;
+	if (removed_before_turn[id]) bad_called_removed++;
+	called[id]=1;
+	int r=rand()%4;
+	if (r==0){ /* remove a random live callback */
+		int k=rand()%next_id; if(alive[k]){ alive[k]=0; if(!called[k]) removed_before_turn[k]=1; use_fork?frm(k):rm(k);} }
+	else if (r==1 && next_id<MAXCB*8-1){ int k=next_id++; alive[k]=1; use_fork?fpush(k):push(k); }
+}
+static int run(int fork_mode, unsigned seed){
+	srand(seed); use_fork=fork_mode; memset(&v,0,sizeof v); flen=0; next_id=0;
+	memset(alive,0,sizeof alive); int n=1+rand()%12;
+	for(int i=0;i<n;i++){ alive[next_id]=1; fork_mode?fpush(next_id):push(next_id); next_id++; }
+	for(int round=0; round<3; round++){
+		memset(called,0,sizeof called); memset(removed_before_turn,0,sizeof removed_before_turn);
+		for(int i=0;i<next_id;i++) present_at_start[i]=alive[i];
+		int before=bad_dup+bad_missed+bad_called_removed+bad_final;
+		fork_mode?fnotify():notify();
+		for(int i=0;i<next_id;i++) if(present_at_start[i] && !removed_before_turn[i] && !called[i]) bad_missed++;
+		/* final contents == alive set */
+		int cnt=0; for(int i=0;i<next_id;i++) cnt+=alive[i];
+		uint32_t L = fork_mode?flen:v.length; if((int)L!=cnt) bad_final++;
+		else for(uint32_t j=0;j<L;j++){ intptr_t id=(intptr_t)(fork_mode?fa[j]:base()[j]); if(!alive[id]) {bad_final++;break;} }
+		if (bad_dup+bad_missed+bad_called_removed+bad_final!=before) return 1;
+	}
+	if(!fork_mode && cap()) free(v.data_or_single);
+	return 0;
+}
+int main_unused(void){
+	for(int mode=0; mode<2; mode++){
+		bad_dup=bad_missed=bad_called_removed=bad_final=0; int failed=0;
+		for(unsigned s=1;s<=100000;s++) failed+=run(mode,s);
+		printf("%-9s runs 100000, failing runs %6d (dup %d, missed %d, called-after-removal %d, wrong final set %d)\n",
+			mode?"fork":"proposed", failed, bad_dup, bad_missed, bad_called_removed, bad_final);
+	}
+	return 0;
+}
+int main(void){ for(unsigned s=1;s<50;s++){ int f=run(0,s); if(f){ printf("seed %u fails; len %u cap %u next_id %d\n", s, v.length, cap(), next_id); for(int i=0;i<next_id;i++) printf(" id%d alive%d called%d rbt%d start%d\n", i, alive[i], called[i], removed_before_turn[i], present_at_start[i]); for(uint32_t j=0;j<v.length;j++) printf(" slot%u=%ld\n", j, (long)(intptr_t)base()[j]); return 0;} } return 0; }

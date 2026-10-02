@@ -1,0 +1,13 @@
+#include "final.h"
+#include <stdio.h>
+#include <stddef.h>
+#define O(T,f) printf("  %-24s off %3zu size %3zu\n", #f, offsetof(T,f), sizeof(((T*)0)->f))
+#define S(T) printf("%-34s %4zu\n", #T, sizeof(T))
+int main(void){
+ S(async_event_callback_t); S(async_coroutine_event_callback_t); S(async_finish_handler_callback_t); S(async_callbacks_vector_t);
+ S(async_coroutine_switch_handlers_vector_t); S(async_coroutine_switch_handler_t);
+ S(async_event_t); O(async_event_t,flags); O(async_event_t,ref_count); O(async_event_t,methods); O(async_event_t,callbacks);
+ S(async_waker_t); O(async_waker_t,error); O(async_waker_t,result); O(async_waker_t,inline_callbacks); O(async_waker_t,callbacks);
+ S(async_coroutine_t); O(async_coroutine_t,coroutine); O(async_coroutine_t,fiber_context); O(async_coroutine_t,callbacks); O(async_coroutine_t,waker); O(async_coroutine_t,scope); O(async_coroutine_t,deferred_cancellation); O(async_coroutine_t,finally_handlers); O(async_coroutine_t,switch_handlers); O(async_coroutine_t,std);
+ S(v_o6_t); S(zend_fcall_t); S(zend_object);
+ return 0;}

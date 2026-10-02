@@ -1,0 +1,52 @@
+--- a/run-tests.php
++++ b/run-tests.php
+@@ -210,6 +210,16 @@
+         $environment = getenv();
+     }
+ 
++    /* true_async runner: $_ENV and getenv() rename or drop variables whose names are not PHP-safe,
++     * and Mull switches a mutant on by such a name; the process environment has them verbatim. */
++    if (is_readable('/proc/self/environ')) {
++        $environment = [];
++        foreach (explode("\0", rtrim(file_get_contents('/proc/self/environ'), "\0")) as $pair) {
++            [$name, $value] = explode('=', $pair, 2) + [1 => ''];
++            $environment[$name] = $value;
++        }
++    }
++
+     if (empty($environment['TEMP'])) {
+         $environment['TEMP'] = sys_get_temp_dir();
+ 
+@@ -1316,6 +1326,12 @@
+         $command = 'start "" /b /wait ' . $command . ' & exit';
+     }
+ 
++    /* true_async runner: /bin/sh is dash on Debian and Ubuntu, and dash drops environment variables
++     * whose names are not shell identifiers; Mull switches a mutant on by such a name. */
++    if (!IS_WINDOWS && is_string($command) && is_executable('/bin/bash')) {
++        $command = ['/bin/bash', '-c', $command];
++    }
++
+     $data = '';
+ 
+     $bin_env = [];
+@@ -1395,7 +1411,7 @@
+     $stat = proc_get_status($proc);
+ 
+     if ($stat['signaled']) {
+-        $data .= "\nTermsig=" . $stat['stopsig'] . "\n";
++        $data .= "\nTermsig=" . $stat['termsig'] . "\n";
+     }
+     if ($stat["exitcode"] > 128 && $stat["exitcode"] < 160) {
+         $data .= "\nTermsig=" . ($stat["exitcode"] - 128) . "\n";
+@@ -2886,6 +2902,10 @@
+         $wanted_re = null;
+     }
+     if (!$passed && !$retried && error_may_be_retried($test, $output)) {
++        /* true_async runner: a retry discards the first attempt, and a test that passes on it
++         * would leave only a WARN behind. */
++        echo "RETRY $shortname: the first attempt failed\n",
++            generate_diff($wanted, $wanted_re, $output), "\n";
+         $retried = true;
+         goto retry;
+     }
