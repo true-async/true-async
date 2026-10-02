@@ -16,3 +16,16 @@ interface Completable extends Awaitable
 
     public function isCancelled(): bool;
 }
+
+/** Starts `$task` in a new coroutine; it runs once the current coroutine yields or ends. */
+function spawn(callable $task, mixed ...$args): Coroutine {}
+
+/** The coroutine that is running; the script's top level runs in the main coroutine. */
+function current_coroutine(): Coroutine {}
+
+/**
+ * Every coroutine that was spawned and has not finished, the main one included.
+ *
+ * @return Coroutine[]
+ */
+function get_coroutines(): array {}

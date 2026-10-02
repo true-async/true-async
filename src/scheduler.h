@@ -1,0 +1,45 @@
+/*
+   +----------------------------------------------------------------------+
+   | Copyright © TrueAsync contributors.                                  |
+   +----------------------------------------------------------------------+
+   | This source file is subject to the Modified BSD License that is      |
+   | bundled with this package in the file LICENSE.                       |
+   |                                                                      |
+   | SPDX-License-Identifier: BSD-3-Clause                                |
+   +----------------------------------------------------------------------+
+   | Authors: Edmond <edmondifthen@proton.me>                             |
+   +----------------------------------------------------------------------+
+*/
+#ifndef TRUE_ASYNC_SCHEDULER_H
+#define TRUE_ASYNC_SCHEDULER_H
+
+#include "php.h"
+#include "Zend/zend_fibers.h"
+#include "coroutine.h"
+
+/* A fiber context a coroutine runs on (dev/plans/S3.md, section 5). A context outlives its
+ * coroutine: when the coroutine finishes, the context's loop runs the next one, or parks in the
+ * pool. Main's context is a copy of the engine's own and never enters the pool. */
+struct _async_fiber_context_s
+{
+	zend_fiber_context context;
+	zend_execute_data *execute_data; /* the frame a parked coroutine waits in; NULL while it runs */
+};
+
+/* Registers the scheduler slots with the core; MINIT, once the extension is enabled. False when the
+ * core refused (it warned why): the extension stays loaded and inert. */
+bool async_scheduler_register(void);
+
+/* Per-request state: the run queue, the context pool, the coroutine registry. */
+void async_scheduler_request_startup(void);
+void async_scheduler_request_shutdown(void);
+
+/* A new coroutine in CREATED with no entry point, for the caller to enqueue; the scheduler holds its
+ * birth reference until it finishes. */
+async_coroutine_t *async_coroutine_new(void);
+
+/* The enqueue slot (S3.md 4.3): CREATED or SUSPENDED to QUEUED. False with an exception on
+ * refusal; a transferred `error` is then released. */
+bool async_scheduler_enqueue(zend_coroutine_t *coroutine, zend_object *error, bool transfer_error);
+
+#endif /* TRUE_ASYNC_SCHEDULER_H */

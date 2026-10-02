@@ -53,4 +53,15 @@ static zend_always_inline async_coroutine_t *async_coroutine_from_object(zend_ob
 
 void async_register_coroutine_ce(zend_class_entry *completable);
 
+/* Runs the coroutine's body on the current context, then finishes it (async_coroutine_finalize).
+ * The coroutine is current and RUNNING. A bailout out of the body sets ASYNC_COROUTINE_F_BAILOUT,
+ * finishes it and passes on. */
+void async_coroutine_execute(async_coroutine_t *coroutine);
+
+/* Finishes the coroutine: FINISHED, an exception pending in EG becomes its outcome, its waiters and
+ * finish handlers run (is_bailout when ASYNC_COROUTINE_F_BAILOUT is set), it leaves the registry
+ * and the scheduler drops its birth reference. An outcome exception nobody can observe becomes the
+ * request's exit exception (S3.md section 6). */
+void async_coroutine_finalize(async_coroutine_t *coroutine);
+
 #endif /* TRUE_ASYNC_COROUTINE_H */

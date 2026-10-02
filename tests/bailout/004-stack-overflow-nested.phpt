@@ -1,7 +1,5 @@
 --TEST--
 Stack overflow bailout in nested async operations
---XFAIL--
-Not implemented yet: S3.10 of dev/PLAN.md
 --INI--
 opcache.jit_hot_func=0
 --SKIPIF--

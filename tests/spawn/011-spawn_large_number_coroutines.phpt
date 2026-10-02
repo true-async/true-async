@@ -1,7 +1,5 @@
 --TEST--
 Future: spawn() - large number of coroutines
---XFAIL--
-Not implemented yet: S3.5 of dev/PLAN.md
 --FILE--
 <?php
 

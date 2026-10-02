@@ -1,7 +1,5 @@
 --TEST--
 Future: spawn() - coroutine with arguments
---XFAIL--
-Not implemented yet: S3.5 of dev/PLAN.md
 --FILE--
 <?php
 

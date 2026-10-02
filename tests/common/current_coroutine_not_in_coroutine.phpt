@@ -1,7 +1,5 @@
 --TEST--
 Async\current_coroutine(): the script root runs in the main coroutine, so nothing throws
---XFAIL--
-Not implemented yet: S3.5 of dev/PLAN.md
 --FILE--
 <?php
 

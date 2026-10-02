@@ -1,7 +1,5 @@
 --TEST--
 require same file twice in coroutine - must trigger redeclare error
---XFAIL--
-Not implemented yet: S3.8 of dev/PLAN.md
 --FILE--
 <?php
 

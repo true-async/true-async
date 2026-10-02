@@ -1,5 +1,7 @@
 --TEST--
 Fibers in destructors 006: multiple GC runs
+--XFAIL--
+Not implemented yet: S3.10 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-02 · Active: S3.5
+Updated: 2026-10-02 · Active: S3.6
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -220,21 +220,34 @@ section 14); a step that finds a test needs more moves it on with a note.
         scheduler context instead of `zend_fiber_switch_block()` (Edmond). Then, on Edmond's call,
         the notify cursor moved into the vector (coroutine 304 B); `async_callbacks_bailout_reset()`
         is gone, so S3.3's obligation to call it lapses.
-- [ ] S3.5 Spawn and run: the 21 slots, launch, run queue, enqueue (4.3), in-place run, call 1
+- [x] S3.5 Spawn and run: the 21 slots, launch, run queue, enqueue (4.3), in-place run, call 1
       from main, RINIT and RSHUTDOWN, `spawn`, `current_coroutine`, `get_coroutines`, state methods;
       wait unlink stubbed.
       done: the S3.5 tests pass on dbg, asan and win; own tests for `asHiPriority` (D20, D35) and
         `isSuspended` of the running coroutine (D18)
       tier: T2 · role: Critic
+      handoff: done 2026-10-02 on core `82df2fc6ccc`: dbg 69 PASS, 100 XFAIL; asan 58 PASS,
+        13 SKIP, 98 XFAIL; win not run yet (CI after the push). Own tests
+        `scheduler/001`-`009`; `003` (the one-shot front of `asHiPriority()`) needs a yield and
+        moves to S3.6. Critic and Sage (Edmond asked for both) against TrueAsync: 1 core bug, a
+        context freed before the core read its stack (`async-core` `565f515df16`, core branch
+        `async-core-io-2026-10-02-2`; the asan lane shows the use-after-free without it; S1 suites
+        equal per test on dbg; on asan all PASS but `039_oom_recursive_fiber` SKIP (no ZendMM) and
+        `hooks/process-ops-proc-open` passing on run-tests' retry under 4 workers, 5 of 5 alone, not
+        run on asan before), 10 extension findings fixed and 1 moved to S3.7; a second round found
+        4 more (the drain and the callable release around a bailout), fixed (DECISIONS 2026-10-02). `gc/013`, `014`, `022` wait for await (XFAIL), 15 tests of
+        later steps pass early (S3.md section 14); until S3.7 an automatic GC over objects with
+        `__destruct` hangs (Sage).
 - [ ] S3.6 Suspend: `suspend()` by 4.2 with the tick (microtasks), yield, the context pool (D23),
       direct switches.
-      done: the S3.6 tests pass; own test: a yield with nobody ahead
+      done: the S3.6 tests pass, `scheduler/003` included; own test: a yield with nobody ahead
       tier: T2 · role: —
 - [ ] S3.7 Await and GC: the wait model (4.1, U1-U6, the debug asserts of 4.4), the await slot, the
       GC rules of section 7, awaiting info; the `changed:` ports of `gc/005` and `gc/011` (moved from
       S3.4: their output under the eager scheduler start is known only by running them).
       done: the S3.7 tests pass; own tests of layer 2 (two waiters, two wakes in one tick, a target
-        destroyed with records linked, a wait refused in scheduler context, GC while an exception
+        destroyed with records linked and its waiter woken with an error (moved from S3.5), a
+        script with 12 000 cyclic objects with `__destruct` ends (it hangs since S3.5), a wait refused in scheduler context, GC while an exception
         unwinds); blind tests from section 4 by `test-author` pass
       tier: T2 · role: Critic
 - [ ] S3.8 Cancellation and exit paths: `cancel`, `protect` (D7), unhandled exceptions as the exit

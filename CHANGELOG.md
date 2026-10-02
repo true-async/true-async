@@ -14,3 +14,10 @@ can see goes here; tests, tools and CI are in the git history.
 - INI `true_async.enable` (system, default `0`): the extension registers as the core's scheduler
   only when it is on.
 - A `phpinfo()` section with the version and the INI entries.
+- `Async\spawn()`, `Async\current_coroutine()` and `Async\get_coroutines()`: spawned coroutines
+  run in FIFO order once the script's main code ends, before the shutdown functions; an
+  unhandled exception in a coroutine nobody holds ends the request as an uncaught exception.
+- `Async\Coroutine`: `getId()`, `asHiPriority()`, `getResult()`, `getException()`,
+  `getSpawnFileAndLine()`, `getSpawnLocation()` and the state methods `isStarted()`, `isQueued()`,
+  `isRunning()`, `isSuspended()` (false for the running coroutine), `isCancelled()`,
+  `isCancellationRequested()`, `isCompleted()`.

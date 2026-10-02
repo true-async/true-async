@@ -110,3 +110,41 @@ someone will propose again.
 - 2026-10-02 Every callback of a notify runs even after one throws (the fork stops at the first
   and disposes the rest uncalled). Why: the core's finish handler "fires exactly once"
   (`zend_async_API.h:83`). To be confirmed by Edmond.
+- 2026-10-02 S3.5 run model as built (`src/scheduler.c`): contexts are allocated apart from their
+  stacks and freed in their cleanup, as TrueAsync's; the core read `context->stack` after that
+  cleanup (heap-use-after-free under ASAN on the first spawn), so `async-core` `565f515df16`
+  reads it first, as TrueAsync's core does; core branch `async-core-io-2026-10-02-2`. Why: Critic;
+  freeing the context elsewhere would need a deferred-free list.
+- 2026-10-02 A coroutine releases its callable right after the call, inside the body's try, as
+  TrueAsync (`coroutine.c:534-535`); the arguments stay until the object dies. The callable is
+  unset before its release, which runs destructors: a fatal error in one would otherwise free the
+  closure twice, and what one throws is the coroutine's outcome. Tests `scheduler/004`, `008`,
+  `009`. Why: Sage (a kept `Coroutine` held its closure), Critic (a release in finalize ran user
+  code outside any try).
+- 2026-10-02 `ZEND_ASYNC_IN_SCHEDULER_CONTEXT` is put back to false when main is adopted, as ts.c
+  does, not in the context entry's catch as TrueAsync. Why: a bailout in call 1 reaches call 2 and
+  its adopt, also one out of a notify on the OS stack, which the entry's catch misses. A bailout
+  inside call 2 or 3 escapes before any adopt: S3.10's.
+- 2026-10-02 A bailout drops the exit exception, as TrueAsync (`scheduler.c:1401-1409`): the
+  bailout's error is what the request reports. Test `scheduler/006` pins the order before S3.8:
+  with the graceful shutdown its second coroutine is cancelled before it runs, and S3.8 rebuilds
+  the fixture. Why: Critic.
+- 2026-10-02 `spawn`, `current_coroutine` and `get_coroutines` refuse while async is not active,
+  which includes `php -r` (the core launches the scheduler only in `php_execute_script`).
+  TrueAsync launches lazily on the first call. Why: under `php -r` no from_main call drains, so a
+  lazily launched queue would never run.
+- 2026-10-02 The unobservable-exception rule of S3.md section 6 (exit exception) is in finalize
+  from S3.5, as in TrueAsync's finalize; the rethrow from the destructor and the graceful
+  shutdown stay with S3.8. Why: the spawn tests of S3.5 print through it.
+- 2026-10-02 The drain keeps a coroutine current until its body starts, and the coroutine that
+  bails out clears the slot itself (TrueAsync, `coroutine.c:567-569`): a bailout before the body
+  (no stack: on the OS stack the exception has no frame and is fatal; no VM stack page) leaves a
+  never-started current coroutine, which the bailout's drop finishes with the queue. With a user
+  exception handler the failed stack does not bail out: the coroutine finishes unrun. Tests
+  `scheduler/005`, `007`. Why: Critic and Sage; the popped coroutine was lost, a NULL context was
+  switched into, and the debug build aborted at RSHUTDOWN.
+- 2026-10-02 `gc/013`, `gc/014` (S3.10) and `gc/022` (S3.7) carry `--XFAIL--` from S3.5: with the
+  scheduler registered, the GC needs the await slot and `suspend()` (S3.md section 14). Until then
+  an automatic collection over objects with `__destruct` does not end; nothing short of the
+  parking `suspend()` and await fixes it. Why: Critic judged the reason real; the Sage found the
+  hang and no S3.5 fix.

@@ -1,7 +1,5 @@
 --TEST--
 Future: spawn() - exception handling in coroutine with await
---XFAIL--
-Not implemented yet: S3.8 of dev/PLAN.md
 --FILE--
 <?php
 

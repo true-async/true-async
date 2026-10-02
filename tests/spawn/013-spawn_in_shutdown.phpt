@@ -1,7 +1,5 @@
 --TEST--
 Future: spawn() - spawn in shutdown handler should fail
---XFAIL--
-Not implemented yet: S3.10 of dev/PLAN.md
 --FILE--
 <?php
 

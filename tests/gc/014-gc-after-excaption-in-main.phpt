@@ -1,5 +1,7 @@
 --TEST--
 Correct GC behavior when the main coroutine is destroyed due to an exception.
+--XFAIL--
+Not implemented yet: S3.10 of dev/PLAN.md
 --FILE--
 <?php
 

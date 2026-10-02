@@ -20,6 +20,7 @@
 #include "php_true_async.h"
 #include "coroutine.h"
 #include "exceptions.h"
+#include "scheduler.h"
 #include "true_async_arginfo.h"
 
 #ifdef TRUE_ASYNC_KNOWN_ANSWER
@@ -50,6 +51,10 @@ PHP_INI_END()
 
 zend_class_entry *async_ce_awaitable = NULL;
 zend_class_entry *async_ce_completable = NULL;
+
+/* False when the extension is disabled or the core refused its scheduler: RINIT and RSHUTDOWN do
+ * nothing then. */
+static bool scheduler_registered = false;
 
 /* Only this extension's classes implement Awaitable: generic wait code reads an awaitable's memory
  * as a coroutine or an event (dev/plans/S3.md, section 13, bug 10). Completable extends it, so
@@ -91,6 +96,18 @@ static PHP_MINIT_FUNCTION(true_async)
 	async_register_exceptions_ce();
 	async_register_coroutine_ce(async_ce_completable);
 
+	scheduler_registered = async_scheduler_register();
+
+	/* Registered here, not in the module entry, so an extension that is disabled, or whose scheduler
+	 * the core refused, has no Async\ functions. */
+	if (!scheduler_registered) {
+		return SUCCESS;
+	}
+
+	if (zend_register_functions(NULL, ext_functions, NULL, type) == FAILURE) {
+		return FAILURE;
+	}
+
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	/* A second table beside TRUE_ASYNC_FUNCTIONS: the mull lane builds the known-answer functions
 	 * and the hooks together. */
@@ -98,6 +115,28 @@ static PHP_MINIT_FUNCTION(true_async)
 		return FAILURE;
 	}
 #endif
+
+	return SUCCESS;
+}
+
+static PHP_RINIT_FUNCTION(true_async)
+{
+#if defined(ZTS) && defined(COMPILE_DL_TRUE_ASYNC)
+	ZEND_TSRMLS_CACHE_UPDATE();
+#endif
+
+	if (scheduler_registered) {
+		async_scheduler_request_startup();
+	}
+
+	return SUCCESS;
+}
+
+static PHP_RSHUTDOWN_FUNCTION(true_async)
+{
+	if (scheduler_registered) {
+		async_scheduler_request_shutdown();
+	}
 
 	return SUCCESS;
 }
@@ -119,6 +158,89 @@ static PHP_MINFO_FUNCTION(true_async)
 	DISPLAY_INI_ENTRIES();
 }
 
+///////////////////////////////////////////////////////////////////
+/// Functions
+///////////////////////////////////////////////////////////////////
+
+/* Refuses while no scheduler runs (php -r launches none; after the request's last drain the core
+ * turns async off) and in scheduler context, as TrueAsync. */
+#define THROW_IF_UNAVAILABLE() \
+	do { \
+		if (UNEXPECTED(!ZEND_ASYNC_IS_ACTIVE)) { \
+			zend_throw_error(NULL, "The operation cannot be executed while async is off"); \
+			RETURN_THROWS(); \
+		} \
+		if (UNEXPECTED(ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) { \
+			zend_throw_error(NULL, "The operation cannot be executed in the scheduler context"); \
+			RETURN_THROWS(); \
+		} \
+	} while (0)
+
+ZEND_FUNCTION(Async_spawn)
+{
+	zend_fcall_info fci;
+	zend_fcall_info_cache fcc;
+	zval *args = NULL;
+	uint32_t args_count = 0;
+	HashTable *named_args = NULL;
+
+	THROW_IF_UNAVAILABLE();
+
+	ZEND_PARSE_PARAMETERS_START(1, -1)
+		Z_PARAM_FUNC(fci, fcc)
+		Z_PARAM_VARIADIC_WITH_NAMED(args, args_count, named_args)
+	ZEND_PARSE_PARAMETERS_END();
+
+	async_coroutine_t *coroutine = async_coroutine_new();
+
+	ZEND_ASYNC_FCALL_DEFINE(fcall, fci, fcc, args, args_count, named_args);
+	coroutine->coroutine.fcall = fcall;
+
+	zend_string *filename = zend_get_executed_filename_ex();
+
+	coroutine->coroutine.filename = filename != NULL ? zend_string_copy(filename) : NULL;
+	coroutine->coroutine.lineno = zend_get_executed_lineno();
+
+	/* A CREATED coroutine is always taken (S3.md 4.3). */
+	async_scheduler_enqueue(&coroutine->coroutine, NULL, false);
+
+	RETURN_OBJ_COPY(&coroutine->std);
+}
+
+ZEND_FUNCTION(Async_current_coroutine)
+{
+	THROW_IF_UNAVAILABLE();
+
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	zend_coroutine_t *coroutine = ZEND_ASYNC_CURRENT_COROUTINE;
+
+	if (UNEXPECTED(coroutine == NULL)) {
+		zend_throw_exception(async_ce_async_exception, "The current coroutine is not defined", 0);
+		RETURN_THROWS();
+	}
+
+	RETURN_OBJ_COPY(ZEND_COROUTINE_OBJECT(coroutine));
+}
+
+ZEND_FUNCTION(Async_get_coroutines)
+{
+	THROW_IF_UNAVAILABLE();
+
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	array_init_size(return_value, zend_hash_num_elements(&ASYNC_G(coroutines)));
+
+	async_coroutine_t *coroutine = NULL;
+
+	ZEND_HASH_FOREACH_PTR(&ASYNC_G(coroutines), coroutine)
+	{
+		GC_ADDREF(&coroutine->std);
+		add_next_index_object(return_value, &coroutine->std);
+	}
+	ZEND_HASH_FOREACH_END();
+}
+
 /* clang-format off */
 zend_module_entry true_async_module_entry = {
 	STANDARD_MODULE_HEADER,
@@ -126,8 +248,8 @@ zend_module_entry true_async_module_entry = {
 	TRUE_ASYNC_FUNCTIONS,
 	PHP_MINIT(true_async),
 	PHP_MSHUTDOWN(true_async),
-	NULL,
-	NULL,
+	PHP_RINIT(true_async),
+	PHP_RSHUTDOWN(true_async),
 	PHP_MINFO(true_async),
 	PHP_TRUE_ASYNC_VERSION,
 	PHP_MODULE_GLOBALS(true_async),

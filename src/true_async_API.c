@@ -136,7 +136,7 @@ void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *v
 
 		if (callback->flags & ASYNC_CALLBACK_F_RECORD) {
 			/* Invariant F (section 4): a waiter unlinks before its target goes. Until the teardown
-			 * wakes such a waiter with an error (S3.5), its later unlink at least finds no target. */
+			 * wakes such a waiter with an error (S3.7), its later unlink at least finds no target. */
 			ZEND_ASSERT(0 && "a wait record outlived its frame's link");
 			((async_coroutine_event_callback_t *) callback)->event = NULL;
 		} else if (callback->dispose != NULL) {

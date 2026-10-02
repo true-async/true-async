@@ -22,11 +22,15 @@ extern zend_module_entry true_async_module_entry;
 #define PHP_TRUE_ASYNC_VERSION "0.1.0-dev"
 
 #include "src/true_async_API.h"
+#include "src/internal/circular_buffer.h"
 #include "Zend/zend_smart_str_public.h"
 
 ZEND_BEGIN_MODULE_GLOBALS(true_async)
-	uint32_t handler_id_seq; /* last finish handler id; 0 is never handed out */
-	bool debug_deadlock;     /* true_async.debug_deadlock: the deadlock report lists every coroutine */
+	circular_buffer_t run_queue;          /* QUEUED coroutines, one entry each; borrowed pointers */
+	circular_buffer_t fiber_context_pool; /* contexts parked with nothing to run */
+	HashTable coroutines;                 /* enqueued, unfinished coroutines by object handle; borrowed */
+	uint32_t handler_id_seq;              /* last finish handler id; 0 is never handed out */
+	bool debug_deadlock;                  /* true_async.debug_deadlock: the deadlock report lists every coroutine */
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	smart_str *test_trace; /* where a test hook's C callback writes; NULL outside a scenario */
 #endif
