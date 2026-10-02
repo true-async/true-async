@@ -12,6 +12,7 @@ Where to look in this repository and around it. Pointers only.
 - `dev/SECURITY.md`: threat model, the security pass of every T2 stage, the journal of security
   decisions, open findings.
 - `dev/WORKFLOW.md`: branches, commits, how the core and ior are built.
+- `dev/HEALTH.md`: the weekly health check: how it is run, the open findings, its journal.
 - `tools/results.py`: per-test statuses from run-tests output, and a diff of two runs.
 - `tools/plan-page.py`: renders `dev/PLAN.md` as the progress page
   (https://claude.ai/artifact/2NzNg5GSZo25MbdDY5PgSE); a daily routine republishes it from `main`.
