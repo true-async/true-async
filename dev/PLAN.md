@@ -169,8 +169,13 @@ Tier: T2. Roles: Critic on S3.1, Critic after S3.4, security pass (S3.5).
         `5add2bcac22`, test 070, `018_cancel` changed by D5. Items 6-14 in `c625aa49b83`..`2aee763aeed`,
         one commit each; tests `Zend/tests/fibers/error-handling-window-per-fiber` (6), 071 (8),
         072 (9), 073 (11), 074 (13); each fails without its fix (072 on its parent, the rest on
-        `5add2bcac22`); 7, 10, 12 and 14 have no phpt (reasons in `dev/handoff.md`). Left: the
-        core update.
+        `5add2bcac22`); 7, 10, 12 and 14 have no phpt (reasons in `dev/handoff.md`).
+      Core update 2026-10-02: `async-core-io-2026-10-02` (`8a29d63edcf`, true-async/php-src) =
+        the current branch + master `d7f966e073b` + `async-core` `2aee763aeed`. Built without ior
+        (auto mode refused building ior in the cloud container): S1 suites per test equal to
+        `834811f2d88` on debug and ASAN, except the seven new test_scheduler tests 068-074, all
+        PASS; 18 hooks and 3 poll tests SKIP in both (Ring and ior absent). Left: the ior half
+        (Ring tests, `IOR_BACKEND=threads`), then move `CORE_REF` and "Pinned core" to it.
 - [ ] S3.3 All 21 slots, internal context init and destroy; `Async\spawn`, `await`, `suspend`,
       `Coroutine` and its methods, `DeadlockError`.
 - [ ] S3.4 Shutdown windows without IO: shutdown functions, destructors, output handlers.

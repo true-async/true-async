@@ -20,8 +20,10 @@ How work is done in this repository and in the core branch it builds on.
   head. A commit of ours never lands there: scheduler changes go to `async-core`, fixes to
   bukka's code go to him as PRs. Gate: `git log --no-merges async-core-io ^origin/async-core
   ^upstream/master ^<hooks head>` is empty.
-- Core update (a new head of either PoC, or master): a new branch `async-core-io/<date>` from
-  the current core branch, the new heads merged in; debug and ASAN built; the S1 suites run and
+- Core update (a new head of either PoC, or master): a new branch `async-core-io-<date>` from
+  the current core branch (a dash: git refuses `async-core-io/<date>` beside the branch
+  `async-core-io`), the new heads merged in, master first when `async-core` carries a newer master
+  (merging `async-core` alone gives two merge bases and false conflicts); debug and ASAN built; the S1 suites run and
   compared per test with `tools/results.py --diff` against the current branch; every difference
   gets a reason in the plan. The extension moves to the new branch only after that; the old one
   stays as it was. Held by discipline, no gate.
@@ -42,8 +44,9 @@ How work is done in this repository and in the core branch it builds on.
 CI pins the same core and ior in `.github/workflows/ci.yml` (`CORE_REF`, `IOR_REF`): a core update
 changes both places.
 
-Newer heads not yet taken: `async-core` `9944e2d7b95` (API version, master `d7f966e073b`),
-IO hooks `b05a2fd63e5`.
+Newer heads not yet taken: `async-core` `2aee763aeed` with master `d7f966e073b` is merged in
+`async-core-io-2026-10-02` (`8a29d63edcf`), compared without ior, not pinned yet (`dev/PLAN.md`,
+S3.2); IO hooks head `608927ebe09` (2026-10-02) is not merged.
 - Merge, never rebase; force-push only on Edmond's explicit word. Held by discipline, no gate.
 
 ## Security

@@ -3,7 +3,7 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-02. Active step: **S3.2** (in progress), core fixes on `async-core`.
+Written 2026-10-02. Active step: **S3.2** (in progress), the core update after the fixes on `async-core`.
 
 ## State
 
@@ -46,10 +46,27 @@ Written 2026-10-02. Active step: **S3.2** (in progress), core fixes on `async-co
   ZEND_ASYNC_IN_SCHEDULER_CONTEXT)`; `Fiber::suspend` in scheduler context still answers "Cannot
   suspend outside of a fiber", because that check comes first.
 
+## Core update (2026-10-02)
+
+- `async-core-io-2026-10-02` in true-async/php-src, head `8a29d63edcf`: `834811f2d88` + master
+  `d7f966e073b` (clean) + `async-core` `2aee763aeed`. Merging `async-core` straight in gave two
+  merge bases and false conflicts in 14 files; with master first, the rest resolve by side: hooks
+  files take ours (`async-core` equals master there), `Zend/zend_gc.c` takes `async-core`. Checked
+  file by file that each comes from the side that changed it.
+- The slash name `async-core-io/<date>` is refused by git beside the `async-core-io` branch;
+  `WORKFLOW.md` names it `async-core-io-<date>`.
+- Built without ior: auto mode refused fetching and building libior/ior in the cloud container.
+  Four trees (old/new x debug/ASAN, WORKFLOW's configure line minus `--with-ior`) in
+  `/home/user/ta`, results in `/home/user/ta/res`. Per test: test_scheduler 61 -> 68 PASS on
+  debug, 59 -> 66 PASS + 2 SKIP on ASAN, the difference is exactly the new tests 068-074; hooks 43
+  PASS 18 SKIP and poll 74 PASS 3 SKIP, equal.
+- Not done: the ior half (Ring tests, `IOR_BACKEND=threads`); `CORE_REF` in CI and "Pinned core"
+  stay at `834811f2d88` until it is done or Edmond accepts the run without ior.
+
 ## Next
 
-1. Core update by `WORKFLOW.md`: `async-core-io/<date>` with the new `async-core` merged, debug and
-   ASAN, S1 suites diffed with `tools/results.py --diff`.
+1. Close the ior half of the core update (Edmond decides how), then move `CORE_REF` and "Pinned
+   core" to `8a29d63edcf` and check CI green.
 2. S3.3.
 
 ## How to run
