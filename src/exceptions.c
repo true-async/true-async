@@ -42,6 +42,11 @@ void async_composite_exception_add_exception(zend_object *composite, zend_object
 
 	ZVAL_OBJ(&element, exception);
 
+	/* unserialize() can leave a reference in the slot. */
+	if (exceptions != NULL) {
+		ZVAL_DEREF(exceptions);
+	}
+
 	if (exceptions != NULL && Z_TYPE_P(exceptions) == IS_ARRAY) {
 		SEPARATE_ARRAY(exceptions);
 		zend_hash_next_index_insert_new(Z_ARRVAL_P(exceptions), &element);
@@ -72,6 +77,10 @@ ZEND_METHOD(Async_CompositeException, getExceptions)
 	ZEND_PARSE_PARAMETERS_NONE();
 
 	zval *exceptions = composite_exceptions(Z_OBJ_P(ZEND_THIS));
+
+	if (exceptions != NULL) {
+		ZVAL_DEREF(exceptions);
+	}
 
 	if (exceptions != NULL && Z_TYPE_P(exceptions) == IS_ARRAY) {
 		RETURN_COPY(exceptions);

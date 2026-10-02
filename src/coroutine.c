@@ -43,6 +43,12 @@ static void coroutine_object_free(zend_object *object)
 {
 	async_coroutine_t *coroutine = async_coroutine_from_object(object);
 
+	/* The steps that fill these fields release them before the object dies. */
+	ZEND_ASSERT(coroutine->fiber_context == NULL);
+	ZEND_ASSERT(coroutine->scope == NULL);
+	ZEND_ASSERT(coroutine->awaiting_info == NULL);
+	ZEND_ASSERT(coroutine->switch_handlers == NULL);
+
 	/* Whoever attached itself to this coroutine (a fiber, say) lets go of it first. */
 	if (coroutine->coroutine.extended_dispose != NULL) {
 		coroutine->coroutine.extended_dispose(&coroutine->coroutine);
@@ -76,6 +82,14 @@ static void coroutine_object_free(zend_object *object)
 	zend_async_internal_context_destroy(&coroutine->coroutine);
 	zend_async_context_destroy(&coroutine->coroutine);
 	zend_object_std_dtor(object);
+}
+
+/* A coroutine comes only from spawn: one built by `new` would have no entry point. */
+static ZEND_COLD zend_function *coroutine_object_get_constructor(zend_object *object)
+{
+	zend_throw_error(NULL, "Instantiation of class Async\\Coroutine is not allowed, use Async\\spawn()");
+
+	return NULL;
 }
 
 static HashTable *coroutine_object_gc(zend_object *object, zval **table, int *num)
@@ -118,7 +132,15 @@ static HashTable *coroutine_object_gc(zend_object *object, zval **table, int *nu
 		zend_get_gc_buffer_add_obj(buffer, coroutine->coroutine.context);
 	}
 
-	zend_get_gc_buffer_add_ht(buffer, &coroutine->coroutine.internal_context);
+	/* The table is a field of this block, not a refcounted array: the collector gets its values, never
+	 * the table itself, or it would free the table out of the middle of the coroutine. */
+	zval *value;
+
+	ZEND_HASH_FOREACH_VAL(&coroutine->coroutine.internal_context, value)
+	{
+		zend_get_gc_buffer_add_zval(buffer, value);
+	}
+	ZEND_HASH_FOREACH_END();
 
 	/* The parked stack is not walked: trial deletion keeps whatever its frames hold, since it
 	 * cannot explain those references. */
@@ -189,4 +211,5 @@ void async_register_coroutine_ce(zend_class_entry *completable)
 	coroutine_handlers.free_obj = coroutine_object_free;
 	coroutine_handlers.get_gc = coroutine_object_gc;
 	coroutine_handlers.clone_obj = NULL;
+	coroutine_handlers.get_constructor = coroutine_object_get_constructor;
 }

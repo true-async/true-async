@@ -81,7 +81,7 @@ static PHP_MINIT_FUNCTION(true_async)
 	REGISTER_INI_ENTRIES();
 
 	/* A disabled extension registers no classes, as it registers no scheduler. */
-	if (!zend_ini_long(ZEND_STRL("true_async.enable"), 0)) {
+	if (!zend_ini_parse_bool(zend_ini_str(ZEND_STRL("true_async.enable"), false))) {
 		return SUCCESS;
 	}
 

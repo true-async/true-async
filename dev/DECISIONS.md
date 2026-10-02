@@ -73,4 +73,9 @@ someone will propose again.
   `info/001-info-getCoroutines-basic.phpt` counts the main coroutine from the start and
   `common/current_coroutine_not_in_coroutine.phpt` gets the main coroutine instead of an error, since the
   RFC core starts the scheduler with the script (section 9). Why: the reference's behaviour no longer
-  applies; Critic to accept.
+  applies; Critic accepted all seven on 2026-10-02 (the predictions for `info/001` and
+  `current_coroutine` come from reading; S3.5 and S3.8 run them).
+- 2026-10-02 `Async\Coroutine` is built only by `spawn`: `new` and `newInstanceWithoutConstructor()`
+  throw, unlike the reference, where `new` gives a coroutine with no entry point that no registry
+  holds. Why: Critic on S3.4; every later step would have to handle that coroutine, and no
+  reference test builds one.

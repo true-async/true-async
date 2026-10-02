@@ -258,8 +258,18 @@ def run_tests(lane, entries, jobs):
         env.update(ASAN_ENV)
         env['LSAN_OPTIONS'] = 'suppressions=' + lsan_suppressions() + ':print_suppressions=0'
 
-    out_dir = RESULTS / lane.name / time.strftime('%Y%m%d-%H%M%S')
-    out_dir.mkdir(parents=True)
+    # Two runs within one second get -2, -3, ... rather than a crash.
+    stamp = time.strftime('%Y%m%d-%H%M%S')
+    out_dir = RESULTS / lane.name / stamp
+    suffix = 1
+
+    while True:
+        try:
+            out_dir.mkdir(parents=True)
+            break
+        except FileExistsError:
+            suffix += 1
+            out_dir = RESULTS / lane.name / f'{stamp}-{suffix}'
     output = out_dir / 'run.out'
 
     with output.open('w') as out:

@@ -37,9 +37,12 @@ struct _async_coroutine_s
 	zend_object std;                                           /* last: the properties table runs past the end */
 };
 
-/* The sizes of section 3.1, checked at compile time: 296 B, allocated as 280 in the 320 B bin. */
+/* The sizes of section 3.1, checked at compile time on 64-bit targets: 296 B, allocated as 280 in
+ * the 320 B bin. */
+#if SIZEOF_SIZE_T == 8
 typedef char async_coroutine_size_check[sizeof(async_coroutine_t) == 296 ? 1 : -1];
 typedef char async_coroutine_std_offset_check[offsetof(async_coroutine_t, std) == 240 ? 1 : -1];
+#endif
 
 extern zend_class_entry *async_ce_coroutine;
 
