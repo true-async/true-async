@@ -3,35 +3,33 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-02. Active step: **S3.3** (not started): its split into steps waits for Edmond's
-agreement.
+Written 2026-10-02. Active step: **S3.3**, all but the circular buffer and allocator done
+(`7f1cba7`).
 
 ## State
 
-- S3.2 closed: the S3.2 fixes are on `async-core` (`2aee763aeed`), merged into
-  `async-core-io-2026-10-02` (`8a29d63edcf`), pinned in CI and "Pinned core". CI green on it
-  (run 36995546671 at `5ad8c0a`).
-- CI change: lanes gate on the lists up to `CLOSED_STAGE` in `.github/workflows/ci.yml` (2); the S3
-  list runs in a non-blocking step. Before it, every lane was red since the S3 list was frozen:
-  127 of 135 tests FAIL on dbg because no S3 code exists, on the old core as on the new one.
-- `tools/roadmap.py --check` fails after every edit of the plan's step marks; rerun
-  `tools/roadmap.py` in the same commit.
-- No extension code for S3 yet.
-
-## Proposed split of S3.3 (not in the plan until Edmond agrees)
-
-S3.3 internal API; S3.4 classes and the seven `changed:` ports; S3.5 spawn and run; S3.6 suspend;
-S3.7 await and GC; S3.8 cancellation and exit paths; S3.9 fibers; S3.10 shutdown windows and
-bailout (old S3.4); S3.11 measurements of S3.md section 12; S3.12 fault injection and fuzz; S3.13
-stage review (Critic, coverage, Mull, Code Reviewer, `CLOSED_STAGE` = 3); S3.14 security (old S3.5).
-Each implementation step owns named tests: every one of the 133 goes to the first step whose
-features it uses (15, 9, 33, 35, 25, 15 tests for S3.5-S3.10, `edge_cases/013` to S3.4), to be
-written into `dev/plans/S3.md` as section 14. Critic round 1 on the split: 12 findings, all
-accepted (tests claimed by steps that lacked their features, no owner for the `changed:` ports,
-fuzz before the shutdown windows, the stage Critic before the measurements). "Both core trees":
-the `rfc` tree exists only once a change to bukka's RFCs is needed; S3 needs none.
+- Core pinned: `async-core-io-2026-10-02` (`8a29d63edcf`). CI gates every lane on every list; a
+  test that cannot pass yet carries the standard `--XFAIL--` section naming its step (Edmond,
+  2026-10-02; `CLOSED_STAGE` was reverted). The commit that makes such a test pass removes the
+  section: a passing XFAIL test is WARN, which `tools/test.py` counts as a failure.
+- S3 is split into S3.3-S3.14 (agreed by Edmond); `dev/plans/S3.md` section 14 names the tests
+  each step owns.
+- S3.3 in `src/true_async_API.{h,c}`: callbacks vector, finish handlers with ids, waker, exception
+  save and restore. `--enable-true-async-test-hooks` (every lane) builds
+  `TrueAsync\Test\callbacks_scenario()`; `tests/internal/001`-`011` pass on dbg, valgrind clean.
+  Critic: 8 findings fixed; where the code differs from the spec text, S3.md 3.6 "As built in
+  S3.3" says so (notify frames in globals, fiber switching blocked during a notify, every callback
+  runs after a throw, the caller holds the reference, `F_RUNNING`/`F_REMOVED`).
+- `tools/check-gates.py` runs the grep gates of S3.md section 11 in the `lists` job; a core update
+  that adds a `zend_async_*_t` type adds it to `CORE_TYPES` there.
+- Obligations for S3.5: its finalize holds the coroutine's object across the notify; teardown with
+  a linked wait record wakes the waiter with an error (section 4.4); the scheduler's bailout
+  handling calls `async_callbacks_bailout_reset()`.
 
 ## Next
 
-1. Edmond's answer on the split; then write it into `dev/PLAN.md` and section 14 of S3.md.
-2. S3.3.
+1. Edmond's answer on the licence of code adapted from php-async (PHP License 3.01): BSD header
+   plus "Adapted from true-async/php-async", or keep the PHP License header. Then port
+   `internal/circular_buffer.{c,h}` and `allocator.{c,h}` into `src/internal/` (symbols renamed
+   `true_async_*`), close S3.3, rerun `tools/roadmap.py`.
+2. S3.4.
