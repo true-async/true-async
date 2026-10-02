@@ -30,7 +30,6 @@
 #include "php_true_async.h"
 #include "test_hooks.h"
 #include "src/internal/circular_buffer.h"
-#include "Zend/zend_fibers.h"
 
 /* A stand-in awaitable: the flags word and a vector, as the event header will have. */
 typedef struct
@@ -61,9 +60,13 @@ test_callback_fire(async_awaitable_t *target, async_event_callback_t *callback, 
 	smart_str_appendc(self->trace, self->name);
 	self->runs++;
 
-	/* Each callback runs with no exception pending. */
+	/* Each callback runs with no exception pending, in scheduler context. */
 	if (EG(exception) != NULL) {
 		smart_str_appendc(self->trace, '?');
+	}
+
+	if (!ZEND_ASYNC_IN_SCHEDULER_CONTEXT) {
+		smart_str_appendc(self->trace, '!');
 	}
 
 	if (self->action != NULL) {
@@ -303,7 +306,8 @@ static void scenario_throw_all(smart_str *trace)
 }
 
 /* T holds A B; A notifies F inside zend_try, and F's W bails out. A's catch swallows it: T drops
- * F's frame and goes on with B, F can be notified again, and fibers switch again. */
+ * F's frame and goes on with B, F can be notified again, and the scheduler-context flag is back to
+ * its value before T. */
 static void scenario_bailout_caught(smart_str *trace)
 {
 	test_target_t outer = { ASYNC_AWAITABLE_F_EVENT };
@@ -323,9 +327,27 @@ static void scenario_bailout_caught(smart_str *trace)
 	async_callbacks_notify((async_awaitable_t *) &outer, &outer.callbacks, NULL, NULL);
 	smart_str_appends(trace, " again:");
 	async_callbacks_notify((async_awaitable_t *) &inner, &inner.callbacks, NULL, NULL);
-	smart_str_append_printf(trace, " depth=%u blocked=%d", ASYNC_G(notify_depth), (int) zend_fiber_switch_blocked());
+	smart_str_append_printf(trace, " depth=%u sched=%d", ASYNC_G(notify_depth), (int) ZEND_ASYNC_IN_SCHEDULER_CONTEXT);
 	async_callbacks_free((async_awaitable_t *) &outer, &outer.callbacks);
 	async_callbacks_free((async_awaitable_t *) &inner, &inner.callbacks);
+}
+
+/* A notify entered in scheduler context leaves the flag set; one entered outside clears it. */
+static void scenario_sched_kept(smart_str *trace)
+{
+	test_target_t target = { ASYNC_AWAITABLE_F_EVENT };
+	test_callback_t a;
+
+	test_callback_init(&a, 'A', trace);
+	async_callbacks_add(&target.callbacks, &a.base);
+	smart_str_appends(trace, "outside:");
+	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
+	smart_str_append_printf(trace, " sched=%d inside:", (int) ZEND_ASYNC_IN_SCHEDULER_CONTEXT);
+	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
+	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
+	smart_str_append_printf(trace, " sched=%d", (int) ZEND_ASYNC_IN_SCHEDULER_CONTEXT);
+	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = false;
+	async_callbacks_free((async_awaitable_t *) &target, &target.callbacks);
 }
 
 /* data of a test finish handler: its name, what it returns, and an id to remove on its run. */
@@ -413,6 +435,7 @@ static const test_scenario_t test_scenarios[] = {
 	{ "nested-same", scenario_nested_same }, { "nested-other", scenario_nested_other },
 	{ "finish-ids", scenario_finish_ids },   { "finish-keep", scenario_finish_keep },
 	{ "throw-all", scenario_throw_all },     { "bailout-caught", scenario_bailout_caught },
+	{ "sched-kept", scenario_sched_kept },
 };
 
 static void test_buffer_push(circular_buffer_t *buffer, const zend_long from, const zend_long to)

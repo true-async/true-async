@@ -17,7 +17,6 @@
 #include "php.h"
 #include "php_true_async.h"
 #include "true_async_API.h"
-#include "Zend/zend_fibers.h"
 
 /* First heap array of a vector that outgrows its inline element: 4 slots, 32 B. */
 #define ASYNC_CALLBACKS_FIRST_CAPACITY 4
@@ -66,23 +65,23 @@ static async_notify_frame_t *async_notify_frame_of(const async_callbacks_vector_
 	return NULL;
 }
 
-/* Drops the frames above `depth`, left by notifies a bailout cut short, with the bit and the fiber
- * switch block each of them set. */
+/* Drops the frames above `depth`, left by notifies a bailout cut short: clears the bit each of
+ * them set and puts back the scheduler-context flag the lowest of them found. */
 static void async_notify_drop_frames(const uint32_t depth)
 {
+	if (ASYNC_G(notify_depth) <= depth) {
+		return;
+	}
+
 	for (uint32_t top = ASYNC_G(notify_depth); top > depth; top--) {
 		async_callbacks_vector_t *vector = ASYNC_G(notify_stack)[top - 1].vector;
 
 		if (vector != NULL) {
 			vector->capacity &= ~ASYNC_CALLBACKS_F_NOTIFYING;
 		}
-
-		/* The engine resets the counter only at request start. */
-		if (zend_fiber_switch_blocked()) {
-			zend_fiber_switch_unblock();
-		}
 	}
 
+	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = ASYNC_G(notify_stack)[depth].in_scheduler_context;
 	ASYNC_G(notify_depth) = depth;
 }
 
@@ -146,8 +145,7 @@ bool async_callbacks_notify(async_awaitable_t *target,
 	const uint32_t depth = ASYNC_G(notify_depth);
 
 	if (UNEXPECTED(depth == ASYNC_NOTIFY_DEPTH_MAX)) {
-		ZEND_ASSERT(0 && "notify nesting deeper than ASYNC_NOTIFY_DEPTH_MAX");
-		return false;
+		zend_error_noreturn(E_ERROR, "Async: callbacks notified more than %d levels deep", ASYNC_NOTIFY_DEPTH_MAX);
 	}
 
 	/* The frame lives in the globals, not on this C stack, so a bailout out of a callback leaves
@@ -155,13 +153,14 @@ bool async_callbacks_notify(async_awaitable_t *target,
 	async_notify_frame_t *frame = &ASYNC_G(notify_stack)[depth];
 	frame->vector = vector;
 	frame->cursor = 0;
+	frame->in_scheduler_context = ZEND_ASYNC_IN_SCHEDULER_CONTEXT;
 	ASYNC_G(notify_depth) = depth + 1;
 	vector->capacity |= ASYNC_CALLBACKS_F_NOTIFYING;
 
-	/* Frames are LIFO only while no callback switches fibers: a GC run in a callback would
-	 * otherwise park this coroutine mid-notify and let another one's notify reuse the frames. With
-	 * switching blocked, the GC defers its run. */
-	zend_fiber_switch_block();
+	/* Frames are LIFO only while no callback switches fibers. Callbacks run in scheduler context
+	 * (S3.md 4.6): suspend and the Fiber methods refuse there, and a GC run defers to the next tick
+	 * instead of parking this coroutine mid-notify. */
+	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
 
 	/* Every callback runs, whatever an earlier one threw: a finish handler fires exactly once
 	 * (zend_async_API.h), and a waiter behind a throwing callback must still wake. Callbacks run
@@ -186,7 +185,7 @@ bool async_callbacks_notify(async_awaitable_t *target,
 		}
 	}
 
-	zend_fiber_switch_unblock();
+	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = frame->in_scheduler_context;
 
 	/* NULL: the vector was freed by its own notify (async_callbacks_free()). */
 	if (frame->vector != NULL) {

@@ -162,8 +162,8 @@ static zend_always_inline void async_callbacks_add(async_callbacks_vector_t *vec
  * does not run again. Allocates nothing, runs no PHP code. */
 bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callback_t *callback);
 
-/* Runs the vector's callbacks in order, each once, including those added meanwhile, with fiber
- * switching blocked. Every callback runs even after one throws; the exceptions are chained over
+/* Runs the vector's callbacks in order, each once, including those added meanwhile, in scheduler
+ * context (ZEND_ASYNC_IN_SCHEDULER_CONTEXT). Every callback runs even after one throws; the exceptions are chained over
  * the one pending at entry and left in EG(exception). The caller holds a reference to `target` for
  * the call (S3.5's finalize does); a teardown of the vector from a callback ends the notify.
  * Returns false, running nothing, when the vector is already being notified further up the

@@ -24,15 +24,16 @@ extern zend_module_entry true_async_module_entry;
 #include "src/true_async_API.h"
 #include "Zend/zend_smart_str_public.h"
 
-/* Notifies nested deeper than this are refused; a coroutine's finish nests at most one level
- * (a callback that resolves another awaitable) in S3. */
+/* Nesting deeper than this is a fatal error; a coroutine's finish nests at most one level (a
+ * callback that resolves another awaitable) in S3. */
 #define ASYNC_NOTIFY_DEPTH_MAX 32
 
 /* A notify in progress: async_callbacks_remove() corrects its cursor. */
 typedef struct
 {
 	async_callbacks_vector_t *vector;
-	uint32_t cursor; /* index of the next callback to run */
+	uint32_t cursor;           /* index of the next callback to run */
+	bool in_scheduler_context; /* the flag's value at entry, put back at exit */
 } async_notify_frame_t;
 
 ZEND_BEGIN_MODULE_GLOBALS(true_async)

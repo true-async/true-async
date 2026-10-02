@@ -79,3 +79,8 @@ someone will propose again.
   throw, unlike the reference, where `new` gives a coroutine with no entry point that no registry
   holds. Why: Critic on S3.4; every later step would have to handle that coroutine, and no
   reference test builds one.
+- 2026-10-02 `async_callbacks_notify()` runs its callbacks in scheduler context
+  (`ZEND_ASYNC_IN_SCHEDULER_CONTEXT`, saved in the frame and put back at exit) instead of blocking
+  fiber switching; `tests/internal/011-callbacks_bailout_caught.phpt` checks the flag instead of the
+  switch block. Why: Edmond, the extension never calls `zend_fiber_switch_block()`; S3.md 4.6
+  already closes such windows with the flag.
