@@ -163,7 +163,8 @@ static zend_always_inline void async_callbacks_add(async_callbacks_vector_t *vec
  * does not run again. Allocates nothing, runs no PHP code. */
 bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callback_t *callback);
 
-/* Runs the vector's callbacks in order, each once, including those added meanwhile, in scheduler
+/* Runs the vector's callbacks, each once (order not kept: a removal moves elements), including
+ * those added meanwhile, in scheduler
  * context (ZEND_ASYNC_IN_SCHEDULER_CONTEXT). Every callback runs even after one throws; the
  * exceptions are chained over the one pending at entry and left in EG(exception). A bailout out of
  * a callback passes through and leaves the vector ready for another notify. The caller holds a
@@ -194,16 +195,16 @@ typedef struct
 	uint32_t handler_id; /* never 0 */
 } async_finish_handler_callback_t;
 
-/* Adds an RFC finish handler to the vector of the coroutine; returns its id, stable across the
- * removal of other handlers (a position would shift). The handler fires on the coroutine's
- * notify, and is dropped after it returns false. */
-uint32_t async_finish_handler_add(async_callbacks_vector_t *vector,
+/* Adds an RFC finish handler to the coroutine's vector; returns its id, stable across the removal
+ * of other handlers (a position would shift). The handler fires on the coroutine's notify, and is
+ * dropped after it returns false. */
+uint32_t async_finish_handler_add(async_coroutine_t *coroutine,
 								  zend_coroutine_finish_handler_fn handler,
 								  zend_coroutine_t *waiter,
 								  void *data);
 
 /* Removes the finish handler `handler_id`; false when there is none. */
-bool async_finish_handler_remove(async_callbacks_vector_t *vector, uint32_t handler_id);
+bool async_finish_handler_remove(async_coroutine_t *coroutine, uint32_t handler_id);
 
 ///////////////////////////////////////////////////////////////////
 /// The waker

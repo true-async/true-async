@@ -182,6 +182,8 @@ internal/016-buffer_front_full.phpt  own:5a39a9685b1e674fbeb454e041b3a0f918ebd8e
 internal/017-buffer_zeroed.phpt  own:07b66f6b2eba3669d5e7551f3c458b725f61a96b9c9810129652b4c8cfc0e079
 internal/018-callbacks_scheduler_context.phpt  own:4922597ad53583a7e05d5a245506ea7219ed1c436f4bd90ce42e6a16da5f8e56
 internal/019-callbacks_free_during_notify.phpt  own:440c2eb57a6e302a869fa33c4b831beab9e7cf9cafa810e533c189fc390ec3d5
+internal/020-callbacks_free_then_add.phpt  own:1dabc7f583cc5e2486d8fe999407ae95a144843c1d2edfb6602e5fe38478baee
+internal/021-callbacks_bailout_pending.phpt  own:7b457e0ea50ada47ba9b1019df87c60f39d96fc67137a43c5fc7bddb59ea52e4
 
 # classes: own tests of the S3.4 classes (Awaitable refuses foreign classes: section 13, bug 10)
 classes/001-awaitable_user_class.phpt  own:6c394d09952d247b4567fb247ff84de4c38ac1702b94fba3c3a5945660fa20e2

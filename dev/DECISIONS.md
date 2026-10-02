@@ -89,3 +89,6 @@ someone will propose again.
   `async_callbacks_bailout_reset()` are gone. A bailout out of a callback is handled by the
   notify's own `zend_try`. `tests/internal/011-callbacks_bailout_caught.phpt` no longer prints the
   frame depth. Why: Edmond; saving 8 B had cost a chain, a global array and a switch block.
+- 2026-10-02 `async_finish_handler_add/remove` take the coroutine, not a vector: a finish handler
+  removes itself from its coroutine's vector, so a caller cannot hand it another one. Why: Critic on
+  the cursor rework.

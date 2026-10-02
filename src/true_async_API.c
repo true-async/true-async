@@ -84,6 +84,40 @@ bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callba
 	return true;
 }
 
+/* The loop of async_callbacks_notify(), out of line: `pending` changes after its setjmp, so it must
+ * live in memory, not in a register a longjmp restores. */
+static zend_never_inline void async_callbacks_run(async_awaitable_t *target,
+												  async_callbacks_vector_t *vector,
+												  void *result,
+												  zend_object *exception,
+												  zend_object **pending)
+{
+	/* data, length and the cursor are reread every step: a callback may add, remove, grow, or
+	 * free the vector (which restarts the cursor on an empty vector). */
+	while (vector->cursor < vector->length) {
+		async_event_callback_t *callback = async_callbacks_slots(vector)[vector->cursor++];
+		callback->callback(target, callback, result, exception);
+
+		if (UNEXPECTED(EG(exception) != NULL)) {
+			async_exception_save_fast(&EG(exception), pending);
+		}
+	}
+}
+
+/* Puts the exceptions back into EG(exception). An exception pending at entry gets its frame back
+ * as zend_objects_destroy_object() does around a destructor (zend_objects.c:158-177). */
+static void async_callbacks_exception_back(zend_object **pending,
+										   zend_execute_data *execute_data,
+										   const zend_op *opline_before_exception)
+{
+	if (execute_data != NULL) {
+		execute_data->opline = EG(exception_op);
+		EG(opline_before_exception) = opline_before_exception;
+	}
+
+	async_exception_restore_fast(&EG(exception), pending);
+}
+
 bool async_callbacks_notify(async_awaitable_t *target,
 							async_callbacks_vector_t *vector,
 							void *result,
@@ -110,30 +144,33 @@ bool async_callbacks_notify(async_awaitable_t *target,
 	 * with no exception pending; what they throw is chained, the latest on top, over the exception
 	 * pending at entry. */
 	zend_object *pending = NULL;
-	const zend_op *opline_before_exception = EG(opline_before_exception);
-	const bool entered_with_exception = EG(exception) != NULL;
+	const zend_op *opline_before_exception = NULL;
+	/* The frame that had an exception pending at entry; NULL without one. A bailout clears
+	 * EG(current_execute_data), so the catch below uses this copy. */
+	zend_execute_data *const execute_data = EG(exception) != NULL ? EG(current_execute_data) : NULL;
+
+	if (execute_data != NULL) {
+		if (execute_data->func != NULL && ZEND_USER_CODE(execute_data->func->common.type)) {
+			zend_rethrow_exception(execute_data);
+		}
+
+		execute_data->opline = EG(opline_before_exception);
+		opline_before_exception = EG(opline_before_exception);
+	}
+
 	async_exception_save_fast(&EG(exception), &pending);
 
 	/* A bailout out of a callback leaves the vector unmarked and the flag as found, so a later
 	 * notify of the vector runs. */
 	zend_try
 	{
-		/* data, length and the cursor are reread every step: a callback may add, remove, grow, or
-		 * free the vector (length 0 ends the loop). */
-		while (vector->cursor < vector->length) {
-			async_event_callback_t *callback = async_callbacks_slots(vector)[vector->cursor++];
-			callback->callback(target, callback, result, exception);
-
-			if (UNEXPECTED(EG(exception) != NULL)) {
-				async_exception_save_fast(&EG(exception), &pending);
-			}
-		}
+		async_callbacks_run(target, vector, result, exception, &pending);
 	}
 	zend_catch
 	{
 		vector->capacity &= ~ASYNC_CALLBACKS_F_NOTIFYING;
 		ZEND_ASYNC_IN_SCHEDULER_CONTEXT = in_scheduler_context;
-		async_exception_restore_fast(&EG(exception), &pending);
+		async_callbacks_exception_back(&pending, execute_data, opline_before_exception);
 		zend_bailout();
 	}
 	zend_end_try();
@@ -141,13 +178,7 @@ bool async_callbacks_notify(async_awaitable_t *target,
 	vector->capacity &= ~ASYNC_CALLBACKS_F_NOTIFYING;
 	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = in_scheduler_context;
 
-	/* The VM resumes the entry exception from where it was raised; a callback's throw while it was
-	 * aside overwrote the opline. */
-	if (entered_with_exception) {
-		EG(opline_before_exception) = opline_before_exception;
-	}
-
-	async_exception_restore_fast(&EG(exception), &pending);
+	async_callbacks_exception_back(&pending, execute_data, opline_before_exception);
 
 	return true;
 }
@@ -178,6 +209,7 @@ void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *v
 	vector->single = NULL;
 	vector->length = 0;
 	vector->capacity &= ASYNC_CALLBACKS_F_NOTIFYING;
+	vector->cursor = 0;
 }
 
 static void async_finish_handler_call(async_awaitable_t *target,
@@ -208,7 +240,9 @@ static void async_finish_handler_call(async_awaitable_t *target,
 		return;
 	}
 
-	async_callbacks_remove(vector, callback);
+	const bool removed = async_callbacks_remove(vector, callback);
+	ZEND_ASSERT(removed && "a finish handler outside its coroutine's vector");
+	(void) removed;
 	efree(entry);
 }
 
@@ -222,11 +256,12 @@ static void async_finish_handler_dispose(async_event_callback_t *callback, async
 	efree(callback);
 }
 
-uint32_t async_finish_handler_add(async_callbacks_vector_t *vector,
+uint32_t async_finish_handler_add(async_coroutine_t *coroutine,
 								  const zend_coroutine_finish_handler_fn handler,
 								  zend_coroutine_t *waiter,
 								  void *data)
 {
+	async_callbacks_vector_t *vector = &coroutine->callbacks;
 	async_callbacks_reserve(vector, 1);
 
 	async_finish_handler_callback_t *entry = emalloc(sizeof(async_finish_handler_callback_t));
@@ -249,8 +284,9 @@ uint32_t async_finish_handler_add(async_callbacks_vector_t *vector,
 	return entry->handler_id;
 }
 
-bool async_finish_handler_remove(async_callbacks_vector_t *vector, const uint32_t handler_id)
+bool async_finish_handler_remove(async_coroutine_t *coroutine, const uint32_t handler_id)
 {
+	async_callbacks_vector_t *vector = &coroutine->callbacks;
 	async_event_callback_t **slots = async_callbacks_slots(vector);
 
 	for (uint32_t i = 0; i < vector->length; i++) {
