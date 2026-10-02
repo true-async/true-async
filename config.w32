@@ -1,9 +1,18 @@
 ARG_ENABLE("true-async", "true_async extension: coroutines on the PHP scheduler API", "no");
+ARG_ENABLE("true-async-test-hooks", "true_async: TrueAsync\\Test functions for tests/internal/", "no");
 
 if (PHP_TRUE_ASYNC != "no") {
 	// Subdirectory paths take backslashes: ADD_SOURCES splits on them, and a forward slash
 	// leaves the .obj outside src\, where the linker does not look.
-	EXTENSION("true_async", "src\\true_async.c", PHP_TRUE_ASYNC_SHARED, "/DZEND_ENABLE_STATIC_TSRMLS_CACHE=1");
+	EXTENSION("true_async", "src\\true_async.c src\\true_async_API.c", PHP_TRUE_ASYNC_SHARED, "/DZEND_ENABLE_STATIC_TSRMLS_CACHE=1");
+
+	if (PHP_TRUE_ASYNC_TEST_HOOKS != "no") {
+		ADD_SOURCES(configure_module_dirname + "\\src", "test_hooks.c", "true_async");
+		ADD_FLAG("CFLAGS_TRUE_ASYNC", "/D TRUE_ASYNC_TEST_HOOKS=1");
+	}
 	// src\*.c include php_true_async.h from the extension root.
 	ADD_FLAG("CFLAGS_TRUE_ASYNC", "/I " + configure_module_dirname);
+	// C4133, incompatible pointer types, is an error: as -Werror=incompatible-pointer-types in
+	// config.m4.
+	ADD_FLAG("CFLAGS_TRUE_ASYNC", "/we4133");
 }

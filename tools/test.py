@@ -151,7 +151,8 @@ def build(lane):
         run([lane.prefix / 'bin' / 'phpize'], ROOT, BUILD / 'phpize.log')
         phpize_stamp.write_text(phpize_key)
 
-    args = lane.configure_args()
+    # Every lane runs tests/internal/, which drives the test hooks.
+    args = ['--enable-true-async-test-hooks', *lane.configure_args()]
     config_key = '\n'.join([phpize_key, file_key(lane.php), file_key(lane.php_config), *args, lane.extra_key])
     config_stamp = lane.build / '.configure'
     lane.build.mkdir(exist_ok=True)
@@ -327,7 +328,8 @@ def verdict(lane, entries, left_out, output):
             wrong += 1
             hint = ' (passes: remove its --XFAIL-- section)' if status == 'WARN' and xfail else ''
             print(f'{status:7} {name}{hint}')
-        elif name in retried:
+        elif name in retried and status == 'PASS':
+            # An unfinished test that failed both attempts is XFAIL as expected, not a retry pass.
             print(f'RETRY   {name} (passed on a retry; first attempt in {output})')
 
     for entry, reason in left_out:

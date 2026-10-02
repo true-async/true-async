@@ -38,6 +38,9 @@ jobs:
       - name: Check the lists
         run: python3 tools/check-lists.py --reference "$RUNNER_TEMP/php-async"
 
+      - name: Check the grep gates
+        run: python3 tools/check-gates.py
+
       - name: Check the C formatting
         run: |
           sudo apt-get install -y -q --no-install-recommends clang-format-18
@@ -158,7 +161,7 @@ jobs:
       PLATFORM: x64
       THREAD_SAFE: '1'
       INTRINSICS: AVX2
-      ADD_CONF: --enable-true-async=shared
+      ADD_CONF: --enable-true-async=shared --enable-true-async-test-hooks
     steps:
       - name: git config
         run: git config --global core.autocrlf false && git config --global core.eol lf

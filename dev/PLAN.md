@@ -195,6 +195,10 @@ section 14); a step that finds a test needs more moves it on with a note.
       done: own tests through test hooks pass: A B C D with B removing A runs each once;
         self-removal order A C B; a nested notify is refused; the positional-handle scenario of 3.6
       tier: T2 · role: Critic
+      progress 2026-10-02: callbacks vector, finish handlers, waker, exception save and restore,
+        test hooks, strict flags and grep gates in; `tests/internal/001`-`011` pass on dbg (19
+        PASS, 127 XFAIL), valgrind clean. Critic: 8 findings fixed (S3.md 3.6, "As built in
+        S3.3"). Left: circular buffer and allocator, waiting on Edmond's licence answer.
 - [ ] S3.4 Classes and test ports: exceptions, `Awaitable` (refuses foreign classes), `Completable`,
       the `Coroutine` object (296 B), INI; the seven `changed:` ports of S3.md section 9.
       done: `edge_cases/013` passes; own test for bug 10; `check-lists.py` clean with the tags

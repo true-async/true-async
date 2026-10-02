@@ -11,6 +11,13 @@ PHP_ARG_ENABLE([true-async-known-answer],
   [no],
   [no])
 
+PHP_ARG_ENABLE([true-async-test-hooks],
+  [whether to build the test hooks],
+  [AS_HELP_STRING([--enable-true-async-test-hooks],
+    [Build TrueAsync\\Test functions that drive internal structures (tests/internal/)])],
+  [no],
+  [no])
+
 if test "$PHP_TRUE_ASYNC" != "no"; then
   dnl The scheduler API exists only in a core built from async-core-io; a stock php-src fails
   dnl here instead of at the first compile error.
@@ -21,15 +28,23 @@ if test "$PHP_TRUE_ASYNC" != "no"; then
     [#include "php.h"])
   CPPFLAGS=$old_CPPFLAGS
 
-  true_async_sources="src/true_async.c"
+  true_async_sources="src/true_async.c src/true_async_API.c"
 
   if test "$PHP_TRUE_ASYNC_KNOWN_ANSWER" != "no"; then
     AC_DEFINE([TRUE_ASYNC_KNOWN_ANSWER], [1], [Define to 1 to plant the known-answer functions.])
     true_async_sources="$true_async_sources src/known_answer.c"
   fi
 
+  if test "$PHP_TRUE_ASYNC_TEST_HOOKS" != "no"; then
+    AC_DEFINE([TRUE_ASYNC_TEST_HOOKS], [1], [Define to 1 to build the test hooks.])
+    true_async_sources="$true_async_sources src/test_hooks.c"
+  fi
+
+  dnl An event helper applied to a coroutine must not compile (dev/plans/S3.md, section 3);
+  dnl gcc 13 only warns about it without the flag. An undeclared function fails here too, not at
+  dnl dlopen.
   PHP_NEW_EXTENSION([true_async], [$true_async_sources],
     [$ext_shared],,
-    [-DZEND_ENABLE_STATIC_TSRMLS_CACHE=1])
+    [-DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -Werror=incompatible-pointer-types -Werror=implicit-function-declaration])
   PHP_ADD_BUILD_DIR([$ext_builddir/src])
 fi

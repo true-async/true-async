@@ -26,15 +26,37 @@
 #define TRUE_ASYNC_FUNCTIONS NULL
 #endif
 
+#ifdef TRUE_ASYNC_TEST_HOOKS
+#include "test_hooks.h"
+#endif
+
+ZEND_DECLARE_MODULE_GLOBALS(true_async)
+
 /* Off by default, as test_scheduler.enable: the scheduler slots are process-wide, and a binary
  * that loads the extension must still be able to run another provider. */
 PHP_INI_BEGIN()
 	PHP_INI_ENTRY("true_async.enable", "0", PHP_INI_SYSTEM, NULL)
 PHP_INI_END()
 
+static PHP_GINIT_FUNCTION(true_async)
+{
+#if defined(ZTS) && defined(COMPILE_DL_TRUE_ASYNC)
+	ZEND_TSRMLS_CACHE_UPDATE();
+#endif
+	memset(true_async_globals, 0, sizeof(*true_async_globals));
+}
+
 static PHP_MINIT_FUNCTION(true_async)
 {
 	REGISTER_INI_ENTRIES();
+
+#ifdef TRUE_ASYNC_TEST_HOOKS
+	/* A second table beside TRUE_ASYNC_FUNCTIONS: the mull lane builds the known-answer functions
+	 * and the hooks together. */
+	if (zend_register_functions(NULL, true_async_test_hooks_functions, NULL, type) == FAILURE) {
+		return FAILURE;
+	}
+#endif
 
 	return SUCCESS;
 }
@@ -42,6 +64,15 @@ static PHP_MINIT_FUNCTION(true_async)
 static PHP_MSHUTDOWN_FUNCTION(true_async)
 {
 	UNREGISTER_INI_ENTRIES();
+
+	return SUCCESS;
+}
+
+/* A bailout out of a callback leaves its notify marked as running; the vectors are still alive
+ * here, before the request frees them. */
+static PHP_RSHUTDOWN_FUNCTION(true_async)
+{
+	async_callbacks_bailout_reset();
 
 	return SUCCESS;
 }
@@ -64,10 +95,14 @@ zend_module_entry true_async_module_entry = {
 	PHP_MINIT(true_async),
 	PHP_MSHUTDOWN(true_async),
 	NULL,
-	NULL,
+	PHP_RSHUTDOWN(true_async),
 	PHP_MINFO(true_async),
 	PHP_TRUE_ASYNC_VERSION,
-	STANDARD_MODULE_PROPERTIES
+	PHP_MODULE_GLOBALS(true_async),
+	PHP_GINIT(true_async),
+	NULL,
+	NULL,
+	STANDARD_MODULE_PROPERTIES_EX
 };
 /* clang-format on */
 
