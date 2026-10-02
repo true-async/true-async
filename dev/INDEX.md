@@ -13,6 +13,8 @@ Where to look in this repository and around it. Pointers only.
   decisions, open findings.
 - `dev/WORKFLOW.md`: branches, commits, how the core and ior are built.
 - `tools/results.py`: per-test statuses from run-tests output, and a diff of two runs.
+- `tools/plan-page.py`: renders `dev/PLAN.md` as the progress page
+  (https://claude.ai/artifact/2NzNg5GSZo25MbdDY5PgSE); a daily routine republishes it from `main`.
 - `dev/plans/S2.md`: S2 notes: build against the core, runner, test lists, layers, CI, Mull.
 - `dev/reviews/io-hooks-design-review.md`: review of the IO hooks design (php/php-src#23997);
   the source of the B1-B3 and M1-M13 references in the plan.
@@ -24,8 +26,9 @@ Where to look in this repository and around it. Pointers only.
 - true-async/php-src: the core, the pinned branch in `WORKFLOW.md` ("Pinned core").
 - true-async/php-async at `tests/lists/REFERENCE`: today's TrueAsync, the reference and the source
   of tests.
-- `E:\php\true-async-plan.html`: source of the plan's visual page
-  (https://claude.ai/artifact/9oHVzBL9FtYrsACfRJnMpF); it lags behind `PLAN.md`.
+- `E:\php\true-async-plan.html`: source of the design page of 2026-10-01
+  (https://claude.ai/artifact/9oHVzBL9FtYrsACfRJnMpF); it lags behind `PLAN.md`, the progress page
+  above does not.
 
 ## Not yet present
 
