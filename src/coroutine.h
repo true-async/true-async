@@ -20,7 +20,6 @@
  * S9. */
 typedef struct _async_fiber_context_s async_fiber_context_t;
 typedef struct _async_scope_s async_scope_t;
-typedef struct _async_awaiting_info_vector_s async_awaiting_info_vector_t;
 typedef struct _async_coroutine_switch_handlers_vector_s async_coroutine_switch_handlers_vector_t;
 
 /* The coroutine and its PHP object in one allocation (dev/plans/S3.md, section 3.1). */
@@ -34,16 +33,15 @@ struct _async_coroutine_s
 	async_waker_t waker;
 	async_scope_t *scope;                                      /* NULL until S9 */
 	zend_object *deferred_cancellation;                        /* the cancel that arrived inside protect() */
-	async_awaiting_info_vector_t *awaiting_info;               /* lazy; foreign RFC registrations */
 	async_coroutine_switch_handlers_vector_t *switch_handlers; /* lazy */
 	zend_object std;                                           /* last: the properties table runs past the end */
 };
 
-/* The sizes of section 3.1, checked at compile time on 64-bit targets: 304 B, allocated as 288 in
+/* The sizes of section 3.1, checked at compile time on 64-bit targets: 320 B, allocated as 304 in
  * the 320 B bin. */
 #if SIZEOF_SIZE_T == 8
-typedef char async_coroutine_size_check[sizeof(async_coroutine_t) == 304 ? 1 : -1];
-typedef char async_coroutine_std_offset_check[offsetof(async_coroutine_t, std) == 248 ? 1 : -1];
+typedef char async_coroutine_size_check[sizeof(async_coroutine_t) == 320 ? 1 : -1];
+typedef char async_coroutine_std_offset_check[offsetof(async_coroutine_t, std) == 264 ? 1 : -1];
 #endif
 
 extern zend_class_entry *async_ce_coroutine;

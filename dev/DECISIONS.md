@@ -211,3 +211,52 @@ someone will propose again.
   coroutine unrun with that exception as its outcome, or a handler that lets the request go on,
   left a full GC root buffer full, and every GC coroutine started for it got no stack either: the
   request never ended. The Critic judged the 007 change justified for that reason.
+- 2026-10-02 The record of a wait for one target lives in the waiting coroutine's waker
+  (`waker.record`), as TrueAsync's inline callbacks of the waker, not on the waiting frame's stack
+  (withdraws that part of D28). The record's `event` says whether it is linked: the waker's `wait`
+  pointer and count and the coroutine's `awaiting_info` go (nothing in S3 used them; Critic), and the
+  coroutine is 320 B, allocated as 304 in the 320 B bin, as before S3.7. A wait for several targets
+  comes with S5, which decides its storage (TrueAsync's waker keeps two inline callbacks and a heap
+  array). A bailout that unwinds the
+  frame leaves the record intact and the coroutine's finish unlinks it, so no `zend_try` guards the
+  window between the link and the switch (U5 of S3.md 4.4 goes). Why: P1.4; the stack record needed
+  a `zend_try` around the tick and the context creation. Edmond agreed, 2026-10-02 ("Ок", after the
+stack options were shown with the code).
+- 2026-10-02 `async_wait_kind_t`, `ASYNC_CALLBACK_F_TYPED` and `F_COUNTED` go: no S3 wait has a
+  typed unlink, an abort or an external count; the unlink removes a record from its coroutine
+  target's vector, and the awaiting info is worded from the target. Events (S4) choose between kinds
+  and TrueAsync's event methods (D25, open). Why: nothing in S3 reads them.
+- 2026-10-02 A wait record that a throwing callback left in a finished coroutine's vector is
+  detached and then fired by the teardown: the waiter wakes and reads the target's outcome, and the
+  teardown loop ends whatever the wake does (Critic). TrueAsync's dispose detaches it,
+  and the waiter stays parked until the deadlock report. Why: the target finished, so the outcome
+  exists.
+- 2026-10-02 The await slot returns false without an exception inside a Fiber the scheduler did not
+  adopt (until S3.9), as in scheduler context: the GC collects later. The report of a stack that
+  cannot be taken runs in scheduler context: its PHP code (`__toString`, a release that fills the GC
+  buffer) ran a nested wait on a coroutine in the middle of its switch. Why: `gc/013`, `gc/014` and
+  `scheduler/016` (an assertion) under the awaiting GC.
+- 2026-10-02 `getAwaitingInfo()` lists the records of the coroutine's wait ("await: coroutine #N",
+  the core's test_scheduler.c wording); the add and remove slots keep nothing (the RFC's 0, "the
+  add did nothing"): nothing in the core adds one. TrueAsync returns nothing at all.
+- 2026-10-02 `gc_collect_cycles()` in a coroutine waits for the whole run, destructors included,
+  and a coroutine queued before the GC coroutine runs first: `gc/002-gc_destructor_spawn_coroutine.phpt`,
+  `gc/007-gc_destructor_complex_async_ops.phpt`, `gc/011-gc_destructor_cycles_with_suspend.phpt` and
+  `gc/012-gc_destructor_multiple_gc_cycles.phpt` expect that order (`changed:`; `gc/005` passes as
+  written). `scheduler/016-no_stack_full_gc_buffer.phpt` expects the fatal on main's stack: main now
+  parks at the collection, so its suspend starts the coroutine that gets no stack. Why: the RFC core collects in a coroutine and awaits it
+  (`zend_gc.c:2245-2293`); the reference collected inline or returned 0 at once.
+- 2026-10-02 A finished coroutine stays current while its finalize releases what it held, so a
+  destructor run there could wait: `await()` refuses with "await() requires a running coroutine",
+  `suspend()` refuses, and the GC's await slot returns false (the GC collects later). Not scheduler
+  context for the whole finalize (the Critic's proposal): it would also refuse `spawn()` in such a
+  destructor, which TrueAsync allows; TrueAsync's finalize sets no scheduler context. Test
+  `scheduler/026`.
+- 2026-10-02 `await()` marks the target's outcome observed before it waits, as TrueAsync does
+  (`async.c:318-320`), not at delivery; the refusal inside a Fiber the scheduler did not adopt comes
+  before the mark, so the target's exception still ends the request (`scheduler/027`). A waiter
+  cancelled while it waits (S3.8) is that step's question.
+- 2026-10-02 `await()` unlinks a record left linked before it links its own, as TrueAsync's
+  `ZEND_ASYNC_WAKER_NEW` cleans a stale waker: a bailout that a shutdown function's `zend_try`
+  caught can leave main's record linked (Sage). `Async\suspend()` refuses for a finished current
+  coroutine before it reads the coroutine's context (Sage); `scheduler/026` covers it.

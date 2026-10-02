@@ -213,6 +213,41 @@ ZEND_FUNCTION(Async_spawn)
 	RETURN_OBJ_COPY(&coroutine->std);
 }
 
+/* Waits for a coroutine (S3.md 4.1 and 4.8): the result and the exception are read from the finished
+ * coroutine in place, as TrueAsync replays a finished coroutine (coroutine.c:1040-1068). */
+ZEND_FUNCTION(Async_await)
+{
+	zend_object *awaitable = NULL;
+
+	THROW_IF_UNAVAILABLE();
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_OBJ_OF_CLASS(awaitable, async_ce_completable)
+	ZEND_PARSE_PARAMETERS_END();
+
+	/* Coroutine is the only Completable until events come (S4). */
+	ZEND_ASSERT(awaitable->ce == async_ce_coroutine);
+	async_coroutine_t *target = async_coroutine_from_object(awaitable);
+
+	if (UNEXPECTED(!async_await_coroutine(target))) {
+		RETURN_THROWS();
+	}
+
+	zend_object *exception = target->coroutine.exception;
+
+	if (UNEXPECTED(exception != NULL)) {
+		GC_ADDREF(exception);
+		zend_throw_exception_internal(exception);
+		RETURN_THROWS();
+	}
+
+	if (Z_ISUNDEF(target->coroutine.result)) {
+		RETURN_NULL();
+	}
+
+	RETURN_COPY(&target->coroutine.result);
+}
+
 /* A yield (S3.md 4.1, TrueAsync's async.c:223-235): refused before the enqueue, so a refusal leaves the coroutine
  * running; otherwise it goes to the back of the run queue and parks there until its turn (D6). With
  * async off it does nothing, as in TrueAsync. */
@@ -228,8 +263,10 @@ ZEND_FUNCTION(Async_suspend)
 
 	async_coroutine_t *coroutine = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
 
-	/* Inside a Fiber the scheduler did not adopt (until S3.9) the stack is not the coroutine's. */
-	if (UNEXPECTED(coroutine == NULL || EG(current_fiber_context) != &coroutine->fiber_context->context)) {
+	/* A finished coroutine is still current while finalize releases what it held; inside a Fiber the
+	 * scheduler did not adopt (until S3.9) the stack is not the coroutine's. */
+	if (UNEXPECTED(coroutine == NULL || ZEND_COROUTINE_IS_FINISHED(&coroutine->coroutine) ||
+				   EG(current_fiber_context) != &coroutine->fiber_context->context)) {
 		zend_throw_error(NULL, "Cannot switch coroutines in the current execution context");
 		RETURN_THROWS();
 	}

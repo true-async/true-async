@@ -1,7 +1,5 @@
 --TEST--
 Fiber with NULL values in suspend/resume
---XFAIL--
-Not implemented yet: S3.9 of dev/PLAN.md
 --FILE--
 <?php
 

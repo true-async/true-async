@@ -1,7 +1,5 @@
 --TEST--
 GC 006: Multiple GC cycles with suspended destructors
---XFAIL--
-Not implemented yet: S3.7 of dev/PLAN.md
 --FILE--
 <?php
 
@@ -89,12 +87,12 @@ Destructor end: batch1-B
 Created: batch2-A
 Created: batch2-B
 === Second GC cycle ===
-=== Third GC cycle ===
-Total destructors called: 2
 Destructor start: batch2-A (count: 3)
 Suspended in destructor: batch2-A
+Destructor end: batch2-A
 Destructor start: batch2-B (count: 4)
 Suspended in destructor: batch2-B
-Test complete
-Destructor end: batch2-A
 Destructor end: batch2-B
+=== Third GC cycle ===
+Total destructors called: 4
+Test complete

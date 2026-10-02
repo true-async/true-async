@@ -31,10 +31,8 @@ unset($nodes, $node);
 echo "end\n";
 ?>
 --EXPECTF--
-end
-
-Fatal error: Uncaught Exception: Fiber stack size is too small, it needs to be at least %d bytes in [no active file]:0
+Fatal error: Uncaught Exception: Fiber stack size is too small, it needs to be at least %d bytes in %s:%d
 Stack trace:
 #0 {main}
-  thrown in [no active file] on line 0
+  thrown in %s on line %d
 shutdown

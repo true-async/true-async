@@ -128,19 +128,28 @@ void async_callbacks_notify(async_awaitable_t *target,
 
 void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *vector)
 {
-	async_event_callback_t **slots = async_callbacks_slots(vector);
+	/* A bailout out of a notify left the mark: removals below are plain swaps with the last. */
+	vector->capacity &= ~ASYNC_CALLBACKS_F_NOTIFYING;
 
-	for (uint32_t i = 0; i < vector->length; i++) {
-		async_event_callback_t *callback = slots[i];
+	uint32_t index = 0;
 
+	while (index < vector->length) {
+		async_event_callback_t *callback = async_callbacks_slots(vector)[index];
+
+		/* Detached before the wake, whatever the wake does: the waiter's unlink finds it gone, and the
+		 * last element takes its slot. */
 		if (UNEXPECTED(callback->flags & ASYNC_CALLBACK_F_RECORD)) {
-			/* Invariant F (section 4): a waiter unlinks before its target goes. Until the teardown
-			 * wakes such a waiter with an error (S3.7), its later unlink at least finds no target. */
-			ZEND_ASSERT(0 && "a wait record outlived its frame's link");
+			async_callbacks_remove(vector, callback);
 			((async_coroutine_event_callback_t *) callback)->event = NULL;
-		} else if (callback->dispose != NULL) {
+			callback->callback(target, callback, NULL, NULL);
+			continue;
+		}
+
+		if (callback->dispose != NULL) {
 			callback->dispose(callback, target);
 		}
+
+		index++;
 	}
 
 	if (ASYNC_CALLBACKS_CAPACITY(vector) != 0) {
@@ -151,6 +160,24 @@ void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *v
 	vector->length = 0;
 	vector->capacity = 0;
 	vector->cursor = 0;
+}
+
+void async_wait_unlink(async_coroutine_t *coroutine)
+{
+	async_coroutine_event_callback_t *record = &coroutine->waker.record;
+	async_awaitable_t *target = record->event;
+
+	if (EXPECTED(target == NULL)) {
+		return;
+	}
+
+	/* Only coroutines are awaited until events come (S4). */
+	ZEND_ASSERT(ASYNC_AWAITABLE_IS_COROUTINE(target));
+
+	const bool removed = async_callbacks_remove(&((async_coroutine_t *) target)->callbacks, &record->event_callback);
+	ZEND_ASSERT(removed && "a linked record is in its target's vector");
+	(void) removed;
+	record->event = NULL;
 }
 
 static void async_finish_handler_call(async_awaitable_t *target,

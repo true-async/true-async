@@ -42,4 +42,10 @@ async_coroutine_t *async_coroutine_new(void);
  * refusal; a transferred `error` is then released. */
 bool async_scheduler_enqueue(zend_coroutine_t *coroutine, zend_object *error, bool transfer_error);
 
+/* Parks the current coroutine until `target` finishes (S3.md 4.1); the caller holds a reference to
+ * `target` and reads the outcome from it. Never called in scheduler context. True once the target
+ * finished; false with an exception when there is no current coroutine, on a self-await, or when
+ * the wait is aborted (a cancellation of the waiter, S3.8). */
+bool async_await_coroutine(async_coroutine_t *target);
+
 #endif /* TRUE_ASYNC_SCHEDULER_H */

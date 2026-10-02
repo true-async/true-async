@@ -59,7 +59,7 @@ Destructor start: test-object
 Coroutine spawned in destructor: test-object
 Destructor end: test-object
 After unset
-After GC
 Spawned coroutine running
-Test complete
 Spawned coroutine complete
+After GC
+Test complete

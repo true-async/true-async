@@ -1,7 +1,5 @@
 --TEST--
 include inside coroutine - with return value
---XFAIL--
-Not implemented yet: S3.7 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -1,7 +1,5 @@
 --TEST--
 Fiber with coroutine: Basic fiber creation and execution when async is active
---XFAIL--
-Not implemented yet: S3.9 of dev/PLAN.md
 --FILE--
 <?php
 

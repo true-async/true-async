@@ -1,7 +1,5 @@
 --TEST--
 Multiple fibers GC during start (Revolt driver scenario)
---XFAIL--
-Not implemented yet: S3.9 of dev/PLAN.md
 --FILE--
 <?php
 

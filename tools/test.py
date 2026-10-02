@@ -378,11 +378,24 @@ def main():
 
     output = run_tests(lane, entries, args.jobs)
     wrong = verdict(lane, entries, left_out, output)
+    junit_add_files()
 
     if lane.variant == 'cov':
         coverage(lane, output.parent)
 
     return 1 if wrong else 0
+
+
+def junit_add_files():
+    """run-tests names a JUnit testcase by its file and title; the blind-test check of a stage spec
+    (claude-skills hooks/blind-tests.py) ties a testcase to its file by a `file` attribute."""
+    report = os.environ.get('TEST_PHP_JUNIT')
+
+    if not report or not Path(report).exists():
+        return
+
+    text = Path(report).read_text()
+    Path(report).write_text(re.sub(r"<testcase name='([^' ]+\.phpt)", r"<testcase file='\1' name='\1", text))
 
 
 def coverage(lane, out_dir):

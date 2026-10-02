@@ -26,3 +26,10 @@ can see goes here; tests, tools and CI are in the git history.
   scheduler has not adopted.
 - `Async\Coroutine::getSuspendFileAndLine()`, `getSuspendLocation()` and `getTrace()` for a
   coroutine parked in `suspend()`.
+- `Async\await()`: waits for a coroutine to finish and returns its result, or throws its
+  exception (the same object at every call, and the exception no longer ends the request as
+  uncaught); refused for the current coroutine itself.
+- `Async\Coroutine::getAwaitingInfo()`: `await: coroutine #<id>` for a coroutine parked in
+  `await()`, an empty array otherwise.
+- A garbage collection runs in its own coroutine and the code that started it, main included,
+  waits for it to end, destructors included.

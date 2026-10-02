@@ -3,101 +3,68 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-02. Active step: **S3.7** (not started); S3.6a (scheduler coroutine) closed; S3.6
-closed (47633ef, 94c5ef5). S3.15-S3.18 (health check) run after S3.14 (Edmond).
-
-## First: Edmond's review of S3.6 (2026-10-02)
-
-Do these before S3.7 code; the first one may change S3.7 and later steps.
-
-1. **Done in S3.6a**: the scheduler coroutine (TrueAsync's hybrid), bailout in ts.c order (main
-   last; Edmond was shown both orders and told TrueAsync's can come back on his word),
-   `scheduler_bailout_all` moved here from S3.10. Analysis and the Critic and
-   Sage rounds: `/mnt/project-files/notes/hybrid-scheduler.md`.
-2. **TLS reads into locals.** A TLS global (`EG()`, `ASYNC_G()`, a `ZEND_ASYNC_*` slot) read two
-   or three times in one function goes into a local first. Add the line to `dev/WORKFLOW.md`
-   "Code" and fix the S3.6 spots (`EG(exception)` in `scheduler_suspend`, `scheduler_tick`) in the
-   S3.7 commit. Minor (Edmond).
-3. **`async_wait_kind_t` (S3.3) has no TrueAsync counterpart**; TrueAsync keeps `del_callback` and
-   `info` on each event. Edmond questioned it and was shown that plain records never read `kind`
-   (`F_TYPED`), but did not confirm it. If S3.7 keeps it, say so with the code before writing
-   `async_wait_unlink`; switching to TrueAsync's event methods is cheapest before S3.7.
-4. **No `zend_fiber_switch_*` at all** in `src/` (done in 94c5ef5, gate extended; D14 withdrawn,
-   it was Claude's error, not Edmond's decision). The core's own switch-block windows (pcntl
-   dispatch, ticks, the IO-hooks lock) stay open, as in TrueAsync; the Critic suggested a phpt
-   that pins the pcntl or ticks case. Not done.
-5. **Names say what the thing is** (Edmond asked about `fiber_loop`, `next`,
-   `scheduler_idle_context`; renamed to `run_coroutines`, `next_coroutine`, `drain_context`).
-   Check new names before review, not after.
+Written 2026-10-02. Active step: **S3.8** (not started); S3.7 (await and GC) closed. S3.15-S3.18
+(health check) run after S3.14 (Edmond).
 
 ## State
 
 - Core pinned: `async-core-io-2026-10-02-2` (`82df2fc6ccc`). CI gates every lane on every list; a
   test that cannot pass yet carries `--XFAIL--` naming its step, and the commit that makes it pass
   removes the section. run-tests (`tools/run-tests.patch`) fails a test the timeout killed.
-- S3.3-S3.5: internal API, classes, the `Coroutine` object (304 B), the 21 slots, the FIFO run
-  queue, pooled contexts with the in-place run, main adopted as a copy of `EG(main_fiber_context)`,
-  from_main calls 1-3.
-- S3.6 (`src/scheduler.c`): the suspend slot by 4.2 (refusals, exception saved, frame stored,
-  SUSPENDED unless a yield, the tick, direct switch to the next queued coroutine, a yield with
-  nobody ahead runs on, the waker's error thrown on return); `Async\suspend()` refuses before its
-  self-enqueue; the defer slot and the tick (microtasks in scheduler context, the first throw ends
-  the tick and becomes the exit exception) in suspend, after each coroutine in a context's loop,
-  and in the scheduler coroutine's loop; `getSuspendFileAndLine`,
-  `getSuspendLocation`, `getTrace` read the parked frame through the core's execute-data slot. Both
-  `Async\suspend()` and the slot refuse inside a Fiber the scheduler did not adopt (until S3.9).
-- S3.6a: the scheduler coroutine (`scheduler_fiber_entry`, S3.md section 5) takes an empty queue,
-  the drain after main and the bailout; `scheduler_bailout_all` unwinds every coroutine but main,
-  drops the queue unread, and the scheduler's end hands main the flag (S3.md 4.5). Deadlock (queue
-  empty, coroutines alive) is a fatal in the scheduler's loop until S3.8. A GC triggered on the
-  scheduler's stack is deferred now (CURRENT is the scheduler coroutine). A stack that cannot be taken
-  ends the request (`fiber_context_take` reports it; `suspend()` hands the scheduler the bailout
-  flag). A bailout path of `suspend()` drops `saved_exception` unreleased (Critic nit, the object
-  store frees it at shutdown). The enqueue's `scheduler_coroutine_ensure()` costs one TLS load on
-  every wake; the Sage suggested calling it only for CREATED and a running yield (not measured).
-- The extension never calls any `zend_fiber_switch_*` function; the notify and the tick run with
-  `ZEND_ASYNC_IN_SCHEDULER_CONTEXT`; no `zend_try` in the notify or the tick.
+- S3.3-S3.6a: internal API, classes, the `Coroutine` object, the 21 slots, the FIFO run queue,
+  pooled contexts, main adopted as a copy, the suspend slot with the tick, the hybrid scheduler
+  coroutine and `scheduler_bailout_all` (main last, the core's test_scheduler.c order).
+- S3.7: `Async\await()` (`src/true_async.c`), `async_await_coroutine` and the await slot
+  (`src/scheduler.c`): one record in the waiter's waker (`waker.record`, linked while `event` is
+  set), pushed into the target's callbacks; the finish's notify wakes the waiter through
+  `await_record_wake` (an enqueue, U1 unlinks). The GC waits for its run in main and in coroutines;
+  the slot returns false in scheduler context, inside an unadopted Fiber and while a finished
+  coroutine is current (finalize's releases). `getAwaitingInfo()` gives `await: coroutine #N`.
+  Coroutine 320 B. The outcome is marked observed when `await()` starts, as TrueAsync does.
+- Blind tests: `dev/plans/S3.7-spec.md` and `tests/wait/` (27 files by `test-author`); the check
+  (`claude-skills/hooks/blind-tests.py check dev/plans/S3.7-spec.md`) passes. `tools/test.py` adds
+  a `file` attribute to run-tests' JUnit report for it. Delete the spec when S3 closes (plan.md
+  23.1.3) or keep it until then; never edit the author's files by hand.
 - Reviews: after the code, Critic and the Sage (`general-purpose`, model `fable`) compare it with
   TrueAsync (`/root/php-async` in the container) and hunt inventions; one plan step is one commit.
 
-## Obligations for S3.7
+## Obligations for S3.8
 
-- U5 (4.2, 4.4): the tick runs microtasks between the first link and the switch. 4.4 wants a
-  `zend_try` there that aborts the wait; TrueAsync has none and Edmond allows no `zend_try` on a hot
-  path without his word (DECISIONS 2026-10-02). Bring it to Edmond with the records. The scheduler
-  coroutine's creation (`scheduler_coroutine_ensure` in the suspend slot) also lands between the
-  link and the switch: an allocation that bails out there leaves the record linked. Move the ensure
-  ahead of the link (phase 0) when the records come.
-- `async_wait_unlink` is called where 4.2 places it (the refusals, after the switch, the bailout
-  return) and is a stub that asserts `wait == NULL`; the bailout return (U4) becomes
-  `async_wait_abort` (4.4).
-- The Sage's GC probe (12 000 cyclic objects with `__destruct`) ends since S3.6, in main and in a
-  coroutine; the own test of the S3.7 done line still has to be written.
+- **First, a use-after-free since S3.5 (the Sage, S3.7):** the coroutine object releases its
+  result, arguments and exception in `free_obj` (`coroutine_object_free`, `src/coroutine.c`), while
+  the finished coroutine is still current. A destructor run there can resurrect the object
+  (`$GLOBALS['c'] = Async\current_coroutine();`), and the engine frees the block after `free_obj`
+  anyway (`zend_objects_API.c:301-308`). TrueAsync releases them in `dtor_obj`
+  (`coroutine_object_destroy`, `coroutine.c:164-242`), where a resurrected object stays alive.
+  Move the releases to a `dtor_obj` handler; it reverses DECISIONS "the arguments stay until the
+  object dies", so tell Edmond. Also `await($finished)` from such a destructor is refused although
+  no park is needed (TrueAsync replays a closed event first).
+- A waiter cancelled while it waits: `await()` has already marked the target's outcome observed,
+  so the target's exception is lost (Critic, S3.7). Decide with TrueAsync's cancel path.
+- An exception pending when `async_await_coroutine` is entered makes the GC report 0 and defer
+  after a completed wait (inherited from test_scheduler.c's `ts_await`; Critic, minor).
+- The tick's exit exception does not start the graceful shutdown yet: `edge_cases/014` and `015`
+  hang until it does. 4.2 step 4 skips FINISHED entries once a queued coroutine can be finalized.
+  The rethrow of an unobserved exception from the coroutine's destructor (TrueAsync
+  `coroutine.c:219-230`); `scheduler/006`'s fixture; `waker_apply_error` keeps the first of two
+  errors, TrueAsync's resume chains them: pick one rule.
+- Deadlock resolution replaces the fatal in `scheduler_loop` (TrueAsync `resolve_deadlocks`).
 
 ## Later steps
 
-- S3.8: deadlock resolution replaces the fatal in `scheduler_loop` (TrueAsync `resolve_deadlocks`,
-  ts.c wakes main with DeadlockError). The tick's exit exception does not
-  start the graceful shutdown yet: `edge_cases/014` hangs
-  (its first coroutine yields forever) and fails by timeout; `edge_cases/015` too. 4.2 step 4 skips
-  FINISHED entries (a cancel-before-run finalized in place) once S3.8 can finalize a queued
-  coroutine; until then no FINISHED entry reaches the queue. The rethrow of an unobserved exception
-  from the coroutine's destructor (TrueAsync `coroutine.c:219-230`) and `scheduler/006`'s fixture
-  (an OOM in a `finally`); `waker_apply_error` keeps the first of two plain errors, TrueAsync's
-  resume replaces it and chains the old one: pick one rule.
-- S3.9: `scheduler/013` pins the refusal of `suspend()` inside an unadopted Fiber; adopting every
-  Fiber changes it (DECISIONS 2026-10-02).
-- S3.10: the bailout drain moved to S3.6a (`scheduler_bailout_all`); what is left: a bailout inside the
-  scheduler's catch (`scheduler_bailout_all` run there has no bailout address, as in ts.c); a
-  scheduler parked at RSHUTDOWN (asserted INIT only). `gc/013` and `gc/014` pass already.
-- Observers: every re-mint of main notifies a switch into a new context copy, and main's end
-  notifies nothing for the copy it frees (as ts.c; TrueAsync never re-mints).
-- Next core update: `ZEND_ASYNC_DEACTIVATE` also clears `in_scheduler_context`; the core could
-  launch the scheduler for `php -r` too (today `spawn` refuses there, DECISIONS 2026-10-02).
-- S9 (callbacks run PHP): the exception save and restore keep an exit marker on top.
+- S3.9: adopting every Fiber removes the unadopted-Fiber refusals of suspend, await and the await
+  slot (`scheduler/013`, `scheduler/027`, `gc/013`, `gc/014`).
+- S3.10: a bailout inside the scheduler's catch; a scheduler parked at RSHUTDOWN.
+- S5: a wait for several targets (await_all/any, a cancellation token, a timeout) needs more than
+  the one record in the waker: decide the storage there (TrueAsync: two inline callbacks and a heap
+  array). The teardown fires a leftover record after detaching it; a multi-shot record (S4+) needs
+  its own rule there.
+- Spec gaps the test author named (S3.7): `await()` with `null`, an array or a second argument;
+  the order woken waiters run in against coroutines already queued.
+- Observers: every re-mint of main notifies a switch into a new context copy (as ts.c).
+- Next core update: `ZEND_ASYNC_DEACTIVATE` also clears `in_scheduler_context`.
 - Nested notifies recurse with no depth limit (S3.md 3.6 "As built").
 
 ## Next
 
-1. Item 1 of "First" above: answer Edmond on the hybrid scheduler.
-2. S3.7.
+1. S3.8.

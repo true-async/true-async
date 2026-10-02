@@ -1,7 +1,5 @@
 --TEST--
 require different files from concurrent coroutines
---XFAIL--
-Not implemented yet: S3.7 of dev/PLAN.md
 --FILE--
 <?php
 

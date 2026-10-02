@@ -20,6 +20,9 @@ interface Completable extends Awaitable
 /** Starts `$task` in a new coroutine; it runs once the current coroutine yields or ends. */
 function spawn(callable $task, mixed ...$args): Coroutine {}
 
+/** Waits until `$awaitable` completes: returns its result, or throws the exception it ended with. */
+function await(Completable $awaitable): mixed {}
+
 /** Gives up the CPU: the current coroutine goes to the back of the run queue and runs again in its turn. */
 function suspend(): void {}
 

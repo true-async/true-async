@@ -630,19 +630,27 @@ static ZEND_FUNCTION(buffer_scenario)
 }
 
 /* A microtask that prints its label and the scheduler-context flag when the tick runs it, throws
- * for "throw", is cancelled before any tick for "cancel", and prints its release. */
+ * for "throw", is cancelled before any tick for "cancel", calls `callback` when one is given, and
+ * prints its release. */
 typedef struct
 {
 	zend_async_microtask_t microtask; /* first: the core's release frees the block through it */
 	char label;
 	bool throws;
+	zval callback; /* UNDEF without one */
 } test_microtask_t;
 
 static void test_microtask_handler(zend_async_microtask_t *microtask)
 {
-	const test_microtask_t *test_microtask = (test_microtask_t *) microtask;
+	test_microtask_t *test_microtask = (test_microtask_t *) microtask;
 
 	php_printf("microtask %c sched=%d\n", test_microtask->label, (int) ZEND_ASYNC_IN_SCHEDULER_CONTEXT);
+
+	if (!Z_ISUNDEF(test_microtask->callback)) {
+		zval retval;
+		call_user_function(NULL, NULL, &test_microtask->callback, &retval, 0, NULL);
+		zval_ptr_dtor(&retval);
+	}
 
 	if (test_microtask->throws) {
 		zend_throw_exception_ex(NULL, 0, "microtask %c", test_microtask->label);
@@ -651,26 +659,36 @@ static void test_microtask_handler(zend_async_microtask_t *microtask)
 
 static void test_microtask_dtor(zend_async_microtask_t *microtask)
 {
-	php_printf("released %c\n", ((test_microtask_t *) microtask)->label);
+	test_microtask_t *test_microtask = (test_microtask_t *) microtask;
+
+	php_printf("released %c\n", test_microtask->label);
+	zval_ptr_dtor(&test_microtask->callback);
 }
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_defer, 0, 1, IS_VOID, 0)
 	ZEND_ARG_TYPE_INFO(0, label, IS_STRING, 0)
-	ZEND_ARG_TYPE_INFO(0, action, IS_STRING, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, action, IS_STRING, 1, "null")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, callback, IS_CALLABLE, 1, "null")
 ZEND_END_ARG_INFO()
 
 static ZEND_FUNCTION(defer)
 {
 	zend_string *label;
 	zend_string *action = NULL;
+	zval *callback = NULL;
 
-	ZEND_PARSE_PARAMETERS_START(1, 2)
+	ZEND_PARSE_PARAMETERS_START(1, 3)
 		Z_PARAM_STR(label)
 		Z_PARAM_OPTIONAL
-		Z_PARAM_STR(action)
+		Z_PARAM_STR_OR_NULL(action)
+		Z_PARAM_ZVAL_OR_NULL(callback)
 	ZEND_PARSE_PARAMETERS_END();
 
 	test_microtask_t *test_microtask = ecalloc(1, sizeof(test_microtask_t));
+
+	if (callback != NULL) {
+		ZVAL_COPY(&test_microtask->callback, callback);
+	}
 
 	test_microtask->microtask.handler = test_microtask_handler;
 	test_microtask->microtask.dtor = test_microtask_dtor;
@@ -687,11 +705,44 @@ static ZEND_FUNCTION(defer)
 	}
 }
 
+/* A finish handler that throws "finish handler" when its coroutine finishes. */
+static bool test_throwing_finish_handler(zend_coroutine_t *coroutine,
+										 zend_coroutine_t *waiter,
+										 void *data,
+										 const bool is_bailout)
+{
+	(void) coroutine;
+	(void) waiter;
+	(void) data;
+	(void) is_bailout;
+
+	zend_throw_exception(NULL, "finish handler", 0);
+
+	return false;
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_add_throwing_finish_handler, 0, 1, IS_VOID, 0)
+	ZEND_ARG_OBJ_INFO(0, coroutine, Async\\Coroutine, 0)
+ZEND_END_ARG_INFO()
+
+static ZEND_FUNCTION(add_throwing_finish_handler)
+{
+	zend_object *coroutine;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_OBJ_OF_CLASS(coroutine, async_ce_coroutine)
+	ZEND_PARSE_PARAMETERS_END();
+
+	ZEND_ASYNC_ADD_FINISH_HANDLER(
+			&async_coroutine_from_object(coroutine)->coroutine, test_throwing_finish_handler, NULL, NULL);
+}
+
 /* clang-format off */
 const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\callbacks_scenario", ZEND_FN(callbacks_scenario), arginfo_callbacks_scenario, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\buffer_scenario", ZEND_FN(buffer_scenario), arginfo_callbacks_scenario, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\defer", ZEND_FN(defer), arginfo_defer, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_throwing_finish_handler", ZEND_FN(add_throwing_finish_handler), arginfo_add_throwing_finish_handler, 0, NULL, NULL)
 	ZEND_FE_END
 };
 /* clang-format on */

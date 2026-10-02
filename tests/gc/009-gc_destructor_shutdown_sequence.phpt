@@ -1,7 +1,5 @@
 --TEST--
 GC 009: Async operations in destructor during shutdown
---XFAIL--
-Not implemented yet: S3.10 of dev/PLAN.md
 --FILE--
 <?php
 

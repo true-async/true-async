@@ -80,6 +80,10 @@ without ior (`dev/PLAN.md`, S3.2); Edmond accepted it on 2026-10-02.
   lookup or from an allocator that can return it; `emalloc` never does), the clearly frequent path in
   `EXPECTED()`. A condition whose sides are about equally likely, or that depends on the configuration,
   stays bare. Edmond, 2026-10-02. Held by discipline, no gate.
+- A blank line follows a block's closing `}` before the next statement, block or declaration.
+  Edmond, 2026-10-02. Held by discipline, no gate.
+- A TLS global (`EG()`, `ASYNC_G()`, a `ZEND_ASYNC_*` macro) read two or three times in one function
+  may be cached in a local variable; a preference, not a rule. Edmond, 2026-10-02.
 
 ## Commits
 

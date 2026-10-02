@@ -27,7 +27,7 @@ static zend_object_handlers coroutine_handlers;
 
 static zend_object *coroutine_object_create(zend_class_entry *class_entry)
 {
-	/* 288 B: a class without properties takes the inline properties slot off the size. */
+	/* 304 B: a class without properties takes the inline properties slot off the size. */
 	async_coroutine_t *coroutine = zend_object_alloc(sizeof(async_coroutine_t), class_entry);
 
 	ZVAL_UNDEF(&coroutine->coroutine.result);
@@ -48,7 +48,6 @@ static void coroutine_object_free(zend_object *object)
 	/* The steps that fill these fields release them before the object dies. */
 	ZEND_ASSERT(coroutine->fiber_context == NULL);
 	ZEND_ASSERT(coroutine->scope == NULL);
-	ZEND_ASSERT(coroutine->awaiting_info == NULL);
 	ZEND_ASSERT(coroutine->switch_handlers == NULL);
 
 	/* Whoever attached itself to this coroutine (a fiber, say) lets go of it first. */
@@ -246,7 +245,9 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 	zend_coroutine_t *zend_coroutine = &coroutine->coroutine;
 	const bool is_bailout = (zend_coroutine->flags & ASYNC_COROUTINE_F_BAILOUT) != 0;
 
-	ZEND_ASSERT(coroutine->waker.wait == NULL && "a coroutine finishes with no wait linked");
+	/* Linked only when a bailout unwound the waiting frame, main's included when a shutdown function's
+	 * zend_try caught it (TrueAsync's finalize destroys the waker the same way). */
+	async_wait_unlink(coroutine);
 
 	if (UNEXPECTED(EG(exception) != NULL)) {
 		coroutine_take_exception(coroutine);
@@ -509,12 +510,17 @@ ZEND_METHOD(Async_Coroutine, getSuspendLocation)
 			0, "%s:%" PRIu32, ZSTR_VAL(suspend_frame->func->op_array.filename), suspend_frame->opline->lineno));
 }
 
-/* Refuses until S3.7 of dev/PLAN.md gives a coroutine a wait to describe. */
 ZEND_METHOD(Async_Coroutine, getAwaitingInfo)
 {
 	ZEND_PARSE_PARAMETERS_NONE();
 
-	zend_throw_error(NULL, "Async\\Coroutine::getAwaitingInfo() is not implemented yet");
+	zend_array *info = ZEND_ASYNC_GET_AWAITING_INFO(&THIS_COROUTINE->coroutine);
+
+	if (info == NULL) {
+		RETURN_EMPTY_ARRAY();
+	}
+
+	RETURN_ARR(info);
 }
 
 /* The backtrace of the parked stack: the engine walks it from the parked frame as if it ran. */

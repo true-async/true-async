@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-02 · Active: S3.7
+Updated: 2026-10-02 · Active: S3.8
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -267,7 +267,7 @@ section 14); a step that finds a test needs more moves it on with a note.
         80 XFAIL. Analysis, Critic and Sage before the code:
         `/mnt/project-files/notes/hybrid-scheduler.md` (project files). A stack that cannot be taken
         ends the request (DECISIONS): `scheduler/007` expects the fatal of `005` now.
-- [ ] S3.7 Await and GC: the wait model (4.1, U1-U6, the debug asserts of 4.4), the await slot, the
+- [x] S3.7 Await and GC: the wait model (4.1, U1-U6, the debug asserts of 4.4), the await slot, the
       GC rules of section 7, awaiting info; the `changed:` ports of `gc/005` and `gc/011` (moved from
       S3.4: their output under the eager scheduler start is known only by running them).
       done: the S3.7 tests pass; own tests of layer 2 (two waiters, two wakes in one tick, a target
@@ -275,6 +275,16 @@ section 14); a step that finds a test needs more moves it on with a note.
         script with 12 000 cyclic objects with `__destruct` ends (it hung in S3.5, ends since S3.6), a wait refused in scheduler context, GC while an exception
         unwinds, a waiter's record left behind a finish handler that throws (S3.md 4.6)); blind tests from section 4 by `test-author` pass
       tier: T2 · role: Critic
+      handoff: done 2026-10-02 on core `82df2fc6ccc`: dbg 182 PASS, 36 XFAIL; asan 168 PASS, 14 SKIP, 36 XFAIL.
+        `Async\await()`, the await slot (the GC waits for its run in main and in coroutines),
+        `getAwaitingInfo()`. The record lives in the waker, so U5 and its `zend_try` go (Edmond
+        agreed); the wait kind, `F_TYPED`, `F_COUNTED`, the waker's `wait` and count and
+        `awaiting_info` go (coroutine 320 B). Blind tests `wait/001`-`027` from
+        `dev/plans/S3.7-spec.md` pass the check; own tests `scheduler/019`-`027`, `internal/021`,
+        `022`. Critic: 6 findings fixed (a wait from a destructor of a finished coroutine, the
+        observed mark before a refusal, a debug assert on main, the teardown loop, the tick's flag
+        order, unused fields); the GC tests `gc/002`, `007`, `011`, `012` and `scheduler/016` are
+        `changed:` ports the Critic judged; S3.md section 14 lists the early passes.
 - [ ] S3.8 Cancellation and exit paths: `cancel`, `protect` (D7), unhandled exceptions as the exit
       exception, deadlock with its report, `graceful_shutdown`, `exit()` in a coroutine.
       done: the S3.8 tests pass; own tests: nested protect cancelled, cancel-before-run then await,

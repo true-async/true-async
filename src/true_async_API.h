@@ -14,10 +14,9 @@
 #define TRUE_ASYNC_API_H
 
 /* The extension's internal async API: what TrueAsync kept in zend_async_API and the RFC core does
- * not have. A wait is a set of records on the waiting frame's C stack, each linked into one
- * target's callbacks vector; the waker of the waiting coroutine points at the first record. Every
- * structure here is sized for the hot path (dev/plans/S3.md, section 3, which also gives the
- * offsets).
+ * not have. A wait is a record linked into the target's callbacks vector; the record lives in the
+ * waiting coroutine's waker. Every structure here is sized for the hot path
+ * (dev/plans/S3.md, section 3, which also gives the offsets).
  *
  * Codes in the extension's comments: Dn is item n of dev/reviews/s3-structures/EDMOND-DECISIONS.md,
  * Un an unlink site (dev/plans/S3.md, section 4.4), Bn a benchmark (dev/plans/S3.md, section 12). */
@@ -56,7 +55,6 @@ typedef struct _async_awaitable_s
 ///////////////////////////////////////////////////////////////////
 
 typedef struct _async_event_callback_s async_event_callback_t;
-typedef struct _async_wait_kind_s async_wait_kind_t;
 
 /* Called by a notify of `target`; `result` and `exception` are borrowed for the call. */
 typedef void (*async_event_callback_fn)(async_awaitable_t *target,
@@ -66,26 +64,17 @@ typedef void (*async_event_callback_fn)(async_awaitable_t *target,
 /* Frees a heap subscriber that leaves a vector by teardown or removal. */
 typedef void (*async_event_callback_dispose_fn)(async_event_callback_t *callback, async_awaitable_t *target);
 
-/* A wait record: lives on the waiting frame's stack, never disposed. */
+/* A wait record: part of the waiting coroutine, never disposed. */
 #define ASYNC_CALLBACK_F_RECORD (1u << 0)
-/* A record that counts as an external wait (a timer, IO): S4 onward. */
-#define ASYNC_CALLBACK_F_COUNTED (1u << 1)
-/* kind->unlink is set: removal goes through it instead of the target's vector. */
-#define ASYNC_CALLBACK_F_TYPED (1u << 2)
 
 struct _async_event_callback_s
 {
 	uint32_t flags; /* 4 B of padding follow */
 	async_event_callback_fn callback;
-
-	union
-	{
-		async_event_callback_dispose_fn dispose; /* heap subscribers */
-		const async_wait_kind_t *kind;           /* ASYNC_CALLBACK_F_RECORD */
-	};
+	async_event_callback_dispose_fn dispose; /* heap subscribers; NULL for a record */
 };
 
-/* One wait-graph edge: the waiter, the target, and the kind in event_callback.kind. */
+/* One wait-graph edge: the waiter and the target. */
 typedef struct
 {
 	async_event_callback_t event_callback;
@@ -94,16 +83,6 @@ typedef struct
 	 * removes the record clears it. */
 	async_awaitable_t *event;
 } async_coroutine_event_callback_t;
-
-/* One const descriptor per wait kind; the code that links a record chooses it, so a target needs
- * no class and no methods table. */
-struct _async_wait_kind_s
-{
-	zend_coroutine_awaiting_info_fn info;                     /* data = the record */
-	void (*unlink)(async_coroutine_event_callback_t *record); /* NULL: removal from the vector */
-	void (*abort)(async_coroutine_event_callback_t *record);  /* the frame never runs again; NULL: nothing */
-	void (*completers)(async_coroutine_event_callback_t *record, void *walker); /* S7 */
-};
 
 ///////////////////////////////////////////////////////////////////
 /// The callbacks vector
@@ -174,8 +153,9 @@ void async_callbacks_notify(async_awaitable_t *target,
 
 /* Teardown of the vector of `target` with its owner: disposes the heap subscribers left in it and
  * frees the array. Never called during a notify of the vector, but the vector may still be marked by
- * a bailout out of one. A wait record still linked here breaks invariant F (section 4): asserted,
- * and its target cleared. */
+ * a bailout out of one. A wait record found here, left by a callback that threw and ended the
+ * notify, is detached and its callback runs with no result, which wakes the waiter (the target is
+ * finished, and the waiter reads the outcome from it). */
 void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *vector);
 
 ///////////////////////////////////////////////////////////////////
@@ -208,15 +188,21 @@ bool async_finish_handler_remove(async_coroutine_t *coroutine, uint32_t handler_
 /// The waker
 ///////////////////////////////////////////////////////////////////
 
-/* Per-coroutine wait state (40 B). Owns `error` and `result` only; the records it points to live
- * on the waiting frame's stack. */
+/* Per-coroutine wait state (64 B). Owns `error` and `result`. */
 typedef struct
 {
-	zend_object *error;                     /* delivered at the next switch-in */
-	zval result;                            /* moved out by the waiter; cleared on the error exit */
-	async_coroutine_event_callback_t *wait; /* first record of the current wait; NULL: none linked */
-	uint32_t wait_count;                    /* the records of one wait are contiguous */
+	zend_object *error; /* delivered at the next switch-in */
+	zval result;        /* moved out by the waiter; cleared on the error exit */
+	/* The record of the wait; linked while `record.event` is set. It lives in the coroutine, as
+	 * TrueAsync's inline callbacks of the waker do, not on the waiting frame's stack: a bailout that
+	 * unwinds the frame leaves it intact, and the coroutine's finish unlinks it. A wait for several
+	 * targets comes with its stage (S5). */
+	async_coroutine_event_callback_t record;
 } async_waker_t;
+
+/* Removes the record of the coroutine's wait from its target (dev/plans/S3.md, section 4.4).
+ * Allocates nothing, runs no PHP code; nothing to do without a wait. */
+void async_wait_unlink(async_coroutine_t *coroutine);
 
 ///////////////////////////////////////////////////////////////////
 /// Exceptions across a park

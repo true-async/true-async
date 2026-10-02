@@ -1,7 +1,5 @@
 --TEST--
 GC 005: Circular references with suspend in destructor
---XFAIL--
-Not implemented yet: S3.7 of dev/PLAN.md
 --FILE--
 <?php
 
@@ -77,14 +75,14 @@ Created: object-A
 Created: object-B
 Created circular reference
 After unset
-GC collected cycles: 0
-After GC
 Destructor start: object-B
 Suspended in destructor: object-B
 Still has reference to: object-A
+Destructor end: object-B
 Destructor start: object-A
 Suspended in destructor: object-A
 Still has reference to: object-B
-Test complete
-Destructor end: object-B
 Destructor end: object-A
+GC collected cycles: 2
+After GC
+Test complete

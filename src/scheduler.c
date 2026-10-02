@@ -100,8 +100,13 @@ static async_fiber_context_t *fiber_context_take(void)
 
 	fiber_context = fiber_context_create(fiber_entry, EG(fiber_stack_size));
 
+	/* The report runs PHP code (the exception's __toString, a release that fills the GC buffer) on a
+	 * stack in the middle of a switch: in scheduler context, so a GC defers and a wait refuses. */
 	if (UNEXPECTED(fiber_context == NULL)) {
+		const bool was_in_scheduler_context = ZEND_ASYNC_IN_SCHEDULER_CONTEXT;
+		ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
 		zend_exception_error(EG(exception), E_ERROR);
+		ZEND_ASYNC_IN_SCHEDULER_CONTEXT = was_in_scheduler_context;
 	}
 
 	return fiber_context;
@@ -208,16 +213,19 @@ static void scheduler_tick(void)
 {
 	circular_buffer_t *microtasks = &ASYNC_G(microtasks);
 	zend_async_microtask_t *microtask = NULL;
+	zend_object **exception_ptr = &EG(exception);
 	const bool was_in_scheduler_context = ZEND_ASYNC_IN_SCHEDULER_CONTEXT;
+
+	/* Set before the fold: the release of the exception may start a collection, which must not wait
+	 * here. */
+	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
 
 	/* A finished coroutine's release left it (a destructor of its arguments that threw): the next
 	 * coroutine's call would return at once with it set. The core's reference scheduler,
 	 * ext/test_scheduler/test_scheduler.c, folds it before every switch. */
-	if (UNEXPECTED(EG(exception) != NULL)) {
+	if (UNEXPECTED(*exception_ptr != NULL)) {
 		exception_to_exit_exception();
 	}
-
-	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
 
 	while (circular_buffer_pop_ptr(microtasks, (void **) &microtask) == SUCCESS) {
 		if (EXPECTED(!ZEND_ASYNC_MICROTASK_IS_CANCELLED(microtask))) {
@@ -226,7 +234,7 @@ static void scheduler_tick(void)
 
 		ZEND_ASYNC_MICROTASK_RELEASE(microtask);
 
-		if (UNEXPECTED(EG(exception) != NULL)) {
+		if (UNEXPECTED(*exception_ptr != NULL)) {
 			exception_to_exit_exception();
 			break;
 		}
@@ -730,14 +738,6 @@ static void waker_apply_error(async_coroutine_t *coroutine, zend_object *error)
 	coroutine->waker.error = error;
 }
 
-/* Removes the records of the coroutine's wait from their targets (section 4.4). No wait links a
- * record before S3.7. */
-static zend_always_inline void async_wait_unlink(async_coroutine_t *coroutine)
-{
-	ZEND_ASSERT(coroutine->waker.wait == NULL);
-	(void) coroutine;
-}
-
 static zend_always_inline void run_queue_push(async_coroutine_t *coroutine)
 {
 	/* The front once after asHiPriority() (D20, D35). */
@@ -840,6 +840,14 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 		return false;
 	}
 
+	/* Finalize releases what a finished coroutine held while it is still current: a destructor run
+	 * there has no context to park. */
+	if (UNEXPECTED(ZEND_COROUTINE_IS_FINISHED(zend_coroutine))) {
+		async_wait_unlink(coroutine);
+		zend_throw_error(NULL, "There is no coroutine to suspend");
+		return false;
+	}
+
 	/* A park from the tick would leave the tick halfway (4.6). */
 	if (UNEXPECTED(ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) {
 		async_wait_unlink(coroutine);
@@ -864,8 +872,9 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 
 	/* The switch does not carry EG(exception), and the next coroutine's call would return at once
 	 * with it set. */
+	zend_object **exception_ptr = &EG(exception);
 	zend_object *saved_exception = NULL;
-	async_exception_save_fast(&EG(exception), &saved_exception);
+	async_exception_save_fast(exception_ptr, &saved_exception);
 
 	/* getTrace(), the suspend location and the GC read the parked frame from here. */
 	coroutine->fiber_context->execute_data = EG(current_execute_data);
@@ -932,9 +941,9 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 		zend_throw_exception_internal(error);
 	}
 
-	async_exception_restore_fast(&EG(exception), &saved_exception);
+	async_exception_restore_fast(exception_ptr, &saved_exception);
 
-	return EG(exception) == NULL;
+	return *exception_ptr == NULL;
 }
 
 /* The slots of later steps refuse the way their contract allows: with an exception where it
@@ -976,12 +985,103 @@ static zend_coroutine_t *scheduler_intercept_fiber(zend_fiber *fiber)
 	return NULL;
 }
 
-/* A wait not possible here: false without an exception (the GC then collects later). */
-static bool scheduler_await(zend_coroutine_t *coroutine)
+/* The record's wake: its target finished, or the target's teardown fires a record that a throwing
+ * callback left behind. The waiter reads the outcome from the target; the enqueue unlinks the
+ * record (U1, U2). */
+static void await_record_wake(async_awaitable_t *target,
+							  async_event_callback_t *callback,
+							  void *result,
+							  zend_object *exception)
 {
-	(void) coroutine;
+	(void) target;
+	(void) result;
+	(void) exception;
 
-	return false;
+	async_coroutine_event_callback_t *record = (async_coroutine_event_callback_t *) callback;
+	async_scheduler_enqueue(&record->coroutine->coroutine, NULL, false);
+}
+
+bool async_await_coroutine(async_coroutine_t *target)
+{
+	async_coroutine_t *waiter = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
+
+	ZEND_ASSERT(!ZEND_ASYNC_IN_SCHEDULER_CONTEXT && "the callers refuse a wait in scheduler context");
+
+	/* A finished coroutine is still current while finalize releases what it held (a destructor). */
+	if (UNEXPECTED(waiter == NULL || ZEND_COROUTINE_IS_FINISHED(&waiter->coroutine))) {
+		zend_throw_error(NULL, "await() requires a running coroutine");
+		return false;
+	}
+
+	if (UNEXPECTED(waiter == target)) {
+		zend_throw_error(NULL, "Cannot await a coroutine from within itself");
+		return false;
+	}
+
+	/* Refused before the outcome is marked observed: the target's exception still ends the request.
+	 * Inside a Fiber the scheduler did not adopt (until S3.9) the stack is the Fiber's. */
+	if (UNEXPECTED(!ZEND_COROUTINE_IS_FINISHED(&target->coroutine) &&
+				   EG(current_fiber_context) != &waiter->fiber_context->context)) {
+		zend_throw_error(NULL, "Cannot switch coroutines in the current execution context");
+		return false;
+	}
+
+	/* A bailout that a shutdown function's zend_try caught can leave main's record linked, as
+	 * TrueAsync's ZEND_ASYNC_WAKER_NEW cleans a stale waker (Sage). */
+	async_wait_unlink(waiter);
+
+	/* The outcome goes to the awaiter: not the request's exit exception (TrueAsync's await,
+	 * async.c:318-320). */
+	target->coroutine.flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
+
+	async_coroutine_event_callback_t *record = &waiter->waker.record;
+
+	/* Another enqueue than the target's finish (a foreign one) wakes the waiter early: it waits
+	 * again, as the core's test_scheduler.c does. */
+	while (!ZEND_COROUTINE_IS_FINISHED(&target->coroutine)) {
+		async_callbacks_reserve(&target->callbacks, 1);
+
+		record->event_callback.flags = ASYNC_CALLBACK_F_RECORD;
+		record->event_callback.callback = await_record_wake;
+		record->event_callback.dispose = NULL;
+		record->coroutine = waiter;
+		record->event = (async_awaitable_t *) target;
+		async_callbacks_push_reserved(&target->callbacks, &record->event_callback);
+
+		if (UNEXPECTED(!ZEND_ASYNC_SUSPEND())) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+/* The core's wait for a coroutine (the GC's, zend_gc.c). The scheduler's own work cannot wait:
+ * false without an exception there, and the GC collects later. The wait holds a reference, as the
+ * core's test_scheduler.c does: the target may lose its last other one while the waiter is parked. */
+static bool scheduler_await(zend_coroutine_t *zend_coroutine)
+{
+	const async_coroutine_t *waiter = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
+
+	if (UNEXPECTED(ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) {
+		return false;
+	}
+
+	/* A finished coroutine is still current while finalize releases what it held, and inside a
+	 * Fiber the scheduler did not adopt (until S3.9) the stack is the Fiber's: await() would refuse
+	 * with an Error, and the GC collects later instead. */
+	if (UNEXPECTED(waiter != NULL && (ZEND_COROUTINE_IS_FINISHED(&waiter->coroutine) ||
+									  EG(current_fiber_context) != &waiter->fiber_context->context))) {
+		return false;
+	}
+
+	async_coroutine_t *target = (async_coroutine_t *) zend_coroutine;
+
+	GC_ADDREF(&target->std);
+	const bool finished = async_await_coroutine(target);
+	OBJ_RELEASE(&target->std);
+
+	return finished;
 }
 
 static uint32_t scheduler_add_switch_handler(zend_coroutine_t *coroutine, zend_coroutine_switch_handler_fn handler)
@@ -1018,11 +1118,26 @@ static bool scheduler_remove_awaiting_info(zend_coroutine_t *coroutine, uint32_t
 	return false;
 }
 
-static zend_array *scheduler_get_awaiting_info(zend_coroutine_t *coroutine)
+/* One line for the coroutine's wait (S3.md 4.7), as the core's test_scheduler.c words it; NULL when
+ * nothing is linked: a yield, a park of the core's, no wait. The add slot keeps nothing, so there are
+ * no foreign lines: nothing in the core adds one. */
+static zend_array *scheduler_get_awaiting_info(zend_coroutine_t *zend_coroutine)
 {
-	(void) coroutine;
+	const async_awaitable_t *target = ((async_coroutine_t *) zend_coroutine)->waker.record.event;
 
-	return NULL;
+	if (target == NULL) {
+		return NULL;
+	}
+
+	/* Only coroutines are awaited until events come (S4). */
+	ZEND_ASSERT(ASYNC_AWAITABLE_IS_COROUTINE(target));
+
+	zend_array *info = zend_new_array(1);
+	zval line;
+	ZVAL_STR(&line, zend_strpprintf(0, "await: coroutine #%u", ((const async_coroutine_t *) target)->std.handle));
+	zend_hash_next_index_insert_new(info, &line);
+
+	return info;
 }
 
 static zend_class_entry *scheduler_get_class_ce(const zend_async_class type)

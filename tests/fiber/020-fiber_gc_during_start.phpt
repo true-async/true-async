@@ -1,7 +1,5 @@
 --TEST--
 Fiber GC during another fiber start (Revolt scenario)
---XFAIL--
-Not implemented yet: S3.9 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -1,7 +1,5 @@
 --TEST--
 GC with include in suspended coroutine - symTable double DELREF
---XFAIL--
-Not implemented yet: S3.7 of dev/PLAN.md
 --FILE--
 <?php
 

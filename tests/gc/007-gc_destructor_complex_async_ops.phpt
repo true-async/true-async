@@ -1,7 +1,5 @@
 --TEST--
 GC 007: Complex async operations in destructor
---XFAIL--
-Not implemented yet: S3.7 of dev/PLAN.md
 --FILE--
 <?php
 
@@ -94,8 +92,8 @@ Spawned coroutine end
 Spawned result: spawned-result
 Destructor end: complex-object
 After unset
+Background coroutine complete
 After GC
 Final result: spawned-result
-Background coroutine complete
 Final result: background-result
 Test complete
