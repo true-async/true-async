@@ -55,7 +55,7 @@ bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callba
 {
 	async_event_callback_t **slots = async_callbacks_slots(vector);
 	const bool notifying = (vector->capacity & ASYNC_CALLBACKS_F_NOTIFYING) != 0;
-	uint32_t index = vector->length;
+	uint32_t index;
 
 	/* A callback removing itself during the notify sits just behind the cursor. */
 	if (notifying && vector->cursor > 0 && slots[vector->cursor - 1] == callback) {
@@ -84,31 +84,13 @@ bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callba
 	return true;
 }
 
-/* Puts the exceptions back into EG(exception). An exception pending at entry gets its frame back
- * as zend_objects_destroy_object() does around a destructor (zend_objects.c:158-177). */
-static void async_callbacks_exception_back(zend_object **pending,
-										   zend_execute_data *execute_data,
-										   const zend_op *opline_before_exception)
-{
-	if (execute_data != NULL) {
-		execute_data->opline = EG(exception_op);
-		EG(opline_before_exception) = opline_before_exception;
-	}
-
-	async_exception_restore_fast(&EG(exception), pending);
-}
-
-bool async_callbacks_notify(async_awaitable_t *target,
+void async_callbacks_notify(async_awaitable_t *target,
 							async_callbacks_vector_t *vector,
 							void *result,
 							zend_object *exception)
 {
-	if (UNEXPECTED(vector->capacity & ASYNC_CALLBACKS_F_NOTIFYING)) {
-		return false;
-	}
-
-	if (vector->length == 0) {
-		return true;
+	if (UNEXPECTED(vector->capacity & ASYNC_CALLBACKS_F_NOTIFYING) || vector->length == 0) {
+		return;
 	}
 
 	vector->capacity |= ASYNC_CALLBACKS_F_NOTIFYING;
@@ -124,25 +106,12 @@ bool async_callbacks_notify(async_awaitable_t *target,
 	 * with no exception pending; what they throw is chained, the latest on top, over the exception
 	 * pending at entry. */
 	zend_object *pending = NULL;
-	const zend_op *opline_before_exception = NULL;
-	/* The frame that had an exception pending at entry; NULL without one. */
-	zend_execute_data *const execute_data = EG(exception) != NULL ? EG(current_execute_data) : NULL;
-
-	if (execute_data != NULL) {
-		if (execute_data->func != NULL && ZEND_USER_CODE(execute_data->func->common.type)) {
-			zend_rethrow_exception(execute_data);
-		}
-
-		execute_data->opline = EG(opline_before_exception);
-		opline_before_exception = EG(opline_before_exception);
-	}
-
 	async_exception_save_fast(&EG(exception), &pending);
 
-	/* data, length and the cursor are reread every step: a callback may add, remove, grow, or
-	 * free the vector (which restarts the cursor on an empty vector). A bailout out of a callback
-	 * leaves the vector marked, as in TrueAsync: the scheduler's bailout handling unwinds every
-	 * unfinished coroutine itself, waiters included (TrueAsync's bailout_all_coroutines()). */
+	/* data, length and the cursor are reread every step: a callback may add, remove or grow the
+	 * vector. A bailout out of a callback leaves the vector marked, as in TrueAsync: the scheduler's
+	 * bailout handling unwinds every unfinished coroutine itself, waiters included (TrueAsync's
+	 * bailout_all_coroutines()). */
 	while (vector->cursor < vector->length) {
 		async_event_callback_t *callback = async_callbacks_slots(vector)[vector->cursor++];
 		callback->callback(target, callback, result, exception);
@@ -155,9 +124,7 @@ bool async_callbacks_notify(async_awaitable_t *target,
 	vector->capacity &= ~ASYNC_CALLBACKS_F_NOTIFYING;
 	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = in_scheduler_context;
 
-	async_callbacks_exception_back(&pending, execute_data, opline_before_exception);
-
-	return true;
+	async_exception_restore_fast(&EG(exception), &pending);
 }
 
 void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *vector)
@@ -181,11 +148,9 @@ void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *v
 		efree(vector->data);
 	}
 
-	/* Freed by a callback of its own notify: the bit stays until that notify ends, which length 0
-	 * makes it do at once. The caller of the notify keeps the owner alive (see the header). */
 	vector->single = NULL;
 	vector->length = 0;
-	vector->capacity &= ASYNC_CALLBACKS_F_NOTIFYING;
+	vector->capacity = 0;
 	vector->cursor = 0;
 }
 
@@ -198,38 +163,23 @@ static void async_finish_handler_call(async_awaitable_t *target,
 
 	async_finish_handler_callback_t *entry = (async_finish_handler_callback_t *) callback;
 	zend_coroutine_t *coroutine = (zend_coroutine_t *) target;
-	const bool is_bailout = (coroutine->flags & ASYNC_COROUTINE_F_BAILOUT) != 0 || ASYNC_G(bailing_out);
-	/* Finish handlers are added only to a coroutine of this extension. */
-	async_callbacks_vector_t *vector = &((async_coroutine_t *) target)->callbacks;
+	const zend_coroutine_finish_handler_fn handler = entry->handler;
+	zend_coroutine_t *waiter = entry->waiter;
+	void *data = entry->data;
 
-	/* While the handler runs, a removal by id or the vector's teardown only unlinks the entry;
-	 * freeing it stays here. */
-	entry->base.flags |= ASYNC_CALLBACK_F_RUNNING;
-	const bool keep = entry->handler(coroutine, entry->waiter, entry->data, is_bailout);
-	entry->base.flags &= ~ASYNC_CALLBACK_F_RUNNING;
-
-	if (entry->base.flags & ASYNC_CALLBACK_F_REMOVED) {
-		efree(entry);
-		return;
-	}
-
-	if (keep) {
-		return;
-	}
-
-	const bool removed = async_callbacks_remove(vector, callback);
+	/* Fires once: the entry goes before the handler runs, so the handler may add or remove others.
+	 * Finish handlers are added only to a coroutine of this extension. */
+	const bool removed = async_callbacks_remove(&((async_coroutine_t *) target)->callbacks, callback);
 	ZEND_ASSERT(removed && "a finish handler outside its coroutine's vector");
 	(void) removed;
 	efree(entry);
+
+	handler(coroutine, waiter, data, (coroutine->flags & ASYNC_COROUTINE_F_BAILOUT) != 0);
 }
 
 static void async_finish_handler_dispose(async_event_callback_t *callback, async_awaitable_t *target)
 {
-	if (callback->flags & ASYNC_CALLBACK_F_RUNNING) {
-		callback->flags |= ASYNC_CALLBACK_F_REMOVED;
-		return;
-	}
-
+	(void) target;
 	efree(callback);
 }
 
@@ -242,7 +192,6 @@ uint32_t async_finish_handler_add(async_coroutine_t *coroutine,
 	async_callbacks_reserve(vector, 1);
 
 	async_finish_handler_callback_t *entry = emalloc(sizeof(async_finish_handler_callback_t));
-	entry->base.ref_count = 1;
 	entry->base.flags = 0;
 	entry->base.callback = async_finish_handler_call;
 	entry->base.dispose = async_finish_handler_dispose;
@@ -272,7 +221,7 @@ bool async_finish_handler_remove(async_coroutine_t *coroutine, const uint32_t ha
 		if (callback->callback == async_finish_handler_call &&
 			((async_finish_handler_callback_t *) callback)->handler_id == handler_id) {
 			async_callbacks_remove(vector, callback);
-			async_finish_handler_dispose(callback, NULL);
+			efree(callback);
 			return true;
 		}
 	}

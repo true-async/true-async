@@ -100,9 +100,11 @@ static void action_add_other(test_callback_t *self, async_awaitable_t *target)
 
 static void action_notify_other(test_callback_t *self, async_awaitable_t *target)
 {
-	if (!async_callbacks_notify((async_awaitable_t *) self->other_target, self->other_vector, NULL, NULL)) {
+	if (self->other_vector->capacity & ASYNC_CALLBACKS_F_NOTIFYING) {
 		smart_str_appends(self->trace, "(refused)");
 	}
+
+	async_callbacks_notify((async_awaitable_t *) self->other_target, self->other_vector, NULL, NULL);
 }
 
 static void action_throw(test_callback_t *self, async_awaitable_t *target)
@@ -117,18 +119,6 @@ static void action_bailout_once(test_callback_t *self, async_awaitable_t *target
 	if (self->runs == 1) {
 		zend_bailout();
 	}
-}
-
-static void action_free_vector(test_callback_t *self, async_awaitable_t *target)
-{
-	async_callbacks_free(target, self->other_vector);
-}
-
-/* Tears the vector down and adds `other` to it, all within the vector's notify. */
-static void action_free_and_add(test_callback_t *self, async_awaitable_t *target)
-{
-	async_callbacks_free(target, self->other_vector);
-	async_callbacks_add(self->other_vector, &self->other->base);
 }
 
 /* zend_bailout() clears the current frame and marks the shutdown unclean; the catch puts both
@@ -345,46 +335,6 @@ static void scenario_bailout_caught(smart_str *trace)
 	async_callbacks_free((async_awaitable_t *) &inner, &inner.callbacks);
 }
 
-/* T holds A B C; A tears T's vector down: the notify ends without B and C, and the vector takes
- * new callbacks and notifies again. */
-static void scenario_free_during(smart_str *trace)
-{
-	test_target_t target = { ASYNC_AWAITABLE_F_EVENT };
-	test_callback_t callbacks[3];
-
-	for (int i = 0; i < 3; i++) {
-		test_callback_init(&callbacks[i], (char) ('A' + i), trace);
-	}
-
-	callbacks[0].action = action_free_vector;
-	callbacks[0].other_vector = &target.callbacks;
-	test_vector_fill(&target.callbacks, callbacks, 3);
-	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
-	smart_str_appends(trace, " then:");
-	callbacks[1].runs = 0;
-	async_callbacks_add(&target.callbacks, &callbacks[1].base);
-	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
-	async_callbacks_free((async_awaitable_t *) &target, &target.callbacks);
-}
-
-/* T holds A B; A tears T's vector down and adds P: P runs in the same notify, B does not. */
-static void scenario_free_add(smart_str *trace)
-{
-	test_target_t target = { ASYNC_AWAITABLE_F_EVENT };
-	test_callback_t a, b, p;
-
-	test_callback_init(&a, 'A', trace);
-	test_callback_init(&b, 'B', trace);
-	test_callback_init(&p, 'P', trace);
-	a.action = action_free_and_add;
-	a.other_vector = &target.callbacks;
-	a.other = &p;
-	async_callbacks_add(&target.callbacks, &a.base);
-	async_callbacks_add(&target.callbacks, &b.base);
-	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
-	async_callbacks_free((async_awaitable_t *) &target, &target.callbacks);
-}
-
 /* A notify entered in scheduler context leaves the flag set; one entered outside clears it. */
 static void scenario_sched_kept(smart_str *trace)
 {
@@ -449,9 +399,9 @@ static void scenario_finish_ids(smart_str *trace)
 	ASYNC_G(test_trace) = NULL;
 }
 
-/* A keeps itself (returns true), B does not, C removes itself by its own id and returns false: C is
- * freed once, and only A runs on the second notify. */
-static void scenario_finish_keep(smart_str *trace)
+/* A returns true, B false, C removes itself by its own id: each runs once whatever it returns, C is
+ * already gone when it runs, and a second notify finds nothing. */
+static void scenario_finish_once(smart_str *trace)
 {
 	async_coroutine_t coroutine = { 0 };
 	test_finish_t handlers[3] = { { 'A', true }, { 'B', false }, { 'C', false, &coroutine } };
@@ -484,10 +434,9 @@ static const test_scenario_t test_scenarios[] = {
 	{ "remove-run", scenario_remove_run },   { "remove-self", scenario_remove_self },
 	{ "single-self", scenario_single_self }, { "add-during", scenario_add_during },
 	{ "nested-same", scenario_nested_same }, { "nested-other", scenario_nested_other },
-	{ "finish-ids", scenario_finish_ids },   { "finish-keep", scenario_finish_keep },
+	{ "finish-ids", scenario_finish_ids },   { "finish-once", scenario_finish_once },
 	{ "throw-all", scenario_throw_all },     { "bailout-caught", scenario_bailout_caught },
-	{ "sched-kept", scenario_sched_kept },   { "free-during", scenario_free_during },
-	{ "free-add", scenario_free_add },
+	{ "sched-kept", scenario_sched_kept },
 };
 
 static void test_buffer_push(circular_buffer_t *buffer, const zend_long from, const zend_long to)

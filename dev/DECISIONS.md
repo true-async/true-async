@@ -86,9 +86,9 @@ someone will propose again.
   already closes such windows with the flag.
 - 2026-10-02 The notify cursor is a field of `async_callbacks_vector_t` (vector 24 B, coroutine
   304 B, same 320 B bin); the global notify frame array, its lookup, its depth limit and
-  `async_callbacks_bailout_reset()` are gone. A bailout out of a callback is handled by the
-  notify's own `zend_try`. `tests/internal/011-callbacks_bailout_caught.phpt` no longer prints the
-  frame depth. Why: Edmond; saving 8 B had cost a chain, a global array and a switch block.
+  `async_callbacks_bailout_reset()` are gone. `tests/internal/011-callbacks_bailout_caught.phpt`
+  no longer prints the frame depth. (Its bailout handling by a `zend_try` is replaced by the entry
+  "No `zend_try`" below.) Why: Edmond; saving 8 B had cost a chain, a global array and a switch block.
 - 2026-10-02 `async_finish_handler_add/remove` take the coroutine, not a vector: a finish handler
   removes itself from its coroutine's vector, so a caller cannot hand it another one. Why: Critic on
   the cursor rework.
@@ -97,3 +97,16 @@ someone will propose again.
   expects the refusal; `internal/021`, added the same day for the recovery, is removed. Why: Edmond,
   one `setjmp` per notify (+3.7 to 6.7 ns measured) is too much for loops; TrueAsync had none, and
   its `bailout_all_coroutines()` unwinds every waiter directly.
+- 2026-10-02 Review of the notify against TrueAsync (Code Reviewer, Critic, the Sage's verdicts):
+  removed what TrueAsync lacks and nothing needs. The notify returns `void` (as the fork's) and no
+  longer repairs the frame of an exception pending at entry; finish handlers fire once and lose
+  `F_RUNNING`, `F_REMOVED` and the meaning of their `bool`; teardown no longer supports a free from
+  the vector's own notify; `ASYNC_G(bailing_out)` and the callback base's unused `ref_count` (the
+  fork's count for shared subscribers; nothing here shares one) are gone (`is_bailout` is bit 19,
+  which `bailout_all_coroutines` will set on every coroutine, S3.md 4.5). Tests:
+  `internal/009-finish_handler_keep` becomes `009-finish_handler_once`; `internal/019` and `020`
+  (free during the notify) are removed. Why: Edmond, no mechanism without a counterpart in the
+  reference or a recorded reason.
+- 2026-10-02 Every callback of a notify runs even after one throws (the fork stops at the first
+  and disposes the rest uncalled). Why: the core's finish handler "fires exactly once"
+  (`zend_async_API.h:83`). To be confirmed by Edmond.

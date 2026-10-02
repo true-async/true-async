@@ -60,8 +60,7 @@ typedef void (*async_event_callback_fn)(async_awaitable_t *target,
 										async_event_callback_t *callback,
 										void *result,
 										zend_object *exception);
-/* Frees a heap subscriber that leaves a vector by teardown or removal; one whose function is
- * running (ASYNC_CALLBACK_F_RUNNING) is only marked removed, and its function frees it. */
+/* Frees a heap subscriber that leaves a vector by teardown or removal. */
 typedef void (*async_event_callback_dispose_fn)(async_event_callback_t *callback, async_awaitable_t *target);
 
 /* A wait record: lives on the waiting frame's stack, never disposed. */
@@ -70,15 +69,10 @@ typedef void (*async_event_callback_dispose_fn)(async_event_callback_t *callback
 #define ASYNC_CALLBACK_F_COUNTED (1u << 1)
 /* kind->unlink is set: removal goes through it instead of the target's vector. */
 #define ASYNC_CALLBACK_F_TYPED (1u << 2)
-/* A heap subscriber whose function is running: removal unlinks it, the function frees it. */
-#define ASYNC_CALLBACK_F_RUNNING (1u << 3)
-/* Removed while running; the function frees it on return. */
-#define ASYNC_CALLBACK_F_REMOVED (1u << 4)
 
 struct _async_event_callback_s
 {
-	uint32_t ref_count; /* heap subscribers only; a record never reads it */
-	uint32_t flags;
+	uint32_t flags; /* 4 B of padding follow */
 	async_event_callback_fn callback;
 
 	union
@@ -113,7 +107,7 @@ struct _async_wait_kind_s
 ///////////////////////////////////////////////////////////////////
 
 /* Subscribers of one awaitable. Up to one element lives inline (capacity 0), so the first waiter
- * costs no allocation. Removal is O(1) and keeps every pending callback of a running notify: see
+ * costs no allocation. Removal keeps every pending callback of a running notify: see
  * async_callbacks_remove(). */
 typedef struct
 {
@@ -164,21 +158,21 @@ static zend_always_inline void async_callbacks_add(async_callbacks_vector_t *vec
 bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callback_t *callback);
 
 /* Runs the vector's callbacks, each once (order not kept: a removal moves elements), including
- * those added meanwhile, in scheduler
- * context (ZEND_ASYNC_IN_SCHEDULER_CONTEXT). Every callback runs even after one throws; the
- * exceptions are chained over the one pending at entry and left in EG(exception). A bailout out of
- * a callback leaves the vector marked, refusing later notifies (as the fork). The caller holds a
- * reference to `target` for the call (S3.5's finalize does); a teardown of the vector from a
- * callback ends the notify. Returns false, running nothing, when the vector is already being
- * notified further up the stack. */
-bool async_callbacks_notify(async_awaitable_t *target,
+ * those added meanwhile, in scheduler context (ZEND_ASYNC_IN_SCHEDULER_CONTEXT). Every callback
+ * runs even after one throws; the exceptions are chained over the one pending at entry and left in
+ * EG(exception). A bailout out of a callback leaves the vector marked, so later notifies of it run
+ * nothing (as the fork). A vector already being notified further up the stack is not notified
+ * again. The caller holds a reference to `target` for the call (S3.5's finalize does), so no
+ * callback frees the vector. */
+void async_callbacks_notify(async_awaitable_t *target,
 							async_callbacks_vector_t *vector,
 							void *result,
 							zend_object *exception);
 
-/* Teardown of the vector of `target`: disposes the heap subscribers left in it and frees the
- * array. A wait record still linked here breaks invariant F (section 4): asserted, and its target
- * cleared. */
+/* Teardown of the vector of `target` with its owner: disposes the heap subscribers left in it and
+ * frees the array. Never called during a notify of the vector, but the vector may still be marked by
+ * a bailout out of one. A wait record still linked here breaks invariant F (section 4): asserted,
+ * and its target cleared. */
 void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *vector);
 
 ///////////////////////////////////////////////////////////////////
@@ -196,8 +190,9 @@ typedef struct
 } async_finish_handler_callback_t;
 
 /* Adds an RFC finish handler to the coroutine's vector; returns its id, stable across the removal
- * of other handlers (a position would shift). The handler fires on the coroutine's notify, and is
- * dropped after it returns false. */
+ * of other handlers (a position would shift). The handler fires once, on the coroutine's notify,
+ * and is dropped before it runs; its return value has no meaning (the core's own handlers return
+ * false). */
 uint32_t async_finish_handler_add(async_coroutine_t *coroutine,
 								  zend_coroutine_finish_handler_fn handler,
 								  zend_coroutine_t *waiter,
