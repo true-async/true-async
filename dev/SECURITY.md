@@ -60,4 +60,4 @@ finding left open gets an owner step in `PLAN.md`.
 ## Open findings
 
 - The secret filter of `tools/test.py` matches names (`TOKEN`, `SECRET`, `_KEY`, `GITHUB_`, …); a
-  secret under another name still reaches the `.sh` files in `results/`. Owner: S3.5.
+  secret under another name still reaches the `.sh` files in `results/`. Owner: S3.14.

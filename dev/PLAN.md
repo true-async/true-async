@@ -137,7 +137,12 @@ change SKIP on PoCs-only with that reason); scheduler fuzz runs the list over 10
 every wait-model line covered on `pocs-dbg-cov` except the listed out-of-memory branches; the
 fault-injection points (`--enable-true-async-test-hooks`) drive a bailout through every unlink site;
 Mull survivors in the wait and scheduler code killed by a test or explained (D34).
-Tier: T2. Roles: Critic on S3.1, Critic after S3.4, security pass (S3.5).
+Tier: T2. Roles: Critic on S3.1 and on the steps marked below, stage review (S3.13), security
+pass (S3.14).
+Trees: "both core trees" is PoCs only in S3: the `rfc` tree exists once a change to bukka's RFCs is
+needed (`dev/plans/S2.md`, section 5), and S3 needs none (scheduler RFC changes go to `async-core`).
+Test ownership: each listed test belongs to the step named in its `--XFAIL--` section (`dev/plans/S3.md`,
+section 14); a step that finds a test needs more moves it on with a note.
 
 - [x] S3.1 Design note: coroutine object and methods (classes from TrueAsync), run queue, idle point before the deadlock
       and end-of-main decisions, cancellation, end-of-main and bailout policy, GC destructor
@@ -184,11 +189,64 @@ Tier: T2. Roles: Critic on S3.1, Critic after S3.4, security pass (S3.5).
       RFC text 2026-10-02: true-async/php-async-core-rfc `f1e64a8`, both `scheduler_rfc.md` and
         `.dokuwiki.txt`: the *started* attribute (item 1) and enqueue of a finished coroutine
         refused with an `Error` (item 7).
-- [ ] S3.3 All 21 slots, internal context init and destroy; `Async\spawn`, `await`, `suspend`,
-      `Coroutine` and its methods, `DeadlockError`.
-- [ ] S3.4 Shutdown windows without IO: shutdown functions, destructors, output handlers.
-- [ ] S3.5 Security pass over the stage diff by `dev/SECURITY.md`; findings fixed with a test or
+- [ ] S3.3 Internal API: circular buffer, allocator, callbacks vector with the cursor rule, wait
+      record and kinds, flat waker, finish handlers with ids, exception save and restore; strict
+      pointer flags; the grep gates of S3.md section 11 in CI.
+      done: own tests through test hooks pass: A B C D with B removing A runs each once;
+        self-removal order A C B; a nested notify is refused; the positional-handle scenario of 3.6
+      tier: T2 · role: Critic
+- [ ] S3.4 Classes and test ports: exceptions, `Awaitable` (refuses foreign classes), `Completable`,
+      the `Coroutine` object (296 B), INI; the seven `changed:` ports of S3.md section 9.
+      done: `edge_cases/013` passes; own test for bug 10; `check-lists.py` clean with the tags
+      tier: T2 · role: —
+- [ ] S3.5 Spawn and run: the 21 slots, launch, run queue, enqueue (4.3), in-place run, call 1
+      from main, RINIT and RSHUTDOWN, `spawn`, `current_coroutine`, `get_coroutines`, state methods;
+      wait unlink stubbed.
+      done: the S3.5 tests pass on dbg, asan and win; own tests for `asHiPriority` (D20, D35) and
+        `isSuspended` of the running coroutine (D18)
+      tier: T2 · role: Critic
+- [ ] S3.6 Suspend: `suspend()` by 4.2 with the tick (microtasks), yield, the context pool (D23),
+      direct switches.
+      done: the S3.6 tests pass; own test: a yield with nobody ahead
+      tier: T2 · role: —
+- [ ] S3.7 Await and GC: the wait model (4.1, U1-U6, the debug asserts of 4.4), the await slot, the
+      GC rules of section 7, awaiting info.
+      done: the S3.7 tests pass; own tests of layer 2 (two waiters, two wakes in one tick, a target
+        destroyed with records linked, a wait refused in scheduler context, GC while an exception
+        unwinds); blind tests from section 4 by `test-author` pass
+      tier: T2 · role: Critic
+- [ ] S3.8 Cancellation and exit paths: `cancel`, `protect` (D7), unhandled exceptions as the exit
+      exception, deadlock with its report, `graceful_shutdown`, `exit()` in a coroutine.
+      done: the S3.8 tests pass; own tests: nested protect cancelled, cancel-before-run then await,
+        `exit()` in a spawned coroutine, await from an output handler during the report
+      tier: T2 · role: Critic
+- [ ] S3.9 Fibers: `intercept_fiber` (always adopt), the deadlock exemption.
+      done: the S3.9 tests pass; own tests: a cancelled fiber suspends in `finally` (D5), Fiber
+        methods from a destructor in the tick, `exit()` in an adopted fiber
+      tier: T2 · role: —
+- [ ] S3.10 Shutdown windows and bailout: calls 2 and 3 from main, the bailout drain (4.5, D24),
+      shutdown functions, destructors, output handlers.
+      done: the S3.10 tests pass (bailout SKIP on asan); own test: two shutdown destructors, the
+        first waiting on the second; no `--XFAIL--` left in the S3 list
+      tier: T2 · role: Critic
+- [ ] S3.11 Measurements of S3.md section 12: B0-B5 against the reference, known answer first;
+      the open items of its table decided by their runs.
+      done: numbers with date in `BENCHMARKS.md`; D2 holds, or each excess has a DECISIONS line
+      tier: T2 · role: —
+- [ ] S3.12 Fault injection and fuzz: hooks for U1-U6 (layer 3); the fuzz hook
+      (`--enable-true-async-fuzz`, `TRUE_ASYNC_SEED`) and `test.py --seeds N`.
+      done: one passing test per site U1-U6; 100 seeds over the S3 list on dbg and asan with no
+        crash, assertion, sanitizer report or leak (output order differences do not count)
+      tier: T2 · role: —
+- [ ] S3.13 Stage review: Critic on the stage diff; coverage of every wait-model line except the
+      out-of-memory branches listed in S3.md section 14; Mull on the stage diff, survivors killed
+      or explained (D34); Code Reviewer.
+      done: Critic's findings answered; coverage and survivors recorded with date
+      tier: T2 · role: Critic, Code Reviewer
+- [ ] S3.14 Security pass over the stage diff by `dev/SECURITY.md`; findings fixed with a test or
       recorded with the reason; the open finding on the runner's secret filter closed.
+      done: every checklist item has an outcome in `dev/SECURITY.md`
+      tier: T2 · role: —
 
 ## S4 — Reactor on Poll, Poll additions and Ring  [ ]
 
