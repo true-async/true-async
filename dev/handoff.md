@@ -65,8 +65,8 @@ Written 2026-10-02. Active step: **S3.2** (in progress), the core update after t
 
 ## Next
 
-1. Close the ior half of the core update (Edmond decides how), then move `CORE_REF` and "Pinned
-   core" to `8a29d63edcf` and check CI green.
+1. Check CI green on `CORE_REF` `8a29d63edcf` (the ior half was accepted without a run, Edmond
+   2026-10-02); a red lane is fixed before S3.3 code.
 2. S3.3. The scheduler RFC text for items 1 and 7 is done (php-async-core-rfc `f1e64a8`).
 
 ## How to run

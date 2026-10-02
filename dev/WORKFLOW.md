@@ -7,7 +7,7 @@ How work is done in this repository and in the core branch it builds on.
 - Extension repository, initial stage: every commit goes straight to `main`, no task branches
   no PRs and no issues. The stage ends when Edmond says so; the rule that replaces it gets a `DECISIONS.md`
   entry. Held by discipline, no gate.
-- Core: `async-core-io` in the worktree `~/php-src2` (a worktree of `/home/edmond/php-src`) has no
+- Core: the pinned `async-core-io` branch ("Pinned core") in the worktree `~/php-src2` (a worktree of `/home/edmond/php-src`) has no
   upstream, so a bare `git push` fails instead of landing in php/php-src#22561. Gate: no upstream
   set (`git rev-parse @{u}` fails). It is published in true-async/php-src under the same name
   for CI, by explicit refspec only: `git push origin async-core-io:async-core-io`.
@@ -33,10 +33,10 @@ How work is done in this repository and in the core branch it builds on.
 
 ## Pinned core
 
-| Part | Revision | In `async-core-io` `834811f2d88` |
+| Part | Revision | In `async-core-io-2026-10-02` `8a29d63edcf` |
 |---|---|---|
-| php-src master | `940ff2098ea` | merged |
-| Scheduler PoC (`async-core`, php/php-src#22561) | `5d5fe3520bb` | merged |
+| php-src master | `d7f966e073b` | merged |
+| Scheduler PoC (`async-core`, php/php-src#22561) | `2aee763aeed` | merged |
 | IO hooks PoC (php/php-src#23997) | `056d9f803a3` | merged |
 | ior | `2fb12e8ce01` | built into `~/ior`, `~/ior-asan` |
 | `ext/async` (reference tests, true-async/php-async) | `1fdacf8575b` | `tests/lists/REFERENCE` |
@@ -44,9 +44,8 @@ How work is done in this repository and in the core branch it builds on.
 CI pins the same core and ior in `.github/workflows/ci.yml` (`CORE_REF`, `IOR_REF`): a core update
 changes both places.
 
-Newer heads not yet taken: `async-core` `2aee763aeed` with master `d7f966e073b` is merged in
-`async-core-io-2026-10-02` (`8a29d63edcf`), compared without ior, not pinned yet (`dev/PLAN.md`,
-S3.2); IO hooks head `608927ebe09` (2026-10-02) is not merged.
+Newer heads not yet taken: IO hooks `608927ebe09` (2026-10-02). The pinned branch was compared
+without ior (`dev/PLAN.md`, S3.2); Edmond accepted it on 2026-10-02.
 - Merge, never rebase; force-push only on Edmond's explicit word. Held by discipline, no gate.
 
 ## Security

@@ -175,7 +175,8 @@ Tier: T2. Roles: Critic on S3.1, Critic after S3.4, security pass (S3.5).
         (auto mode refused building ior in the cloud container): S1 suites per test equal to
         `834811f2d88` on debug and ASAN, except the seven new test_scheduler tests 068-074, all
         PASS; 18 hooks and 3 poll tests SKIP in both (Ring and ior absent). Left: the ior half
-        (Ring tests, `IOR_BACKEND=threads`), then move `CORE_REF` and "Pinned core" to it.
+        (Ring tests, `IOR_BACKEND=threads`) accepted without a run (Edmond, 2026-10-02); `CORE_REF` and
+        "Pinned core" point at `8a29d63edcf`. Left: CI green on it.
       RFC text 2026-10-02: true-async/php-async-core-rfc `f1e64a8`, both `scheduler_rfc.md` and
         `.dokuwiki.txt`: the *started* attribute (item 1) and enqueue of a finished coroutine
         refused with an `Error` (item 7).
