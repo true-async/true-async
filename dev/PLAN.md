@@ -261,9 +261,6 @@ Goal: the review's findings measured on a real provider; requests to both RFCs w
 Done when: B1, B2, B3, M1, M4, M10, M12, M13 each have an outcome (reproduced, not reproduced,
 not expressible with why); `RFC-CHANGES.md` complete; the review updated.
 Tier: T1.
-Known: the True Async RFC (true-async/php-true-async-rfc, `base.rfc:80-87`) declares
-`Cancellation extends \Throwable`, which an extension cannot implement; D8 chose
-`AsyncCancellation extends \Error`. The RFC text needs that change.
 
 ## S9 — Higher layers, one at a time  [ ]
 
