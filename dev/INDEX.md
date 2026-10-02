@@ -21,9 +21,9 @@ Where to look in this repository and around it. Pointers only.
 
 ## Outside the repository
 
-- `~/php-src2`: the core worktree, branch `async-core-io` (`WORKFLOW.md`, "Branches").
-- `~/ior`, `~/ior-asan`, `~/ior-src`: ior builds for the debug and ASAN trees.
-- `~/php-src/ext/async`: today's TrueAsync, the reference and the source of tests.
+- true-async/php-src: the core, the pinned branch in `WORKFLOW.md` ("Pinned core").
+- true-async/php-async at `tests/lists/REFERENCE`: today's TrueAsync, the reference and the source
+  of tests.
 - `E:\php\true-async-plan.html`: source of the plan's visual page
   (https://claude.ai/artifact/9oHVzBL9FtYrsACfRJnMpF); it lags behind `PLAN.md`.
 
