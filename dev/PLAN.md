@@ -253,6 +253,20 @@ section 14); a step that finds a test needs more moves it on with a note.
         pass early, `bailout/012` goes back to S3.10 and `edge_cases/014` hangs until S3.8 (S3.md
         section 14); run-tests fails a test the timeout killed (DECISIONS 2026-10-02). The Sage's
         GC probe (12 000 cyclic objects with `__destruct`) ends now, in main and in a coroutine.
+- [x] S3.6a Scheduler coroutine: TrueAsync's hybrid algorithm (Edmond, 2026-10-02): the scheduler's
+      code runs between coroutines and in a scheduler coroutine on its own fiber; the drain on the OS
+      stack, `drain_context()` and the bailout to main's stack go; `scheduler_bailout_all` (4.5)
+      moves here from S3.10, in the core's ts.c order (main last).
+      done: the S3.6 tests pass, `bailout/012` too; own tests: a microtask that throws after main is
+        the exit exception (it had no frame on the OS stack), coroutines spawned by a shutdown
+        function and a destructor run on a new scheduler coroutine, a destructor that throws in a
+        finalize skips no coroutine, a stack that cannot be taken ends the request once, with a full
+        GC buffer too
+      tier: T2 · role: Critic, Sage
+      handoff: done 2026-10-02 on core `82df2fc6ccc`: dbg 100 PASS, 80 XFAIL; asan 86 PASS, 14 SKIP,
+        80 XFAIL. Analysis, Critic and Sage before the code:
+        `/mnt/project-files/notes/hybrid-scheduler.md` (project files). A stack that cannot be taken
+        ends the request (DECISIONS): `scheduler/007` expects the fatal of `005` now.
 - [ ] S3.7 Await and GC: the wait model (4.1, U1-U6, the debug asserts of 4.4), the await slot, the
       GC rules of section 7, awaiting info; the `changed:` ports of `gc/005` and `gc/011` (moved from
       S3.4: their output under the eager scheduler start is known only by running them).

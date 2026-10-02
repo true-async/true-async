@@ -1,5 +1,5 @@
 --TEST--
-With a user exception handler, a coroutine that cannot get a stack finishes unrun
+A coroutine that cannot get a stack ends the request even with a user exception handler, as running out of memory does
 --FILE--
 <?php
 set_exception_handler(function (Throwable $e) {
@@ -15,10 +15,13 @@ $second = Async\spawn(fn() => print("second ran\n"));
 ini_set('fiber.stack_size', '1');
 echo "end\n";
 ?>
---EXPECT--
+--EXPECTF--
 end
-handler: Exception
-handler: Exception
+
+Fatal error: Uncaught Exception: Fiber stack size is too small, it needs to be at least %d bytes in [no active file]:0
+Stack trace:
+#0 {main}
+  thrown in [no active file] on line 0
 shutdown
 bool(false)
 bool(true)

@@ -153,7 +153,8 @@ someone will propose again.
   never-started current coroutine, which the bailout's drop finishes with the queue. With a user
   exception handler the failed stack does not bail out: the coroutine finishes unrun. Tests
   `scheduler/005`, `007`. Why: Critic and Sage; the popped coroutine was lost, a NULL context was
-  switched into, and the debug build aborted at RSHUTDOWN.
+  switched into, and the debug build aborted at RSHUTDOWN. Replaced by S3.6a: the drain is gone, and a stack
+  that cannot be taken ends the request (entry below).
 - 2026-10-02 `gc/013`, `gc/014` (S3.10) and `gc/022` (S3.7) carry `--XFAIL--` from S3.5: with the
   scheduler registered, the GC needs the await slot and `suspend()` (S3.md section 14). Until then
   an automatic collection over objects with `__destruct` does not end; nothing short of the
@@ -169,6 +170,7 @@ someone will propose again.
   no bailout address left for a destructor that bails out again (Sage).
 - 2026-10-02 `bailout/012` carries `--XFAIL--` for S3.10 again (S3.md section 14). Why: it passed
   in S3.5 only because `suspend()` threw; its yielded coroutine needs the bailout drain of S3.10.
+  Withdrawn by S3.6a: the scheduler coroutine's bailout unwinds it, and the test passes.
 - 2026-10-02 run-tests (`tools/run-tests.patch`) never passes a test the timeout killed. Why:
   `edge_cases/014` hangs until S3.8, and its trailing `%A` took the timeout as a pass.
 - 2026-10-02 `Async\suspend()` and the suspend slot refuse inside a Fiber the scheduler did not
@@ -180,8 +182,32 @@ someone will propose again.
 - 2026-10-02 A stack that cannot be taken in `suspend()` finishes the next coroutine unrun with
   that exception as its outcome, as the drain does, not 4.2 step 3's abort plus exit exception.
   Why: the suspender did nothing wrong; the coroutine that got no stack owns the failure.
+  Replaced by S3.6a: a stack that cannot be taken ends the request (entry below).
 - 2026-10-02 The extension never reads `zend_fiber_switch_blocked()` either: `Async\suspend()` and
   the suspend slot no longer refuse on it, and `tools/check-gates.py` forbids it in `src/`. A window
   the extension must close is closed by `ZEND_ASYNC_IN_SCHEDULER_CONTEXT`, as TrueAsync; the core's
   own switch-block windows (pcntl dispatch, ticks, IO-hooks lock) stay open, as in TrueAsync.
   Withdraws D14, which Edmond says was Claude's error, not his decision. Why: Edmond.
+- 2026-10-02 The scheduler follows TrueAsync's hybrid algorithm: the tick and direct switches
+  between coroutines, plus a scheduler coroutine on its own fiber for an empty queue, the drain
+  after main and the bailout (S3.6a, S3.md section 5). Withdraws "no scheduler coroutine" of S3.md
+  section 5 and the bailout to main's stack (U4 entry above). Why: Edmond; the drain on the OS stack
+  had no frame and no place to wait.
+- 2026-10-02 The scheduler coroutine is a Coroutine object, current while it runs, outside the
+  registry, never queued; created by the first enqueue, defer or suspend that needs it, ended when it
+  has drained the queue in a from_main call, or after a bailout. Why: the core expects a current coroutine while async is active
+  (`zend_gc.c:2245` defers a GC only then); creating it at the end of main or in a bailout would
+  allocate a stack where none can fail (Critic, Sage).
+- 2026-10-02 A bailout unwinds every coroutine but main first and hands main the flag last, the
+  core's ts.c order, not TrueAsync's main-first. Why: main's bailout may land in a `zend_try` of the
+  shutdown functions, and the from_main call that comes back is then a plain one (Critic); not
+  copied from TrueAsync either: the unchecked scheduler creation (`scheduler.c:1313`), the lost
+  bailout result (`:1374`), no unwinding after a bailout on the scheduler's own stack (`:2026`).
+- 2026-10-02 A stack that cannot be taken ends the request, as running out of memory does: the
+  exception is reported as uncaught and the request bails out through the scheduler (`suspend()`
+  hands it the bailout flag). It is the core's path for an exception thrown without a frame
+  (`zend_throw_exception_internal`) minus its user handler, deliberately. `scheduler/005` keeps its
+  fatal, `scheduler/007` expects it too; tests `scheduler/016`-`018`. Why: the Sage; finishing the
+  coroutine unrun with that exception as its outcome, or a handler that lets the request go on,
+  left a full GC root buffer full, and every GC coroutine started for it got no stack either: the
+  request never ended. The Critic judged the 007 change justified for that reason.

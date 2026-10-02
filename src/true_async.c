@@ -202,8 +202,12 @@ ZEND_FUNCTION(Async_spawn)
 	coroutine->coroutine.filename = filename != NULL ? zend_string_copy(filename) : NULL;
 	coroutine->coroutine.lineno = zend_get_executed_lineno();
 
-	/* A CREATED coroutine is always taken (S3.md 4.3). */
-	async_scheduler_enqueue(&coroutine->coroutine, NULL, false);
+	/* A CREATED coroutine is refused only when the scheduler coroutine cannot get a stack: the
+	 * coroutine then never existed. */
+	if (UNEXPECTED(!async_scheduler_enqueue(&coroutine->coroutine, NULL, false))) {
+		OBJ_RELEASE(&coroutine->std);
+		RETURN_THROWS();
+	}
 
 	RETURN_OBJ_COPY(&coroutine->std);
 }
@@ -229,7 +233,10 @@ ZEND_FUNCTION(Async_suspend)
 		RETURN_THROWS();
 	}
 
-	async_scheduler_enqueue(&coroutine->coroutine, NULL, false);
+	if (UNEXPECTED(!async_scheduler_enqueue(&coroutine->coroutine, NULL, false))) {
+		RETURN_THROWS();
+	}
+
 	ZEND_ASYNC_SUSPEND();
 }
 

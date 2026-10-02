@@ -30,6 +30,7 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	circular_buffer_t fiber_context_pool; /* contexts parked with nothing to run */
 	circular_buffer_t microtasks;         /* deferred through the defer slot; one reference each, the tick's */
 	HashTable coroutines;                 /* enqueued, unfinished coroutines by object handle; borrowed */
+	async_coroutine_t *scheduler_coroutine; /* runs the loop on its own fiber; NULL until work needs it */
 	uint32_t handler_id_seq;              /* last finish handler id; 0 is never handed out */
 	bool debug_deadlock;                  /* true_async.debug_deadlock: the deadlock report lists every coroutine */
 #ifdef TRUE_ASYNC_TEST_HOOKS
