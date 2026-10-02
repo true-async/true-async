@@ -158,13 +158,14 @@ Tier: T2. Roles: Critic on S3.1, Critic after S3.4, security pass (S3.5).
       Design agreed 2026-10-02: Edmond's decisions D1-D38 (`dev/reviews/s3-structures/`), note
         rewritten (version 3), test list frozen at 133. Critic on version 3: self in the run queue,
         tick exceptions, Fiber methods inside the tick, ts.c for D5, thresholds; all fixed.
-- [ ] S3.2 Fixes on `async-core` that S3 needs, each with a test: `F_STARTED` (bit 8) and the fiber
+- [~] S3.2 Fixes on `async-core` that S3 needs, each with a test: `F_STARTED` (bit 8) and the fiber
       release and force-close checks; EH_THROW saved per switch; GC where switching is blocked
       starts its coroutine without waiting; GC's async pointers cleared on any finish and in
       `gc_reset`; no NULL dereference after `shutdown` in a fiber coroutine; current and main
       coroutine cleared at deactivation; Fiber methods refuse in scheduler context; the observer
       call on a switch guarded; `ts.c` reads CANCELLED as requested; RFC comments. Then a core update by `WORKFLOW.md`. List
       and reasons: `dev/plans/S3.md`, section 10.
+      Progress 2026-10-02: items 1-4 (D3) in `async-core` `996a9bd7047`, test 069.
 - [ ] S3.3 All 21 slots, internal context init and destroy; `Async\spawn`, `await`, `suspend`,
       `Coroutine` and its methods, `DeadlockError`.
 - [ ] S3.4 Shutdown windows without IO: shutdown functions, destructors, output handlers.
