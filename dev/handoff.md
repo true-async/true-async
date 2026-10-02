@@ -24,16 +24,22 @@ Written 2026-10-02. Active step: **S3.2** (in progress), core fixes on `async-co
   reading. The test_scheduler entry's error branch keeps a graceful exit as the coroutine's
   exception (not reachable either).
 
+## Also done: item 5 (D5)
+
+`async-core` `5add2bcac22`: `zend_fibers.c` `Fiber::suspend` refuses only when `extended_data` is
+NULL; `ts_suspend` parks a cancelled coroutine; `ts_cancel` ignores a cancel only for a RUNNING
+coroutine or one with an error pending, so a later cancel is delivered again. `018_cancel.phpt`
+changed on purpose by D5 (fails on the base, passes after); new `070` (a scheduler-cancelled fiber
+suspends in `finally`; fails on the base). With the scheduler on,
+`Zend/tests/fibers/suspend-in-force-close-fiber-after-shutdown.phpt` goes PASS to FAIL: the
+FiberError is no longer raised, the behaviour D5 accepted (the extension excludes its copy,
+`fiber/030`). Off: 255 PASS, 1 SKIP.
+
 ## Next
 
-1. Item 5 (D5): drop the `ZEND_COROUTINE_IS_CANCELLED(current)` term at `zend_fibers.c:1375`;
-   `ts_suspend` stops refusing a cancelled coroutine; `ts_cancel` delivers a second cancel when no
-   error is pending and only flags a RUNNING (current) coroutine, which keeps the force-close
-   re-entry case of its comment safe. `018_cancel.phpt` changes on purpose ("cannot suspend again"
-   becomes a second cancel delivered); a new test for a cancelled fiber suspending in `finally`.
-2. Items 6-14 of section 10, one commit and one test each, known-answer against an unchanged base
-   build.
-3. Core update by `WORKFLOW.md`: `async-core-io/<date>` with the new `async-core` merged, debug and
+1. Items 6-14 of section 10 of `dev/plans/S3.md`, one commit and one test each, known-answer
+   against the unchanged base build.
+2. Core update by `WORKFLOW.md`: `async-core-io/<date>` with the new `async-core` merged, debug and
    ASAN, S1 suites diffed with `tools/results.py --diff`.
 
 ## How to run

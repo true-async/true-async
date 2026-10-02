@@ -165,7 +165,8 @@ Tier: T2. Roles: Critic on S3.1, Critic after S3.4, security pass (S3.5).
       coroutine cleared at deactivation; Fiber methods refuse in scheduler context; the observer
       call on a switch guarded; `ts.c` reads CANCELLED as requested; RFC comments. Then a core update by `WORKFLOW.md`. List
       and reasons: `dev/plans/S3.md`, section 10.
-      Progress 2026-10-02: items 1-4 (D3) in `async-core` `996a9bd7047`, test 069.
+      Progress 2026-10-02: items 1-4 (D3) in `async-core` `996a9bd7047`, test 069; item 5 (D5) in
+        `5add2bcac22`, test 070, `018_cancel` changed by D5.
 - [ ] S3.3 All 21 slots, internal context init and destroy; `Async\spawn`, `await`, `suspend`,
       `Coroutine` and its methods, `DeadlockError`.
 - [ ] S3.4 Shutdown windows without IO: shutdown functions, destructors, output handlers.
