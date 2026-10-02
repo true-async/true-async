@@ -17,7 +17,8 @@
 #include "allocator.h"
 
 /* A FIFO of fixed-size items with push to either end. One slot stays free to tell full from
- * empty, so a buffer of capacity N holds N - 1 items. */
+ * empty, so a buffer of capacity N holds N - 1 items. A zero-filled buffer, never constructed,
+ * accepts count, is_empty, is_not_empty and pop_ptr only. */
 typedef struct _circular_buffer_s circular_buffer_t;
 
 struct _circular_buffer_s
@@ -28,7 +29,9 @@ struct _circular_buffer_s
 	/* Halve the buffer on a push once it is used below decrease_t; off for the run queue
 	 * (dev/plans/S3.md, section 11). */
 	bool auto_optimize;
-	/* A quarter of the capacity, recalculated on every resize; 0 at the minimum size. */
+	/* About a quarter of the capacity, recalculated on every resize: 0 once a resize reaches the
+	 * minimum size, but the constructor sets it for any count above 4, so the first shrink of such
+	 * a buffer reallocates it at its own size. */
 	size_t decrease_t;
 	const allocator_t *allocator;
 	void *data;

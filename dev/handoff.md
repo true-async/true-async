@@ -3,8 +3,7 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-02. Active step: **S3.3**, all but the circular buffer and allocator done
-(`7f1cba7`).
+Written 2026-10-02. Active step: **S3.4** (not started); S3.3 closed.
 
 ## State
 
@@ -14,12 +13,12 @@ Written 2026-10-02. Active step: **S3.3**, all but the circular buffer and alloc
   section: a passing XFAIL test is WARN, which `tools/test.py` counts as a failure.
 - S3 is split into S3.3-S3.14 (agreed by Edmond); `dev/plans/S3.md` section 14 names the tests
   each step owns.
-- S3.3 in `src/true_async_API.{h,c}`: callbacks vector, finish handlers with ids, waker, exception
-  save and restore. `--enable-true-async-test-hooks` (every lane) builds
-  `TrueAsync\Test\callbacks_scenario()`; `tests/internal/001`-`011` pass on dbg, valgrind clean.
-  Critic: 8 findings fixed; where the code differs from the spec text, S3.md 3.6 "As built in
-  S3.3" says so (notify frames in globals, fiber switching blocked during a notify, every callback
-  runs after a throw, the caller holds the reference, `F_RUNNING`/`F_REMOVED`).
+- S3.3: `src/true_async_API.{h,c}` (callbacks vector, finish handlers with ids, waker, exception
+  save and restore) and `src/internal/` (circular buffer and allocator from php-async, under the
+  project's BSD header: the code is Edmond's). `--enable-true-async-test-hooks` (every lane)
+  builds `TrueAsync\Test\callbacks_scenario()` and `buffer_scenario()`; `tests/internal/001`-`017`
+  pass on dbg. Where the code differs from the spec text, S3.md 3.6 "As built in S3.3" says so.
+  The module exports only `get_module` (`-fvisibility=hidden`).
 - `tools/check-gates.py` runs the grep gates of S3.md section 11 in the `lists` job; a core update
   that adds a `zend_async_*_t` type adds it to `CORE_TYPES` there.
 - Obligations for S3.5: its finalize holds the coroutine's object across the notify; teardown with
@@ -28,8 +27,5 @@ Written 2026-10-02. Active step: **S3.3**, all but the circular buffer and alloc
 
 ## Next
 
-1. Edmond's answer on the licence of code adapted from php-async (PHP License 3.01): BSD header
-   plus "Adapted from true-async/php-async", or keep the PHP License header. Then port
-   `internal/circular_buffer.{c,h}` and `allocator.{c,h}` into `src/internal/` (symbols renamed
-   `true_async_*`), close S3.3, rerun `tools/roadmap.py`.
-2. S3.4.
+1. S3.4: exceptions, `Awaitable`, `Completable`, the `Coroutine` object, INI; the seven `changed:`
+   ports of S3.md section 9.

@@ -488,8 +488,8 @@ static void scenario_buffer_shrink(smart_str *trace)
 	}
 }
 
-/* The pointer helpers: push_ptr refuses a full buffer, pop_ptr an empty one, swap_ptr_at swaps by
- * offset from the tail, push_ptr_with_resize grows. */
+/* The pointer helpers on a wrapped buffer: push_ptr refuses a full buffer, pop_ptr an empty one,
+ * swap_ptr_at swaps by offset from the tail across the wrap, push_ptr_with_resize grows. */
 static void scenario_buffer_ptr(smart_str *trace)
 {
 	static char names[] = "ABCD";
@@ -499,12 +499,18 @@ static void scenario_buffer_ptr(smart_str *trace)
 	circular_buffer_ctor(&buffer, 4, sizeof(void *), &true_async_persistent_allocator);
 	smart_str_append_printf(trace, "empty=%d ", circular_buffer_pop_ptr(&buffer, &ptr) == FAILURE);
 
+	/* Tail 2: A B C take slots 2, 3 and 0. */
+	for (int i = 0; i < 2; i++) {
+		circular_buffer_push_ptr(&buffer, &names[i]);
+		circular_buffer_pop_ptr(&buffer, &ptr);
+	}
+
 	for (int i = 0; i < 3; i++) {
 		circular_buffer_push_ptr(&buffer, &names[i]);
 	}
 
 	smart_str_append_printf(trace, "full=%d ", circular_buffer_push_ptr(&buffer, &names[3]) == FAILURE);
-	circular_buffer_swap_ptr_at(&buffer, 0, 2);
+	circular_buffer_swap_ptr_at(&buffer, 1, 2);
 	circular_buffer_push_ptr_with_resize(&buffer, &names[3]);
 	smart_str_append_printf(trace, "capacity=%zu:", circular_buffer_capacity(&buffer));
 
@@ -515,11 +521,42 @@ static void scenario_buffer_ptr(smart_str *trace)
 	circular_buffer_dtor(&buffer);
 }
 
+/* push_front with resize on a full wrapped buffer (asHiPriority on a full run queue): it grows
+ * first, and the new item goes ahead of the rest. */
+static void scenario_buffer_front_full(smart_str *trace)
+{
+	circular_buffer_t buffer;
+	zend_long value = 9;
+
+	circular_buffer_ctor(&buffer, 4, sizeof(zend_long), NULL);
+	test_buffer_push(&buffer, 1, 2);
+	test_buffer_pop(&buffer, trace, 2);
+	test_buffer_push(&buffer, 10, 12);
+	smart_str_append_printf(trace, " full=%d", circular_buffer_is_full(&buffer));
+	circular_buffer_push_front(&buffer, &value, true);
+	smart_str_append_printf(trace, " capacity=%zu:", circular_buffer_capacity(&buffer));
+	test_buffer_pop(&buffer, trace, SIZE_MAX);
+	circular_buffer_dtor(&buffer);
+}
+
+/* A zero-filled buffer (a scheduler queue before the scheduler allocates it) reads as empty. */
+static void scenario_buffer_zeroed(smart_str *trace)
+{
+	circular_buffer_t buffer = { 0 };
+	void *ptr;
+
+	smart_str_append_printf(trace,
+							"count=%zu empty=%d not_empty=%d pop=%d",
+							circular_buffer_count(&buffer),
+							circular_buffer_is_empty(&buffer),
+							circular_buffer_is_not_empty(&buffer),
+							circular_buffer_pop_ptr(&buffer, &ptr) == FAILURE);
+}
+
 static const test_scenario_t buffer_scenarios[] = {
-	{ "wrap-grow", scenario_buffer_wrap_grow },
-	{ "push-front", scenario_buffer_push_front },
-	{ "shrink", scenario_buffer_shrink },
-	{ "ptr", scenario_buffer_ptr },
+	{ "wrap-grow", scenario_buffer_wrap_grow },   { "push-front", scenario_buffer_push_front },
+	{ "shrink", scenario_buffer_shrink },         { "ptr", scenario_buffer_ptr },
+	{ "front-full", scenario_buffer_front_full }, { "zeroed", scenario_buffer_zeroed },
 };
 
 static void

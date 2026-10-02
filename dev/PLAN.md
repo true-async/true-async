@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-02 · Active: S3.3
+Updated: 2026-10-02 · Active: S3.4
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -189,16 +189,18 @@ section 14); a step that finds a test needs more moves it on with a note.
       RFC text 2026-10-02: true-async/php-async-core-rfc `f1e64a8`, both `scheduler_rfc.md` and
         `.dokuwiki.txt`: the *started* attribute (item 1) and enqueue of a finished coroutine
         refused with an `Error` (item 7).
-- [ ] S3.3 Internal API: circular buffer, allocator, callbacks vector with the cursor rule, wait
+- [x] S3.3 Internal API: circular buffer, allocator, callbacks vector with the cursor rule, wait
       record and kinds, flat waker, finish handlers with ids, exception save and restore; strict
       pointer flags; the grep gates of S3.md section 11 in CI.
       done: own tests through test hooks pass: A B C D with B removing A runs each once;
         self-removal order A C B; a nested notify is refused; the positional-handle scenario of 3.6
       tier: T2 · role: Critic
-      progress 2026-10-02: callbacks vector, finish handlers, waker, exception save and restore,
-        test hooks, strict flags and grep gates in; `tests/internal/001`-`011` pass on dbg (19
-        PASS, 127 XFAIL), valgrind clean. Critic: 8 findings fixed (S3.md 3.6, "As built in
-        S3.3"). Left: circular buffer and allocator, waiting on Edmond's licence answer.
+      handoff: done 2026-10-02 (`7f1cba7`, `ee6e071` and the commit closing it): `tests/internal/001`-`017`
+        pass on dbg (25 PASS, 127 XFAIL), valgrind clean; CI green on `7f1cba7` (run 37000266077,
+        all lanes). Two Critic rounds: 8 findings on the API, 5 on the buffer port, all fixed;
+        departures from the spec text in S3.md 3.6, "As built in S3.3". Obligations for S3.5: the
+        finalize holds the coroutine's object across its notify; teardown with a linked record
+        wakes the waiter (4.4); the bailout handling calls `async_callbacks_bailout_reset()`.
 - [ ] S3.4 Classes and test ports: exceptions, `Awaitable` (refuses foreign classes), `Completable`,
       the `Coroutine` object (296 B), INI; the seven `changed:` ports of S3.md section 9.
       done: `edge_cases/013` passes; own test for bug 10; `check-lists.py` clean with the tags

@@ -42,10 +42,11 @@ if test "$PHP_TRUE_ASYNC" != "no"; then
 
   dnl An event helper applied to a coroutine must not compile (dev/plans/S3.md, section 3);
   dnl gcc 13 only warns about it without the flag. An undeclared function fails here too, not at
-  dnl dlopen.
+  dnl dlopen. Only get_module is exported (ZEND_DLEXPORT): phpize, unlike an in-tree build, does
+  dnl not hide the rest, and php-async exports the same circular_buffer_* names.
   PHP_NEW_EXTENSION([true_async], [$true_async_sources],
     [$ext_shared],,
-    [-DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -Werror=incompatible-pointer-types -Werror=implicit-function-declaration])
+    [-DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -Werror=incompatible-pointer-types -Werror=implicit-function-declaration -fvisibility=hidden])
   PHP_ADD_BUILD_DIR([$ext_builddir/src])
   PHP_ADD_BUILD_DIR([$ext_builddir/src/internal])
 fi
