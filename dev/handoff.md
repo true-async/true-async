@@ -3,8 +3,42 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-02. Active step: **S3.7** (not started); S3.6 closed. S3.15-S3.18 (health check)
-run after S3.14 (Edmond).
+Written 2026-10-02. Active step: **S3.7** (not started); S3.6 closed (47633ef), review fixes in
+94c5ef5. S3.15-S3.18 (health check) run after S3.14 (Edmond).
+
+## First: Edmond's review of S3.6 (2026-10-02)
+
+Do these before S3.7 code; the first one may change S3.7 and later steps.
+
+1. **The scheduler follows TrueAsync's hybrid algorithm, or a recorded reason why it cannot.**
+   Edmond: TrueAsync's scheduler code runs between coroutines (the tick and
+   `execute_next_coroutine` inside suspend, direct switches) and in a separate scheduler
+   coroutine `ZEND_ASYNC_SCHEDULER` with its own fiber, both at once. Ours (S3.md section 5) has
+   only the first half; the drain on the OS stack (`drain_context()`, `scheduler_drain`) stands in
+   for the second only after the script ends. Map TrueAsync's algorithm from
+   `/root/php-async/scheduler.c` (scheduler launch and `main_transfer` around `:1300-1420`,
+   `switch_to_scheduler` `:383`, `execute_next_coroutine` `:497-546`, `fiber_entry` `:1764-2060`,
+   `bailout_all_coroutines` `:949-995`), check what the RFC core allows (the from_main calls,
+   `EG(main_fiber_context)`, the GC, ts.c), then tell Edmond with code which it is. It decides the
+   bailout path too: today `fiber_entry`'s `zend_catch` sends BAILOUT straight to main's stack
+   or the drain (ts.c's shape, not TrueAsync's: TrueAsync goes through the scheduler fiber, which
+   runs `bailout_all_coroutines`, then to main). Never describe TrueAsync as a separate scheduler
+   fiber alone.
+2. **TLS reads into locals.** A TLS global (`EG()`, `ASYNC_G()`, a `ZEND_ASYNC_*` slot) read two
+   or three times in one function goes into a local first. Add the line to `dev/WORKFLOW.md`
+   "Code" and fix the S3.6 spots (`EG(exception)` in `scheduler_suspend`, `scheduler_tick`) in the
+   S3.7 commit. Minor (Edmond).
+3. **`async_wait_kind_t` (S3.3) has no TrueAsync counterpart**; TrueAsync keeps `del_callback` and
+   `info` on each event. Edmond questioned it and was shown that plain records never read `kind`
+   (`F_TYPED`), but did not confirm it. If S3.7 keeps it, say so with the code before writing
+   `async_wait_unlink`; switching to TrueAsync's event methods is cheapest before S3.7.
+4. **No `zend_fiber_switch_*` at all** in `src/` (done in 94c5ef5, gate extended; D14 withdrawn,
+   it was Claude's error, not Edmond's decision). The core's own switch-block windows (pcntl
+   dispatch, ticks, the IO-hooks lock) stay open, as in TrueAsync; the Critic suggested a phpt
+   that pins the pcntl or ticks case. Not done.
+5. **Names say what the thing is** (Edmond asked about `fiber_loop`, `next`,
+   `scheduler_idle_context`; renamed to `run_coroutines`, `next_coroutine`, `drain_context`).
+   Check new names before review, not after.
 
 ## State
 
@@ -23,7 +57,7 @@ run after S3.14 (Edmond).
   from_main call drops the queue before main finishes; `getSuspendFileAndLine`,
   `getSuspendLocation`, `getTrace` read the parked frame through the core's execute-data slot. Both
   `Async\suspend()` and the slot refuse inside a Fiber the scheduler did not adopt (until S3.9).
-- The extension never calls `zend_fiber_switch_block()`; the notify and the tick run with
+- The extension never calls any `zend_fiber_switch_*` function; the notify and the tick run with
   `ZEND_ASYNC_IN_SCHEDULER_CONTEXT`; no `zend_try` in the notify or the tick.
 - Reviews: after the code, Critic and the Sage (`general-purpose`, model `fable`) compare it with
   TrueAsync (`/root/php-async` in the container) and hunt inventions; one plan step is one commit.
@@ -69,4 +103,5 @@ run after S3.14 (Edmond).
 
 ## Next
 
-1. S3.7.
+1. Item 1 of "First" above: answer Edmond on the hybrid scheduler.
+2. S3.7.
