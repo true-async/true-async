@@ -59,6 +59,14 @@ without ior (`dev/PLAN.md`, S3.2); Edmond accepted it on 2026-10-02.
 - A decision that changes what the extension or CI exposes gets a line in the journal of
   `dev/SECURITY.md`, beside its `DECISIONS.md` entry when it has one.
 
+## Tests
+
+- An existing test is changed only with a reason: the test is wrong, it contradicts the RFC or a
+  recorded decision. Critic judges the reason before the change; when Critic doubts, the question
+  goes to Edmond (2026-10-02). A ported test carries the change as `changed:` with the
+  `DECISIONS.md` line that records the reason. Held by discipline; `check-lists.py` catches an
+  untagged edit of a ported test.
+
 ## Code
 
 - A name states the role of the value: no one-letter or clipped variable names (`c`, `x`, `ce`, `rec`,
