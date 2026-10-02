@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-02 · Active: S3.2
+Updated: 2026-10-02 · Active: S3.3
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -158,7 +158,7 @@ Tier: T2. Roles: Critic on S3.1, Critic after S3.4, security pass (S3.5).
       Design agreed 2026-10-02: Edmond's decisions D1-D38 (`dev/reviews/s3-structures/`), note
         rewritten (version 3), test list frozen at 133. Critic on version 3: self in the run queue,
         tick exceptions, Fiber methods inside the tick, ts.c for D5, thresholds; all fixed.
-- [~] S3.2 Fixes on `async-core` that S3 needs, each with a test: `F_STARTED` (bit 8) and the fiber
+- [x] S3.2 Fixes on `async-core` that S3 needs, each with a test: `F_STARTED` (bit 8) and the fiber
       release and force-close checks; EH_THROW saved per switch; GC where switching is blocked
       starts its coroutine without waiting; GC's async pointers cleared on any finish and in
       `gc_reset`; no NULL dereference after `shutdown` in a fiber coroutine; current and main
@@ -176,7 +176,11 @@ Tier: T2. Roles: Critic on S3.1, Critic after S3.4, security pass (S3.5).
         `834811f2d88` on debug and ASAN, except the seven new test_scheduler tests 068-074, all
         PASS; 18 hooks and 3 poll tests SKIP in both (Ring and ior absent). Left: the ior half
         (Ring tests, `IOR_BACKEND=threads`) accepted without a run (Edmond, 2026-10-02); `CORE_REF` and
-        "Pinned core" point at `8a29d63edcf`. Left: CI green on it.
+        "Pinned core" point at `8a29d63edcf`.
+      handoff: CI green on `8a29d63edcf` (run 36995546671, 5ad8c0a: lists, `pocs-dbg`, `pocs-asan`,
+        Windows, mutants-coverage). CI gates on lists up to `CLOSED_STAGE` (2); the S3 list runs in a
+        step that reports without failing; with no S3 code it gives 127 FAIL, 8 PASS on dbg, on this
+        core (run 36994985179) as on `834811f2d88` (run 36994693932).
       RFC text 2026-10-02: true-async/php-async-core-rfc `f1e64a8`, both `scheduler_rfc.md` and
         `.dokuwiki.txt`: the *started* attribute (item 1) and enqueue of a finished coroutine
         refused with an `Error` (item 7).
