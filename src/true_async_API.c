@@ -141,7 +141,8 @@ bool async_callbacks_notify(async_awaitable_t *target,
 
 	/* data, length and the cursor are reread every step: a callback may add, remove, grow, or
 	 * free the vector (which restarts the cursor on an empty vector). A bailout out of a callback
-	 * leaves the vector marked: the request is going down, and no later notify of it is needed. */
+	 * leaves the vector marked, as in TrueAsync: the scheduler's bailout handling unwinds every
+	 * unfinished coroutine itself, waiters included (TrueAsync's bailout_all_coroutines()). */
 	while (vector->cursor < vector->length) {
 		async_event_callback_t *callback = async_callbacks_slots(vector)[vector->cursor++];
 		callback->callback(target, callback, result, exception);
