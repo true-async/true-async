@@ -170,7 +170,9 @@ Tier: T2. Roles: Critic on S3.1, Critic after S3.4, security pass (S3.5).
         one commit each; tests `Zend/tests/fibers/error-handling-window-per-fiber` (6), 071 (8),
         072 (9), 073 (11), 074 (13); each fails without its fix (072 on its parent, the rest on
         `5add2bcac22`); 7, 10, 12 and 14 have no phpt (reasons in `dev/handoff.md`). Left: the
-        core update.
+        core update; the RFC text in true-async/php-async-core-rfc (`scheduler_rfc.md` and
+        `scheduler_rfc.dokuwiki.txt`) brought in line with items 1 and 7: what "started" means
+        (the lifecycle, lines 126-171) and enqueue of a FINISHED coroutine (lines 246-262).
 - [ ] S3.3 All 21 slots, internal context init and destroy; `Async\spawn`, `await`, `suspend`,
       `Coroutine` and its methods, `DeadlockError`.
 - [ ] S3.4 Shutdown windows without IO: shutdown functions, destructors, output handlers.
@@ -248,6 +250,9 @@ Goal: the review's findings measured on a real provider; requests to both RFCs w
 Done when: B1, B2, B3, M1, M4, M10, M12, M13 each have an outcome (reproduced, not reproduced,
 not expressible with why); `RFC-CHANGES.md` complete; the review updated.
 Tier: T1.
+Known: the True Async RFC (true-async/php-true-async-rfc, `base.rfc:80-87`) declares
+`Cancellation extends \Throwable`, which an extension cannot implement; D8 chose
+`AsyncCancellation extends \Error`. The RFC text needs that change.
 
 ## S9 — Higher layers, one at a time  [ ]
 
