@@ -19,6 +19,7 @@
 #include "Zend/zend_builtin_functions.h"
 #include "coroutine.h"
 #include "exceptions.h"
+#include "scheduler.h"
 #include "coroutine_arginfo.h"
 
 zend_class_entry *async_ce_coroutine = NULL;
@@ -41,6 +42,85 @@ static zend_object *coroutine_object_create(zend_class_entry *class_entry)
 	return &coroutine->std;
 }
 
+/* Releases the values a coroutine holds that can run PHP code when they go: its arguments, result,
+ * outcome, contexts and wait state. Each field is cleared before its release, so a destructor that
+ * the release runs finds the coroutine without it. Returns the outcome exception, still referenced,
+ * for the caller to release or throw. */
+static zend_object *coroutine_release_values(async_coroutine_t *coroutine)
+{
+	zend_coroutine_t *zend_coroutine = &coroutine->coroutine;
+	zend_fcall_t *fcall = zend_coroutine->fcall;
+
+	if (fcall != NULL) {
+		zend_coroutine->fcall = NULL;
+		ZEND_ASYNC_FCALL_FREE(fcall);
+	}
+
+	zval value;
+
+	ZVAL_COPY_VALUE(&value, &zend_coroutine->result);
+	ZVAL_UNDEF(&zend_coroutine->result);
+	zval_ptr_dtor(&value);
+
+	ZVAL_COPY_VALUE(&value, &coroutine->waker.result);
+	ZVAL_UNDEF(&coroutine->waker.result);
+	zval_ptr_dtor(&value);
+
+	zend_object *deferred_cancellation = coroutine->deferred_cancellation;
+
+	if (UNEXPECTED(deferred_cancellation != NULL)) {
+		coroutine->deferred_cancellation = NULL;
+		OBJ_RELEASE(deferred_cancellation);
+	}
+
+	zend_object *pending_error = coroutine->waker.error;
+
+	if (UNEXPECTED(pending_error != NULL)) {
+		coroutine->waker.error = NULL;
+		OBJ_RELEASE(pending_error);
+	}
+
+	zend_object *context = zend_coroutine->context;
+
+	if (UNEXPECTED(context != NULL)) {
+		zend_coroutine->context = NULL;
+		OBJ_RELEASE(context);
+	}
+
+	zend_hash_clean(&zend_coroutine->internal_context);
+
+	zend_object *exception = zend_coroutine->exception;
+	zend_coroutine->exception = NULL;
+
+	return exception;
+}
+
+/* The values go here, at the last reference, not in free_obj, as in TrueAsync's
+ * coroutine_object_destroy (coroutine.c:164-242): a destructor that their release runs may take the
+ * object again (Async\current_coroutine() while the finished coroutine is still current), and the
+ * engine keeps an object taken again after dtor_obj but frees the block after free_obj whatever
+ * its refcount (zend_objects_store_del). The store's destructor pass at shutdown skips coroutine
+ * objects (zend_objects_store_call_destructors_async), so a queued one keeps its arguments until it
+ * runs. An exception nobody observed is thrown where the last reference went
+ * (coroutine.c:219-230), unless it is a cancellation or no PHP code runs there. */
+static void coroutine_object_destroy(zend_object *object)
+{
+	async_coroutine_t *coroutine = async_coroutine_from_object(object);
+	zend_object *exception = coroutine_release_values(coroutine);
+
+	if (EXPECTED(exception == NULL)) {
+		return;
+	}
+
+	if (UNEXPECTED(!(coroutine->coroutine.flags & ASYNC_COROUTINE_F_EXC_CAUGHT) &&
+				   !instanceof_function(exception->ce, async_ce_cancellation) && EG(current_execute_data) != NULL)) {
+		zend_throw_exception_internal(exception);
+		return;
+	}
+
+	OBJ_RELEASE(exception);
+}
+
 static void coroutine_object_free(zend_object *object)
 {
 	async_coroutine_t *coroutine = async_coroutine_from_object(object);
@@ -57,31 +137,17 @@ static void coroutine_object_free(zend_object *object)
 
 	async_callbacks_free((async_awaitable_t *) coroutine, &coroutine->callbacks);
 
-	if (coroutine->coroutine.fcall != NULL) {
-		ZEND_ASYNC_FCALL_FREE(coroutine->coroutine.fcall);
-		coroutine->coroutine.fcall = NULL;
+	zend_object *exception = coroutine_release_values(coroutine);
+
+	if (UNEXPECTED(exception != NULL)) {
+		OBJ_RELEASE(exception);
 	}
 
 	if (coroutine->coroutine.filename != NULL) {
 		zend_string_release_ex(coroutine->coroutine.filename, false);
 	}
 
-	if (UNEXPECTED(coroutine->coroutine.exception != NULL)) {
-		OBJ_RELEASE(coroutine->coroutine.exception);
-	}
-
-	if (UNEXPECTED(coroutine->deferred_cancellation != NULL)) {
-		OBJ_RELEASE(coroutine->deferred_cancellation);
-	}
-
-	if (UNEXPECTED(coroutine->waker.error != NULL)) {
-		OBJ_RELEASE(coroutine->waker.error);
-	}
-
-	zval_ptr_dtor(&coroutine->waker.result);
-	zval_ptr_dtor(&coroutine->coroutine.result);
 	zend_async_internal_context_destroy(&coroutine->coroutine);
-	zend_async_context_destroy(&coroutine->coroutine);
 	zend_object_std_dtor(object);
 }
 
@@ -164,10 +230,10 @@ void async_exit_exception_add(zend_object *exception)
 }
 
 /* The exception pending in EG becomes the coroutine's outcome. Over an outcome already stored (a
- * cancellation delivered while the body ran on, S3.8) it keeps that one as its previous, unless it
- * is itself a cancellation. An exit unwinds the coroutine and is no outcome; what exit() in a
- * coroutine does to the request is S3.8's. */
-static void coroutine_take_exception(async_coroutine_t *coroutine)
+ * cancellation of the running coroutine, which ran on) it keeps that one as its previous, unless it
+ * is itself a cancellation. An exit unwinds the coroutine and is no outcome; true when it was
+ * exit(), which ends the request (D16). */
+static bool coroutine_take_exception(async_coroutine_t *coroutine)
 {
 	zend_object *exception = EG(exception);
 
@@ -175,15 +241,16 @@ static void coroutine_take_exception(async_coroutine_t *coroutine)
 	zend_clear_exception();
 
 	if (UNEXPECTED(zend_is_graceful_exit(exception) || zend_is_unwind_exit(exception))) {
+		const bool is_exit = zend_is_unwind_exit(exception);
 		OBJ_RELEASE(exception);
-		return;
+		return is_exit;
 	}
 
 	zend_object *outcome = coroutine->coroutine.exception;
 
 	if (UNEXPECTED(outcome != NULL && instanceof_function(exception->ce, async_ce_cancellation))) {
 		OBJ_RELEASE(exception);
-		return;
+		return false;
 	}
 
 	if (UNEXPECTED(outcome != NULL)) {
@@ -191,6 +258,8 @@ static void coroutine_take_exception(async_coroutine_t *coroutine)
 	}
 
 	coroutine->coroutine.exception = exception;
+
+	return false;
 }
 
 void async_coroutine_execute(async_coroutine_t *coroutine)
@@ -249,11 +318,19 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 	 * zend_try caught it (TrueAsync's finalize destroys the waker the same way). */
 	async_wait_unlink(coroutine);
 
+	bool is_exit = false;
+
 	if (UNEXPECTED(EG(exception) != NULL)) {
-		coroutine_take_exception(coroutine);
+		is_exit = coroutine_take_exception(coroutine);
 	}
 
 	ZEND_COROUTINE_SET_STATUS(zend_coroutine, ZEND_COROUTINE_STATUS_FINISHED);
+
+	/* exit() ends the request gracefully, as in TrueAsync (D16): the other coroutines are cancelled,
+	 * this one no longer, being finished. */
+	if (UNEXPECTED(is_exit)) {
+		async_scheduler_cancel_for_exit();
+	}
 
 	/* The context stays with the loop that ran the body; main's copy was freed by main_coroutine_finish. */
 	coroutine->fiber_context = NULL;
@@ -264,10 +341,12 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 
 	GC_ADDREF(&coroutine->std);
 
-	if (exception != NULL) {
+	if (UNEXPECTED(exception != NULL)) {
 		GC_ADDREF(exception);
 	}
 
+	/* Bit 17 has no setter in S3: the await record marks nothing (scheduler.c, await_record_wake). The
+	 * callbacks of a wait for several targets set it from S5, as TrueAsync's (async_API.c:390, 487). */
 	zend_coroutine->flags &= ~ASYNC_COROUTINE_F_EXCEPTION_HANDLED;
 	async_callbacks_notify((async_awaitable_t *) coroutine, &coroutine->callbacks, &zend_coroutine->result, exception);
 
@@ -296,7 +375,7 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 					ZEND_COROUTINE_IS_FIBER(zend_coroutine)))) {
 		zend_coroutine->flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
 		GC_ADDREF(exception);
-		async_exit_exception_add(exception);
+		async_scheduler_exit_with(exception);
 	}
 
 	/* What the waiters and finish handlers threw ends the request too. */
@@ -304,7 +383,7 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 		zend_object *handler_exception = EG(exception);
 		GC_ADDREF(handler_exception);
 		zend_clear_exception();
-		async_exit_exception_add(handler_exception);
+		async_scheduler_exit_with(handler_exception);
 	}
 
 	if (exception != NULL) {
@@ -465,9 +544,7 @@ ZEND_METHOD(Async_Coroutine, isCompleted)
 	RETURN_BOOL((THIS_FLAGS & ZEND_COROUTINE_STATUS_MASK) == ZEND_COROUTINE_STATUS_FINISHED);
 }
 
-/* The innermost user frame of a parked coroutine (S3.md section 2), or NULL: one that never ran,
- * runs or finished, or one the core parked with no PHP code on its stack (the GC's). */
-static zend_execute_data *coroutine_suspend_frame(async_coroutine_t *coroutine)
+zend_execute_data *async_coroutine_suspend_frame(async_coroutine_t *coroutine)
 {
 	zend_execute_data *execute_data = ZEND_ASYNC_COROUTINE_EXECUTE_DATA(&coroutine->coroutine);
 
@@ -482,7 +559,7 @@ ZEND_METHOD(Async_Coroutine, getSuspendFileAndLine)
 {
 	ZEND_PARSE_PARAMETERS_NONE();
 
-	const zend_execute_data *suspend_frame = coroutine_suspend_frame(THIS_COROUTINE);
+	const zend_execute_data *suspend_frame = async_coroutine_suspend_frame(THIS_COROUTINE);
 
 	array_init_size(return_value, 2);
 
@@ -500,7 +577,7 @@ ZEND_METHOD(Async_Coroutine, getSuspendLocation)
 {
 	ZEND_PARSE_PARAMETERS_NONE();
 
-	const zend_execute_data *suspend_frame = coroutine_suspend_frame(THIS_COROUTINE);
+	const zend_execute_data *suspend_frame = async_coroutine_suspend_frame(THIS_COROUTINE);
 
 	if (suspend_frame == NULL) {
 		RETURN_STRING("unknown");
@@ -556,7 +633,7 @@ ZEND_METHOD(Async_Coroutine, cancel)
 		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_cancellation)
 	ZEND_PARSE_PARAMETERS_END();
 
-	zend_throw_error(NULL, "Async\\Coroutine::cancel() is not implemented yet");
+	async_coroutine_cancel(THIS_COROUTINE, cancellation, false);
 }
 
 void async_register_coroutine_ce(zend_class_entry *completable_interface)
@@ -567,6 +644,7 @@ void async_register_coroutine_ce(zend_class_entry *completable_interface)
 
 	memcpy(&coroutine_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
 	coroutine_handlers.offset = offsetof(async_coroutine_t, std);
+	coroutine_handlers.dtor_obj = coroutine_object_destroy;
 	coroutine_handlers.free_obj = coroutine_object_free;
 	coroutine_handlers.get_gc = coroutine_object_gc;
 	coroutine_handlers.clone_obj = NULL;

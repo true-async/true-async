@@ -61,6 +61,24 @@ void async_composite_exception_add_exception(zend_object *composite, zend_object
 	zval_ptr_dtor(&exceptions_array);
 }
 
+zend_object *async_new_exception(zend_class_entry *exception_ce, const char *format, ...)
+{
+	zval exception;
+	zval message;
+	va_list args;
+
+	object_init_ex(&exception, exception_ce);
+
+	va_start(args, format);
+	ZVAL_STR(&message, zend_vstrpprintf(0, format, args));
+	va_end(args);
+
+	zend_update_property_ex(exception_ce, Z_OBJ(exception), ZSTR_KNOWN(ZEND_STR_MESSAGE), &message);
+	zval_ptr_dtor(&message);
+
+	return Z_OBJ(exception);
+}
+
 ZEND_METHOD(Async_CompositeException, addException)
 {
 	zend_object *exception;

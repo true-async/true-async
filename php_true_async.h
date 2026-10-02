@@ -32,6 +32,7 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	HashTable coroutines;                   /* enqueued, unfinished coroutines by object handle; borrowed */
 	async_coroutine_t *scheduler_coroutine; /* runs the loop on its own fiber; NULL until work needs it */
 	uint32_t last_finish_handler_id;        /* the id of the newest finish handler; 0 is never handed out */
+	bool graceful_shutdown;                 /* the graceful shutdown started: once per request */
 	bool debug_deadlock;                    /* true_async.debug_deadlock: the deadlock report lists every coroutine */
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	smart_str *test_trace; /* where a test hook's C callback writes; NULL outside a scenario */

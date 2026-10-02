@@ -1,7 +1,5 @@
 --TEST--
 Async\protect: nested protect calls
---XFAIL--
-Not implemented yet: S3.8 of dev/PLAN.md
 --FILE--
 <?php
 

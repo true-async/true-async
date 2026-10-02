@@ -1,7 +1,5 @@
 --TEST--
 Coroutine: cancel() - basic usage with AsyncCancellation
---XFAIL--
-Not implemented yet: S3.8 of dev/PLAN.md
 --FILE--
 <?php
 

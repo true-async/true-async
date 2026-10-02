@@ -1,7 +1,5 @@
 --TEST--
 Async\protect: closure parameter is required
---XFAIL--
-Not implemented yet: S3.8 of dev/PLAN.md
 --FILE--
 <?php
 

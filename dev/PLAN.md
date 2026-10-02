@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-02 · Active: S3.8
+Updated: 2026-10-02 · Active: S3.9
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -285,11 +285,23 @@ section 14); a step that finds a test needs more moves it on with a note.
         observed mark before a refusal, a debug assert on main, the teardown loop, the tick's flag
         order, unused fields); the GC tests `gc/002`, `007`, `011`, `012` and `scheduler/016` are
         `changed:` ports the Critic judged; S3.md section 14 lists the early passes.
-- [ ] S3.8 Cancellation and exit paths: `cancel`, `protect` (D7), unhandled exceptions as the exit
+- [x] S3.8 Cancellation and exit paths: `cancel`, `protect` (D7), unhandled exceptions as the exit
       exception, deadlock with its report, `graceful_shutdown`, `exit()` in a coroutine.
       done: the S3.8 tests pass; own tests: nested protect cancelled, cancel-before-run then await,
         `exit()` in a spawned coroutine, await from an output handler during the report
       tier: T2 · role: Critic
+      handoff: done 2026-10-02 on core `82df2fc6ccc`: dbg 227 PASS, 7 XFAIL; asan 213 PASS, 14 SKIP, 7 XFAIL.
+        The 29 S3.8 tests lost their `--XFAIL--`. The coroutine's values go in `dtor_obj`, as
+        TrueAsync: a use-after-free since S3.5 (the Sage); it reverses the S3.5 entry "the arguments
+        stay until the object dies" (a Sage and Critic call, not Edmond's). The outcome is observed
+        when a waiter reads it, so a cancelled waiter no longer loses the target's exception. A
+        deadlock cancels and reports instead of a fatal. Own tests `scheduler/028`-`043`; four own
+        tests got new fixtures (`changed:`, Critic and Sage judged). Critic: 1 blocking and 7 more
+        fixed (an exception of an unrun coroutine's release reached the next coroutine, scheduler
+        context of that finalize, the observed mark at the wake, the cancel-all walk, one deadlock
+        cancellation per coroutine, `exit()` after the shutdown, the `shutdown` slot, weak tests);
+        Sage: no blocker, an `exit()` in the report's output handler fixed, two TrueAsync
+        behaviours kept (DECISIONS).
 - [ ] S3.9 Fibers: `intercept_fiber` (always adopt), the deadlock exemption.
       done: the S3.9 tests pass; own tests: a cancelled fiber suspends in `finally` (D5), Fiber
         methods from a destructor in the tick, `exit()` in an adopted fiber

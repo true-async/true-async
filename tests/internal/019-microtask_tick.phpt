@@ -1,5 +1,5 @@
 --TEST--
-The tick runs deferred microtasks in scheduler context, skips a cancelled one, stops at the first throw, which ends the request, and runs the rest at the next tick
+The tick runs deferred microtasks in scheduler context, skips a cancelled one, stops at the first throw, which ends the request gracefully, and runs the rest at the next tick
 --FILE--
 <?php
 use function Async\spawn;
@@ -12,7 +12,14 @@ spawn(function () {
     Test\defer('C', 'cancel');
     Test\defer('D');
     echo "suspend 1\n";
-    suspend();
+
+    /* B's exception starts the graceful shutdown, which cancels this coroutine. */
+    try {
+        suspend();
+    } catch (Async\AsyncCancellation $e) {
+        echo $e->getMessage(), "\n";
+    }
+
     echo "suspend 2\n";
     suspend();
     echo "end\n";
@@ -24,6 +31,7 @@ microtask A sched=1
 released A
 microtask B sched=1
 released B
+Graceful shutdown
 suspend 2
 released C
 microtask D sched=1

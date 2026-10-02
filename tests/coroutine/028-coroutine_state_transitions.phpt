@@ -1,7 +1,5 @@
 --TEST--
 Coroutine state transitions and edge cases
---XFAIL--
-Not implemented yet: S3.8 of dev/PLAN.md
 --FILE--
 <?php
 

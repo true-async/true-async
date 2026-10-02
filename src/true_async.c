@@ -17,6 +17,7 @@
 #include "php.h"
 #include "php_ini.h"
 #include "ext/standard/info.h"
+#include "Zend/zend_closures.h"
 #include "php_true_async.h"
 #include "coroutine.h"
 #include "exceptions.h"
@@ -278,6 +279,47 @@ ZEND_FUNCTION(Async_suspend)
 	ZEND_ASYNC_SUSPEND();
 }
 
+/* S3.md section 6 and D7: the request that arrives inside waits in deferred_cancellation. Only the
+ * outermost protect() ends the protection, so a nested one does not throw in the middle of the outer
+ * (section 13, bug 1). Without a current coroutine (async off) the closure is just called. */
+ZEND_FUNCTION(Async_protect)
+{
+	zend_object *closure = NULL;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_OBJ_OF_CLASS(closure, zend_ce_closure)
+	ZEND_PARSE_PARAMETERS_END();
+
+	async_coroutine_t *coroutine = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
+	const bool was_protected = coroutine != NULL && (coroutine->coroutine.flags & ASYNC_COROUTINE_F_PROTECTED);
+
+	if (EXPECTED(coroutine != NULL)) {
+		coroutine->coroutine.flags |= ASYNC_COROUTINE_F_PROTECTED;
+	}
+
+	zval closure_zval;
+	ZVAL_OBJ(&closure_zval, closure);
+	call_user_function(NULL, NULL, &closure_zval, return_value, 0, NULL);
+
+	if (UNEXPECTED(Z_ISUNDEF_P(return_value))) {
+		ZVAL_NULL(return_value);
+	}
+
+	if (UNEXPECTED(coroutine == NULL || was_protected)) {
+		return;
+	}
+
+	coroutine->coroutine.flags &= ~ASYNC_COROUTINE_F_PROTECTED;
+
+	zend_object *deferred_cancellation = coroutine->deferred_cancellation;
+
+	if (UNEXPECTED(deferred_cancellation != NULL)) {
+		coroutine->deferred_cancellation = NULL;
+		ZEND_COROUTINE_SET_CANCELLED(&coroutine->coroutine);
+		zend_throw_exception_internal(deferred_cancellation);
+	}
+}
+
 ZEND_FUNCTION(Async_current_coroutine)
 {
 	THROW_IF_UNAVAILABLE();
@@ -310,6 +352,21 @@ ZEND_FUNCTION(Async_get_coroutines)
 		add_next_index_object(return_value, &coroutine->std);
 	}
 	ZEND_HASH_FOREACH_END();
+}
+
+/* TrueAsync's async.c:947-960: refused while async is off and in scheduler context. */
+ZEND_FUNCTION(Async_graceful_shutdown)
+{
+	zend_object *cancellation = NULL;
+
+	ZEND_PARSE_PARAMETERS_START(0, 1)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_cancellation)
+	ZEND_PARSE_PARAMETERS_END();
+
+	THROW_IF_UNAVAILABLE();
+
+	async_scheduler_graceful_shutdown(cancellation);
 }
 
 /* clang-format off */

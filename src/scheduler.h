@@ -42,6 +42,29 @@ async_coroutine_t *async_coroutine_new(void);
  * refusal; a transferred `error` is then released. */
 bool async_scheduler_enqueue(zend_coroutine_t *coroutine, zend_object *error, bool transfer_error);
 
+/* Requests the cancellation of `coroutine` (S3.md section 6, TrueAsync's async_coroutine_cancel,
+ * coroutine.c:900-1003). `error`, or a new AsyncCancellation("Coroutine cancelled") when it is NULL,
+ * is thrown inside the coroutine's suspend() when it next runs; one that never ran finishes without
+ * running its body. Inside protect() the first request waits for protect() to return. The running
+ * coroutine is not interrupted: the error becomes its outcome. A finished coroutine ignores it. A
+ * transferred `error` is the callee's. False with an exception when the coroutine cannot be queued. */
+bool async_coroutine_cancel(async_coroutine_t *coroutine, zend_object *error, bool transfer_error);
+
+/* Starts the graceful shutdown (S3.md section 6, TrueAsync's start_graceful_shutdown_with,
+ * scheduler.c:1005-1030): every unfinished coroutine is cancelled with `cancellation` (borrowed), or
+ * with AsyncCancellation("Graceful shutdown") when it is NULL, protection cleared, so its try/finally
+ * blocks run. Once per request: a later call does nothing. */
+void async_scheduler_graceful_shutdown(zend_object *cancellation);
+
+/* What ends the request cancels the coroutines: the graceful shutdown starts, or, once it runs,
+ * every unfinished coroutine is cancelled again, what was spawned since included. exit() calls it
+ * directly. */
+void async_scheduler_cancel_for_exit(void);
+
+/* Ends the request on an exception nothing can catch (an unobserved outcome, a microtask's): it
+ * joins the exit exception and the coroutines are cancelled as above. Takes the reference. */
+void async_scheduler_exit_with(zend_object *exception);
+
 /* Parks the current coroutine until `target` finishes (S3.md 4.1); the caller holds a reference to
  * `target` and reads the outcome from it. Never called in scheduler context. True once the target
  * finished; false with an exception when there is no current coroutine, on a self-await, or when

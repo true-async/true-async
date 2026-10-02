@@ -1,7 +1,5 @@
 --TEST--
 Basic coroutine deferred cancellation with protected operation
---XFAIL--
-Not implemented yet: S3.8 of dev/PLAN.md
 --FILE--
 <?php
 

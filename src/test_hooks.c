@@ -737,12 +737,33 @@ static ZEND_FUNCTION(add_throwing_finish_handler)
 			&async_coroutine_from_object(coroutine)->coroutine, test_throwing_finish_handler, NULL, NULL);
 }
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_enqueue_with_error, 0, 2, _IS_BOOL, 0)
+	ZEND_ARG_OBJ_INFO(0, coroutine, Async\\Coroutine, 0)
+	ZEND_ARG_OBJ_INFO(0, error, Throwable, 0)
+ZEND_END_ARG_INFO()
+
+/* The core's wake with an error (ZEND_ASYNC_ENQUEUE_WITH_ERROR, the fibers' path): the waker rule of
+ * a resume, beside the cancel's. */
+static ZEND_FUNCTION(enqueue_with_error)
+{
+	zend_object *coroutine;
+	zend_object *error;
+
+	ZEND_PARSE_PARAMETERS_START(2, 2)
+		Z_PARAM_OBJ_OF_CLASS(coroutine, async_ce_coroutine)
+		Z_PARAM_OBJ_OF_CLASS(error, zend_ce_throwable)
+	ZEND_PARSE_PARAMETERS_END();
+
+	RETURN_BOOL(ZEND_ASYNC_ENQUEUE_WITH_ERROR(&async_coroutine_from_object(coroutine)->coroutine, error, false));
+}
+
 /* clang-format off */
 const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\callbacks_scenario", ZEND_FN(callbacks_scenario), arginfo_callbacks_scenario, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\buffer_scenario", ZEND_FN(buffer_scenario), arginfo_callbacks_scenario, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\defer", ZEND_FN(defer), arginfo_defer, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_throwing_finish_handler", ZEND_FN(add_throwing_finish_handler), arginfo_add_throwing_finish_handler, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\enqueue_with_error", ZEND_FN(enqueue_with_error), arginfo_enqueue_with_error, 0, NULL, NULL)
 	ZEND_FE_END
 };
 /* clang-format on */

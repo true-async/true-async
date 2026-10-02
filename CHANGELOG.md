@@ -33,3 +33,14 @@ can see goes here; tests, tools and CI are in the git history.
   `await()`, an empty array otherwise.
 - A garbage collection runs in its own coroutine and the code that started it, main included,
   waits for it to end, destructors included.
+- `Async\Coroutine::cancel()`: cancels a coroutine with `AsyncCancellation` (or the given one),
+  delivered at its next switch; a coroutine cancelled before it ran finishes without running.
+- `Async\protect()`: a cancellation requested inside the closure waits until the outermost
+  `protect()` returns.
+- `Async\graceful_shutdown()`: cancels every coroutine once, with the given cancellation or
+  "Graceful shutdown". An unhandled exception that ends the request and `exit()` in a coroutine
+  start it too, so the other coroutines can run their `catch` and `finally` blocks.
+- A deadlock ends the request with `Async\DeadlockError` after every waiting coroutine gets
+  `AsyncCancellation("Deadlock detected")`; `true_async.debug_deadlock` (default on) prints which
+  coroutine waits for which.
+- An exception nobody observed is thrown where the last reference to its coroutine goes.

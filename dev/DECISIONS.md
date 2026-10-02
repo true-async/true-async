@@ -260,3 +260,52 @@ stack options were shown with the code).
   `ZEND_ASYNC_WAKER_NEW` cleans a stale waker: a bailout that a shutdown function's `zend_try`
   caught can leave main's record linked (Sage). `Async\suspend()` refuses for a finished current
   coroutine before it reads the coroutine's context (Sage); `scheduler/026` covers it.
+- 2026-10-02 The coroutine releases its arguments, result, outcome and contexts in `dtor_obj`, as
+  TrueAsync's `coroutine_object_destroy` (`coroutine.c:164-242`), and throws an outcome nobody
+  observed there when PHP code runs. This reverses "the arguments stay until the object dies"
+  above, an S3.5 call of the Sage and the Critic: a destructor that the release ran in `free_obj`
+  could take the finished coroutine again (`Async\current_coroutine()`), and the engine frees the
+  block after `free_obj` whatever its refcount (use-after-free, the Sage in S3.7). `dtor_obj` has
+  no FINISHED guard, as TrueAsync's: the store's destructor pass at shutdown skips coroutine
+  objects. Tests `scheduler/032`, `033`, `038`.
+- 2026-10-02 The outcome counts as observed when a waiter reads it (after the wait, or at once for
+  a finished target), not when `await()` starts and not at the record's wake (TrueAsync's
+  `zend_async_waker_callback_resolve` marks there). This replaces the entry "`await()` marks the
+  target's outcome observed before it waits" above: a waiter cancelled before its target finished,
+  or after the wake and before it ran, lost the target's exception, in TrueAsync too (Critic).
+  Tests `scheduler/034`, `041`.
+- 2026-10-02 One rule for a coroutine's pending error, TrueAsync's (`zend_async_API.c:1344-1367`
+  and its resume): a cancellation keeps a pending cancellation and takes a pending plain error as
+  its previous; a plain error drops a new cancellation and goes on top of the rest. Test
+  `scheduler/037` through the hook `TrueAsync\Test\enqueue_with_error`.
+- 2026-10-02 The graceful shutdown starts once per request (`ASYNC_G(graceful_shutdown)`; the core
+  has no such flag) and its second call is ignored; an exit exception or an `exit()` after it
+  re-cancels every coroutine, as TrueAsync's `finally_shutdown`. `exit()` in any coroutine starts
+  it from finalize (D16); an `exit()` the tick folds is not added to the exit exception (it hid
+  the one already there); the `shutdown` slot clears the exit, as TrueAsync's, since the pinned
+  core handles that. The 5 s deadline stays S4's. Tests `scheduler/030`, `035`, `042`, `043`.
+- 2026-10-02 A deadlock no longer ends the request with a fatal: as TrueAsync's
+  `resolve_deadlocks`, a `DeadlockError` joins the exit exception and every coroutine is cancelled
+  with its own "Deadlock detected" (a shared one would carry one coroutine's pending error into
+  another's chain, Critic); it does not start the graceful shutdown. The report is composed and
+  written once, so an output handler cannot run while the registry is walked; one that waits is
+  refused (scheduler context). Test `scheduler/031`.
+- 2026-10-02 A coroutine cancelled before it ran is finished where the run queue pops it, its
+  cancellation as the outcome, instead of TrueAsync's skip at switch-in. Why: no stack is taken for
+  a body that never runs. Its finalize runs outside scheduler context whoever pops it, and what its
+  releases throw is folded there (Critic: it reached the next coroutine). Tests `scheduler/029`,
+  `039`, `040`.
+- 2026-10-02 The graceful shutdown that an exit exception starts cancels coroutines four own tests
+  left yielding or parked to the end, so their fixtures changed with their expectations kept or
+  extended: `scheduler/006-bailout_drops_exit_exception.phpt` and
+  `scheduler/015-finalize_destructor_throws.phpt` spawn the coroutine that must still run first and
+  catch the cancellation, `internal/019-microtask_tick.phpt` catches and prints it, and
+  `internal/022-finish_handler_throws_before_waiter.phpt` parks two coroutines on each other so the
+  teardown's wake shows ahead of the shutdown (a probe without the wake fails it).
+- 2026-10-02 Two TrueAsync behaviours kept as they are (the Sage, S3.8): an unobserved exception of
+  a coroutine that a global variable holds to the end is released silently, since its last
+  release comes with no frame (`coroutine_object_destroy`'s `EG(current_execute_data)` test, as
+  TrueAsync's `coroutine.c:219-230`); and the graceful shutdown hands one cancellation object to
+  every coroutine, so pending errors of two coroutines share its previous chain
+  (`cancel_queued_coroutines`), while the deadlock gives each its own. Edmond may want the first
+  reported instead.

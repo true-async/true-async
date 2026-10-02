@@ -10,8 +10,20 @@ class D
     }
 }
 
-Async\spawn(fn($d) => print("first\n"), new D());
-Async\spawn(fn() => print("second\n"));
+Async\spawn(function ($d) {
+    Async\suspend();
+    print("first\n");
+}, new D());
+
+/* Started before the destructor throws: the graceful shutdown cancels it, and it goes on. */
+Async\spawn(function () {
+    try {
+        Async\suspend();
+    } catch (Async\AsyncCancellation $e) {
+    }
+
+    print("second\n");
+});
 ?>
 --EXPECTF--
 first

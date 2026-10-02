@@ -64,6 +64,10 @@ void async_coroutine_execute(async_coroutine_t *coroutine);
  * request's exit exception (S3.md section 6). */
 void async_coroutine_finalize(async_coroutine_t *coroutine);
 
+/* The innermost user frame of a parked coroutine (S3.md section 2), or NULL: one that never ran,
+ * runs or finished, or one the core parked with no PHP code on its stack (the GC's). */
+zend_execute_data *async_coroutine_suspend_frame(async_coroutine_t *coroutine);
+
 /* The request's exit exception (S3.md section 6): a later one takes the earlier as its previous.
  * Takes a reference. */
 void async_exit_exception_add(zend_object *exception);
