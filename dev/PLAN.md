@@ -131,8 +131,8 @@ Base: 82fd6d6
       handoff: true-async `ci.yml` upload-artifact v4 to v7 (`de2e015`, run 37001631753 green, no
       annotations); the site's `deploy.yml` checkout and setup-node v7, upload-pages-artifact and
       deploy-pages v5 (`c5d30eb`, deployed, no Node 20 warning). true-async-doc,
-      php-async-core-rfc and claude-skills have no workflows; true-async/php-src carries upstream's
-      workflows, already on Node 24 actions, and every job in the fork is skipped.
+      php-async-core-rfc and claude-skills have no workflows; true-async/php-src carries only
+      upstream's workflows, and every job of theirs in the fork is skipped (no warning to fix).
 
 Test layers: `dev/plans/S2.md`, section 4.
 
