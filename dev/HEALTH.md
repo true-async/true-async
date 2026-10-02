@@ -36,8 +36,6 @@ Known dark places: none beyond the open findings
 - 8 core Zend/zend_async_API.h, .c: API surface with no caller and no RFC text: `call_on_main_stack`, `coroutine_from_object`, `ZEND_COROUTINE_F_OBJ_REF`, `ZEND_ASYNC_GET_EXCEPTION_CE`, `zend_async_is_enabled`, empty `internal_globals_dtor` (S3.18)
 - 8 core Zend/zend_execute_API.c:243: `shutdown_destructors_iterator_entry` forwards to a function of the same signature (S3.18)
 - 8 core Zend/zend_fibers.h:141-143: the comment says the coroutine owns the fiber; the code has the fiber own the coroutine (S3.18)
-- 9 dev/PRINCIPLES.md:11-12, 27-28: the gate fields of P1.1 and P2.2 are stale (S3.15)
-- 9 dev/DECISIONS.md:110-112: "every callback of a notify runs" waits for Edmond's confirmation while the code ships it
 - 9 dev/plans/S3.md:302-304: says the fiber entry's catch restores the scheduler-context flag; DECISIONS 2026-10-02 and the code restore it when main is adopted (S3.15)
 - 10 dev/plans/S2.md:187: the scenarios layer (`.feature` ports of fuzzy-tests) has no owning plan step and no DECISIONS entry for its generator
 - fine 6 src/scheduler.c:502-503: the registry insert precedes a push that can bail out on OOM; the leftover is the case RSHUTDOWN names for S3.10's bailout drain
@@ -70,6 +68,7 @@ Looks bad but is fine:
 - The core never calls `zend_fiber_switch_block()` in new code and adds no global that is written
   but never read; it uses the scheduler-context flag.
 Plan: S3.15-S3.18 added after S3.5.
-Questions for Edmond: the notify rule (DECISIONS 2026-10-02), a parked fiber not collected by
-  `gc_collect_cycles()` (S3.18), a principle for "no mechanism without a counterpart".
+Edmond's answers the same day: the notify stops at the first throw, as TrueAsync; the parked
+  fiber stays uncollected, recorded in the RFC and the tests (S3.18); principle P1.4 with its gate.
+  Applied with the notify change; the two pass 9 findings they settle are closed.
 Next: 8, 9

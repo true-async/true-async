@@ -3,9 +3,10 @@
 
     check-gates.py
 
-Each gate names a construct of the fork that the port must not carry over, or a build flag that
-must stay. Prints every violation with file:line; exits 1 if there is one. The gate "every
-`flags =` on an event contains ASYNC_AWAITABLE_F_EVENT" waits for the first event (S4).
+Each gate names a construct the port must not carry (a fork construct, or a call a principle
+forbids), or a build flag that must stay. Prints every violation with file:line; exits 1 if there
+is one. The gate "every `flags =` on an event contains ASYNC_AWAITABLE_F_EVENT" waits for the first
+event (S4).
 """
 import re
 import sys
@@ -39,6 +40,7 @@ FORBIDDEN = [
     ('the fork waker status', r'waker->status|\bZEND_ASYNC_WAKER_(?:NO_STATUS|WAITING|QUEUED|IGNORED|RESULT)\b'),
     ('the fork yield flag', r'\bF_YIELD\b|\bIS_YIELD\b'),
     ('a fork wait structure', r'\b(?:triggered_events|inline_triggers|current_iterator|resume_when|resumed_coroutines)\b'),
+    ('a fiber switch ban (P1.4: the scheduler-context flag)', r'\bzend_fiber_switch_(?:un)?block\s*\('),
 ]
 
 # (file, flag it must pass to the compiler), looked for outside comments.

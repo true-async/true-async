@@ -288,9 +288,10 @@ static void scenario_nested_other(smart_str *trace)
 	async_callbacks_free((async_awaitable_t *) &inner, &inner.callbacks);
 }
 
-/* A B C, entered with an exception pending; A and C throw: all three run with no exception
- * pending, and the chain is c, then a, then the entry exception. */
-static void scenario_throw_all(smart_str *trace)
+/* A B C, entered with an exception pending; A and C throw: A runs with no exception pending and
+ * ends the notify, B and C stay uncalled until the free, and the chain is a, then the entry
+ * exception. */
+static void scenario_throw_stops(smart_str *trace)
 {
 	test_target_t target = { ASYNC_AWAITABLE_F_EVENT };
 	test_callback_t callbacks[3];
@@ -305,6 +306,7 @@ static void scenario_throw_all(smart_str *trace)
 	zend_throw_exception(NULL, "entry", 0);
 	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
 	test_trace_exception(trace);
+	smart_str_append_printf(trace, " left=%u", target.callbacks.length);
 	async_callbacks_free((async_awaitable_t *) &target, &target.callbacks);
 }
 
@@ -435,7 +437,7 @@ static const test_scenario_t test_scenarios[] = {
 	{ "single-self", scenario_single_self }, { "add-during", scenario_add_during },
 	{ "nested-same", scenario_nested_same }, { "nested-other", scenario_nested_other },
 	{ "finish-ids", scenario_finish_ids },   { "finish-once", scenario_finish_once },
-	{ "throw-all", scenario_throw_all },     { "bailout-caught", scenario_bailout_caught },
+	{ "throw-stops", scenario_throw_stops }, { "bailout-caught", scenario_bailout_caught },
 	{ "sched-kept", scenario_sched_kept },
 };
 

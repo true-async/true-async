@@ -9,7 +9,8 @@ below); the table at the end shows where each of them went.
 - **P1.1 Stock php-src plus the RFCs over private core patches.** Why: N1; the fork's core is the
   reason a slice of `ext/async` could not be ported (design round 1). Flips: never; a needed core
   change becomes an RFC change request (`RFC-CHANGES.md`), an upstream fix, or waits. Gate: CI
-  builds the PoCs-only core tree (S2.4); until then, held by discipline.
+  builds the extension against the pinned PoCs-only core (S2.4); a private patch landing on
+  `async-core-io` is caught by the merge-only check of `WORKFLOW.md`, held by discipline.
 - **P1.2 bukka's IO APIs over libuv.** Why: N4; embedding libuv spun the loop (design round 2).
   Flips: never. Gate: held by discipline, no gate.
 - **P1.3 Code written anew over code ported from the fork.** Why: N3. Flips: tests, which are
@@ -17,6 +18,14 @@ below); the table at the end shows where each of them went.
   buffer, the scheduler, the needed part of the fork's async API), reviewed and changed where
   wrong rather than copied (`DECISIONS.md` 2026-10-01).
   Gate: held by discipline, no gate.
+- **P1.4 TrueAsync's solution over a new mechanism.** Before a global, a counter, a `zend_try`, an
+  extra function or field, find how TrueAsync (true-async/php-async and its core) solves the same
+  thing and do the same; a mechanism it lacks needs a recorded reason. Fiber switches are never
+  forbidden with `zend_fiber_switch_block()`: the scheduler-context flag does it. No `zend_try` or
+  global counter on a hot path without Edmond's word. Why: Edmond, 2026-10-02, after the notify
+  rework (`DECISIONS.md` 2026-10-02). Flips: Edmond's word, recorded in `DECISIONS.md`. Gate:
+  `tools/check-gates.py` forbids `zend_fiber_switch_block()` and `zend_fiber_switch_unblock()` in
+  `src/`; the rest is held by the Critic, who compares each change with TrueAsync.
 
 ## P2. Compatibility
 
@@ -25,7 +34,7 @@ below); the table at the end shows where each of them went.
   Gate: the frozen stage list names the reason of every excluded test.
 - **P2.2 TrueAsync classes, interfaces and logic over a cleaner new API.** Why: N8. Flips: P2.1,
   or a reason written in `DECISIONS.md`. Gate: a ported test changes only with a `DECISIONS.md`
-  entry; held by discipline until the stage lists exist (S3).
+  entry; `tools/check-lists.py` refuses a `changed:` tag without one (S2.3).
 
 ## P3. Testing and platforms
 

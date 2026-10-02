@@ -242,8 +242,8 @@ section 14); a step that finds a test needs more moves it on with a note.
       field of `test_finish_t`; `async_ce_awaitable` and `async_ce_completable` static; the finish
       handler functions take `zend_coroutine_t *` and sit in the slots, the two forwarders in
       `scheduler.c` go; S3.md "As built" on the scheduler-context flag follows DECISIONS 2026-10-02;
-      the P1.1 and P2.2 gate fields name S2.4 and `check-lists.py`; `check-gates.py` forbids
-      `zend_fiber_switch_(un)?block`; `dev/INDEX.md` lists `src/`, the build files and every tool.
+      `dev/INDEX.md` lists `src/`, the build files and every tool. Done ahead with Edmond's answers:
+      the notify stops at the first throw, P1.4 and its gate, the P1.1 and P2.2 gate fields.
       done: the S3 list passes as before; `check-gates.py` and `check-lists.py` clean
       tier: T1 · role: —
 - [ ] S3.16 Health tests: own tests for the refusals of `true_async.c` (extension off, async off, scheduler
@@ -264,9 +264,11 @@ section 14); a step that finds a test needs more moves it on with a note.
       `coroutine_from_object`, `ZEND_COROUTINE_F_OBJ_REF`, `ZEND_ASYNC_GET_EXCEPTION_CE`,
       `zend_async_is_enabled`, empty `internal_globals_dtor`) with the RFC text and
       `ZEND_ASYNC_API_VERSION`; tests 034, 036, 055-059 get the reason of their departure from
-      upstream (a parked fiber is collected only at the scheduler's shutdown), or the core makes it
-      collectable, as Edmond decides; a fault seam in the test scheduler for enqueue and spawn
-      failures.
+      upstream (a parked fiber is collected only at the scheduler's shutdown) and the RFC's
+      "Backward Incompatible Changes" its fourth item (Edmond, 2026-10-02, DECISIONS); the finish
+      handler contract in `zend_async_API.h` and the RFC reads "at most once: a handler that throws
+      ends the notify", as the notify now does (DECISIONS 2026-10-02); a fault seam
+      in the test scheduler for enqueue and spawn failures.
       done: `ext/test_scheduler/tests` equal per test on dbg and ASAN; `CORE_REF` and "Pinned core" moved
       tier: T2 · role: Critic
 - [ ] S3.6 Suspend: `suspend()` by 4.2 with the tick (microtasks), yield, the context pool (D23),
@@ -279,7 +281,7 @@ section 14); a step that finds a test needs more moves it on with a note.
       done: the S3.7 tests pass; own tests of layer 2 (two waiters, two wakes in one tick, a target
         destroyed with records linked and its waiter woken with an error (moved from S3.5), a
         script with 12 000 cyclic objects with `__destruct` ends (it hangs since S3.5), a wait refused in scheduler context, GC while an exception
-        unwinds); blind tests from section 4 by `test-author` pass
+        unwinds, a waiter's record left behind a finish handler that throws (S3.md 4.6)); blind tests from section 4 by `test-author` pass
       tier: T2 · role: Critic
 - [ ] S3.8 Cancellation and exit paths: `cancel`, `protect` (D7), unhandled exceptions as the exit
       exception, deadlock with its report, `graceful_shutdown`, `exit()` in a coroutine.

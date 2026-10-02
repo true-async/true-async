@@ -101,10 +101,9 @@ void async_callbacks_notify(async_awaitable_t *target,
 	const bool in_scheduler_context = ZEND_ASYNC_IN_SCHEDULER_CONTEXT;
 	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
 
-	/* Every callback runs, whatever an earlier one threw: a finish handler fires exactly once
-	 * (zend_async_API.h), and a waiter behind a throwing callback must still wake. Callbacks run
-	 * with no exception pending; what they throw is chained, the latest on top, over the exception
-	 * pending at entry. */
+	/* The first callback that throws ends the notify, as in TrueAsync: the callbacks behind it stay
+	 * in the vector uncalled and are disposed with it. Callbacks run with no exception pending; the
+	 * one thrown is chained over the exception pending at entry. */
 	zend_object *pending = NULL;
 	async_exception_save_fast(&EG(exception), &pending);
 
@@ -117,7 +116,7 @@ void async_callbacks_notify(async_awaitable_t *target,
 		callback->callback(target, callback, result, exception);
 
 		if (UNEXPECTED(EG(exception) != NULL)) {
-			async_exception_save_fast(&EG(exception), &pending);
+			break;
 		}
 	}
 

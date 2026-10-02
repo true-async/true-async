@@ -107,9 +107,20 @@ someone will propose again.
   `internal/009-finish_handler_keep` becomes `009-finish_handler_once`; `internal/019` and `020`
   (free during the notify) are removed. Why: Edmond, no mechanism without a counterpart in the
   reference or a recorded reason.
-- 2026-10-02 Every callback of a notify runs even after one throws (the fork stops at the first
-  and disposes the rest uncalled). Why: the core's finish handler "fires exactly once"
-  (`zend_async_API.h:83`). To be confirmed by Edmond.
+- 2026-10-02 The first callback of a notify that throws ends it; the rest stay uncalled and are
+  disposed with the vector, as in TrueAsync (`zend_async_callbacks_notify()`, true-async/php-src
+  `863f6dd90cf`). A finish handler behind a throwing one therefore never fires, against the core's
+  "fires exactly once" (`zend_async_API.h:83`). Test `internal/010-callbacks_throw_all` becomes
+  `010-callbacks_throw_stops`. Why: Edmond, "пока как в trueasync" (health check).
+- 2026-10-02 Under a scheduler, a fiber adopted as a coroutine and parked at `Fiber::suspend()` is not
+  collected by `gc_collect_cycles()` when the cycle runs through its body's closure: the closure sits
+  in `coroutine->fcall`, a reference GC cannot see. It goes when the fiber finishes or is cancelled at
+  the scheduler's shutdown. TrueAsync's core does the same (`zend_fiber_object_gc()`, `zend_fibers.c`
+  at `863f6dd90cf`); it only shows here because the RFC core starts the scheduler with the script.
+  The RFC lists it as a fourth behaviour change and core tests 034, 036, 055-059 say so (S3.18).
+  Why: Edmond, health check.
+- 2026-10-02 Principle P1.4 added: no mechanism without a counterpart in TrueAsync or a recorded
+  reason. Why: Edmond, health check.
 - 2026-10-02 S3.5 run model as built (`src/scheduler.c`): contexts are allocated apart from their
   stacks and freed in their cleanup, as TrueAsync's; the core read `context->stack` after that
   cleanup (heap-use-after-free under ASAN on the first spawn), so `async-core` `565f515df16`

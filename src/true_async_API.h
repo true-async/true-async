@@ -153,17 +153,17 @@ static zend_always_inline void async_callbacks_add(async_callbacks_vector_t *vec
 }
 
 /* Removes `callback`; false when it is not in the vector. Order is not kept. During a notify of
- * the vector, every callback the notify has not reached yet still runs once, and the removed one
- * does not run again. Allocates nothing, runs no PHP code. */
+ * the vector, every callback the notify has not reached yet still runs at most once, and the
+ * removed one does not run again. Allocates nothing, runs no PHP code. */
 bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callback_t *callback);
 
 /* Runs the vector's callbacks, each once (order not kept: a removal moves elements), including
- * those added meanwhile, in scheduler context (ZEND_ASYNC_IN_SCHEDULER_CONTEXT). Every callback
- * runs even after one throws; the exceptions are chained over the one pending at entry and left in
- * EG(exception). A bailout out of a callback leaves the vector marked, so later notifies of it run
- * nothing (as the fork). A vector already being notified further up the stack is not notified
- * again. The caller holds a reference to `target` for the call (S3.5's finalize does), so no
- * callback frees the vector. */
+ * those added meanwhile, in scheduler context (ZEND_ASYNC_IN_SCHEDULER_CONTEXT). The first callback
+ * that throws ends the notify, as in TrueAsync: the rest stay in the vector uncalled, and the thrown
+ * exception is chained over the one pending at entry and left in EG(exception). A bailout out of
+ * a callback leaves the vector marked, so later notifies of it run nothing (as the fork). A vector
+ * already being notified further up the stack is not notified again. The caller holds a reference
+ * to `target` for the call (S3.5's finalize does), so no callback frees the vector. */
 void async_callbacks_notify(async_awaitable_t *target,
 							async_callbacks_vector_t *vector,
 							void *result,
@@ -190,9 +190,9 @@ typedef struct
 } async_finish_handler_callback_t;
 
 /* Adds an RFC finish handler to the coroutine's vector; returns its id, stable across the removal
- * of other handlers (a position would shift). The handler fires once, on the coroutine's notify,
- * and is dropped before it runs; its return value has no meaning (the core's own handlers return
- * false). */
+ * of other handlers (a position would shift). The handler fires at most once, on the coroutine's
+ * notify (not when a callback before it throws), and is dropped before it runs; its return value
+ * has no meaning (the core's own handlers return false). */
 uint32_t async_finish_handler_add(async_coroutine_t *coroutine,
 								  zend_coroutine_finish_handler_fn handler,
 								  zend_coroutine_t *waiter,
