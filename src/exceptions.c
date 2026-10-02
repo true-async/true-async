@@ -54,11 +54,11 @@ void async_composite_exception_add_exception(zend_object *composite, zend_object
 	}
 
 	/* The first write goes through the property API, which initialises the typed property. */
-	zval list;
-	array_init(&list);
-	zend_hash_next_index_insert_new(Z_ARRVAL(list), &element);
-	zend_update_property(async_ce_composite_exception, composite, ZEND_STRL("exceptions"), &list);
-	zval_ptr_dtor(&list);
+	zval exceptions_array;
+	array_init(&exceptions_array);
+	zend_hash_next_index_insert_new(Z_ARRVAL(exceptions_array), &element);
+	zend_update_property(async_ce_composite_exception, composite, ZEND_STRL("exceptions"), &exceptions_array);
+	zval_ptr_dtor(&exceptions_array);
 }
 
 ZEND_METHOD(Async_CompositeException, addException)

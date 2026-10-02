@@ -44,11 +44,11 @@ typedef struct test_callback_s test_callback_t;
 /* A named callback with one optional action run when it fires. */
 struct test_callback_s
 {
-	async_event_callback_t base;
+	async_event_callback_t event_callback;
 	char name;
-	void (*action)(test_callback_t *self, async_awaitable_t *target);
+	void (*action)(test_callback_t *test_callback, async_awaitable_t *target);
 	async_callbacks_vector_t *other_vector; /* the vector the action works on */
-	test_callback_t *other;                 /* the callback the action works on */
+	test_callback_t *other_callback;        /* the callback the action works on */
 	test_target_t *other_target;
 	smart_str *trace;
 	uint32_t runs;
@@ -57,86 +57,87 @@ struct test_callback_s
 static void
 test_callback_fire(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
 {
-	test_callback_t *self = (test_callback_t *) callback;
-	smart_str_appendc(self->trace, self->name);
-	self->runs++;
+	test_callback_t *test_callback = (test_callback_t *) callback;
+	smart_str_appendc(test_callback->trace, test_callback->name);
+	test_callback->runs++;
 
 	/* Each callback runs with no exception pending, in scheduler context. */
 	if (UNEXPECTED(EG(exception) != NULL)) {
-		smart_str_appendc(self->trace, '?');
+		smart_str_appendc(test_callback->trace, '?');
 	}
 
 	if (UNEXPECTED(!ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) {
-		smart_str_appendc(self->trace, '!');
+		smart_str_appendc(test_callback->trace, '!');
 	}
 
-	if (self->action != NULL) {
-		self->action(self, target);
+	if (test_callback->action != NULL) {
+		test_callback->action(test_callback, target);
 	}
 }
 
 static void test_callback_init(test_callback_t *callback, const char name, smart_str *trace)
 {
 	memset(callback, 0, sizeof(*callback));
-	callback->base.callback = test_callback_fire;
+	callback->event_callback.callback = test_callback_fire;
 	callback->name = name;
 	callback->trace = trace;
 }
 
-static void action_remove_other(test_callback_t *self, async_awaitable_t *target)
+static void action_remove_other(test_callback_t *test_callback, async_awaitable_t *target)
 {
-	async_callbacks_remove(self->other_vector, &self->other->base);
+	async_callbacks_remove(test_callback->other_vector, &test_callback->other_callback->event_callback);
 }
 
-static void action_remove_self(test_callback_t *self, async_awaitable_t *target)
+static void action_remove_self(test_callback_t *test_callback, async_awaitable_t *target)
 {
-	async_callbacks_remove(self->other_vector, &self->base);
+	async_callbacks_remove(test_callback->other_vector, &test_callback->event_callback);
 }
 
-static void action_add_other(test_callback_t *self, async_awaitable_t *target)
+static void action_add_other(test_callback_t *test_callback, async_awaitable_t *target)
 {
-	async_callbacks_add(self->other_vector, &self->other->base);
+	async_callbacks_add(test_callback->other_vector, &test_callback->other_callback->event_callback);
 }
 
-static void action_notify_other(test_callback_t *self, async_awaitable_t *target)
+static void action_notify_other(test_callback_t *test_callback, async_awaitable_t *target)
 {
-	if (self->other_vector->capacity & ASYNC_CALLBACKS_F_NOTIFYING) {
-		smart_str_appends(self->trace, "(refused)");
+	if (test_callback->other_vector->capacity & ASYNC_CALLBACKS_F_NOTIFYING) {
+		smart_str_appends(test_callback->trace, "(refused)");
 	}
 
-	async_callbacks_notify((async_awaitable_t *) self->other_target, self->other_vector, NULL, NULL);
+	async_callbacks_notify((async_awaitable_t *) test_callback->other_target, test_callback->other_vector, NULL, NULL);
 }
 
-static void action_throw(test_callback_t *self, async_awaitable_t *target)
+static void action_throw(test_callback_t *test_callback, async_awaitable_t *target)
 {
-	const char message[2] = { (char) (self->name + 'a' - 'A'), '\0' };
+	const char message[2] = { (char) (test_callback->name + 'a' - 'A'), '\0' };
 	zend_throw_exception(NULL, message, 0);
 }
 
 /* Bails out on its first run only. */
-static void action_bailout_once(test_callback_t *self, async_awaitable_t *target)
+static void action_bailout_once(test_callback_t *test_callback, async_awaitable_t *target)
 {
-	if (self->runs == 1) {
+	if (test_callback->runs == 1) {
 		zend_bailout();
 	}
 }
 
 /* zend_bailout() clears the current frame and marks the shutdown unclean; the catch puts both
  * back, so the PHP code that called the hook goes on. */
-static void action_notify_catching_bailout(test_callback_t *self, async_awaitable_t *target)
+static void action_notify_catching_bailout(test_callback_t *test_callback, async_awaitable_t *target)
 {
 	zend_execute_data *execute_data = EG(current_execute_data);
 	const bool unclean_shutdown = CG(unclean_shutdown);
 
 	zend_try
 	{
-		async_callbacks_notify((async_awaitable_t *) self->other_target, self->other_vector, NULL, NULL);
+		async_callbacks_notify(
+				(async_awaitable_t *) test_callback->other_target, test_callback->other_vector, NULL, NULL);
 	}
 	zend_catch
 	{
 		EG(current_execute_data) = execute_data;
 		CG(unclean_shutdown) = unclean_shutdown;
-		smart_str_appends(self->trace, "(caught)");
+		smart_str_appends(test_callback->trace, "(caught)");
 	}
 	zend_end_try();
 }
@@ -147,10 +148,12 @@ static void test_trace_exception(smart_str *trace)
 	smart_str_appends(trace, " caught:");
 
 	for (zend_object *exception = EG(exception); exception != NULL;) {
-		zval rv;
+		zval property_storage;
 		zend_class_entry *exception_class = zend_get_exception_base(exception);
-		zval *message = zend_read_property_ex(exception_class, exception, ZSTR_KNOWN(ZEND_STR_MESSAGE), true, &rv);
-		zval *previous = zend_read_property_ex(exception_class, exception, ZSTR_KNOWN(ZEND_STR_PREVIOUS), true, &rv);
+		zval *message = zend_read_property_ex(
+				exception_class, exception, ZSTR_KNOWN(ZEND_STR_MESSAGE), true, &property_storage);
+		zval *previous = zend_read_property_ex(
+				exception_class, exception, ZSTR_KNOWN(ZEND_STR_PREVIOUS), true, &property_storage);
 
 		smart_str_append(trace, Z_STR_P(message));
 		exception = Z_TYPE_P(previous) == IS_OBJECT ? Z_OBJ_P(previous) : NULL;
@@ -166,7 +169,7 @@ static void test_trace_exception(smart_str *trace)
 static void test_vector_fill(async_callbacks_vector_t *vector, test_callback_t *callbacks, const uint32_t count)
 {
 	for (uint32_t i = 0; i < count; i++) {
-		async_callbacks_add(vector, &callbacks[i].base);
+		async_callbacks_add(vector, &callbacks[i].event_callback);
 	}
 }
 
@@ -182,7 +185,7 @@ static void scenario_remove_run(smart_str *trace)
 
 	callbacks[1].action = action_remove_other;
 	callbacks[1].other_vector = &target.callbacks;
-	callbacks[1].other = &callbacks[0];
+	callbacks[1].other_callback = &callbacks[0];
 	test_vector_fill(&target.callbacks, callbacks, 4);
 	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
 	smart_str_append_printf(trace, " length=%u", target.callbacks.length);
@@ -217,7 +220,7 @@ static void scenario_single_self(smart_str *trace)
 	test_callback_init(&callback, 'A', trace);
 	callback.action = action_remove_self;
 	callback.other_vector = &target.callbacks;
-	async_callbacks_add(&target.callbacks, &callback.base);
+	async_callbacks_add(&target.callbacks, &callback.event_callback);
 	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
 	smart_str_append_printf(trace, " length=%u capacity=%u", target.callbacks.length, target.callbacks.capacity);
 }
@@ -234,7 +237,7 @@ static void scenario_add_during(smart_str *trace)
 
 	callbacks[0].action = action_add_other;
 	callbacks[0].other_vector = &target.callbacks;
-	callbacks[0].other = &callbacks[2];
+	callbacks[0].other_callback = &callbacks[2];
 	test_vector_fill(&target.callbacks, callbacks, 2);
 	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
 	async_callbacks_free((async_awaitable_t *) &target, &target.callbacks);
@@ -276,12 +279,12 @@ static void scenario_nested_other(smart_str *trace)
 	a.other_target = &inner;
 	w.action = action_remove_other;
 	w.other_vector = &outer.callbacks;
-	w.other = &r;
-	async_callbacks_add(&outer.callbacks, &r.base);
-	async_callbacks_add(&outer.callbacks, &a.base);
-	async_callbacks_add(&outer.callbacks, &b.base);
-	async_callbacks_add(&inner.callbacks, &w.base);
-	async_callbacks_add(&inner.callbacks, &x.base);
+	w.other_callback = &r;
+	async_callbacks_add(&outer.callbacks, &r.event_callback);
+	async_callbacks_add(&outer.callbacks, &a.event_callback);
+	async_callbacks_add(&outer.callbacks, &b.event_callback);
+	async_callbacks_add(&inner.callbacks, &w.event_callback);
+	async_callbacks_add(&inner.callbacks, &x.event_callback);
 	async_callbacks_notify((async_awaitable_t *) &outer, &outer.callbacks, NULL, NULL);
 	smart_str_append_printf(trace, " length=%u", outer.callbacks.length);
 	async_callbacks_free((async_awaitable_t *) &outer, &outer.callbacks);
@@ -326,9 +329,9 @@ static void scenario_bailout_caught(smart_str *trace)
 	a.other_vector = &inner.callbacks;
 	a.other_target = &inner;
 	w.action = action_bailout_once;
-	async_callbacks_add(&outer.callbacks, &a.base);
-	async_callbacks_add(&outer.callbacks, &b.base);
-	async_callbacks_add(&inner.callbacks, &w.base);
+	async_callbacks_add(&outer.callbacks, &a.event_callback);
+	async_callbacks_add(&outer.callbacks, &b.event_callback);
+	async_callbacks_add(&inner.callbacks, &w.event_callback);
 	async_callbacks_notify((async_awaitable_t *) &outer, &outer.callbacks, NULL, NULL);
 	smart_str_appends(trace, " again:");
 	async_callbacks_notify((async_awaitable_t *) &inner, &inner.callbacks, NULL, NULL);
@@ -344,7 +347,7 @@ static void scenario_sched_kept(smart_str *trace)
 	test_callback_t a;
 
 	test_callback_init(&a, 'A', trace);
-	async_callbacks_add(&target.callbacks, &a.base);
+	async_callbacks_add(&target.callbacks, &a.event_callback);
 	smart_str_appends(trace, "outside:");
 	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
 	smart_str_append_printf(trace, " sched=%d inside:", (int) ZEND_ASYNC_IN_SCHEDULER_CONTEXT);
@@ -520,15 +523,15 @@ static void scenario_buffer_ptr(smart_str *trace)
 {
 	static char names[] = "ABCD";
 	circular_buffer_t buffer;
-	void *ptr;
+	void *element;
 
 	circular_buffer_ctor(&buffer, 4, sizeof(void *), &true_async_persistent_allocator);
-	smart_str_append_printf(trace, "empty=%d ", circular_buffer_pop_ptr(&buffer, &ptr) == FAILURE);
+	smart_str_append_printf(trace, "empty=%d ", circular_buffer_pop_ptr(&buffer, &element) == FAILURE);
 
 	/* Tail 2: A B C take slots 2, 3 and 0. */
 	for (int i = 0; i < 2; i++) {
 		circular_buffer_push_ptr(&buffer, &names[i]);
-		circular_buffer_pop_ptr(&buffer, &ptr);
+		circular_buffer_pop_ptr(&buffer, &element);
 	}
 
 	for (int i = 0; i < 3; i++) {
@@ -540,8 +543,8 @@ static void scenario_buffer_ptr(smart_str *trace)
 	circular_buffer_push_ptr_with_resize(&buffer, &names[3]);
 	smart_str_append_printf(trace, "capacity=%zu:", circular_buffer_capacity(&buffer));
 
-	while (circular_buffer_pop_ptr(&buffer, &ptr) == SUCCESS) {
-		smart_str_appendc(trace, *(char *) ptr);
+	while (circular_buffer_pop_ptr(&buffer, &element) == SUCCESS) {
+		smart_str_appendc(trace, *(char *) element);
 	}
 
 	circular_buffer_dtor(&buffer);
@@ -569,14 +572,14 @@ static void scenario_buffer_front_full(smart_str *trace)
 static void scenario_buffer_zeroed(smart_str *trace)
 {
 	circular_buffer_t buffer = { 0 };
-	void *ptr;
+	void *element;
 
 	smart_str_append_printf(trace,
 							"count=%zu empty=%d not_empty=%d pop=%d",
 							circular_buffer_count(&buffer),
 							circular_buffer_is_empty(&buffer),
 							circular_buffer_is_not_empty(&buffer),
-							circular_buffer_pop_ptr(&buffer, &ptr) == FAILURE);
+							circular_buffer_pop_ptr(&buffer, &element) == FAILURE);
 }
 
 static const test_scenario_t buffer_scenarios[] = {

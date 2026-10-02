@@ -171,6 +171,7 @@ static PHP_MINFO_FUNCTION(true_async)
 			zend_throw_error(NULL, "The operation cannot be executed while async is off"); \
 			RETURN_THROWS(); \
 		} \
+\
 		if (UNEXPECTED(ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) { \
 			zend_throw_error(NULL, "The operation cannot be executed in the scheduler context"); \
 			RETURN_THROWS(); \
@@ -212,7 +213,7 @@ ZEND_FUNCTION(Async_spawn)
 	RETURN_OBJ_COPY(&coroutine->std);
 }
 
-/* A yield (S3.md 4.1, async.c:223-235): refused before the enqueue, so a refusal leaves the coroutine
+/* A yield (S3.md 4.1, TrueAsync's async.c:223-235): refused before the enqueue, so a refusal leaves the coroutine
  * running; otherwise it goes to the back of the run queue and parks there until its turn (D6). With
  * async off it does nothing, as in TrueAsync. */
 ZEND_FUNCTION(Async_suspend)

@@ -13,11 +13,14 @@
 #ifndef TRUE_ASYNC_API_H
 #define TRUE_ASYNC_API_H
 
-/* The extension's internal async API: what the fork kept in zend_async_API and the RFC core does
+/* The extension's internal async API: what TrueAsync kept in zend_async_API and the RFC core does
  * not have. A wait is a set of records on the waiting frame's C stack, each linked into one
  * target's callbacks vector; the waker of the waiting coroutine points at the first record. Every
  * structure here is sized for the hot path (dev/plans/S3.md, section 3, which also gives the
- * offsets). */
+ * offsets).
+ *
+ * Codes in the extension's comments: Dn is item n of dev/reviews/s3-structures/EDMOND-DECISIONS.md,
+ * Un an unlink site (dev/plans/S3.md, section 4.4), Bn a benchmark (dev/plans/S3.md, section 12). */
 
 #include "php.h"
 #include "Zend/zend_async_API.h"
@@ -82,10 +85,10 @@ struct _async_event_callback_s
 	};
 };
 
-/* One wait-graph edge: the waiter, the target, and the kind in base.kind. */
+/* One wait-graph edge: the waiter, the target, and the kind in event_callback.kind. */
 typedef struct
 {
-	async_event_callback_t base;
+	async_event_callback_t event_callback;
 	async_coroutine_t *coroutine;
 	/* Non-NULL exactly while the record is in that target's callbacks; owns no reference. Whoever
 	 * removes the record clears it. */
@@ -113,8 +116,8 @@ typedef struct
 {
 	union
 	{
-		async_event_callback_t **data;  /* capacity > 0 */
-		async_event_callback_t *single; /* capacity == 0: at most one element */
+		async_event_callback_t **data;           /* capacity > 0 */
+		async_event_callback_t *inline_callback; /* capacity == 0: at most one element */
 	};
 
 	uint32_t length;
@@ -128,7 +131,7 @@ typedef struct
 /* The element array, inline or on the heap. */
 static zend_always_inline async_event_callback_t **async_callbacks_slots(async_callbacks_vector_t *vector)
 {
-	return ASYNC_CALLBACKS_CAPACITY(vector) == 0 ? &vector->single : vector->data;
+	return ASYNC_CALLBACKS_CAPACITY(vector) == 0 ? &vector->inline_callback : vector->data;
 }
 
 /* Makes room for `count` more elements; may allocate, and so bail out on OOM. A push into
@@ -161,7 +164,7 @@ bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callba
  * those added meanwhile, in scheduler context (ZEND_ASYNC_IN_SCHEDULER_CONTEXT). The first callback
  * that throws ends the notify, as in TrueAsync: the rest stay in the vector uncalled, and the thrown
  * exception is chained over the one pending at entry and left in EG(exception). A bailout out of
- * a callback leaves the vector marked, so later notifies of it run nothing (as the fork). A vector
+ * a callback leaves the vector marked, so later notifies of it run nothing (as in TrueAsync). A vector
  * already being notified further up the stack is not notified again. The caller holds a reference
  * to `target` for the call (S3.5's finalize does), so no callback frees the vector. */
 void async_callbacks_notify(async_awaitable_t *target,
@@ -182,7 +185,7 @@ void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *v
 /* An RFC finish handler stored as a callback in the coroutine's vector (56 B). */
 typedef struct
 {
-	async_event_callback_t base;
+	async_event_callback_t event_callback;
 	zend_coroutine_finish_handler_fn handler;
 	zend_coroutine_t *waiter;
 	void *data;

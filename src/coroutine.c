@@ -52,7 +52,7 @@ static void coroutine_object_free(zend_object *object)
 	ZEND_ASSERT(coroutine->switch_handlers == NULL);
 
 	/* Whoever attached itself to this coroutine (a fiber, say) lets go of it first. */
-	if (coroutine->coroutine.extended_dispose != NULL) {
+	if (UNEXPECTED(coroutine->coroutine.extended_dispose != NULL)) {
 		coroutine->coroutine.extended_dispose(&coroutine->coroutine);
 	}
 
@@ -67,15 +67,15 @@ static void coroutine_object_free(zend_object *object)
 		zend_string_release_ex(coroutine->coroutine.filename, false);
 	}
 
-	if (coroutine->coroutine.exception != NULL) {
+	if (UNEXPECTED(coroutine->coroutine.exception != NULL)) {
 		OBJ_RELEASE(coroutine->coroutine.exception);
 	}
 
-	if (coroutine->deferred_cancellation != NULL) {
+	if (UNEXPECTED(coroutine->deferred_cancellation != NULL)) {
 		OBJ_RELEASE(coroutine->deferred_cancellation);
 	}
 
-	if (coroutine->waker.error != NULL) {
+	if (UNEXPECTED(coroutine->waker.error != NULL)) {
 		OBJ_RELEASE(coroutine->waker.error);
 	}
 
@@ -97,41 +97,41 @@ static ZEND_COLD zend_function *coroutine_object_get_constructor(zend_object *ob
 static HashTable *coroutine_object_gc(zend_object *object, zval **table, int *num)
 {
 	async_coroutine_t *coroutine = async_coroutine_from_object(object);
-	zend_get_gc_buffer *buffer = zend_get_gc_buffer_create();
+	zend_get_gc_buffer *gc_buffer = zend_get_gc_buffer_create();
 
-	zend_get_gc_buffer_add_zval(buffer, &coroutine->coroutine.result);
-	zend_get_gc_buffer_add_zval(buffer, &coroutine->waker.result);
+	zend_get_gc_buffer_add_zval(gc_buffer, &coroutine->coroutine.result);
+	zend_get_gc_buffer_add_zval(gc_buffer, &coroutine->waker.result);
 
 	/* An exception's trace can point back at this coroutine; without these edges such a cycle
 	 * never collects. */
-	if (coroutine->coroutine.exception != NULL) {
-		zend_get_gc_buffer_add_obj(buffer, coroutine->coroutine.exception);
+	if (UNEXPECTED(coroutine->coroutine.exception != NULL)) {
+		zend_get_gc_buffer_add_obj(gc_buffer, coroutine->coroutine.exception);
 	}
 
-	if (coroutine->deferred_cancellation != NULL) {
-		zend_get_gc_buffer_add_obj(buffer, coroutine->deferred_cancellation);
+	if (UNEXPECTED(coroutine->deferred_cancellation != NULL)) {
+		zend_get_gc_buffer_add_obj(gc_buffer, coroutine->deferred_cancellation);
 	}
 
-	if (coroutine->waker.error != NULL) {
-		zend_get_gc_buffer_add_obj(buffer, coroutine->waker.error);
+	if (UNEXPECTED(coroutine->waker.error != NULL)) {
+		zend_get_gc_buffer_add_obj(gc_buffer, coroutine->waker.error);
 	}
 
 	const zend_fcall_t *fcall = coroutine->coroutine.fcall;
 
 	if (fcall != NULL) {
-		zend_get_gc_buffer_add_zval(buffer, (zval *) &fcall->fci.function_name);
+		zend_get_gc_buffer_add_zval(gc_buffer, (zval *) &fcall->fci.function_name);
 
 		for (uint32_t i = 0; i < fcall->fci.param_count; i++) {
-			zend_get_gc_buffer_add_zval(buffer, &fcall->fci.params[i]);
+			zend_get_gc_buffer_add_zval(gc_buffer, &fcall->fci.params[i]);
 		}
 
 		if (fcall->fci.named_params != NULL) {
-			zend_get_gc_buffer_add_ht(buffer, fcall->fci.named_params);
+			zend_get_gc_buffer_add_ht(gc_buffer, fcall->fci.named_params);
 		}
 	}
 
 	if (coroutine->coroutine.context != NULL) {
-		zend_get_gc_buffer_add_obj(buffer, coroutine->coroutine.context);
+		zend_get_gc_buffer_add_obj(gc_buffer, coroutine->coroutine.context);
 	}
 
 	/* The table is a field of this block, not a refcounted array: the collector gets its values, never
@@ -140,13 +140,13 @@ static HashTable *coroutine_object_gc(zend_object *object, zval **table, int *nu
 
 	ZEND_HASH_FOREACH_VAL(&coroutine->coroutine.internal_context, value)
 	{
-		zend_get_gc_buffer_add_zval(buffer, value);
+		zend_get_gc_buffer_add_zval(gc_buffer, value);
 	}
 	ZEND_HASH_FOREACH_END();
 
 	/* The parked stack is not walked: trial deletion keeps whatever its frames hold, since it
 	 * cannot explain those references. */
-	zend_get_gc_buffer_use(buffer, table, num);
+	zend_get_gc_buffer_use(gc_buffer, table, num);
 
 	return NULL;
 }
@@ -254,11 +254,11 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 
 	ZEND_COROUTINE_SET_STATUS(zend_coroutine, ZEND_COROUTINE_STATUS_FINISHED);
 
-	/* The context stays with the loop that ran the body; main's copy is its caller's to free. */
+	/* The context stays with the loop that ran the body; main's copy was freed by main_coroutine_finish. */
 	coroutine->fiber_context = NULL;
 
 	/* The notify may drop every other reference to the object, and a finish handler may clear the
-	 * exception (R:84): both live until the end of this function. */
+	 * exception (the finish handler contract, Zend/zend_async_API.h): both live until the end of this function. */
 	zend_object *exception = zend_coroutine->exception;
 
 	GC_ADDREF(&coroutine->std);
@@ -278,7 +278,7 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 
 	async_callbacks_free((async_awaitable_t *) coroutine, &coroutine->callbacks);
 
-	if (zend_coroutine->extended_dispose != NULL) {
+	if (UNEXPECTED(zend_coroutine->extended_dispose != NULL)) {
 		const zend_coroutine_dispose_fn dispose = zend_coroutine->extended_dispose;
 		zend_coroutine->extended_dispose = NULL;
 		dispose(zend_coroutine);
@@ -300,10 +300,10 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 
 	/* What the waiters and finish handlers threw ends the request too. */
 	if (UNEXPECTED(EG(exception) != NULL)) {
-		zend_object *thrown = EG(exception);
-		GC_ADDREF(thrown);
+		zend_object *handler_exception = EG(exception);
+		GC_ADDREF(handler_exception);
 		zend_clear_exception();
-		async_exit_exception_add(thrown);
+		async_exit_exception_add(handler_exception);
 	}
 
 	if (exception != NULL) {
@@ -509,7 +509,7 @@ ZEND_METHOD(Async_Coroutine, getSuspendLocation)
 			0, "%s:%" PRIu32, ZSTR_VAL(suspend_frame->func->op_array.filename), suspend_frame->opline->lineno));
 }
 
-/* The getAwaitingInfo of S3.7 of dev/PLAN.md. */
+/* Refuses until S3.7 of dev/PLAN.md gives a coroutine a wait to describe. */
 ZEND_METHOD(Async_Coroutine, getAwaitingInfo)
 {
 	ZEND_PARSE_PARAMETERS_NONE();
@@ -534,11 +534,11 @@ ZEND_METHOD(Async_Coroutine, getTrace)
 		RETURN_NULL();
 	}
 
-	zend_execute_data *current_execute_data = EG(current_execute_data);
+	zend_execute_data *running_frame = EG(current_execute_data);
 
 	EG(current_execute_data) = parked_frame;
 	zend_fetch_debug_backtrace(return_value, 0, (int) options, (int) limit);
-	EG(current_execute_data) = current_execute_data;
+	EG(current_execute_data) = running_frame;
 }
 
 ZEND_METHOD(Async_Coroutine, cancel)
@@ -553,9 +553,9 @@ ZEND_METHOD(Async_Coroutine, cancel)
 	zend_throw_error(NULL, "Async\\Coroutine::cancel() is not implemented yet");
 }
 
-void async_register_coroutine_ce(zend_class_entry *completable)
+void async_register_coroutine_ce(zend_class_entry *completable_interface)
 {
-	async_ce_coroutine = register_class_Async_Coroutine(completable);
+	async_ce_coroutine = register_class_Async_Coroutine(completable_interface);
 	async_ce_coroutine->create_object = coroutine_object_create;
 	async_ce_coroutine->default_object_handlers = &coroutine_handlers;
 

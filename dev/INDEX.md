@@ -19,6 +19,8 @@ Where to look in this repository and around it. Pointers only.
 - `dev/plans/S2.md`: S2 notes: build against the core, runner, test lists, layers, CI, Mull.
 - `dev/reviews/io-hooks-design-review.md`: review of the IO hooks design (php/php-src#23997);
   the source of the B1-B3 and M1-M13 references in the plan.
+- Codes in source comments: Dn is item n of `dev/reviews/s3-structures/EDMOND-DECISIONS.md`, Un an unlink
+  site (`dev/plans/S3.md` 4.4), Bn a benchmark (`dev/plans/S3.md` 12).
 - `dev/reviews/s3-structures/`: raw S3.1 material of 2026-10-01: Edmond's decisions, the two experts'
   reports (fork-to-RFC consolidation, structure layouts), the Critic rounds, probe sources (`.c.txt`).
 

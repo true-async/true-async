@@ -38,11 +38,11 @@ void async_callbacks_reserve(async_callbacks_vector_t *vector, const uint32_t co
 	}
 
 	if (capacity == 0) {
-		async_event_callback_t *single = vector->single;
+		async_event_callback_t *inline_callback = vector->inline_callback;
 		vector->data = safe_emalloc(new_capacity, sizeof(async_event_callback_t *), 0);
 
 		if (vector->length == 1) {
-			vector->data[0] = single;
+			vector->data[0] = inline_callback;
 		}
 	} else {
 		vector->data = safe_erealloc(vector->data, new_capacity, sizeof(async_event_callback_t *), 0);
@@ -69,16 +69,16 @@ bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callba
 		}
 	}
 
-	const uint32_t last = --vector->length;
+	const uint32_t last_index = --vector->length;
 
 	if (notifying && index < vector->cursor) {
 		/* Already run: the last run element takes its place and the last element fills the gap,
 		 * so the cursor moves back by one and still points at the first pending callback. */
-		const uint32_t last_run = --vector->cursor;
-		slots[index] = slots[last_run];
-		slots[last_run] = slots[last];
+		const uint32_t last_run_index = --vector->cursor;
+		slots[index] = slots[last_run_index];
+		slots[last_run_index] = slots[last_index];
 	} else {
-		slots[index] = slots[last];
+		slots[index] = slots[last_index];
 	}
 
 	return true;
@@ -98,14 +98,14 @@ void async_callbacks_notify(async_awaitable_t *target,
 
 	/* Callbacks run in scheduler context (S3.md 4.6): suspend and the Fiber methods refuse there,
 	 * and a GC run defers to the next tick instead of parking the notify halfway. */
-	const bool in_scheduler_context = ZEND_ASYNC_IN_SCHEDULER_CONTEXT;
+	const bool was_in_scheduler_context = ZEND_ASYNC_IN_SCHEDULER_CONTEXT;
 	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
 
 	/* The first callback that throws ends the notify, as in TrueAsync: the callbacks behind it stay
 	 * in the vector uncalled and are disposed with it. Callbacks run with no exception pending; the
 	 * one thrown is chained over the exception pending at entry. */
-	zend_object *pending = NULL;
-	async_exception_save_fast(&EG(exception), &pending);
+	zend_object *saved_exception = NULL;
+	async_exception_save_fast(&EG(exception), &saved_exception);
 
 	/* data, length and the cursor are reread every step: a callback may add, remove or grow the
 	 * vector. A bailout out of a callback leaves the vector marked, as in TrueAsync: the scheduler's
@@ -121,9 +121,9 @@ void async_callbacks_notify(async_awaitable_t *target,
 	}
 
 	vector->capacity &= ~ASYNC_CALLBACKS_F_NOTIFYING;
-	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = in_scheduler_context;
+	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = was_in_scheduler_context;
 
-	async_exception_restore_fast(&EG(exception), &pending);
+	async_exception_restore_fast(&EG(exception), &saved_exception);
 }
 
 void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *vector)
@@ -147,7 +147,7 @@ void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *v
 		efree(vector->data);
 	}
 
-	vector->single = NULL;
+	vector->inline_callback = NULL;
 	vector->length = 0;
 	vector->capacity = 0;
 	vector->cursor = 0;
@@ -191,20 +191,20 @@ uint32_t async_finish_handler_add(async_coroutine_t *coroutine,
 	async_callbacks_reserve(vector, 1);
 
 	async_finish_handler_callback_t *finish_handler = emalloc(sizeof(async_finish_handler_callback_t));
-	finish_handler->base.flags = 0;
-	finish_handler->base.callback = async_finish_handler_call;
-	finish_handler->base.dispose = async_finish_handler_dispose;
+	finish_handler->event_callback.flags = 0;
+	finish_handler->event_callback.callback = async_finish_handler_call;
+	finish_handler->event_callback.dispose = async_finish_handler_dispose;
 	finish_handler->handler = handler;
 	finish_handler->waiter = waiter;
 	finish_handler->data = data;
 
 	/* One counter per thread; 0 is the RFC's "nothing added". */
-	if (UNEXPECTED(++ASYNC_G(handler_id_seq) == 0)) {
-		ASYNC_G(handler_id_seq) = 1;
+	if (UNEXPECTED(++ASYNC_G(last_finish_handler_id) == 0)) {
+		ASYNC_G(last_finish_handler_id) = 1;
 	}
 
-	finish_handler->handler_id = ASYNC_G(handler_id_seq);
-	async_callbacks_push_reserved(vector, &finish_handler->base);
+	finish_handler->handler_id = ASYNC_G(last_finish_handler_id);
+	async_callbacks_push_reserved(vector, &finish_handler->event_callback);
 
 	return finish_handler->handler_id;
 }

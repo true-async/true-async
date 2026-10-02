@@ -16,8 +16,8 @@
 #include "php.h"
 #include "true_async_API.h"
 
-/* Defined by the steps that fill them: the fiber context in S3.5, the switch handlers in S3.10,
- * the scope in S9. */
+/* Defined elsewhere: the fiber context in scheduler.h; the switch handlers by S3.10, the scope by
+ * S9. */
 typedef struct _async_fiber_context_s async_fiber_context_t;
 typedef struct _async_scope_s async_scope_t;
 typedef struct _async_awaiting_info_vector_s async_awaiting_info_vector_t;
@@ -26,9 +26,11 @@ typedef struct _async_coroutine_switch_handlers_vector_s async_coroutine_switch_
 /* The coroutine and its PHP object in one allocation (dev/plans/S3.md, section 3.1). */
 struct _async_coroutine_s
 {
-	zend_coroutine_t coroutine;           /* flags at offset 0: the awaitable type bit is 0 */
-	async_fiber_context_t *fiber_context; /* execute_data stored at suspend entry */
-	async_callbacks_vector_t callbacks;   /* waiters' records and finish handlers */
+	zend_coroutine_t coroutine; /* flags at offset 0: the awaitable type bit is 0 */
+	/* The stack it runs on: taken before the first run, the scheduler's at its creation, main's a copy of
+	 * the engine's context; NULL once the coroutine finishes. */
+	async_fiber_context_t *fiber_context;
+	async_callbacks_vector_t callbacks; /* waiters' records and finish handlers */
 	async_waker_t waker;
 	async_scope_t *scope;                                      /* NULL until S9 */
 	zend_object *deferred_cancellation;                        /* the cancel that arrived inside protect() */
@@ -51,7 +53,7 @@ static zend_always_inline async_coroutine_t *async_coroutine_from_object(zend_ob
 	return (async_coroutine_t *) ((char *) object - offsetof(async_coroutine_t, std));
 }
 
-void async_register_coroutine_ce(zend_class_entry *completable);
+void async_register_coroutine_ce(zend_class_entry *completable_interface);
 
 /* Runs the coroutine's body on the current context, then finishes it (async_coroutine_finalize)
  * and clears the current-coroutine slot. The coroutine is current and RUNNING. A bailout out of
