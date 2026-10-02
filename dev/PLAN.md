@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-02 · Active: S3.10
+Updated: 2026-10-02 · Active: S3.11
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -316,11 +316,21 @@ section 14); a step that finds a test needs more moves it on with a note.
         recorded with tests (fibers closed before the shutdown functions, as TrueAsync; `Fiber::start()`
         in a finished coroutine's release refused); Sage: agreed, moved that refusal into
         `intercept_fiber` (a refusal at the park ran the body twice).
-- [ ] S3.10 Shutdown windows and bailout: calls 2 and 3 from main, the bailout drain (4.5, D24),
+- [x] S3.10 Shutdown windows and bailout: calls 2 and 3 from main, the bailout drain (4.5, D24),
       shutdown functions, destructors, output handlers.
       done: the S3.10 tests pass (bailout SKIP on asan); own test: two shutdown destructors, the
         first waiting on the second; no `--XFAIL--` left in the S3 list
       tier: T2 · role: Critic
+      handoff: done 2026-10-03 on core `82df2fc6ccc`: dbg 249 PASS; asan 235 PASS, 14 SKIP; no
+        `--XFAIL--` left. The 15 S3.10 tests passed early (S3.5-S3.7). The core's switch handlers
+        run (leave before the tick, as TrueAsync), so a shutdown destructor that waits lets the
+        pass go on in the core's new coroutine; it hung before. A bailout out of the bailout walk
+        goes on with the walk (it was a bailout with no address); RSHUTDOWN releases what a
+        bailout out of the last from_main call leaves (U6), where it asserted. Critic: a coroutine
+        whose finish bailed out stayed in the registry and a later drain spun on it (fixed: it
+        leaves as it finishes); weak tests and doc wording fixed. Sage: kept the walk's retry, the
+        stack unmapping at RSHUTDOWN and the early registry delete (DECISIONS). Own tests `scheduler/050`-`054`,
+        `internal/024`-`026`.
 - [ ] S3.11 Measurements of S3.md section 12: B0-B5 against the reference, known answer first;
       the open items of its table decided by their runs.
       done: numbers with date in `BENCHMARKS.md`; D2 holds, or each excess has a DECISIONS line

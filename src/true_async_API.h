@@ -185,6 +185,41 @@ uint32_t async_finish_handler_add(async_coroutine_t *coroutine,
 bool async_finish_handler_remove(async_coroutine_t *coroutine, uint32_t handler_id);
 
 ///////////////////////////////////////////////////////////////////
+/// Switch handlers
+///////////////////////////////////////////////////////////////////
+
+typedef struct
+{
+	zend_coroutine_switch_handler_fn handler;
+	uint32_t handler_id; /* never 0 */
+} async_switch_handler_t;
+
+/* A coroutine's switch handlers, allocated at the first add and freed when the last one goes, as
+ * TrueAsync's (zend_async_API.c:1985-2097 of the fork). The core adds one to the coroutine that
+ * runs the shutdown destructors (zend_execute_API.c, zend_objects_API.c). */
+struct _async_coroutine_switch_handlers_vector_s
+{
+	async_switch_handler_t *data;
+	uint32_t length;
+	uint32_t capacity;
+	bool in_execution; /* adds and removes refuse while the handlers run */
+};
+
+/* Adds `handler` once: a second add of the same function returns its id. 0 with a warning while the
+ * coroutine's handlers run. */
+uint32_t async_switch_handler_add(async_coroutine_t *coroutine, zend_coroutine_switch_handler_fn handler);
+
+/* Removes the switch handler `handler_id`; false when there is none. */
+bool async_switch_handler_remove(async_coroutine_t *coroutine, uint32_t handler_id);
+
+/* Calls every switch handler of a coroutine that has some: is_enter false when it gives up the CPU,
+ * true when it runs again. A handler that returns false is dropped. */
+void async_switch_handlers_call(async_coroutine_t *coroutine, bool is_enter);
+
+/* Frees the handlers of a coroutine that finishes. */
+void async_switch_handlers_free(async_coroutine_t *coroutine);
+
+///////////////////////////////////////////////////////////////////
 /// The waker
 ///////////////////////////////////////////////////////////////////
 

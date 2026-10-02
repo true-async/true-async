@@ -180,6 +180,17 @@ void async_wait_unlink(async_coroutine_t *coroutine)
 	record->event = NULL;
 }
 
+/* The id of a new finish or switch handler: one counter per thread, so an id is never reused while
+ * its handler may still be removed; 0 is the RFC's "nothing added". */
+static uint32_t next_handler_id(void)
+{
+	if (UNEXPECTED(++ASYNC_G(last_handler_id) == 0)) {
+		ASYNC_G(last_handler_id) = 1;
+	}
+
+	return ASYNC_G(last_handler_id);
+}
+
 static void async_finish_handler_call(async_awaitable_t *target,
 									  async_event_callback_t *callback,
 									  void *result,
@@ -225,12 +236,7 @@ uint32_t async_finish_handler_add(async_coroutine_t *coroutine,
 	finish_handler->waiter = waiter;
 	finish_handler->data = data;
 
-	/* One counter per thread; 0 is the RFC's "nothing added". */
-	if (UNEXPECTED(++ASYNC_G(last_finish_handler_id) == 0)) {
-		ASYNC_G(last_finish_handler_id) = 1;
-	}
-
-	finish_handler->handler_id = ASYNC_G(last_finish_handler_id);
+	finish_handler->handler_id = next_handler_id();
 	async_callbacks_push_reserved(vector, &finish_handler->event_callback);
 
 	return finish_handler->handler_id;
@@ -253,4 +259,108 @@ bool async_finish_handler_remove(async_coroutine_t *coroutine, const uint32_t ha
 	}
 
 	return false;
+}
+
+///////////////////////////////////////////////////////////////////
+/// Switch handlers
+///////////////////////////////////////////////////////////////////
+
+uint32_t async_switch_handler_add(async_coroutine_t *coroutine, const zend_coroutine_switch_handler_fn handler)
+{
+	async_coroutine_switch_handlers_vector_t *vector = coroutine->switch_handlers;
+
+	if (vector == NULL) {
+		vector = ecalloc(1, sizeof(async_coroutine_switch_handlers_vector_t));
+		coroutine->switch_handlers = vector;
+	}
+
+	if (UNEXPECTED(vector->in_execution)) {
+		zend_error(E_WARNING, "Cannot add a switch handler while the switch handlers run");
+		return 0;
+	}
+
+	for (uint32_t i = 0; i < vector->length; i++) {
+		if (vector->data[i].handler == handler) {
+			return vector->data[i].handler_id;
+		}
+	}
+
+	if (vector->length == vector->capacity) {
+		vector->capacity = vector->capacity == 0 ? 4 : vector->capacity * 2;
+		vector->data = safe_erealloc(vector->data, vector->capacity, sizeof(async_switch_handler_t), 0);
+	}
+
+	async_switch_handler_t *switch_handler = &vector->data[vector->length++];
+	switch_handler->handler = handler;
+	switch_handler->handler_id = next_handler_id();
+
+	return switch_handler->handler_id;
+}
+
+bool async_switch_handler_remove(async_coroutine_t *coroutine, const uint32_t handler_id)
+{
+	async_coroutine_switch_handlers_vector_t *vector = coroutine->switch_handlers;
+
+	if (vector == NULL) {
+		return false;
+	}
+
+	if (UNEXPECTED(vector->in_execution)) {
+		zend_error(E_WARNING, "Cannot remove a switch handler while the switch handlers run");
+		return false;
+	}
+
+	for (uint32_t i = 0; i < vector->length; i++) {
+		if (vector->data[i].handler_id == handler_id) {
+			memmove(&vector->data[i], &vector->data[i + 1], (vector->length - i - 1) * sizeof(async_switch_handler_t));
+			vector->length--;
+
+			if (vector->length == 0) {
+				async_switch_handlers_free(coroutine);
+			}
+
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void async_switch_handlers_call(async_coroutine_t *coroutine, const bool is_enter)
+{
+	async_coroutine_switch_handlers_vector_t *vector = coroutine->switch_handlers;
+	uint32_t kept = 0;
+
+	vector->in_execution = true;
+
+	for (uint32_t i = 0; i < vector->length; i++) {
+		if (vector->data[i].handler(&coroutine->coroutine, is_enter)) {
+			vector->data[kept++] = vector->data[i];
+		}
+	}
+
+	vector->length = kept;
+	vector->in_execution = false;
+
+	/* The core's handlers go at the first leave: the check before the next call stays one NULL test. */
+	if (kept == 0) {
+		async_switch_handlers_free(coroutine);
+	}
+}
+
+void async_switch_handlers_free(async_coroutine_t *coroutine)
+{
+	async_coroutine_switch_handlers_vector_t *vector = coroutine->switch_handlers;
+
+	if (vector == NULL) {
+		return;
+	}
+
+	coroutine->switch_handlers = NULL;
+
+	if (vector->data != NULL) {
+		efree(vector->data);
+	}
+
+	efree(vector);
 }

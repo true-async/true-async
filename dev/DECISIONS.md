@@ -345,3 +345,19 @@ stack options were shown with the code).
   shutdown functions, as in TrueAsync (the fork drains at the same place, main.c:2625 on
   `863f6dd90cf`); plain PHP leaves
   it for a shutdown function to resume (Critic). Test `scheduler/049`.
+- 2026-10-02 The leave switch handlers run before the tick, as TrueAsync (`scheduler.c:1708-1711`),
+  not at the switch as S3.md 4.2 drew them. Why: the core's shutdown destructors queue the coroutine
+  that carries their pass on in the leave handler; at the switch, a destructor that only yields
+  with nobody else queued never switches and yields to itself forever. Test `scheduler/050`.
+- 2026-10-02 The bailout walk runs in a `zend_try` of its own and goes on after a bailout out of a
+  finalize on the scheduler's stack; TrueAsync's walk gives up there and leaves the rest to its
+  dtor. Why: our walk also runs after the scheduler's `zend_catch`, where a second bailout had no
+  address and ended the process. Test `internal/025`.
+- 2026-10-02 RSHUTDOWN destroys the context of a coroutine a bailout left parked without unwinding
+  it, and releases the registry's reference, as TrueAsync's dtor releases its leftovers. Why: no
+  code may run there, and the request reports no leaks after a bailout. Test `internal/024`.
+- 2026-10-03 Finalize takes the coroutine out of the registry as it sets FINISHED, before its
+  handlers; TrueAsync deletes it after them. Why: a bailout out of a handler left a finished
+  coroutine in the registry, and a later drain in the request counted it as a waiter forever
+  (Critic). A PHP-level finish handler (a later step) will not see its own coroutine in
+  `Async\get_coroutines()`, unlike TrueAsync (the Sage). Test `internal/026`.

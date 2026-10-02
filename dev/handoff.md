@@ -3,8 +3,8 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-02. Active step: **S3.10** (not started); S3.9 (fibers) closed. S3.15-S3.18
-(health check) run after S3.14 (Edmond).
+Written 2026-10-03. Active step: **S3.11** (not started); S3.10 (shutdown windows and bailout)
+closed. S3.15-S3.18 (health check) run after S3.14 (Edmond).
 
 ## State
 
@@ -28,6 +28,10 @@ Written 2026-10-02. Active step: **S3.10** (not started); S3.9 (fibers) closed. 
   closed with a graceful exit, no `DeadlockError`; the waker never chains an exit object; both
   context entries clear `EG(active_fiber)`; `extended_dispose` runs in `free_obj` only. S3.md
   section 8 "As built".
+- S3.10: the core's switch handlers run (leave before the tick, as TrueAsync), so a shutdown
+  destructor may wait; the bailout walk survives a bailout of its own; finalize leaves the registry
+  as it sets FINISHED; RSHUTDOWN unmaps what a bailout out of the last from_main call leaves (U6).
+  Test hook `add_throwing_finish_handler($coroutine, bailout: true)`. S3.md section 7 "As built".
 - Reviews: after the code, Critic and the Sage (`general-purpose`, model `fable`) compare it with
   TrueAsync (`/root/php-async` in the container) and hunt inventions; one plan step is one commit.
 - Container notes: the ASAN lane needs `TRUE_ASYNC_CORE_SRC=/root/core-asan`; `gen_stub.php`
@@ -54,13 +58,18 @@ Written 2026-10-02. Active step: **S3.10** (not started); S3.9 (fibers) closed. 
   after a completed wait (inherited from test_scheduler.c's `ts_await`; Critic in S3.7, minor);
   not touched in S3.8.
 - `scheduler_cancel` ignores `is_safely` until the zombie state (S9).
-- S3.10: `scheduler_cancel_all` also cancels the core's internal coroutines (the GC coroutine, the
-  shutdown destructor iterators); a cancelled-before-run iterator reports "was not finished
-  properly" and marks every object destructed (Critic, latent until the switch handlers run).
+- `scheduler_cancel_all` also cancels the core's internal coroutines. A shutdown iterator cancelled
+  before it ran reports nothing (only the coroutine that starts a pass is recorded in
+  `EG(shutdown_context)`; Critic in S3.10); a destructor that waits for a later destructor and
+  catches a graceful shutdown's cancellation, then waits again, spins (user-dependent).
+- A fatal error raised by main in a shutdown function lands in the core's `zend_try` there; the
+  last from_main call is then a plain one, and coroutines queued before the fatal run their bodies
+  after it. TrueAsync's fork has the same structure; the fix is a core one (main.c passes
+  `is_bailout` to the last call when `CG(unclean_shutdown)` flipped during the shutdown functions;
+  the Sage). Kept as TrueAsync until Edmond wants the core change.
 - Two coroutines that catch the deadlock's cancellation and await each other again loop, each
   round adding a `DeadlockError`; TrueAsync does the same (Critic, minor).
 - D16's 5 s deadline after `exit()` needs a clock and a reactor timeout (S4).
-- S3.10: a bailout inside the scheduler's catch; a scheduler parked at RSHUTDOWN.
 - S5: a wait for several targets needs more than the one record in the waker (TrueAsync: two
   inline callbacks and a heap array). A multi-shot record (S4+) needs its own teardown rule.
 - Spec gaps the test author named (S3.7): `await()` with `null`, an array or a second argument;
@@ -71,4 +80,4 @@ Written 2026-10-02. Active step: **S3.10** (not started); S3.9 (fibers) closed. 
 
 ## Next
 
-1. S3.10.
+1. S3.11.

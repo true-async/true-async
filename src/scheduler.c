@@ -716,25 +716,38 @@ static async_coroutine_t *bailout_next_coroutine(void)
  * each one, as test_scheduler.c does: a finalize removes entries and an enqueue (a GC coroutine) may add one.
  * Main is left to the scheduler's end, which hands it the bailout, as the core's test_scheduler.c does: main's
  * bailout may land in any zend_try of main.c, so the scheduler must not be parked inside this loop
- * while main unwinds. */
+ * while main unwinds. A bailout out of the walk itself (a finish handler of a coroutine that never
+ * started) lands in the walk's own try and the walk goes on: the scheduler's catch has no bailout
+ * address left, and TrueAsync's walk gives up there instead. A coroutine whose finalize bailed out
+ * has left the registry already and is not taken again. */
 static void scheduler_bailout_all(void)
 {
-	async_coroutine_t *coroutine = NULL;
+	bool is_done = false;
 
-	while ((coroutine = bailout_next_coroutine()) != NULL) {
-		coroutine->coroutine.flags |= ASYNC_COROUTINE_F_BAILOUT;
+	while (!is_done) {
+		zend_try
+		{
+			async_coroutine_t *coroutine = NULL;
 
-		if (!ZEND_COROUTINE_IS_STARTED(&coroutine->coroutine)) {
-			async_coroutine_finalize(coroutine);
-			continue;
+			while ((coroutine = bailout_next_coroutine()) != NULL) {
+				coroutine->coroutine.flags |= ASYNC_COROUTINE_F_BAILOUT;
+
+				if (!ZEND_COROUTINE_IS_STARTED(&coroutine->coroutine)) {
+					async_coroutine_finalize(coroutine);
+					continue;
+				}
+
+				/* The coroutine is finished, maybe freed, when its context comes back through
+				 * fiber_entry's catch, which made the scheduler current again: not read again. */
+				make_current(coroutine);
+				ZEND_ASYNC_IN_SCHEDULER_CONTEXT = false;
+				switch_to(&coroutine->fiber_context->context, ZEND_FIBER_TRANSFER_FLAG_BAILOUT);
+				ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
+			}
+
+			is_done = true;
 		}
-
-		/* The coroutine is finished, maybe freed, when its context comes back through fiber_entry's
-		 * catch, which made the scheduler current again: not read again. */
-		make_current(coroutine);
-		ZEND_ASYNC_IN_SCHEDULER_CONTEXT = false;
-		switch_to(&coroutine->fiber_context->context, ZEND_FIBER_TRANSFER_FLAG_BAILOUT);
-		ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
+		zend_end_try();
 	}
 
 	/* Every coroutine but main is finished, and the finalizes may have freed some that are still
@@ -767,10 +780,6 @@ static ZEND_STACK_ALIGNED void scheduler_fiber_entry(zend_fiber_transfer *transf
 		if (EXPECTED(!is_bailout)) {
 			is_bailout = scheduler_loop();
 		}
-
-		if (UNEXPECTED(is_bailout)) {
-			scheduler_bailout_all();
-		}
 	}
 	zend_catch
 	{
@@ -778,9 +787,12 @@ static ZEND_STACK_ALIGNED void scheduler_fiber_entry(zend_fiber_transfer *transf
 		is_bailout = true;
 		ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
 		ZEND_ASYNC_CURRENT_COROUTINE = &scheduler_coroutine->coroutine;
-		scheduler_bailout_all();
 	}
 	zend_end_try();
+
+	if (UNEXPECTED(is_bailout)) {
+		scheduler_bailout_all();
+	}
 
 	fiber_pool_teardown();
 
@@ -1199,6 +1211,14 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 		ZEND_COROUTINE_SET_STATUS(zend_coroutine, ZEND_COROUTINE_STATUS_SUSPENDED);
 	}
 
+	/* Whoever watches the coroutine learns that it gives up the CPU before the tick, as in TrueAsync
+	 * (scheduler.c:1708-1711): the core's shutdown destructors queue the coroutine that carries their
+	 * pass on, and a destructor that only yields must let it run even with nobody else queued. */
+	if (UNEXPECTED(coroutine->switch_handlers != NULL)) {
+		async_switch_handlers_call(coroutine, false);
+		ZEND_ASSERT(EG(exception) == NULL && "a switch handler throws nothing (TrueAsync's scheduler.c:1710)");
+	}
+
 	scheduler_tick();
 
 	/* Whoever switches back here has made this coroutine current and RUNNING. */
@@ -1243,6 +1263,10 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 			async_wait_unlink(coroutine);
 			zend_bailout();
 		}
+	}
+
+	if (UNEXPECTED(coroutine->switch_handlers != NULL)) {
+		async_switch_handlers_call(coroutine, true);
 	}
 
 	async_wait_unlink(coroutine);
@@ -1425,18 +1449,12 @@ static bool scheduler_await(zend_coroutine_t *zend_coroutine)
 
 static uint32_t scheduler_add_switch_handler(zend_coroutine_t *coroutine, zend_coroutine_switch_handler_fn handler)
 {
-	(void) coroutine;
-	(void) handler;
-
-	return 0;
+	return async_switch_handler_add((async_coroutine_t *) coroutine, handler);
 }
 
 static bool scheduler_remove_switch_handler(zend_coroutine_t *coroutine, uint32_t handler_id)
 {
-	(void) coroutine;
-	(void) handler_id;
-
-	return false;
+	return async_switch_handler_remove((async_coroutine_t *) coroutine, handler_id);
 }
 
 static uint32_t
@@ -1581,42 +1599,64 @@ void async_scheduler_request_startup(void)
 }
 
 /* Runs after the core turned async off (the main and current slots are NULL already). What is left
- * in the registry is the main coroutine minted by the last from_main call; the parked coroutines a
- * bailout leaves (U6) are S3.10's. */
+ * in the registry is the main coroutine minted by the last from_main call, and, when a bailout cut
+ * that call short (U6), the coroutines it never reached, a parked scheduler and its pool. Nothing may
+ * run any more, so a parked stack is unmapped without unwinding: the heap never reclaims a fiber
+ * stack, and a worker would lose one per such request. TrueAsync's dtor only releases the objects.
+ * What the dropped frames held is leaked to the heap, which is silent after a bailout
+ * (CG(unclean_shutdown)). Each coroutine finishes without handlers. */
 void async_scheduler_request_shutdown(void)
 {
 	async_coroutine_t *coroutine = NULL;
 
 	ZEND_HASH_FOREACH_PTR(&ASYNC_G(coroutines), coroutine)
 	{
-		ZEND_ASSERT(ZEND_COROUTINE_IS_MAIN(&coroutine->coroutine) && "S3.10: unwind what a bailout left");
-
-		efree(coroutine->fiber_context);
+		async_fiber_context_t *fiber_context = coroutine->fiber_context;
 		coroutine->fiber_context = NULL;
 
+		/* Main's is a copy of the engine's context, and the OS stack behind it is not ours; NULL when a
+		 * bailout came out of main's own finish. */
+		if (ZEND_COROUTINE_IS_MAIN(&coroutine->coroutine)) {
+			if (EXPECTED(fiber_context != NULL)) {
+				efree(fiber_context);
+			}
+		} else if (UNEXPECTED(fiber_context != NULL)) {
+			zend_fiber_destroy_context(&fiber_context->context);
+		}
+
+		async_wait_unlink(coroutine);
+		async_switch_handlers_free(coroutine);
 		ZEND_COROUTINE_SET_STATUS(&coroutine->coroutine, ZEND_COROUTINE_STATUS_FINISHED);
+	}
+	ZEND_HASH_FOREACH_END();
+
+	/* Released once every wait is unlinked: a target freed with a waiter linked would wake it, which
+	 * creates a scheduler. */
+	ZEND_HASH_FOREACH_PTR(&ASYNC_G(coroutines), coroutine)
+	{
 		OBJ_RELEASE(&coroutine->std);
 	}
 	ZEND_HASH_FOREACH_END();
 
 	zend_hash_destroy(&ASYNC_G(coroutines));
 
-	/* A scheduler created after the last from_main call that entered one (a bailout out of that call
-	 * before it switched, say) was never entered: its stack is unmapped here. A parked one is S3.10's
-	 * (U6). */
+	/* A scheduler never entered (created after the last from_main call that entered one) or parked by
+	 * that bailout. */
 	async_coroutine_t *scheduler_coroutine = ASYNC_G(scheduler_coroutine);
 
 	if (UNEXPECTED(scheduler_coroutine != NULL)) {
-		ZEND_ASSERT(scheduler_coroutine->fiber_context->context.status == ZEND_FIBER_STATUS_INIT &&
-					"S3.10: unwind what a bailout left");
-
 		ASYNC_G(scheduler_coroutine) = NULL;
 		zend_fiber_destroy_context(&scheduler_coroutine->fiber_context->context);
 		scheduler_coroutine->fiber_context = NULL;
 		OBJ_RELEASE(&scheduler_coroutine->std);
 	}
 
-	ZEND_ASSERT(circular_buffer_is_empty(&ASYNC_G(fiber_context_pool)));
+	async_fiber_context_t *fiber_context = NULL;
+
+	while (circular_buffer_pop_ptr(&ASYNC_G(fiber_context_pool), (void **) &fiber_context) == SUCCESS) {
+		zend_fiber_destroy_context(&fiber_context->context);
+	}
+
 	circular_buffer_dtor(&ASYNC_G(run_queue));
 	circular_buffer_dtor(&ASYNC_G(fiber_context_pool));
 

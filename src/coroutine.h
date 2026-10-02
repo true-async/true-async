@@ -16,8 +16,8 @@
 #include "php.h"
 #include "true_async_API.h"
 
-/* Defined elsewhere: the fiber context in scheduler.h; the switch handlers by S3.10, the scope by
- * S9. */
+/* Defined elsewhere: the fiber context in scheduler.h, the switch handlers in true_async_API.h, the
+ * scope by S9. */
 typedef struct _async_fiber_context_s async_fiber_context_t;
 typedef struct _async_scope_s async_scope_t;
 typedef struct _async_coroutine_switch_handlers_vector_s async_coroutine_switch_handlers_vector_t;

@@ -46,3 +46,5 @@ can see goes here; tests, tools and CI are in the git history.
 - A `Fiber` runs as a coroutine of the scheduler: `Async\suspend()` and `Async\await()` work inside
   it, its caller waits for it as for any coroutine, and `exit()` in it ends the request as in a
   coroutine. Fibers left suspended when nothing else runs are closed with no deadlock reported.
+- A destructor run at the end of the request may wait or yield: the remaining destructors run in
+  the meantime, so one destructor can wait for another.

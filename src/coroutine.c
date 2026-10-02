@@ -330,6 +330,11 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 
 	ZEND_COROUTINE_SET_STATUS(zend_coroutine, ZEND_COROUTINE_STATUS_FINISHED);
 
+	/* Out of the registry before any handler runs: a bailout out of the notify would leave a finished
+	 * coroutine there, and a later drain in the request would count it as a waiter forever. TrueAsync
+	 * deletes it after its catch (coroutine.c:747-767). */
+	zend_hash_index_del(&ASYNC_G(coroutines), coroutine->std.handle);
+
 	/* exit() ends the request gracefully, as in TrueAsync (D16): the other coroutines are cancelled,
 	 * this one no longer, being finished. */
 	if (UNEXPECTED(is_exit)) {
@@ -338,6 +343,9 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 
 	/* The context stays with the loop that ran the body; main's copy was freed by main_coroutine_finish. */
 	coroutine->fiber_context = NULL;
+
+	/* A finished coroutine switches no more: its handlers go, as in TrueAsync (coroutine.c:624). */
+	async_switch_handlers_free(coroutine);
 
 	/* The notify may drop every other reference to the object, and a finish handler may clear the
 	 * exception (the finish handler contract, Zend/zend_async_API.h): both live until the end of this function. */
@@ -361,8 +369,6 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 	}
 
 	async_callbacks_free((async_awaitable_t *) coroutine, &coroutine->callbacks);
-
-	zend_hash_index_del(&ASYNC_G(coroutines), coroutine->std.handle);
 
 	/* Nobody can observe the exception when only the scheduler's reference and this function's are
 	 * left, or for main and a fiber, which nobody awaits through the object: it ends the request. A

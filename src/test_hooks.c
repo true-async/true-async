@@ -721,20 +721,40 @@ static bool test_throwing_finish_handler(zend_coroutine_t *coroutine,
 	return false;
 }
 
+/* A finish handler that ends the request with a fatal error, a bailout out of the finish (U6). */
+static bool
+test_bailout_finish_handler(zend_coroutine_t *coroutine, zend_coroutine_t *waiter, void *data, const bool is_bailout)
+{
+	(void) waiter;
+	(void) data;
+
+	zend_error_noreturn(E_ERROR,
+						"finish handler of coroutine %u bails out%s",
+						((async_coroutine_t *) coroutine)->std.handle,
+						is_bailout ? " after a bailout" : "");
+}
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_add_throwing_finish_handler, 0, 1, IS_VOID, 0)
 	ZEND_ARG_OBJ_INFO(0, coroutine, Async\\Coroutine, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, bailout, _IS_BOOL, 0, "false")
 ZEND_END_ARG_INFO()
 
+/* The handler throws, or with `bailout` ends the request with a fatal error. */
 static ZEND_FUNCTION(add_throwing_finish_handler)
 {
 	zend_object *coroutine;
+	bool bailout = false;
 
-	ZEND_PARSE_PARAMETERS_START(1, 1)
+	ZEND_PARSE_PARAMETERS_START(1, 2)
 		Z_PARAM_OBJ_OF_CLASS(coroutine, async_ce_coroutine)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_BOOL(bailout)
 	ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_ASYNC_ADD_FINISH_HANDLER(
-			&async_coroutine_from_object(coroutine)->coroutine, test_throwing_finish_handler, NULL, NULL);
+	ZEND_ASYNC_ADD_FINISH_HANDLER(&async_coroutine_from_object(coroutine)->coroutine,
+								  bailout ? test_bailout_finish_handler : test_throwing_finish_handler,
+								  NULL,
+								  NULL);
 }
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_enqueue_with_error, 0, 2, _IS_BOOL, 0)
