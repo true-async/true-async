@@ -166,7 +166,11 @@ Tier: T2. Roles: Critic on S3.1, Critic after S3.4, security pass (S3.5).
       call on a switch guarded; `ts.c` reads CANCELLED as requested; RFC comments. Then a core update by `WORKFLOW.md`. List
       and reasons: `dev/plans/S3.md`, section 10.
       Progress 2026-10-02: items 1-4 (D3) in `async-core` `996a9bd7047`, test 069; item 5 (D5) in
-        `5add2bcac22`, test 070, `018_cancel` changed by D5.
+        `5add2bcac22`, test 070, `018_cancel` changed by D5. Items 6-14 in `c625aa49b83`..`2aee763aeed`,
+        one commit each; tests `Zend/tests/fibers/error-handling-window-per-fiber` (6), 071 (8),
+        072 (9), 073 (11), 074 (13); each fails without its fix (072 on its parent, the rest on
+        `5add2bcac22`); 7, 10, 12 and 14 have no phpt (reasons in `dev/handoff.md`). Left: the
+        core update.
 - [ ] S3.3 All 21 slots, internal context init and destroy; `Async\spawn`, `await`, `suspend`,
       `Coroutine` and its methods, `DeadlockError`.
 - [ ] S3.4 Shutdown windows without IO: shutdown functions, destructors, output handlers.
