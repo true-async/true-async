@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-02 · Active: S3.4
+Updated: 2026-10-02 · Active: S3.5
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -208,11 +208,17 @@ section 14); a step that finds a test needs more moves it on with a note.
         departures from the spec text in S3.md 3.6, "As built in S3.3". Obligations for S3.5: the
         finalize holds the coroutine's object across its notify; teardown with a linked record
         wakes the waiter (4.4); the bailout handling calls `async_callbacks_bailout_reset()`.
-- [ ] S3.4 Classes and test ports: exceptions, `Awaitable` (refuses foreign classes), `Completable`,
+- [x] S3.4 Classes and test ports: exceptions, `Awaitable` (refuses foreign classes), `Completable`,
       the `Coroutine` object (296 B), INI; five of the seven `changed:` ports of S3.md section 9
       (`gc/005` and `gc/011` go to S3.7).
       done: `edge_cases/013` passes; own test for bug 10; `check-lists.py` clean with the tags
       tier: T2 · role: —
+      handoff: done 2026-10-02 (`158e5c6`, `bc5b1fb`, `8196bd2`): 33 PASS, 127 XFAIL on dbg; CI green
+        on all three (runs 37002982898, 37004144080, 37005572624). Critic: 7 findings, all fixed
+        (GC walked the embedded `internal_context` as an array; `new Async\Coroutine` refused;
+        `true_async.enable=On`); the seven test changes accepted. Notify callbacks run in
+        scheduler context instead of `zend_fiber_switch_block()` (Edmond). Open: Edmond questions
+        the notify frame stack; a cursor in the vector is proposed, waiting for his answer.
 - [ ] S3.5 Spawn and run: the 21 slots, launch, run queue, enqueue (4.3), in-place run, call 1
       from main, RINIT and RSHUTDOWN, `spawn`, `current_coroutine`, `get_coroutines`, state methods;
       wait unlink stubbed.
