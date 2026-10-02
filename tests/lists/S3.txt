@@ -162,7 +162,7 @@ fiber/021-multiple_fibers_gc_on_start.phpt  ref:0a28d12a7ade33c85c2b975503f3ae16
 fiber/022-fiber_suspended_after_manager_terminates.phpt  ref:16ead44fab91c0b5ccf437602a045d231b90b5686adf17d1367ef423e7b91740
 fiber/029-fiber_create_without_callback_no_leak.phpt  ref:cdebcb42949199e5f0da2e79ccb894754035aab141f4427488b984ca34b33b91
 
-# internal: own tests of the extension API through the test hooks (S3.3)
+# internal: own tests of the extension API and the circular buffer through the test hooks (S3.3)
 internal/001-callbacks_remove_run.phpt  own:e4bf3970f6131c96ee2e67e0247c1591be2c3c0ba47c6b7f5c8a9955a61a66b1
 internal/002-callbacks_remove_self.phpt  own:a392b2bf83ef1b9d2569e985e46a6969b56c7360bcd3afacf621cd3d9e815689
 internal/003-callbacks_single_self.phpt  own:d0a13b47b7d4639e4f4f9522682bb64840feb0e173c321a6bfb945f4a292173e
@@ -174,3 +174,7 @@ internal/008-callbacks_unknown_scenario.phpt  own:37347ef2114a0ce57d9ba33dbb891a
 internal/009-finish_handler_keep.phpt  own:ff545866428bca63cb56e7a0cf7c93ed96b9c96a3c64caec00989bc6ac646e61
 internal/010-callbacks_throw_all.phpt  own:fe9edefa94d02db23f6de208f56155f93e937edf507393501cdfb4366dbd3c1b
 internal/011-callbacks_bailout_caught.phpt  own:3fb722c9a32d799e07ffd34c11302c3e61771b8f35452ba2d73eeeb7d40a2611
+internal/012-buffer_wrap_grow.phpt  own:93c7128e22228d67427eee2eb0064156f14ba29f80b672515255f6794119c459
+internal/013-buffer_push_front.phpt  own:ca0f0c450758124902c165534db2f8505be68cccf095e30d7a2f79b636424e97
+internal/014-buffer_shrink.phpt  own:8f87150c03adda7f620321a1e8b14c644c208fc5539572d1b4df388fb51ab368
+internal/015-buffer_ptr.phpt  own:b5e4cb11be39a8f9eb99ddaeaf12d6d2b3711e3df0548cc5bab2a89d96a15693

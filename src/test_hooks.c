@@ -16,7 +16,9 @@
  * (tools/test.py, the Windows ADD_CONF); a build without the flag has none of them.
  *
  * TrueAsync\Test\callbacks_scenario(string $name): string runs one scenario on the callbacks
- * vector and returns the names of the callbacks in the order they ran. */
+ * vector and returns the names of the callbacks in the order they ran;
+ * TrueAsync\Test\buffer_scenario(string $name): string runs one on the circular buffer and returns
+ * what it popped and the sizes it saw. */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -27,6 +29,7 @@
 #include "zend_smart_str.h"
 #include "php_true_async.h"
 #include "test_hooks.h"
+#include "src/internal/circular_buffer.h"
 #include "Zend/zend_fibers.h"
 
 /* A stand-in awaitable: the flags word and a vector, as the event header will have. */
@@ -412,6 +415,128 @@ static const test_scenario_t test_scenarios[] = {
 	{ "throw-all", scenario_throw_all },     { "bailout-caught", scenario_bailout_caught },
 };
 
+static void test_buffer_push(circular_buffer_t *buffer, const zend_long from, const zend_long to)
+{
+	for (zend_long value = from; value <= to; value++) {
+		circular_buffer_push(buffer, &value, true);
+	}
+}
+
+static void test_buffer_pop(circular_buffer_t *buffer, smart_str *trace, size_t count)
+{
+	zend_long value;
+
+	while (count-- > 0 && circular_buffer_is_not_empty(buffer)) {
+		circular_buffer_pop(buffer, &value);
+		smart_str_append_printf(trace, " %d", (int) value);
+	}
+}
+
+/* 1 2 3 fill a buffer of 4 slots; 1 and 2 leave, 4 and 5 wrap around, 6 grows the wrapped buffer:
+ * the order survives. */
+static void scenario_buffer_wrap_grow(smart_str *trace)
+{
+	circular_buffer_t buffer;
+
+	circular_buffer_ctor(&buffer, 4, sizeof(zend_long), NULL);
+	test_buffer_push(&buffer, 1, 3);
+	smart_str_append_printf(trace, "full=%d", circular_buffer_is_full(&buffer));
+	test_buffer_pop(&buffer, trace, 2);
+	test_buffer_push(&buffer, 4, 6);
+	smart_str_append_printf(trace, " capacity=%zu:", circular_buffer_capacity(&buffer));
+	test_buffer_pop(&buffer, trace, SIZE_MAX);
+	smart_str_append_printf(trace, " count=%zu", circular_buffer_count(&buffer));
+	circular_buffer_dtor(&buffer);
+}
+
+/* push_front from tail 0 wraps to the last slot; with no room and no resize it falls back to a
+ * push, which refuses the full buffer. */
+static void scenario_buffer_push_front(smart_str *trace)
+{
+	circular_buffer_t *buffer = circular_buffer_new(4, sizeof(zend_long), NULL);
+	zend_long value = 0;
+
+	test_buffer_push(buffer, 1, 2);
+	circular_buffer_push_front(buffer, &value, true);
+	value = 9;
+	smart_str_append_printf(trace, "refused=%d:", circular_buffer_push_front(buffer, &value, false) == FAILURE);
+	test_buffer_pop(buffer, trace, SIZE_MAX);
+	circular_buffer_destroy(buffer);
+}
+
+/* 32 items grow a 4-slot buffer to 64 slots; after 30 leave, the next push halves it, keeping the
+ * order. With auto_optimize off it stays at 64. */
+static void scenario_buffer_shrink(smart_str *trace)
+{
+	for (int optimize = 1; optimize >= 0; optimize--) {
+		circular_buffer_t buffer;
+
+		circular_buffer_ctor(&buffer, 0, sizeof(zend_long), NULL);
+		buffer.auto_optimize = optimize;
+		test_buffer_push(&buffer, 1, 32);
+		smart_str_append_printf(trace, "%sslots %zu", optimize ? "" : " off: ", buffer.capacity);
+
+		zend_long value;
+		for (int i = 0; i < 30; i++) {
+			circular_buffer_pop(&buffer, &value);
+		}
+
+		test_buffer_push(&buffer, 33, 33);
+		smart_str_append_printf(trace, "->%zu:", buffer.capacity);
+		test_buffer_pop(&buffer, trace, SIZE_MAX);
+		circular_buffer_dtor(&buffer);
+	}
+}
+
+/* The pointer helpers: push_ptr refuses a full buffer, pop_ptr an empty one, swap_ptr_at swaps by
+ * offset from the tail, push_ptr_with_resize grows. */
+static void scenario_buffer_ptr(smart_str *trace)
+{
+	static char names[] = "ABCD";
+	circular_buffer_t buffer;
+	void *ptr;
+
+	circular_buffer_ctor(&buffer, 4, sizeof(void *), &true_async_persistent_allocator);
+	smart_str_append_printf(trace, "empty=%d ", circular_buffer_pop_ptr(&buffer, &ptr) == FAILURE);
+
+	for (int i = 0; i < 3; i++) {
+		circular_buffer_push_ptr(&buffer, &names[i]);
+	}
+
+	smart_str_append_printf(trace, "full=%d ", circular_buffer_push_ptr(&buffer, &names[3]) == FAILURE);
+	circular_buffer_swap_ptr_at(&buffer, 0, 2);
+	circular_buffer_push_ptr_with_resize(&buffer, &names[3]);
+	smart_str_append_printf(trace, "capacity=%zu:", circular_buffer_capacity(&buffer));
+
+	while (circular_buffer_pop_ptr(&buffer, &ptr) == SUCCESS) {
+		smart_str_appendc(trace, *(char *) ptr);
+	}
+
+	circular_buffer_dtor(&buffer);
+}
+
+static const test_scenario_t buffer_scenarios[] = {
+	{ "wrap-grow", scenario_buffer_wrap_grow },
+	{ "push-front", scenario_buffer_push_front },
+	{ "shrink", scenario_buffer_shrink },
+	{ "ptr", scenario_buffer_ptr },
+};
+
+static void
+test_run_scenario(zend_string *name, const test_scenario_t *scenarios, const size_t count, zval *return_value)
+{
+	for (size_t i = 0; i < count; i++) {
+		if (zend_string_equals_cstr(name, scenarios[i].name, strlen(scenarios[i].name))) {
+			smart_str trace = { 0 };
+			scenarios[i].run(&trace);
+			RETURN_STR(smart_str_extract(&trace));
+		}
+	}
+
+	zend_argument_value_error(1, "is not a known scenario");
+	RETURN_THROWS();
+}
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_callbacks_scenario, 0, 1, IS_STRING, 0)
 	ZEND_ARG_TYPE_INFO(0, name, IS_STRING, 0)
 ZEND_END_ARG_INFO()
@@ -424,21 +549,24 @@ static ZEND_FUNCTION(callbacks_scenario)
 		Z_PARAM_STR(name)
 	ZEND_PARSE_PARAMETERS_END();
 
-	for (size_t i = 0; i < sizeof(test_scenarios) / sizeof(test_scenarios[0]); i++) {
-		if (zend_string_equals_cstr(name, test_scenarios[i].name, strlen(test_scenarios[i].name))) {
-			smart_str trace = { 0 };
-			test_scenarios[i].run(&trace);
-			RETURN_STR(smart_str_extract(&trace));
-		}
-	}
+	test_run_scenario(name, test_scenarios, sizeof(test_scenarios) / sizeof(test_scenarios[0]), return_value);
+}
 
-	zend_argument_value_error(1, "is not a known scenario");
-	RETURN_THROWS();
+static ZEND_FUNCTION(buffer_scenario)
+{
+	zend_string *name;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_STR(name)
+	ZEND_PARSE_PARAMETERS_END();
+
+	test_run_scenario(name, buffer_scenarios, sizeof(buffer_scenarios) / sizeof(buffer_scenarios[0]), return_value);
 }
 
 /* clang-format off */
 const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\callbacks_scenario", ZEND_FN(callbacks_scenario), arginfo_callbacks_scenario, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\buffer_scenario", ZEND_FN(buffer_scenario), arginfo_callbacks_scenario, 0, NULL, NULL)
 	ZEND_FE_END
 };
 /* clang-format on */

@@ -28,7 +28,7 @@ if test "$PHP_TRUE_ASYNC" != "no"; then
     [#include "php.h"])
   CPPFLAGS=$old_CPPFLAGS
 
-  true_async_sources="src/true_async.c src/true_async_API.c"
+  true_async_sources="src/true_async.c src/true_async_API.c src/internal/allocator.c src/internal/circular_buffer.c"
 
   if test "$PHP_TRUE_ASYNC_KNOWN_ANSWER" != "no"; then
     AC_DEFINE([TRUE_ASYNC_KNOWN_ANSWER], [1], [Define to 1 to plant the known-answer functions.])
@@ -47,4 +47,5 @@ if test "$PHP_TRUE_ASYNC" != "no"; then
     [$ext_shared],,
     [-DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 -Werror=incompatible-pointer-types -Werror=implicit-function-declaration])
   PHP_ADD_BUILD_DIR([$ext_builddir/src])
+  PHP_ADD_BUILD_DIR([$ext_builddir/src/internal])
 fi
