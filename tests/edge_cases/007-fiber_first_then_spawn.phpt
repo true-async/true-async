@@ -1,7 +1,5 @@
 --TEST--
 Fiber created first, then spawn operation - should detect incompatible context
---XFAIL--
-Not implemented yet: S3.9 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -3,8 +3,8 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-02. Active step: **S3.9** (not started); S3.8 (cancellation and exit paths)
-closed. S3.15-S3.18 (health check) run after S3.14 (Edmond).
+Written 2026-10-02. Active step: **S3.10** (not started); S3.9 (fibers) closed. S3.15-S3.18
+(health check) run after S3.14 (Edmond).
 
 ## State
 
@@ -24,6 +24,10 @@ closed. S3.15-S3.18 (health check) run after S3.14 (Edmond).
   coroutine's values go in `dtor_obj` (`coroutine_object_destroy`), which throws an unobserved
   outcome; the observed mark is set when a waiter reads the outcome. Test hook
   `TrueAsync\Test\enqueue_with_error`. S3.md section 6 "As built" has the details.
+- S3.9: every Fiber runs as a coroutine (`scheduler_intercept_fiber`); suspended fibers alone are
+  closed with a graceful exit, no `DeadlockError`; the waker never chains an exit object; both
+  context entries clear `EG(active_fiber)`; `extended_dispose` runs in `free_obj` only. S3.md
+  section 8 "As built".
 - Reviews: after the code, Critic and the Sage (`general-purpose`, model `fable`) compare it with
   TrueAsync (`/root/php-async` in the container) and hunt inventions; one plan step is one commit.
 - Container notes: the ASAN lane needs `TRUE_ASYNC_CORE_SRC=/root/core-asan`; `gen_stub.php`
@@ -31,18 +35,20 @@ closed. S3.15-S3.18 (health check) run after S3.14 (Edmond).
   (the stub hash is the stub's sha1); local `clang-format-18` (18.1.3) flags lines CI accepts, so
   check only changed lines (`git clang-format-18 --diff HEAD`).
 
-## Obligations for S3.9
-
-- The deadlock exemption for fibers (S3.md section 6): `scheduler_resolve_deadlock` treats every
-  coroutine alike today.
-- `exit()` in an adopted fiber (own test of the plan): the `shutdown` slot clears the exit and
-  cancels (`zend_fibers.c:886-898`); no test reaches it before S3.9. The Critic also asks that
-  `waker_apply_error` never chain onto or under an exit object (the core's caller enqueue at
-  `:917` when the exit stays pending).
-- Adopting every Fiber removes the unadopted-Fiber refusals of suspend, await and the await slot
-  (`scheduler/013`, `scheduler/027`, `gc/013`, `gc/014`).
-
 ## Later steps
+
+- Core gaps found in S3.9 (test_scheduler.c has them too): its two context entries do not clear
+  `EG(active_fiber)`; a Fiber whose coroutine was cancelled before it ran stays INIT, and a second
+  `start()` overwrites `fiber->coroutine` and leaks the first; `resume()`/`throw()` refused by the
+  park (a finished coroutine's release) leave the body queued with no caller. A core-side fix
+  belongs on `async-core`.
+- Legacy core path, async off: a Fiber that calls `Fiber::suspend()` from a destructor while an
+  exception unwinds gets the graceful exit at shutdown with that exception chained under it, a
+  "Creation of dynamic property GracefulExit::$previous" deprecation
+  (`tests/internal/023-fiber_methods_in_tick.phpt` run with `-n` and no extension); not checked on
+  upstream master.
+- A kept Fiber closed by the exemption reports "The fiber threw an exception" from `getReturn()`
+  (the core sets THREW for a graceful exit while the Fiber lives; Sage, no action).
 
 - An exception pending when `async_await_coroutine` is entered makes the GC report 0 and defer
   after a completed wait (inherited from test_scheduler.c's `ts_await`; Critic in S3.7, minor);
@@ -65,4 +71,4 @@ closed. S3.15-S3.18 (health check) run after S3.14 (Edmond).
 
 ## Next
 
-1. S3.9.
+1. S3.10.

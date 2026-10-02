@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-02 · Active: S3.9
+Updated: 2026-10-02 · Active: S3.10
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -302,10 +302,20 @@ section 14); a step that finds a test needs more moves it on with a note.
         cancellation per coroutine, `exit()` after the shutdown, the `shutdown` slot, weak tests);
         Sage: no blocker, an `exit()` in the report's output handler fixed, two TrueAsync
         behaviours kept (DECISIONS).
-- [ ] S3.9 Fibers: `intercept_fiber` (always adopt), the deadlock exemption.
+- [x] S3.9 Fibers: `intercept_fiber` (always adopt), the deadlock exemption.
       done: the S3.9 tests pass; own tests: a cancelled fiber suspends in `finally` (D5), Fiber
         methods from a destructor in the tick, `exit()` in an adopted fiber
       tier: T2 · role: —
+      handoff: done 2026-10-02 on core `82df2fc6ccc`: dbg 241 PASS; asan 227 PASS, 14 SKIP; no XFAIL
+        left but S3.10's. Every Fiber runs as a coroutine; the unadopted-Fiber refusals went
+        (`scheduler/013`, `027` changed). `extended_dispose` moved to `free_obj` (the finalize call
+        leaked every fiber coroutine). Suspended fibers alone are closed with a graceful exit, no
+        `DeadlockError`. The waker never chains an exit object. Own tests `scheduler/044`-`049`,
+        `internal/023`. Critic: 1 blocking fixed (a fresh context inherited the switcher's
+        `EG(active_fiber)`: wrong `Fiber::getCurrent()`, a freed Fiber after a park), two behaviours
+        recorded with tests (fibers closed before the shutdown functions, as TrueAsync; `Fiber::start()`
+        in a finished coroutine's release refused); Sage: agreed, moved that refusal into
+        `intercept_fiber` (a refusal at the park ran the body twice).
 - [ ] S3.10 Shutdown windows and bailout: calls 2 and 3 from main, the bailout drain (4.5, D24),
       shutdown functions, destructors, output handlers.
       done: the S3.10 tests pass (bailout SKIP on asan); own test: two shutdown destructors, the

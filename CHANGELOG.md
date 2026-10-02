@@ -22,8 +22,7 @@ can see goes here; tests, tools and CI are in the git history.
   `isRunning()`, `isSuspended()` (false for the running coroutine), `isCancelled()`,
   `isCancellationRequested()`, `isCompleted()`.
 - `Async\suspend()`: the current coroutine, main included, yields to the coroutines queued ahead of
-  it and runs again in its turn; refused in the scheduler's own work and inside a Fiber the
-  scheduler has not adopted.
+  it and runs again in its turn; refused in the scheduler's own work.
 - `Async\Coroutine::getSuspendFileAndLine()`, `getSuspendLocation()` and `getTrace()` for a
   coroutine parked in `suspend()`.
 - `Async\await()`: waits for a coroutine to finish and returns its result, or throws its
@@ -44,3 +43,6 @@ can see goes here; tests, tools and CI are in the git history.
   `AsyncCancellation("Deadlock detected")`; `true_async.debug_deadlock` (default on) prints which
   coroutine waits for which.
 - An exception nobody observed is thrown where the last reference to its coroutine goes.
+- A `Fiber` runs as a coroutine of the scheduler: `Async\suspend()` and `Async\await()` work inside
+  it, its caller waits for it as for any coroutine, and `exit()` in it ends the request as in a
+  coroutine. Fibers left suspended when nothing else runs are closed with no deadlock reported.

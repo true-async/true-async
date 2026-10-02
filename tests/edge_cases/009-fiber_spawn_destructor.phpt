@@ -1,7 +1,5 @@
 --TEST--
 Fiber and spawn operations in destructors - memory management conflicts
---XFAIL--
-Not implemented yet: S3.9 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -148,17 +148,37 @@ static void fiber_pool_teardown(void)
 /// The run queue and switches
 ///////////////////////////////////////////////////////////////////
 
+/* An exit or the graceful exit that closes a dropped Fiber (zend_fibers.c, zend_fiber_release_coroutine):
+ * an order to stop, not a Throwable, so it can neither take a previous nor become one
+ * (zend_exception_set_previous would add a dynamic property to it, or drop it). */
+static zend_always_inline bool is_exit_object(const zend_object *error)
+{
+	return zend_is_graceful_exit(error) || zend_is_unwind_exit(error);
+}
+
 /* The waker keeps one error until the switch-in, by TrueAsync's rules (the fork's
  * zend_async_waker_apply_error, zend_async_API.c:1334-1373, and async_coroutine_resume,
  * coroutine.c:807-829): a new error goes on top, with the pending one as its previous, except that a
  * cancellation never replaces a pending cancellation, and a wake never brings a cancellation over a
- * pending error. Takes a reference to `error`. */
+ * pending error. An exit object wins over any other error and is never chained, unlike TrueAsync's
+ * (S3.9: a Fiber dropped while a throw() into it waits). Takes a reference to `error`. */
 static void waker_apply_error(async_coroutine_t *coroutine, zend_object *error, const bool for_cancellation)
 {
 	zend_object *pending_error = coroutine->waker.error;
 
 	if (EXPECTED(pending_error == NULL)) {
 		coroutine->waker.error = error;
+		return;
+	}
+
+	if (UNEXPECTED(is_exit_object(pending_error))) {
+		OBJ_RELEASE(error);
+		return;
+	}
+
+	if (UNEXPECTED(is_exit_object(error))) {
+		coroutine->waker.error = error;
+		OBJ_RELEASE(pending_error);
 		return;
 	}
 
@@ -376,6 +396,10 @@ static ZEND_STACK_ALIGNED void fiber_entry(zend_fiber_transfer *transfer)
 
 	/* The switcher's VM stack is saved with its state; a bailout before ours exists destroys none. */
 	EG(vm_stack) = NULL;
+	/* A context entered for the first time inherits the switcher's active fiber (the core restores it
+	 * only on a switch back, zend_fibers.c, zend_fiber_switch_context): a coroutine started from a
+	 * fiber's body would see that Fiber as Fiber::getCurrent(), and keep it after the Fiber is gone. */
+	EG(active_fiber) = NULL;
 
 	zend_first_try
 	{
@@ -538,13 +562,50 @@ static void scheduler_deadlock_report(const uint32_t waiting)
 	smart_str_free(&report);
 }
 
+/* A fiber parked in Fiber::suspend(): it handed control back to whoever resumed it, and only that
+ * code, not an event, can wake it (S3.md section 6, D6; the core sets the status in
+ * zend_fiber_coroutine_yield). */
+static zend_always_inline bool coroutine_is_suspended_fiber(const async_coroutine_t *coroutine)
+{
+	const zend_fiber *fiber = coroutine->coroutine.extended_data;
+
+	return ZEND_COROUTINE_IS_FIBER(&coroutine->coroutine) && fiber != NULL &&
+			fiber->context.status == ZEND_FIBER_STATUS_SUSPENDED;
+}
+
 /* Nothing is queued, no microtask is pending, and `waiting` coroutines are parked with nothing left
  * to wake them (S3.md section 6, TrueAsync's resolve_deadlocks, scheduler.c:749-889): a DeadlockError
  * becomes the exit exception, and every one of them is cancelled with AsyncCancellation("Deadlock
  * detected"), protection cleared, so each runs its cleanup. Not a graceful shutdown: a coroutine that
- * catches the cancellation runs on. */
+ * catches the cancellation runs on. When every one is a suspended fiber, it is no deadlock: a worker
+ * fiber left suspended (Revolt's) is closed with a graceful exit, as a dropped Fiber is, and nothing
+ * is reported (scheduler.c:776-817). The loop runs in scheduler context. */
 static void scheduler_resolve_deadlock(const uint32_t waiting)
 {
+	async_coroutine_t *coroutine = NULL;
+	uint32_t suspended_fibers = 0;
+
+	ZEND_HASH_FOREACH_PTR(&ASYNC_G(coroutines), coroutine)
+	{
+		if (coroutine_is_suspended_fiber(coroutine)) {
+			suspended_fibers++;
+		}
+	}
+	ZEND_HASH_FOREACH_END();
+
+	if (UNEXPECTED(suspended_fibers == waiting)) {
+		ZEND_HASH_FOREACH_PTR(&ASYNC_G(coroutines), coroutine)
+		{
+			/* Cleared as for a deadlock: a deferred cancellation would never come, and the loop would
+			 * find the same fibers again. */
+			coroutine->coroutine.flags &= ~ASYNC_COROUTINE_F_PROTECTED;
+			async_coroutine_cancel(coroutine, zend_create_graceful_exit(), true);
+		}
+		ZEND_HASH_FOREACH_END();
+
+		return;
+	}
+
 	if (EXPECTED(ASYNC_G(debug_deadlock))) {
 		scheduler_deadlock_report(waiting);
 
@@ -567,10 +628,7 @@ static void scheduler_resolve_deadlock(const uint32_t waiting)
 			async_ce_deadlock_error, "Deadlock detected: no active coroutines, %u coroutines in waiting", waiting));
 
 	/* One cancellation for each coroutine, as TrueAsync's resolve_deadlocks (scheduler.c:860-879): a
-	 * pending error is chained under it, which must not reach another coroutine. The loop runs in
-	 * scheduler context. */
-	async_coroutine_t *coroutine = NULL;
-
+	 * pending error is chained under it, which must not reach another coroutine. */
 	ZEND_HASH_FOREACH_PTR(&ASYNC_G(coroutines), coroutine)
 	{
 		coroutine->coroutine.flags &= ~ASYNC_COROUTINE_F_PROTECTED;
@@ -697,7 +755,9 @@ static ZEND_STACK_ALIGNED void scheduler_fiber_entry(zend_fiber_transfer *transf
 
 	ZEND_ASSERT(ZEND_ASYNC_CURRENT_COROUTINE == &scheduler_coroutine->coroutine);
 
+	/* As in fiber_entry: neither the switcher's VM stack nor its active fiber. */
 	EG(vm_stack) = NULL;
+	EG(active_fiber) = NULL;
 
 	zend_first_try
 	{
@@ -1119,14 +1179,6 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 		return false;
 	}
 
-	/* Inside a Fiber the scheduler did not adopt (until S3.9) the stack is the Fiber's: parking it as
-	 * this coroutine would resume the coroutine inside the Fiber later. */
-	if (UNEXPECTED(EG(current_fiber_context) != &coroutine->fiber_context->context)) {
-		async_wait_unlink(coroutine);
-		zend_throw_error(NULL, "Cannot switch coroutines in the current execution context");
-		return false;
-	}
-
 	/* The queue may be empty below, and the scheduler coroutine is where the suspend goes then: a
 	 * coroutine always has one (its enqueue made it), main may not yet. */
 	if (UNEXPECTED(!scheduler_coroutine_ensure())) {
@@ -1244,12 +1296,26 @@ static bool scheduler_defer(zend_async_microtask_t *microtask)
 	return circular_buffer_push_ptr_with_resize(&ASYNC_G(microtasks), microtask) == SUCCESS;
 }
 
-/* NULL keeps a starting fiber on the engine's own path until S3.9 adopts it. */
+/* Every fiber runs as a coroutine (S3.md section 8): a fiber left on the engine's own path would
+ * switch stacks the scheduler does not know about. The core sets the entry point and the fiber bit
+ * (zend_fibers.c, zend_fiber_adopt), as for the core's test_scheduler.c. */
 static zend_coroutine_t *scheduler_intercept_fiber(zend_fiber *fiber)
 {
 	(void) fiber;
 
-	return NULL;
+	/* A finished coroutine is still current while finalize releases what it held: the start would
+	 * queue the body and then fail to park the caller, and the body would run later with nobody
+	 * waiting. Refused before any coroutine exists; the core then leaves the Fiber unstarted. */
+	const zend_coroutine_t *current_coroutine = ZEND_ASYNC_CURRENT_COROUTINE;
+
+	if (UNEXPECTED(current_coroutine != NULL && ZEND_COROUTINE_IS_FINISHED(current_coroutine))) {
+		/* The core's own refusal, whose class it keeps static (zend_fibers.c). */
+		zend_class_entry *fiber_error = zend_hash_str_find_ptr(CG(class_table), ZEND_STRL("fibererror"));
+		zend_throw_error(fiber_error, "Cannot switch fibers in current execution context");
+		return NULL;
+	}
+
+	return &async_coroutine_new()->coroutine;
 }
 
 /* The record's wake: its target finished, or the target's teardown fires a record that a throwing
@@ -1301,12 +1367,6 @@ bool async_await_coroutine(async_coroutine_t *target)
 		return false;
 	}
 
-	/* Inside a Fiber the scheduler did not adopt (until S3.9) the stack is the Fiber's. */
-	if (UNEXPECTED(EG(current_fiber_context) != &waiter->fiber_context->context)) {
-		zend_throw_error(NULL, "Cannot switch coroutines in the current execution context");
-		return false;
-	}
-
 	/* A bailout that a shutdown function's zend_try caught can leave main's record linked, as
 	 * TrueAsync's ZEND_ASYNC_WAKER_NEW cleans a stale waker (Sage). */
 	async_wait_unlink(waiter);
@@ -1348,11 +1408,9 @@ static bool scheduler_await(zend_coroutine_t *zend_coroutine)
 		return false;
 	}
 
-	/* A finished coroutine is still current while finalize releases what it held, and inside a
-	 * Fiber the scheduler did not adopt (until S3.9) the stack is the Fiber's: await() would refuse
-	 * with an Error, and the GC collects later instead. */
-	if (UNEXPECTED(waiter != NULL && (ZEND_COROUTINE_IS_FINISHED(&waiter->coroutine) ||
-									  EG(current_fiber_context) != &waiter->fiber_context->context))) {
+	/* A finished coroutine is still current while finalize releases what it held: await() would
+	 * refuse with an Error, and the GC collects later instead. */
+	if (UNEXPECTED(waiter != NULL && ZEND_COROUTINE_IS_FINISHED(&waiter->coroutine))) {
 		return false;
 	}
 

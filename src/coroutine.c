@@ -130,7 +130,10 @@ static void coroutine_object_free(zend_object *object)
 	ZEND_ASSERT(coroutine->scope == NULL);
 	ZEND_ASSERT(coroutine->switch_handlers == NULL);
 
-	/* Whoever attached itself to this coroutine (a fiber, say) lets go of it first. */
+	/* Whoever attached itself to this coroutine (a fiber, say) lets go of it first. Here and not in
+	 * finalize, as in the core's test_scheduler.c: a fiber holds a reference to its coroutine and
+	 * releases it when the Fiber goes (zend_fibers.c, zend_fiber_release_coroutine); its dispose only
+	 * forgets the coroutine, so a call at the finish would leak that reference. */
 	if (UNEXPECTED(coroutine->coroutine.extended_dispose != NULL)) {
 		coroutine->coroutine.extended_dispose(&coroutine->coroutine);
 	}
@@ -267,7 +270,8 @@ void async_coroutine_execute(async_coroutine_t *coroutine)
 	zend_coroutine_t *zend_coroutine = &coroutine->coroutine;
 
 	ZEND_ASSERT(zend_coroutine == ZEND_ASYNC_CURRENT_COROUTINE && ZEND_COROUTINE_IS_RUNNING(zend_coroutine));
-	ZEND_ASSERT((zend_coroutine->fcall != NULL) != (zend_coroutine->internal_entry != NULL));
+	/* A fiber's coroutine has both: its entry point calls the fiber's function through the fcall. */
+	ZEND_ASSERT(zend_coroutine->fcall != NULL || zend_coroutine->internal_entry != NULL);
 
 	ZEND_COROUTINE_SET_STARTED(zend_coroutine);
 
@@ -357,12 +361,6 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 	}
 
 	async_callbacks_free((async_awaitable_t *) coroutine, &coroutine->callbacks);
-
-	if (UNEXPECTED(zend_coroutine->extended_dispose != NULL)) {
-		const zend_coroutine_dispose_fn dispose = zend_coroutine->extended_dispose;
-		zend_coroutine->extended_dispose = NULL;
-		dispose(zend_coroutine);
-	}
 
 	zend_hash_index_del(&ASYNC_G(coroutines), coroutine->std.handle);
 

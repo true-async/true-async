@@ -1,5 +1,5 @@
 --TEST--
-An await refused inside a Fiber the scheduler did not adopt leaves the target's exception unobserved: it still ends the request
+Async\await() inside a Fiber waits for the target and throws its exception there; caught, it is observed and does not end the request (every Fiber is adopted since S3.9)
 --FILE--
 <?php
 use function Async\spawn;
@@ -10,18 +10,19 @@ $coroutine = spawn(fn() => throw new Exception("boom"));
 $fiber = new Fiber(function () use ($coroutine) {
     try {
         await($coroutine);
-    } catch (Error $error) {
-        echo $error->getMessage(), "\n";
+    } catch (Exception $exception) {
+        echo "caught: ", $exception->getMessage(), "\n";
     }
+
+    return "fiber end";
 });
 
 $fiber->start();
+echo $fiber->getReturn(), "\n";
 unset($fiber, $coroutine);
 echo "end\n";
 ?>
---EXPECTF--
-Cannot switch coroutines in the current execution context
+--EXPECT--
+caught: boom
+fiber end
 end
-
-Fatal error: Uncaught Exception: boom in %s:%d
-%A

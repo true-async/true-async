@@ -309,3 +309,39 @@ stack options were shown with the code).
   every coroutine, so pending errors of two coroutines share its previous chain
   (`cancel_queued_coroutines`), while the deadlock gives each its own. Edmond may want the first
   reported instead.
+- 2026-10-02 Every Fiber is adopted (S3.9): `intercept_fiber` returns a new coroutine, as the
+  core's test_scheduler.c. Why: a legacy fiber switches stacks the scheduler does not know about.
+  The refusals of `suspend()` and `await()` inside an unadopted Fiber go, as TrueAsync has none;
+  the own tests `scheduler/013-suspend_in_unadopted_fiber.phpt` and
+  `scheduler/027-await_refused_in_fiber_keeps_exception.phpt` pinned that refusal and now pin the
+  park and the await inside a Fiber (their names stay: the list is frozen).
+- 2026-10-02 A coroutine's `extended_dispose` runs in `free_obj` only, as the core's
+  test_scheduler.c, not in finalize as TrueAsync's. Why: the core's fiber dispose only forgets the
+  coroutine and the Fiber holds a reference it releases when it goes; a call at the finish leaked
+  every fiber coroutine.
+- 2026-10-02 When every waiting coroutine is a fiber parked in `Fiber::suspend()`, each is closed
+  with a graceful exit and no `DeadlockError` (TrueAsync's `resolve_deadlocks`); protection is
+  cleared, as for a deadlock, which TrueAsync does not do there. Why: a protected fiber would defer
+  the exit forever and the scheduler would loop.
+- 2026-10-02 In the waker an exit object (an `exit()`, the graceful exit of a dropped Fiber) wins
+  over any pending error and is never chained, unlike TrueAsync's
+  `zend_async_waker_apply_error`. Why: `zend_exception_set_previous` adds a dynamic property to a
+  graceful exit (a deprecation) or drops it, so a Fiber dropped while a `throw()` into it waited
+  ran on (Critic, S3.8). Test `scheduler/046`.
+- 2026-10-02 `fiber_entry` and `scheduler_fiber_entry` clear `EG(active_fiber)`, as they clear
+  `EG(vm_stack)`. Why: a context entered for the first time inherits the switcher's active fiber
+  (the core restores it only on a switch back), so a coroutine spawned in a Fiber's body saw that
+  Fiber as `Fiber::getCurrent()`, and after a park a freed one (Critic). TrueAsync never sets the
+  active fiber in coroutine mode; the core's test_scheduler.c has the same gap. Test
+  `scheduler/047`.
+- 2026-10-02 `Fiber::start()` in a destructor that a finished coroutine's release runs is refused
+  in `intercept_fiber` with the core's FiberError "Cannot switch fibers in current execution
+  context", as a wait there is since S3.7: the finished coroutine is still current and cannot park.
+  Refused before a coroutine exists, so the Fiber stays unstarted (the Sage: a refusal at the park
+  left the body queued with no caller, and a second `start()` ran it twice). Before S3.9 such a
+  Fiber ran on the legacy path (Critic). `resume()` and `throw()` there are refused by the core's
+  park and leave the body queued: a core gap (handoff). Test `scheduler/048`.
+- 2026-10-02 A fiber left suspended when main ends is closed in the drain after main, before the
+  shutdown functions, as in TrueAsync (the fork drains at the same place, main.c:2625 on
+  `863f6dd90cf`); plain PHP leaves
+  it for a shutdown function to resume (Critic). Test `scheduler/049`.

@@ -1,5 +1,5 @@
 --TEST--
-Async\suspend() inside a Fiber the scheduler did not adopt is refused and leaves the coroutine running
+Async\suspend() inside a Fiber parks the fiber's coroutine: the queued coroutine runs, then the fiber goes on (every Fiber is adopted since S3.9)
 --FILE--
 <?php
 use function Async\spawn;
@@ -10,12 +10,7 @@ spawn(function () {
 });
 
 $fiber = new Fiber(function () {
-    try {
-        suspend();
-    } catch (Error $error) {
-        echo $error->getMessage(), "\n";
-    }
-
+    suspend();
     echo "fiber end\n";
 });
 
@@ -24,8 +19,7 @@ var_dump($fiber->isTerminated());
 echo "main end\n";
 ?>
 --EXPECT--
-Cannot switch coroutines in the current execution context
+coroutine
 fiber end
 bool(true)
 main end
-coroutine

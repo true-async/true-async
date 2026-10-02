@@ -264,10 +264,8 @@ ZEND_FUNCTION(Async_suspend)
 
 	async_coroutine_t *coroutine = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
 
-	/* A finished coroutine is still current while finalize releases what it held; inside a Fiber the
-	 * scheduler did not adopt (until S3.9) the stack is not the coroutine's. */
-	if (UNEXPECTED(coroutine == NULL || ZEND_COROUTINE_IS_FINISHED(&coroutine->coroutine) ||
-				   EG(current_fiber_context) != &coroutine->fiber_context->context)) {
+	/* A finished coroutine is still current while finalize releases what it held. */
+	if (UNEXPECTED(coroutine == NULL || ZEND_COROUTINE_IS_FINISHED(&coroutine->coroutine))) {
 		zend_throw_error(NULL, "Cannot switch coroutines in the current execution context");
 		RETURN_THROWS();
 	}
