@@ -209,7 +209,8 @@ section 14); a step that finds a test needs more moves it on with a note.
         finalize holds the coroutine's object across its notify; teardown with a linked record
         wakes the waiter (4.4); the bailout handling calls `async_callbacks_bailout_reset()`.
 - [ ] S3.4 Classes and test ports: exceptions, `Awaitable` (refuses foreign classes), `Completable`,
-      the `Coroutine` object (296 B), INI; the seven `changed:` ports of S3.md section 9.
+      the `Coroutine` object (296 B), INI; five of the seven `changed:` ports of S3.md section 9
+      (`gc/005` and `gc/011` go to S3.7).
       done: `edge_cases/013` passes; own test for bug 10; `check-lists.py` clean with the tags
       tier: T2 · role: —
 - [ ] S3.5 Spawn and run: the 21 slots, launch, run queue, enqueue (4.3), in-place run, call 1
@@ -223,7 +224,8 @@ section 14); a step that finds a test needs more moves it on with a note.
       done: the S3.6 tests pass; own test: a yield with nobody ahead
       tier: T2 · role: —
 - [ ] S3.7 Await and GC: the wait model (4.1, U1-U6, the debug asserts of 4.4), the await slot, the
-      GC rules of section 7, awaiting info.
+      GC rules of section 7, awaiting info; the `changed:` ports of `gc/005` and `gc/011` (moved from
+      S3.4: their output under the eager scheduler start is known only by running them).
       done: the S3.7 tests pass; own tests of layer 2 (two waiters, two wakes in one tick, a target
         destroyed with records linked, a wait refused in scheduler context, GC while an exception
         unwinds); blind tests from section 4 by `test-author` pass

@@ -12,3 +12,4 @@ Version => %d.%d.%s
 
 Directive => Local Value => Master Value
 true_async.enable => 1 => 1
+true_async.debug_deadlock => On => On

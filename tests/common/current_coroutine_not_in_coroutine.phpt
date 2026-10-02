@@ -1,5 +1,5 @@
 --TEST--
-Async\current_coroutine(): throws at the script root (no current coroutine)
+Async\current_coroutine(): the script root runs in the main coroutine, so nothing throws
 --XFAIL--
 Not implemented yet: S3.5 of dev/PLAN.md
 --FILE--
@@ -7,9 +7,8 @@ Not implemented yet: S3.5 of dev/PLAN.md
 
 use function Async\current_coroutine;
 
-// Covers async.c PHP_FUNCTION(Async_current_coroutine) L772-775:
-// zend_async_throw("The current coroutine is not defined") when called
-// outside any coroutine context (main script root).
+// The RFC core starts the scheduler with the script, so the root already runs in the main
+// coroutine and current_coroutine() returns it (the reference threw here).
 
 try {
     current_coroutine();
@@ -20,4 +19,4 @@ try {
 
 ?>
 --EXPECT--
-caught: The current coroutine is not defined
+no-throw

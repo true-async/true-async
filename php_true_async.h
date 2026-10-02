@@ -40,6 +40,7 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	uint32_t notify_depth;
 	uint32_t handler_id_seq; /* last finish handler id; 0 is never handed out */
 	bool bailing_out;        /* the scheduler unwinds every coroutine after a bailout */
+	bool debug_deadlock;     /* true_async.debug_deadlock: the deadlock report lists every coroutine */
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	smart_str *test_trace; /* where a test hook's C callback writes; NULL outside a scenario */
 #endif

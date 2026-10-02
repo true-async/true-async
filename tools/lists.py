@@ -102,8 +102,8 @@ def parse_tag(entry, tag):
     if tag.startswith('changed:'):
         match = CHANGED.match(tag)
 
-        if not match or entry.form != 'ref':
-            raise ListError(f'{where}: "changed:<date>:<sha256>" belongs to a ref: test only')
+        if not match:
+            raise ListError(f'{where}: "changed:<date>:<sha256>" expected')
 
         entry.changed = (match.group(1), match.group(2))
     elif tag.startswith('core:'):

@@ -48,7 +48,7 @@ echo "end\n";
 ?>
 --EXPECT--
 start
-Initial coroutines count: 0
+Initial coroutines count: 1
 Initial coroutines type: array
 Active coroutines count: 3
 First coroutine is Coroutine: true

@@ -66,3 +66,11 @@ someone will propose again.
 - 2026-10-02 Pushes to `main` no longer wait for Edmond's OK on the diff. Why: Edmond.
 - 2026-10-02 An existing test is changed only with a reason (wrong test, contradicts the RFC or a decision)
   that Critic accepts; Critic's doubt goes to Edmond. Unfinished tests carry the standard `--XFAIL--` section, no ratchet. Why: Edmond.
+- 2026-10-02 Tests changed for S3.4, each for a reason in dev/plans/S3.md: `module/001-registration.phpt`
+  and `module/002-info.phpt` list the new INI `true_async.debug_deadlock` (section 1);
+  `edge_cases/001-deadlock-basic-test.phpt`, `edge_cases/002-deadlock-with-catch.phpt` and
+  `edge_cases/003-deadlock-with-zombie.phpt` set it under its new name instead of `async.debug_deadlock`;
+  `info/001-info-getCoroutines-basic.phpt` counts the main coroutine from the start and
+  `common/current_coroutine_not_in_coroutine.phpt` gets the main coroutine instead of an error, since the
+  RFC core starts the scheduler with the script (section 9). Why: the reference's behaviour no longer
+  applies; Critic to accept.

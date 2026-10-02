@@ -18,6 +18,9 @@
 #include "php_ini.h"
 #include "ext/standard/info.h"
 #include "php_true_async.h"
+#include "coroutine.h"
+#include "exceptions.h"
+#include "true_async_arginfo.h"
 
 #ifdef TRUE_ASYNC_KNOWN_ANSWER
 #include "known_answer.h"
@@ -36,7 +39,34 @@ ZEND_DECLARE_MODULE_GLOBALS(true_async)
  * that loads the extension must still be able to run another provider. */
 PHP_INI_BEGIN()
 	PHP_INI_ENTRY("true_async.enable", "0", PHP_INI_SYSTEM, NULL)
+	STD_PHP_INI_BOOLEAN("true_async.debug_deadlock",
+						"1",
+						PHP_INI_ALL,
+						OnUpdateBool,
+						debug_deadlock,
+						zend_true_async_globals,
+						true_async_globals)
 PHP_INI_END()
+
+zend_class_entry *async_ce_awaitable = NULL;
+zend_class_entry *async_ce_completable = NULL;
+
+/* Only this extension's classes implement Awaitable: generic wait code reads an awaitable's memory
+ * as a coroutine or an event (dev/plans/S3.md, section 13, bug 10). Completable extends it, so
+ * this covers both. */
+static int awaitable_gets_implemented(zend_class_entry *interface, zend_class_entry *class_entry)
+{
+	if (class_entry->type == ZEND_INTERNAL_CLASS && class_entry->info.internal.module == &true_async_module_entry) {
+		return SUCCESS;
+	}
+
+	zend_error_noreturn(E_ERROR,
+						"Class %s cannot implement interface %s: only the classes of true_async implement it",
+						ZSTR_VAL(class_entry->name),
+						ZSTR_VAL(interface->name));
+
+	return FAILURE;
+}
 
 static PHP_GINIT_FUNCTION(true_async)
 {
@@ -49,6 +79,17 @@ static PHP_GINIT_FUNCTION(true_async)
 static PHP_MINIT_FUNCTION(true_async)
 {
 	REGISTER_INI_ENTRIES();
+
+	/* A disabled extension registers no classes, as it registers no scheduler. */
+	if (!zend_ini_long(ZEND_STRL("true_async.enable"), 0)) {
+		return SUCCESS;
+	}
+
+	async_ce_awaitable = register_class_Async_Awaitable();
+	async_ce_awaitable->interface_gets_implemented = awaitable_gets_implemented;
+	async_ce_completable = register_class_Async_Completable(async_ce_awaitable);
+	async_register_exceptions_ce();
+	async_register_coroutine_ce(async_ce_completable);
 
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	/* A second table beside TRUE_ASYNC_FUNCTIONS: the mull lane builds the known-answer functions

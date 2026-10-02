@@ -63,6 +63,9 @@ def check_entry(entry, reference_tests, decisions):
     if entry.expected_sha256() not in (sha256(local), listed_sha256(local)):
         error(f'{entry.path}: content differs from the hash in {entry.list_file.name}')
 
+    if entry.changed and not decided(decisions, entry.changed[0], entry.path):
+        error(f'{entry.path}: changed:{entry.changed[0]} has no DECISIONS.md entry of that date naming it')
+
     if entry.form != 'ref':
         return
 
@@ -72,9 +75,6 @@ def check_entry(entry, reference_tests, decisions):
         error(f'{entry.path}: no such file in the reference')
     elif sha256(reference) != entry.sha256:
         error(f'{entry.path}: ref: hash is not the reference file\'s hash')
-
-    if entry.changed and not decided(decisions, entry.changed[0], entry.path):
-        error(f'{entry.path}: changed:{entry.changed[0]} has no DECISIONS.md entry of that date naming it')
 
 
 def decided(decisions, date, path):

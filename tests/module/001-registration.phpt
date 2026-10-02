@@ -11,7 +11,9 @@ var_dump(array_keys((new ReflectionExtension('true_async'))->getINIEntries()));
 bool(true)
 int(1)
 string(1) "1"
-array(1) {
+array(2) {
   [0]=>
   string(17) "true_async.enable"
+  [1]=>
+  string(25) "true_async.debug_deadlock"
 }

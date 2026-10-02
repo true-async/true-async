@@ -9,7 +9,8 @@ cd "$(dirname "$0")/.."
 clang_format=${CLANG_FORMAT:-clang-format-18}
 
 # Tracked and new files alike; _build/ and other ignored paths are left out.
-mapfile -t files < <(git ls-files --cached --others --exclude-standard -- '*.c' '*.h')
+# The *_arginfo.h files are gen_stub.php's output, kept as it writes them.
+mapfile -t files < <(git ls-files --cached --others --exclude-standard -- '*.c' '*.h' ':!:*_arginfo.h')
 
 if [ "${1:-}" = --check ]; then
     "$clang_format" --dry-run --Werror "${files[@]}"

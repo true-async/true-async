@@ -1,3 +1,3 @@
 # S2: tests written here; no reference tests yet.
-module/001-registration.phpt  own:16f4601443d97825fcc1cec51b754cd32ff881b41fb42f90bb875b9096aca3b7
-module/002-info.phpt  own:82fb55950ac780d5950261e16c22e1e49d4fcd09c8d03bc8c8eba01cf99e40cd
+module/001-registration.phpt  own:16f4601443d97825fcc1cec51b754cd32ff881b41fb42f90bb875b9096aca3b7  changed:2026-10-02:7577225eecf13c4ddc74ac551ad30bbe1273c3e5ed244ce36c00aa731afcf452
+module/002-info.phpt  own:82fb55950ac780d5950261e16c22e1e49d4fcd09c8d03bc8c8eba01cf99e40cd  changed:2026-10-02:15eed45fe38082b2e231f4e9cc1ea3935c44eb46605cc6df01027fed5b18a765
