@@ -461,3 +461,24 @@ stack options were shown with the code).
   on (Edmond), `error_reporting` with `E_ERROR`, stderr for `display_errors=stderr` as php_error_cb.
   Why: it names the script path of every coroutine, which a production response must not show
   (`scheduler/083`-`085`).
+- 2026-10-03 A coroutine is in the registry from its creation, not from its first enqueue (S3.18).
+  Why: the core releases only its own reference to a coroutine it creates and fails to enqueue (a
+  Fiber's; the GC takes none), so ours leaked; test_scheduler.c's live table owns a coroutine from birth
+  (`ts_coroutine_new`). The S3.14 thread's call, 2026-10-03. Such a refused coroutine is no waiter:
+  the deadlock count and report and `get_coroutines()` skip CREATED entries, as test_scheduler.c
+  counts only suspended ones; counted, it made a later drain report a false deadlock (Critic).
+- 2026-10-03 The core's finish handler contract reads "fires at most once; a handler that throws may
+  end the notify", so a handler that must fire belongs on a coroutine whose handlers its owner
+  controls, as the GC's do (S3.18). Why: test_scheduler.c calls every handler and ours stops at the
+  first throw (Edmond, "пока как в trueasync"); "may" covers both. The Critic asked for "exactly
+  once" or "a handler must not throw"; the Sage kept "may": the first overturns Edmond's call, the
+  second is a rule neither provider enforces.
+- 2026-10-03 The new_coroutine slot loses `extra_size`, and `active_coroutine_count`,
+  `call_on_main_stack`, `coroutine_from_object`, the OBJ_REF object model,
+  `ZEND_ASYNC_GET_EXCEPTION_CE` and `zend_async_is_enabled()` go (S3.18; API version 20261003, moved
+  the same day by the S3.14 Fiber fix). Why: no caller, no scheduler honoured them, no RFC text
+  (HEALTH 2026-10-02, finding 8).
+- 2026-10-03 test_scheduler gets a fault seam: INI `test_scheduler.fail_new_coroutine` and
+  `test_scheduler.fail_enqueue` (n-th call from now fails) (S3.18). Why: the core's paths for a
+  coroutine it cannot create or queue had no test (HEALTH finding 6); the seam found a crash
+  (`ts_suspend` with no loop started), fixed in test_scheduler.c.

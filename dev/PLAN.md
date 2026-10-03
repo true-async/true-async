@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-03 · Active: S3.18
+Updated: 2026-10-03 · Active: none (S3 steps closed; the stage waits for the S3.14 follow-ups, handoff "Next")
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -38,6 +38,21 @@ true-async/
   keeps internal structures open to it, the first version does not promise it.
 - Stream concurrency: the IO hooks freeze a whole stream (review B1); today's TrueAsync allows
   duplex and close-from-another-coroutine.
+
+## Open questions
+
+Waiting for Edmond's call; nothing here is being worked on.
+
+- A fatal error in a shutdown destructor: the coroutines queued before it still run after it.
+  `shutdown_destructors()` catches the bailout in its own `zend_try`, and `main/main.c`
+  then calls `ZEND_ASYNC_RUN_SCHEDULER_AFTER_MAIN(false)` (the Critic of S3.18). Reproduced on the
+  core of S3.18: a destructor that spawns a coroutine and then calls an undefined function prints
+  the fatal error, then the coroutine's output. The fix would be in the core, as for shutdown
+  functions. Not fixed; waiting for Edmond.
+- Closed: the same case for a shutdown function (Edmond, 2026-10-03: recorded as an open question;
+  handoff of S3.10, 89e4fe7). The S3.14 thread fixed it on Edmond's word: `async-core`
+  `c43060ea12d` ends the scheduler as a bailout; the coroutine no longer runs (checked on the core
+  of S3.18).
 
 ## S1 — Core branch `async-core-io`  [x] (S1.5 deferred)
 
@@ -457,7 +472,7 @@ section 14); a step that finds a test needs more moves it on with a note.
         on the commit: two growth corners untested (head at slot 0; push_front on a full buffer from
         tail 0), now in `012` and `016`; the pushes return void, as nothing can refuse them. The
         Sage: dtor's NULL check cut, `push_front` keeps the reference's `&item` shape.
-- [ ] S3.18 Health fixes, core (`async-core`, one topic per commit, then a core update by `WORKFLOW.md`):
+- [x] S3.18 Health fixes, core (`async-core`, one topic per commit, then a core update by `WORKFLOW.md`):
       `active_coroutine_count` removed; `shutdown_destructors` is the iterator's entry itself; the
       `zend_fibers.h` ownership comment corrected; uncalled surface removed (`call_on_main_stack`,
       `coroutine_from_object`, `ZEND_COROUTINE_F_OBJ_REF`, `ZEND_ASYNC_GET_EXCEPTION_CE`,
@@ -466,7 +481,7 @@ section 14); a step that finds a test needs more moves it on with a note.
       upstream (a parked fiber is collected only at the scheduler's shutdown) and the RFC's
       "Backward Incompatible Changes" its fourth item (Edmond, 2026-10-02, DECISIONS); the finish
       handler contract in `zend_async_API.h` and the RFC reads "at most once: a handler that throws
-      ends the notify", as the notify now does (DECISIONS 2026-10-02); a fault seam
+      may end the notify" (DECISIONS 2026-10-03, the Sage); a fault seam
       in the test scheduler for enqueue and spawn failures. Done ahead in the S3.14 thread on
       Edmond's word (`dev/SECURITY.md` journal 2026-10-03): the two core findings of S3.14, `async-core`
       `2cb30e538e4` (`ZEND_ASYNC_FCALL_DEFINE` and `Fiber` hold the callable's object, API 20261003)
@@ -475,6 +490,18 @@ section 14); a step that finds a test needs more moves it on with a note.
       done: `ext/test_scheduler/tests` equal per test on dbg and ASAN; `CORE_REF` and "Pinned core"
         moved
       tier: T2 · role: Critic
+      Done 2026-10-03: `async-core` `d7f3e1dbcbd` (13 commits on S3.14's two), pinned
+        `async-core-io-2026-10-03` `5d29d253d05`; the RFC in php-async-core-rfc. Also: the
+        new_coroutine slot lost `extra_size`; a shutdown or GC iterator the scheduler refuses leaves
+        no exception (the first left the Error in the coroutine entered); test_scheduler's
+        `ts_suspend` starts its loop when nothing started it (a crash the seam found). Ours: the
+        registry holds a coroutine from its creation, as test_scheduler.c's live table, which fixes
+        the leak of a core coroutine whose enqueue fails (`scheduler/086`); CREATED entries are no
+        waiters (`scheduler/087`). Core suites (`ext/test_scheduler`, `Zend/tests/fibers`, `gc`,
+        `generators`): dbg and ASAN 464 PASS, 4 SKIP each, the 452 old ones equal per test with
+        `async-core-io-2026-10-02-2`. Extension: pocs-dbg 312 PASS, pocs-asan 298 PASS, 14 SKIP.
+        The runs were on `8acdc9a45d2`, which differs from the pinned head only in two comments.
+        Critic, Code Reviewer, the Sage (finish handler wording).
 
 ## S4 — Reactor on Poll, Poll additions and Ring  [ ]
 

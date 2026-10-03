@@ -3,11 +3,12 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-03. Active step: **S3.18** (not started); S3.17 (circular buffer) closed. S3.15-S3.18 (health check) run now (Edmond).
+Written 2026-10-03. S3.18 (core health fixes) closed, the last step of S3; the stage header stays
+open until the S3.14 thread's open items close ("Next").
 
 ## State
 
-- Core pinned: `async-core-io-2026-10-02-2` (`82df2fc6ccc`). CI gates every lane on every list; a
+- Core pinned: `async-core-io-2026-10-03` (`5d29d253d05`, S3.18). CI gates every lane on every list; a
   test that cannot pass yet carries `--XFAIL--` naming its step, and the commit that makes it pass
   removes the section. run-tests (`tools/run-tests.patch`) fails a test the timeout killed.
 - S3.3-S3.6a: internal API, classes, the `Coroutine` object, the 21 slots, the FIFO run queue,
@@ -83,6 +84,13 @@ Written 2026-10-03. Active step: **S3.18** (not started); S3.17 (circular buffer
   frozen list keeps the name). A later port of channels brings back what it needs from the
   reference. Not touched: `count`/`is_empty`/`is_full` stay out of line (efficiency report of
   2026-10-03, waits for Edmond).
+- S3.18: the core's API lost what nothing called (`active_coroutine_count`, `call_on_main_stack`,
+  `coroutine_from_object`, `F_OBJ_REF`, `GET_EXCEPTION_CE`, `zend_async_is_enabled`,
+  `new_coroutine`'s `extra_size`); a finish handler fires at most once and a throwing one may end
+  the notify. test_scheduler has a fault seam (`test_scheduler.fail_new_coroutine`,
+  `test_scheduler.fail_enqueue`, tests `079`-`085`); a refused shutdown or GC iterator leaves no
+  exception. Ours: the registry holds a coroutine from its creation, so a core coroutine whose
+  enqueue fails is released at RSHUTDOWN; CREATED entries are no waiters (`scheduler/086`, `087`).
 - Reviews: after the code, Critic and the Sage (`general-purpose`, model `fable`) compare it with
   TrueAsync (`/root/php-async` in the container) and hunt inventions; one plan step is one commit.
 - Container notes: the ASAN lane needs `TRUE_ASYNC_CORE_SRC=/root/core-asan`; `gen_stub.php`
@@ -113,15 +121,8 @@ Written 2026-10-03. Active step: **S3.18** (not started); S3.17 (circular buffer
   before it ran reports nothing (only the coroutine that starts a pass is recorded in
   `EG(shutdown_context)`; Critic in S3.10); a destructor that waits for a later destructor and
   catches a graceful shutdown's cancellation, then waits again, spins (user-dependent).
-- A fatal error raised by main in a shutdown function lands in the core's `zend_try` there; the
-  last from_main call is then a plain one, and coroutines queued before the fatal run their bodies
-  after it. TrueAsync's fork has the same structure; the fix is a core one (main.c passes
-  `is_bailout` to the last call when `CG(unclean_shutdown)` flipped during the shutdown functions;
-  the Sage). Kept as TrueAsync until Edmond wants the core change. S3.14: the same catch while
-  main suspends left main queued and freed it (fixed in the extension, `internal/048`), and leaves
-  the current coroutine at a finished one, whose switch handlers the shutdown destructors then fill
-  (open in `dev/SECURITY.md`; reproducer: a shutdown function spawns a coroutine with an argument
-  whose destructor bails out, cancels it, then `Async\await()`s another coroutine).
+- A fatal error in a shutdown destructor still runs the coroutines queued before it (open question
+  in `dev/PLAN.md`; the shutdown-function case was fixed by S3.14, `c43060ea12d`).
 - Two coroutines that catch the deadlock's cancellation and await each other again loop, each
   round adding a `DeadlockError`; TrueAsync does the same (Critic, minor).
 - D16's 5 s deadline after `exit()` needs a clock and a reactor timeout (S4).
@@ -141,26 +142,15 @@ Written 2026-10-03. Active step: **S3.18** (not started); S3.17 (circular buffer
 
 - The nightly `seeds` CI job (dbg 100, asan 20 seeds) was added without a run; its first nightly or
   dispatch run is its check.
-- Two leaks found by the Sage in S3.13, for S3.18 or Edmond's call on ownership: a coroutine the
-  core creates and fails to enqueue is never released. The GC coroutine (`gc_collect_cycles()` on
-  a cycle under `-d fiber.stack_size=64G`: "Freeing ... (408 bytes)", the core's
-  `new_gc_coroutine`, `zend_gc.c:2234`) and a Fiber's coroutine (`new Fiber` + `start()` under 64G,
-  `zend_fiber_adopt`, `zend_fibers.c:1079`). Both core callers release only their own reference,
-  as test_scheduler.c's rule expects: the live table owns a coroutine from its creation
-  (`test_scheduler.c:810-818`). Ours inserts into the registry at the first enqueue and drops the
-  birth reference in finalize. The fix by test_scheduler.c's rule must keep the deadlock count,
-  which reads the registry. Reproducers: `/tmp/claude-0/sage/r6_gc_no_stack.php`, `r8_fiber_no_stack.php`
-  (the container's scratch, gone with it).
-- `ZEND_ASYNC_NEW_COROUTINE`'s `extra_size` is ignored, as `test_scheduler.c:1373` ignores it; no
-  core caller passes it. S3.18 drops the parameter from the core API or defines it.
 - Seeds 1-100 on dbg list 16 tests whose output gains a diagnostic under some order (their
   expectations assume FIFO); two were read, `scheduler/034` (the lost coroutine, fixed) and
   `scheduler/037` (an order artifact); the others are not read.
 
-- The core's `ZEND_ASYNC_FCALL_DEFINE` and upstream `Fiber::__construct` keep the callable's cache
-  without references (S3.14, open in `dev/SECURITY.md`): `async-core` in S3.18, the upstream report
-  on Edmond's word.
+- The upstream report on `Fiber::__construct` keeping its callable's object without a reference
+  (fixed on `async-core` by S3.14, `2cb30e538e4`) waits for Edmond's word on its text.
 
 ## Next
 
-1. S3.18 (core health fixes, the deadlock report as Edmond answers).
+1. The S3.14 thread's open items: main kept when nothing ran, an unobserved exception printed as
+   Fatal (waits for Edmond), the php/php-src report. Then stage S3 closes; ask Edmond what comes
+   next (S4 is planned, not started on its own).

@@ -483,7 +483,8 @@ static ZEND_STACK_ALIGNED void fiber_entry(zend_fiber_transfer *transfer)
 static bool scheduler_coroutine_create(void)
 {
 	/* The object first: a bailout out of its allocation leaves no mapped stack behind (the core's test_scheduler.c). */
-	async_coroutine_t *scheduler_coroutine = async_coroutine_new();
+	async_coroutine_t *scheduler_coroutine =
+			async_coroutine_from_object(async_ce_coroutine->create_object(async_ce_coroutine));
 	/* Never below the core's default fiber stack: a script may shrink fiber.stack_size to nothing,
 	 * and the scheduler still reports that failure. test_scheduler.c's 128 KiB floor is not enough under ASAN,
 	 * whose reserved stack (zend.c, OnUpdateReservedStackSize) is ten times larger. The first VM page
@@ -590,6 +591,11 @@ static void scheduler_deadlock_report(const uint32_t waiting)
 
 	ZEND_HASH_FOREACH_PTR(&ASYNC_G(coroutines), coroutine)
 	{
+		/* Not a waiter (registry_waiting_count). */
+		if (UNEXPECTED(ZEND_COROUTINE_STATUS(&coroutine->coroutine) == ZEND_COROUTINE_STATUS_CREATED)) {
+			continue;
+		}
+
 		const zend_string *spawn_file = coroutine->coroutine.filename;
 
 		smart_str_append_printf(&report,
@@ -648,8 +654,29 @@ static void scheduler_deadlock_report(const uint32_t waiting)
 	smart_str_free(&report);
 }
 
+/* The coroutines of the registry that wait. A CREATED one is a core coroutine whose enqueue the
+ * scheduler refused (scheduler.h, async_coroutine_new): creation and enqueue never straddle a switch,
+ * so with the queue empty nothing else is CREATED. It waits for nothing and is not counted, as
+ * test_scheduler.c counts only suspended coroutines; a deadlock's cancelling walks still cancel it,
+ * which finishes it unrun. */
+static uint32_t registry_waiting_count(void)
+{
+	const async_coroutine_t *coroutine = NULL;
+	uint32_t waiting = 0;
+
+	ZEND_HASH_FOREACH_PTR(&ASYNC_G(coroutines), coroutine)
+	{
+		if (EXPECTED(ZEND_COROUTINE_STATUS(&coroutine->coroutine) != ZEND_COROUTINE_STATUS_CREATED)) {
+			waiting++;
+		}
+	}
+	ZEND_HASH_FOREACH_END();
+
+	return waiting;
+}
+
 /* The next coroutine of a cancelling walk over the registry, or NULL at its end. A cancel releases
- * errors, whose release may start a collection; it defers in scheduler context, and the enqueue of
+ * errors, whose release may start a collection; it defers in scheduler context, and the creation of
  * its GC coroutine adds it to the registry under the walk: the engine's iterator follows the table
  * through a resize, as foreach by reference does (ext/standard/array.c, php_array_walk). Each walk
  * takes at most the count present at its start, as TrueAsync's foreach visits only the coroutines it
@@ -768,7 +795,7 @@ static bool scheduler_loop(void)
 				continue;
 			}
 
-			const uint32_t waiting = zend_hash_num_elements(&ASYNC_G(coroutines));
+			const uint32_t waiting = registry_waiting_count();
 
 			if (EXPECTED(waiting == 0)) {
 				return false;
@@ -827,7 +854,7 @@ static async_coroutine_t *bailout_next_coroutine(void)
  * once with the bailout flag, so its stack unwinds through its own zend_first_try and its context
  * comes back here, and every coroutine that never started finishes with is_bailout handlers
  * (TrueAsync's bailout_all_coroutines, scheduler.c:949-995). The registry is scanned again after
- * each one, as test_scheduler.c does: a finalize removes entries and an enqueue (a GC coroutine) may add one.
+ * each one, as test_scheduler.c does: a finalize removes entries and a new coroutine (a GC coroutine) may add one.
  * Main is left to the scheduler's end, which hands it the bailout, as the core's test_scheduler.c does: main's
  * bailout may land in any zend_try of main.c, so the scheduler must not be parked inside this loop
  * while main unwinds. A bailout out of the walk itself (a finish handler of a coroutine that never
@@ -963,7 +990,6 @@ static async_coroutine_t *main_coroutine_adopt(void)
 
 	coroutine->coroutine.flags |= ZEND_COROUTINE_F_MAIN | ZEND_COROUTINE_F_STARTED;
 	ZEND_COROUTINE_SET_STATUS(&coroutine->coroutine, ZEND_COROUTINE_STATUS_RUNNING);
-	zend_hash_index_add_new_ptr(&ASYNC_G(coroutines), coroutine->std.handle, coroutine);
 
 	return coroutine;
 }
@@ -1054,13 +1080,15 @@ static bool scheduler_main_suspend(bool is_bailout)
 
 async_coroutine_t *async_coroutine_new(void)
 {
-	return async_coroutine_from_object(async_ce_coroutine->create_object(async_ce_coroutine));
+	async_coroutine_t *coroutine = async_coroutine_from_object(async_ce_coroutine->create_object(async_ce_coroutine));
+
+	zend_hash_index_add_new_ptr(&ASYNC_G(coroutines), coroutine->std.handle, coroutine);
+
+	return coroutine;
 }
 
-static zend_coroutine_t *scheduler_new_coroutine(size_t extra_size)
+static zend_coroutine_t *scheduler_new_coroutine(void)
 {
-	(void) extra_size;
-
 	return &async_coroutine_new()->coroutine;
 }
 
@@ -1151,9 +1179,7 @@ bool async_scheduler_enqueue(zend_coroutine_t *zend_coroutine, zend_object *erro
 
 	switch (ZEND_COROUTINE_STATUS(zend_coroutine)) {
 		case ZEND_COROUTINE_STATUS_CREATED:
-			/* The registry holds every enqueued coroutine until it finishes; the scope hook of
-			 * S9 goes here. */
-			zend_hash_index_add_new_ptr(&ASYNC_G(coroutines), coroutine->std.handle, coroutine);
+			/* The scope hook of S9 goes here. */
 			run_queue_push(coroutine);
 			return true;
 		case ZEND_COROUTINE_STATUS_SUSPENDED:
@@ -1671,15 +1697,6 @@ static zend_class_entry *scheduler_get_class_ce(const zend_async_class type)
 	}
 }
 
-static zend_coroutine_t *scheduler_coroutine_from_object(zend_object *object)
-{
-	if (UNEXPECTED(object->ce != async_ce_coroutine)) {
-		return NULL;
-	}
-
-	return &async_coroutine_from_object(object)->coroutine;
-}
-
 /* The frame of a parked coroutine: started, not running, not finished (a yield is QUEUED). */
 static zend_execute_data *scheduler_coroutine_execute_data(zend_coroutine_t *zend_coroutine)
 {
@@ -1694,7 +1711,6 @@ static zend_execute_data *scheduler_coroutine_execute_data(zend_coroutine_t *zen
 	return coroutine->fiber_context->execute_data;
 }
 
-/* call_on_main_stack is left to the core's default, which calls the function where it is. */
 static const zend_async_scheduler_api_t scheduler_api = {
 	.size = sizeof(zend_async_scheduler_api_t),
 	.version = ZEND_ASYNC_API_VERSION,
@@ -1706,9 +1722,7 @@ static const zend_async_scheduler_api_t scheduler_api = {
 	.launch = scheduler_launch,
 	.shutdown = scheduler_shutdown,
 	.get_class_ce = scheduler_get_class_ce,
-	.call_on_main_stack = NULL,
 	.defer = scheduler_defer,
-	.coroutine_from_object = scheduler_coroutine_from_object,
 	.intercept_fiber = scheduler_intercept_fiber,
 	.coroutine_execute_data = scheduler_coroutine_execute_data,
 	.add_switch_handler = async_switch_handler_add,
@@ -1749,8 +1763,9 @@ void async_scheduler_request_startup(void)
 }
 
 /* Runs after the core turned async off (the main and current slots are NULL already). What is left
- * in the registry is the main coroutine minted by the last from_main call, and, when a bailout cut
- * that call short (U6), the coroutines it never reached, a parked scheduler and its pool. Nothing may
+ * in the registry is the main coroutine minted by the last from_main call, a core coroutine whose
+ * enqueue the scheduler refused, and, when a bailout cut that call short (U6), the coroutines it never
+ * reached, a parked scheduler and its pool. Nothing may
  * run any more, so a parked stack is unmapped without unwinding: the heap never reclaims a fiber
  * stack, and a worker would lose one per such request. TrueAsync's dtor only releases the objects.
  * What the dropped frames held is leaked to the heap, which is silent after a bailout

@@ -40,7 +40,7 @@ Known dark places: none beyond the open findings
 - 8 core Zend/zend_fibers.h:141-143: the comment says the coroutine owns the fiber; the code has the fiber own the coroutine (S3.18)
 - 9 dev/plans/S3.md:302-304: says the fiber entry's catch restores the scheduler-context flag; DECISIONS 2026-10-02 and the code restore it when main is adopted (S3.15)
 - 10 dev/plans/S2.md:187: the scenarios layer (`.feature` ports of fuzzy-tests) has no owning plan step and no DECISIONS entry for its generator
-- fine 6 src/scheduler.c:502-503: the registry insert precedes a push that can bail out on OOM; the leftover is the case RSHUTDOWN names for S3.10's bailout drain
+- fine 6 src/scheduler.c, async_coroutine_new: the registry holds a coroutine from its creation, so one whose enqueue fails or bails out on OOM stays CREATED until RSHUTDOWN releases it; deadlock counting skips it (S3.18)
 - fine 8 src/true_async.c:57: `scheduler_registered` is a process-wide static for a process-wide fact (the core's slots are set once in MINIT)
 - fine 8 src/true_async_API.c:203-205: `ASYNC_G(last_finish_handler_id)` is the id source of the agreed design (S3.md 3.6); the alternative is a counter in every coroutine
 - fine 8 core Zend/zend_gc.c: `GC_G(dtor_pending)` counts more than one outstanding iterator; the reason is at its definition

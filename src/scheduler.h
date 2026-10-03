@@ -34,8 +34,10 @@ bool async_scheduler_register(void);
 void async_scheduler_request_startup(void);
 void async_scheduler_request_shutdown(void);
 
-/* A new coroutine in CREATED with no entry point, for the caller to enqueue; the scheduler holds its
- * birth reference until it finishes. */
+/* A new coroutine in CREATED with no entry point, for the caller to enqueue. In the registry from
+ * its birth: the registry holds the birth reference until the coroutine finishes or the request ends
+ * (test_scheduler.c's live table, ts_coroutine_new()). A coroutine the core fails to enqueue is freed
+ * at RSHUTDOWN; the core drops only the reference it took itself. */
 async_coroutine_t *async_coroutine_new(void);
 
 /* The enqueue slot (S3.md 4.3): CREATED or SUSPENDED to QUEUED; the running current coroutine with

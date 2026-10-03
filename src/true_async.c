@@ -245,6 +245,7 @@ ZEND_FUNCTION(Async_spawn)
 	/* A CREATED coroutine is refused only when the scheduler coroutine cannot get a stack: the
 	 * coroutine then never existed. */
 	if (UNEXPECTED(!async_scheduler_enqueue(&coroutine->coroutine, NULL, false))) {
+		zend_hash_index_del(&ASYNC_G(coroutines), coroutine->std.handle);
 		OBJ_RELEASE(&coroutine->std);
 		RETURN_THROWS();
 	}
@@ -384,6 +385,11 @@ ZEND_FUNCTION(Async_get_coroutines)
 
 	ZEND_HASH_FOREACH_PTR(&ASYNC_G(coroutines), coroutine)
 	{
+		/* A core coroutine the scheduler refused to enqueue: it never runs (scheduler.h). */
+		if (UNEXPECTED(ZEND_COROUTINE_STATUS(&coroutine->coroutine) == ZEND_COROUTINE_STATUS_CREATED)) {
+			continue;
+		}
+
 		GC_ADDREF(&coroutine->std);
 		add_next_index_object(return_value, &coroutine->std);
 	}
