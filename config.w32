@@ -8,7 +8,7 @@ if (PHP_TRUE_ASYNC != "no") {
 	// Subdirectory paths take backslashes: ADD_SOURCES splits on them, and a forward slash
 	// leaves the .obj outside src\, where the linker does not look.
 	EXTENSION("true_async", "src\\true_async.c src\\true_async_API.c src\\coroutine.c src\\exceptions.c src\\scheduler.c", PHP_TRUE_ASYNC_SHARED, "/DZEND_ENABLE_STATIC_TSRMLS_CACHE=1");
-	ADD_SOURCES(configure_module_dirname + "\\src\\internal", "allocator.c circular_buffer.c", "true_async");
+	ADD_SOURCES(configure_module_dirname + "\\src\\internal", "circular_buffer.c", "true_async");
 
 	if (PHP_TRUE_ASYNC_TEST_HOOKS == "yes") {
 		ADD_SOURCES(configure_module_dirname + "\\src", "test_hooks.c", "true_async");

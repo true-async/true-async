@@ -135,7 +135,9 @@ static bool fiber_pool_keep(async_fiber_context_t *fiber_context)
 		return false;
 	}
 
-	return circular_buffer_push_ptr_with_resize(&ASYNC_G(fiber_context_pool), fiber_context) == SUCCESS;
+	circular_buffer_push_ptr_with_resize(&ASYNC_G(fiber_context_pool), fiber_context);
+
+	return true;
 }
 
 /* Ends every parked context, from the scheduler coroutine at its end (TrueAsync's
@@ -1062,7 +1064,7 @@ static zend_always_inline void run_queue_push(async_coroutine_t *coroutine)
 	/* The front once after asHiPriority() (D20, D35). */
 	if (UNEXPECTED(coroutine->coroutine.flags & ASYNC_COROUTINE_F_HI_PRIORITY)) {
 		coroutine->coroutine.flags &= ~ASYNC_COROUTINE_F_HI_PRIORITY;
-		circular_buffer_push_front(&ASYNC_G(run_queue), &coroutine, true);
+		circular_buffer_push_front(&ASYNC_G(run_queue), &coroutine);
 	} else {
 		circular_buffer_push_ptr_with_resize(&ASYNC_G(run_queue), coroutine);
 	}
@@ -1365,7 +1367,7 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 		 * the popped one keeps its turn. */
 		if (UNEXPECTED(ZEND_COROUTINE_IS_RUNNING(zend_coroutine))) {
 			if (next_coroutine != NULL) {
-				circular_buffer_push_front(&ASYNC_G(run_queue), &next_coroutine, true);
+				circular_buffer_push_front(&ASYNC_G(run_queue), &next_coroutine);
 			}
 
 			break;
@@ -1465,7 +1467,9 @@ static bool scheduler_defer(zend_async_microtask_t *microtask)
 		return false;
 	}
 
-	return circular_buffer_push_ptr_with_resize(&ASYNC_G(microtasks), microtask) == SUCCESS;
+	circular_buffer_push_ptr_with_resize(&ASYNC_G(microtasks), microtask);
+
+	return true;
 }
 
 /* Every fiber runs as a coroutine (S3.md section 8): a fiber left on the engine's own path would
@@ -1712,14 +1716,10 @@ bool async_scheduler_register(void)
 
 void async_scheduler_request_startup(void)
 {
-	circular_buffer_ctor(&ASYNC_G(run_queue), 0, sizeof(async_coroutine_t *), NULL);
-	/* The run queue never shrinks (section 5). */
-	ASYNC_G(run_queue).auto_optimize = false;
-	/* Grows as contexts park, up to ASYNC_FIBER_POOL_SIZE and the run queue's length; never shrinks,
-	 * or a pool emptied and refilled in every burst would be copied twice per burst. */
-	circular_buffer_ctor(&ASYNC_G(fiber_context_pool), 0, sizeof(async_fiber_context_t *), NULL);
-	ASYNC_G(fiber_context_pool).auto_optimize = false;
-	circular_buffer_ctor(&ASYNC_G(microtasks), 0, sizeof(zend_async_microtask_t *), NULL);
+	circular_buffer_ctor(&ASYNC_G(run_queue), sizeof(async_coroutine_t *));
+	/* Grows as contexts park, up to ASYNC_FIBER_POOL_SIZE and the run queue's length. */
+	circular_buffer_ctor(&ASYNC_G(fiber_context_pool), sizeof(async_fiber_context_t *));
+	circular_buffer_ctor(&ASYNC_G(microtasks), sizeof(zend_async_microtask_t *));
 	zend_hash_init(&ASYNC_G(coroutines), 8, NULL, NULL, false);
 	ASYNC_G(scheduler_coroutine) = NULL;
 	ASYNC_G(graceful_shutdown) = false;

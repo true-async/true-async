@@ -448,3 +448,12 @@ stack options were shown with the code).
 - 2026-10-03 `scheduler/065-no_stack_refusals.phpt` expects `Fiber stack allocate failed: %s`, as the
   other no-stack tests. Why: its "mmap failed" names the POSIX allocator, and Windows reports
   VirtualAlloc (S3.16, Critic).
+- 2026-10-03 The circular buffer keeps only what S3 calls (S3.17): beyond the plan's list, `pop`,
+  `capacity`, the refusing push, the ctor's count, shrinking and the request allocator's indirection
+  (`allocator.{c,h}` deleted) go too, being of the same class (only the test hooks reached them; no
+  queue ever shrank); `clean` stays, its caller is the bailout walk (`scheduler.c`, S3.6a). Tests
+  `internal/012-buffer_wrap_grow.phpt`, `internal/013-buffer_push_front.phpt`,
+  `internal/014-buffer_shrink.phpt` (now the growth from tail 0, name kept as the lists are frozen),
+  `internal/015-buffer_ptr.phpt` (a second swap) and `internal/016-buffer_front_full.phpt` changed
+  to pointer items and the scheduler's calls. Why: HEALTH 2026-10-02 finding 7 and DECISIONS
+  2026-10-01 ("what S3 does not need is cut"); the Sage.

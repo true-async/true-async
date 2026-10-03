@@ -1,8 +1,8 @@
 --TEST--
-Circular buffer: an underused buffer halves on push, keeping the order, unless auto_optimize is off
+Circular buffer: a buffer filled from tail 0 grows twice and keeps the order
 --FILE--
 <?php
-echo TrueAsync\Test\buffer_scenario('shrink'), "\n";
+echo TrueAsync\Test\buffer_scenario('grow'), "\n";
 ?>
 --EXPECT--
-slots 64->32: 31 32 33 off: slots 64->64: 31 32 33
+slots=16: 1 2 3 4 5 6 7 8

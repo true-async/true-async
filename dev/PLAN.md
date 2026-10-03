@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-03 · Active: S3.17
+Updated: 2026-10-03 · Active: S3.18
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -441,12 +441,22 @@ section 14); a step that finds a test needs more moves it on with a note.
         report's output still waits for Edmond's answer and moves to S3.18. The Sage: `suspend()`
         checks only the scheduler context after its async-off return, as TrueAsync's `async.c:223-235`
         (`THROW_IF_ASYNC_OFF`, `THROW_IF_SCHEDULER_CONTEXT`).
-- [ ] S3.17 Circular buffer cut to what S3 uses (DECISIONS 2026-10-01): `circular_buffer_clean`,
+- [x] S3.17 Circular buffer cut to what S3 uses (DECISIONS 2026-10-01): `circular_buffer_clean`,
       `_new`, `_destroy`, the explicit count of `circular_buffer_realloc` and the persistent allocator
       go; `circular_buffer_ctor` returns void; the `internal/012`-`017` hooks drive the production
       paths; a DECISIONS line names the changed internal tests.
       done: `internal/*` pass on dbg and asan
       tier: T2 · role: Critic
+      handoff: done 2026-10-03 on core `82df2fc6ccc`: dbg 306 PASS; asan 292 PASS, 14 SKIP, as at
+        S3.16; `check-lists.py`, `check-gates.py`, `format.sh --check` clean. `clean` stays: the
+        bailout walk calls it since S3.6a, after the health check listed it. The Critic found the
+        rest of the class (`pop`, `capacity`, the refusing push, the ctor's count, shrinking, which
+        no queue reached, and the one-instance allocator); the Sage cut it too (DECISIONS). Growth
+        is one branch; its condition and move are killed by `internal/012`, `014`, `016`, the swap's
+        offsets by `015`, each mutant applied by hand (the short `erealloc2` on asan only). Critic
+        on the commit: two growth corners untested (head at slot 0; push_front on a full buffer from
+        tail 0), now in `012` and `016`; the pushes return void, as nothing can refuse them. The
+        Sage: dtor's NULL check cut, `push_front` keeps the reference's `&item` shape.
 - [ ] S3.18 Health fixes, core (`async-core`, one topic per commit, then a core update by `WORKFLOW.md`):
       `active_coroutine_count` removed; `shutdown_destructors` is the iterator's entry itself; the
       `zend_fibers.h` ownership comment corrected; uncalled surface removed (`call_on_main_stack`,

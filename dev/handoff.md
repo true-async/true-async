@@ -3,7 +3,7 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-03. Active step: **S3.17** (not started); S3.16 (health tests) closed. S3.15-S3.18 (health check) run now (Edmond).
+Written 2026-10-03. Active step: **S3.18** (not started); S3.17 (circular buffer) closed. S3.15-S3.18 (health check) run now (Edmond).
 
 ## State
 
@@ -77,6 +77,12 @@ Written 2026-10-03. Active step: **S3.17** (not started); S3.16 (health tests) c
   CI of the previous push before closing a step, even without waiting for the current one.
   `module/004` skips on win: the snapshot build makes `php_test_scheduler.dll`, but the lane loads
   only true_async; loading that DLL first there would run the test (the Sage, not done).
+- S3.17: the circular buffer holds only what S3 calls: ctor/dtor, the pushes (always growing by
+  doubling, never shrinking), the pointer helpers, `count`, `clean`; request memory directly,
+  `allocator.{c,h}` deleted. `internal/014-buffer_shrink.phpt` now tests growth from tail 0 (the
+  frozen list keeps the name). A later port of channels brings back what it needs from the
+  reference. Not touched: `count`/`is_empty`/`is_full` stay out of line (efficiency report of
+  2026-10-03, waits for Edmond).
 - Reviews: after the code, Critic and the Sage (`general-purpose`, model `fable`) compare it with
   TrueAsync (`/root/php-async` in the container) and hunt inventions; one plan step is one commit.
 - Container notes: the ASAN lane needs `TRUE_ASYNC_CORE_SRC=/root/core-asan`; `gen_stub.php`
@@ -157,4 +163,4 @@ Written 2026-10-03. Active step: **S3.17** (not started); S3.16 (health tests) c
 
 ## Next
 
-1. S3.17 (circular buffer), then S3.18 (core health fixes, the deadlock report as Edmond answers).
+1. S3.18 (core health fixes, the deadlock report as Edmond answers).

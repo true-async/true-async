@@ -44,7 +44,7 @@ Where to look in this repository and around it. Pointers only.
 - `src/true_async_API.c`, `.h`: the internal API: the callbacks vector and its notify, finish and
   switch handlers, the wait record.
 - `src/exceptions.c`, `.h`: the exception classes and `CompositeException`.
-- `src/internal/`: the circular buffer, its allocators and the fuzz hook (`fuzz.c`, built with
+- `src/internal/`: the circular buffer and the fuzz hook (`fuzz.c`, built with
   `--enable-true-async-fuzz`).
 - `src/test_hooks.c`, `.h`: `TrueAsync\Test\` functions for `tests/internal/`, built with
   `--enable-true-async-test-hooks`.

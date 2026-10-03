@@ -646,88 +646,85 @@ static const test_scenario_t test_scenarios[] = {
 	{ "switch-handlers", scenario_switch_handlers }, { "switch-handlers-running", scenario_switch_handlers_running },
 };
 
+/* Small integers stand for the pointers the scheduler's queues hold, pushed and popped by the
+ * scheduler's calls. */
 static void test_buffer_push(circular_buffer_t *buffer, const zend_long from, const zend_long to)
 {
 	for (zend_long value = from; value <= to; value++) {
-		circular_buffer_push(buffer, &value, true);
+		circular_buffer_push_ptr_with_resize(buffer, (void *) (uintptr_t) value);
 	}
 }
 
 static void test_buffer_pop(circular_buffer_t *buffer, smart_str *trace, size_t count)
 {
-	zend_long value;
+	void *item;
 
-	while (count-- > 0 && circular_buffer_is_not_empty(buffer)) {
-		circular_buffer_pop(buffer, &value);
-		smart_str_append_printf(trace, " %d", (int) value);
+	while (count-- > 0 && circular_buffer_pop_ptr(buffer, &item) == SUCCESS) {
+		smart_str_append_printf(trace, " %d", (int) (uintptr_t) item);
 	}
 }
 
 /* 1 2 3 fill a buffer of 4 slots; 1 and 2 leave, 4 and 5 wrap around, 6 grows the wrapped buffer:
- * the order survives. */
+ * the order survives. Then a buffer full with its tail at slot 1 and its head at slot 0 grows. */
 static void scenario_buffer_wrap_grow(smart_str *trace)
 {
 	circular_buffer_t buffer;
 
-	circular_buffer_ctor(&buffer, 4, sizeof(zend_long), NULL);
+	circular_buffer_ctor(&buffer, sizeof(void *));
 	test_buffer_push(&buffer, 1, 3);
 	smart_str_append_printf(trace, "full=%d", circular_buffer_is_full(&buffer));
 	test_buffer_pop(&buffer, trace, 2);
 	test_buffer_push(&buffer, 4, 6);
-	smart_str_append_printf(trace, " capacity=%zu:", circular_buffer_capacity(&buffer));
+	smart_str_append_printf(trace, " slots=%zu:", buffer.capacity);
 	test_buffer_pop(&buffer, trace, SIZE_MAX);
 	smart_str_append_printf(trace, " count=%zu", circular_buffer_count(&buffer));
 	circular_buffer_dtor(&buffer);
+
+	circular_buffer_ctor(&buffer, sizeof(void *));
+	test_buffer_push(&buffer, 1, 3);
+	test_buffer_pop(&buffer, trace, 1);
+	test_buffer_push(&buffer, 4, 5);
+	smart_str_append_printf(trace, " slots=%zu:", buffer.capacity);
+	test_buffer_pop(&buffer, trace, SIZE_MAX);
+	circular_buffer_dtor(&buffer);
 }
 
-/* push_front from tail 0 wraps to the last slot; with no room and no resize it falls back to a
- * push, which refuses the full buffer. */
+/* push_front from tail 0 wraps to the last slot (asHiPriority on a run queue never popped). */
 static void scenario_buffer_push_front(smart_str *trace)
 {
-	circular_buffer_t *buffer = circular_buffer_new(4, sizeof(zend_long), NULL);
-	zend_long value = 0;
+	circular_buffer_t buffer;
+	void *item = (void *) (uintptr_t) 0;
 
-	test_buffer_push(buffer, 1, 2);
-	circular_buffer_push_front(buffer, &value, true);
-	value = 9;
-	smart_str_append_printf(trace, "refused=%d:", circular_buffer_push_front(buffer, &value, false) == FAILURE);
-	test_buffer_pop(buffer, trace, SIZE_MAX);
-	circular_buffer_destroy(buffer);
+	circular_buffer_ctor(&buffer, sizeof(void *));
+	test_buffer_push(&buffer, 1, 2);
+	circular_buffer_push_front(&buffer, &item);
+	smart_str_append_printf(trace, "tail=%zu:", buffer.tail);
+	test_buffer_pop(&buffer, trace, SIZE_MAX);
+	circular_buffer_dtor(&buffer);
 }
 
-/* 32 items grow a 4-slot buffer to 64 slots; after 30 leave, the next push halves it, keeping the
- * order. With auto_optimize off it stays at 64. */
-static void scenario_buffer_shrink(smart_str *trace)
+/* A buffer filled from tail 0 grows twice without moving its items: 4 slots to 8, then to 16. */
+static void scenario_buffer_grow(smart_str *trace)
 {
-	for (int optimize = 1; optimize >= 0; optimize--) {
-		circular_buffer_t buffer;
+	circular_buffer_t buffer;
 
-		circular_buffer_ctor(&buffer, 0, sizeof(zend_long), NULL);
-		buffer.auto_optimize = optimize;
-		test_buffer_push(&buffer, 1, 32);
-		smart_str_append_printf(trace, "%sslots %zu", optimize ? "" : " off: ", buffer.capacity);
-
-		zend_long value;
-		for (int i = 0; i < 30; i++) {
-			circular_buffer_pop(&buffer, &value);
-		}
-
-		test_buffer_push(&buffer, 33, 33);
-		smart_str_append_printf(trace, "->%zu:", buffer.capacity);
-		test_buffer_pop(&buffer, trace, SIZE_MAX);
-		circular_buffer_dtor(&buffer);
-	}
+	circular_buffer_ctor(&buffer, sizeof(void *));
+	test_buffer_push(&buffer, 1, 8);
+	smart_str_append_printf(trace, "slots=%zu:", buffer.capacity);
+	test_buffer_pop(&buffer, trace, SIZE_MAX);
+	circular_buffer_dtor(&buffer);
 }
 
 /* The pointer helpers on a wrapped buffer: push_ptr refuses a full buffer, pop_ptr an empty one,
- * swap_ptr_at swaps by offset from the tail across the wrap, push_ptr_with_resize grows. */
+ * swap_ptr_at swaps by offset from the tail across the wrap and next to the tail,
+ * push_ptr_with_resize grows. */
 static void scenario_buffer_ptr(smart_str *trace)
 {
 	static char names[] = "ABCD";
 	circular_buffer_t buffer;
 	void *element;
 
-	circular_buffer_ctor(&buffer, 4, sizeof(void *), &true_async_persistent_allocator);
+	circular_buffer_ctor(&buffer, sizeof(void *));
 	smart_str_append_printf(trace, "empty=%d ", circular_buffer_pop_ptr(&buffer, &element) == FAILURE);
 
 	/* Tail 2: A B C take slots 2, 3 and 0. */
@@ -742,8 +739,9 @@ static void scenario_buffer_ptr(smart_str *trace)
 
 	smart_str_append_printf(trace, "full=%d ", circular_buffer_push_ptr(&buffer, &names[3]) == FAILURE);
 	circular_buffer_swap_ptr_at(&buffer, 1, 2);
+	circular_buffer_swap_ptr_at(&buffer, 0, 1);
 	circular_buffer_push_ptr_with_resize(&buffer, &names[3]);
-	smart_str_append_printf(trace, "capacity=%zu:", circular_buffer_capacity(&buffer));
+	smart_str_append_printf(trace, "slots=%zu:", buffer.capacity);
 
 	while (circular_buffer_pop_ptr(&buffer, &element) == SUCCESS) {
 		smart_str_appendc(trace, *(char *) element);
@@ -752,20 +750,29 @@ static void scenario_buffer_ptr(smart_str *trace)
 	circular_buffer_dtor(&buffer);
 }
 
-/* push_front with resize on a full wrapped buffer (asHiPriority on a full run queue): it grows
- * first, and the new item goes ahead of the rest. */
+/* push_front on a full wrapped buffer (asHiPriority on a full run queue): it grows first, and the
+ * new item goes ahead of the rest. Then the same on a full buffer never popped: the tail wraps to the
+ * last slot of the grown buffer. */
 static void scenario_buffer_front_full(smart_str *trace)
 {
 	circular_buffer_t buffer;
-	zend_long value = 9;
+	void *item = (void *) (uintptr_t) 9;
 
-	circular_buffer_ctor(&buffer, 4, sizeof(zend_long), NULL);
+	circular_buffer_ctor(&buffer, sizeof(void *));
 	test_buffer_push(&buffer, 1, 2);
 	test_buffer_pop(&buffer, trace, 2);
 	test_buffer_push(&buffer, 10, 12);
 	smart_str_append_printf(trace, " full=%d", circular_buffer_is_full(&buffer));
-	circular_buffer_push_front(&buffer, &value, true);
-	smart_str_append_printf(trace, " capacity=%zu:", circular_buffer_capacity(&buffer));
+	circular_buffer_push_front(&buffer, &item);
+	smart_str_append_printf(trace, " slots=%zu:", buffer.capacity);
+	test_buffer_pop(&buffer, trace, SIZE_MAX);
+	circular_buffer_dtor(&buffer);
+
+	circular_buffer_ctor(&buffer, sizeof(void *));
+	test_buffer_push(&buffer, 1, 3);
+	item = (void *) (uintptr_t) 0;
+	circular_buffer_push_front(&buffer, &item);
+	smart_str_append_printf(trace, " slots=%zu tail=%zu:", buffer.capacity, buffer.tail);
 	test_buffer_pop(&buffer, trace, SIZE_MAX);
 	circular_buffer_dtor(&buffer);
 }
@@ -785,9 +792,12 @@ static void scenario_buffer_zeroed(smart_str *trace)
 }
 
 static const test_scenario_t buffer_scenarios[] = {
-	{ "wrap-grow", scenario_buffer_wrap_grow },   { "push-front", scenario_buffer_push_front },
-	{ "shrink", scenario_buffer_shrink },         { "ptr", scenario_buffer_ptr },
-	{ "front-full", scenario_buffer_front_full }, { "zeroed", scenario_buffer_zeroed },
+	{ "wrap-grow", scenario_buffer_wrap_grow },
+	{ "push-front", scenario_buffer_push_front },
+	{ "grow", scenario_buffer_grow },
+	{ "ptr", scenario_buffer_ptr },
+	{ "front-full", scenario_buffer_front_full },
+	{ "zeroed", scenario_buffer_zeroed },
 };
 
 static void
