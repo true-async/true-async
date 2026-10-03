@@ -1,0 +1,13 @@
+The context pool as a cap alone (128 here), without TrueAsync's run-queue rule (dev/BENCHMARKS.md, 2026-10-03). Made against 89e4fe7; apply with patch -p1.
+
+--- a/src/scheduler.c
++++ b/src/scheduler.c
+@@ -120,7 +120,7 @@
+ {
+ 	const size_t pooled = circular_buffer_count(&ASYNC_G(fiber_context_pool));
+ 
+-	if (pooled >= ASYNC_FIBER_POOL_SIZE && pooled >= circular_buffer_count(&ASYNC_G(run_queue))) {
++	if (pooled >= 128) {
+ 		return false;
+ 	}
+ 

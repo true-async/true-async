@@ -48,3 +48,6 @@ can see goes here; tests, tools and CI are in the git history.
   coroutine. Fibers left suspended when nothing else runs are closed with no deadlock reported.
 - A destructor run at the end of the request may wait or yield: the remaining destructors run in
   the meantime, so one destructor can wait for another.
+- A parked coroutine takes no VM stack page from `memory_limit`: its first page lives on its own
+  stack, which is `fiber.stack_size` plus 16 KiB, and up to 1024 stacks of finished coroutines are
+  kept for reuse.

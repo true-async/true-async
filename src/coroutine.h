@@ -34,14 +34,18 @@ struct _async_coroutine_s
 	async_scope_t *scope;                                      /* NULL until S9 */
 	zend_object *deferred_cancellation;                        /* the cancel that arrived inside protect() */
 	async_coroutine_switch_handlers_vector_t *switch_handlers; /* lazy */
-	zend_object std;                                           /* last: the properties table runs past the end */
+	/* The callable and arguments of spawn(), which coroutine.fcall points to: one allocation less per
+	 * spawn than the core's separate block (O6, measured in dev/BENCHMARKS.md). A Fiber's coroutine
+	 * keeps the core's block. */
+	zend_fcall_t spawn_fcall;
+	zend_object std; /* last: the properties table runs past the end */
 };
 
-/* The sizes of section 3.1, checked at compile time on 64-bit targets: 320 B, allocated as 304 in
- * the 320 B bin. */
+/* The sizes of section 3.1, checked at compile time on 64-bit targets: 424 B, allocated as 408 in
+ * the 448 B bin. */
 #if SIZEOF_SIZE_T == 8
-typedef char async_coroutine_size_check[sizeof(async_coroutine_t) == 320 ? 1 : -1];
-typedef char async_coroutine_std_offset_check[offsetof(async_coroutine_t, std) == 264 ? 1 : -1];
+typedef char async_coroutine_size_check[sizeof(async_coroutine_t) == 424 ? 1 : -1];
+typedef char async_coroutine_std_offset_check[offsetof(async_coroutine_t, std) == 368 ? 1 : -1];
 #endif
 
 extern zend_class_entry *async_ce_coroutine;

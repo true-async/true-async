@@ -23,15 +23,17 @@ for ($i = 0; $i < 10001; $i++) {
     $nodes[] = $node;
 }
 
-ini_set('fiber.stack_size', '1');
 $coroutine = Async\spawn(function () use ($nodes) {
     echo "ran\n";
 });
+// After the spawn, which created the scheduler with its own stack; mmap refuses this size
+// (vm.overcommit_memory 0 or 2).
+ini_set('fiber.stack_size', '64G');
 unset($nodes, $node);
 echo "end\n";
 ?>
 --EXPECTF--
-Fatal error: Uncaught Exception: Fiber stack size is too small, it needs to be at least %d bytes in %s:%d
+Fatal error: Uncaught Exception: Fiber stack allocate failed: %s in %s:%d
 Stack trace:
 #0 {main}
   thrown in %s on line %d

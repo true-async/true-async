@@ -49,8 +49,12 @@
 #include "Zend/zend_smart_str.h"
 #include "internal/circular_buffer.h"
 
-/* Contexts the pool keeps however short the run queue is (TrueAsync's policy, D23). */
-#define ASYNC_FIBER_POOL_SIZE 4
+/* Contexts the pool keeps however short the run queue is: TrueAsync's policy (D23) with 1024 for its
+ * 4. A chain of awaits up to that deep, or that many waiters woken together, then take no new stack:
+ * B4 at depth 100 runs 21 % fewer instructions per link, B5 (1000 waiters) 11 % fewer and in a tenth
+ * of the time (dev/BENCHMARKS.md). A pooled context keeps about 20 KiB of its stack resident and
+ * 0.14 KiB of the request's memory, until the scheduler ends. */
+#define ASYNC_FIBER_POOL_SIZE 1024
 
 /* The bottom frame of every coroutine's VM stack. Nameless: backtraces skip a frame without a
  * function name, as they skip the core's own fiber root frame. */
@@ -59,6 +63,8 @@ static zend_function root_function = { ZEND_INTERNAL_FUNCTION };
 static ZEND_STACK_ALIGNED void fiber_entry(zend_fiber_transfer *transfer);
 static ZEND_STACK_ALIGNED void scheduler_fiber_entry(zend_fiber_transfer *transfer);
 static void scheduler_cancel_all(zend_object *cancellation);
+static void context_vm_stack_start(zend_fiber_context *context, zval *vm_stack_memory);
+static void context_vm_stack_free(void);
 
 ///////////////////////////////////////////////////////////////////
 /// Fiber contexts and their pool
@@ -100,7 +106,10 @@ static async_fiber_context_t *fiber_context_take(void)
 		return fiber_context;
 	}
 
-	fiber_context = fiber_context_create(fiber_entry, EG(fiber_stack_size));
+	/* fiber_entry keeps the first VM stack page on the stack (context_vm_stack_start): it gets its
+	 * own room, so fiber.stack_size stays the C budget the core's stack limit measures, as for a Fiber;
+	 * without it a small size overran into the guard page. */
+	fiber_context = fiber_context_create(fiber_entry, EG(fiber_stack_size) + ZEND_FIBER_VM_STACK_SIZE);
 
 	/* The report runs PHP code (the exception's __toString, a release that fills the GC buffer) on a
 	 * stack in the middle of a switch: in scheduler context, so a GC defers and a wait refuses. */
@@ -120,7 +129,7 @@ static bool fiber_pool_keep(async_fiber_context_t *fiber_context)
 {
 	const size_t pooled = circular_buffer_count(&ASYNC_G(fiber_context_pool));
 
-	if (pooled >= ASYNC_FIBER_POOL_SIZE && pooled >= circular_buffer_count(&ASYNC_G(run_queue))) {
+	if (UNEXPECTED(pooled >= ASYNC_FIBER_POOL_SIZE && pooled >= circular_buffer_count(&ASYNC_G(run_queue)))) {
 		return false;
 	}
 
@@ -391,6 +400,7 @@ static ZEND_STACK_ALIGNED void fiber_entry(zend_fiber_transfer *transfer)
 	async_fiber_context_t *fiber_context = (async_fiber_context_t *) EG(current_fiber_context);
 	zend_fiber_context *target = NULL;
 	uint8_t flags = 0;
+	zval vm_stack_memory[ZEND_FIBER_VM_STACK_SIZE / sizeof(zval)];
 
 	ZEND_ASSERT(transfer->flags == 0 && "a context starts only to run a coroutine");
 
@@ -404,8 +414,7 @@ static ZEND_STACK_ALIGNED void fiber_entry(zend_fiber_transfer *transfer)
 	zend_first_try
 	{
 		/* The root frame has no caller: a coroutine's backtrace ends in it. */
-		EG(current_execute_data) = NULL;
-		zend_fiber_vm_stack_start(&fiber_context->context, &root_function);
+		context_vm_stack_start(&fiber_context->context, vm_stack_memory);
 
 		target = run_coroutines(fiber_context);
 	}
@@ -416,7 +425,7 @@ static ZEND_STACK_ALIGNED void fiber_entry(zend_fiber_transfer *transfer)
 	}
 	zend_end_try();
 
-	zend_vm_stack_destroy();
+	context_vm_stack_free();
 
 	/* The trampoline marks this context dead and switches to `target`, whose switch destroys it. */
 	transfer->context = target;
@@ -462,10 +471,12 @@ static zend_always_inline bool scheduler_coroutine_ensure(void)
 	return EXPECTED(ASYNC_G(scheduler_coroutine) != NULL) || scheduler_coroutine_create();
 }
 
-/* The scheduler's VM stack, with its first page on the scheduler's own C stack, as in TrueAsync
- * (scheduler.c:1796-1829): no allocation, so the scheduler starts even after an out-of-memory
- * bailout, and the code it runs (microtasks, finalizes) has a root frame. */
-static void scheduler_vm_stack_start(zend_fiber_context *context, zval *vm_stack_memory)
+/* A context's VM stack, with its first page on the context's own C stack, as TrueAsync's fiber_entry
+ * does for every context (scheduler.c:1796-1829): no allocation, so the scheduler starts even after
+ * an out-of-memory bailout, and a context, pooled or running, holds no page of the request's memory
+ * (the core's zend_fiber_vm_stack_start allocates 16 KiB). The root frame has no caller. The pages
+ * the VM adds go with context_vm_stack_free(). */
+static void context_vm_stack_start(zend_fiber_context *context, zval *vm_stack_memory)
 {
 	/* Determined as zend_fiber_vm_stack_start does: an empty ini value means "never configured". */
 	zend_long error_reporting = zend_ini_long_literal("error_reporting");
@@ -502,6 +513,21 @@ static void scheduler_vm_stack_start(zend_fiber_context *context, zval *vm_stack
 #else
 	(void) context;
 #endif
+}
+
+/* Frees the pages the VM added to a stack context_vm_stack_start() began; the first page goes with
+ * the C stack (TrueAsync's scheduler.c:2083-2093). */
+static void context_vm_stack_free(void)
+{
+	zend_vm_stack page = EG(vm_stack);
+
+	while (page != NULL && page->prev != NULL) {
+		zend_vm_stack older_page = page->prev;
+		efree(page);
+		page = older_page;
+	}
+
+	EG(vm_stack) = NULL;
 }
 
 /* The deadlock report of true_async.debug_deadlock (TrueAsync's dump_deadlock_info,
@@ -775,7 +801,7 @@ static ZEND_STACK_ALIGNED void scheduler_fiber_entry(zend_fiber_transfer *transf
 	zend_first_try
 	{
 		ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
-		scheduler_vm_stack_start(&scheduler_coroutine->fiber_context->context, vm_stack_memory);
+		context_vm_stack_start(&scheduler_coroutine->fiber_context->context, vm_stack_memory);
 
 		if (EXPECTED(!is_bailout)) {
 			is_bailout = scheduler_loop();
@@ -819,16 +845,7 @@ static ZEND_STACK_ALIGNED void scheduler_fiber_entry(zend_fiber_transfer *transf
 	transfer->flags = is_bailout ? ZEND_FIBER_TRANSFER_FLAG_BAILOUT : 0;
 	ZVAL_NULL(&transfer->value);
 
-	/* The first page is on this stack; the pages the VM added are freed (TrueAsync's scheduler.c:2083-2093). */
-	zend_vm_stack page = EG(vm_stack);
-
-	while (page != NULL && page->prev != NULL) {
-		zend_vm_stack older_page = page->prev;
-		efree(page);
-		page = older_page;
-	}
-
-	EG(vm_stack) = NULL;
+	context_vm_stack_free();
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -1588,7 +1605,10 @@ void async_scheduler_request_startup(void)
 	circular_buffer_ctor(&ASYNC_G(run_queue), 0, sizeof(async_coroutine_t *), NULL);
 	/* The run queue never shrinks (section 5). */
 	ASYNC_G(run_queue).auto_optimize = false;
-	circular_buffer_ctor(&ASYNC_G(fiber_context_pool), ASYNC_FIBER_POOL_SIZE, sizeof(async_fiber_context_t *), NULL);
+	/* Grows as contexts park, up to ASYNC_FIBER_POOL_SIZE and the run queue's length; never shrinks,
+	 * or a pool emptied and refilled in every burst would be copied twice per burst. */
+	circular_buffer_ctor(&ASYNC_G(fiber_context_pool), 0, sizeof(async_fiber_context_t *), NULL);
+	ASYNC_G(fiber_context_pool).auto_optimize = false;
 	circular_buffer_ctor(&ASYNC_G(microtasks), 0, sizeof(zend_async_microtask_t *), NULL);
 	zend_hash_init(&ASYNC_G(coroutines), 8, NULL, NULL, false);
 	ASYNC_G(scheduler_coroutine) = NULL;

@@ -12,13 +12,13 @@ register_shutdown_function(function () use (&$first, &$second) {
 });
 $first = Async\spawn(fn() => print("first ran\n"));
 $second = Async\spawn(fn() => print("second ran\n"));
-ini_set('fiber.stack_size', '1');
+ini_set('fiber.stack_size', '64G'); // mmap refuses it (vm.overcommit_memory 0 or 2)
 echo "end\n";
 ?>
 --EXPECTF--
 end
 
-Fatal error: Uncaught Exception: Fiber stack size is too small, it needs to be at least %d bytes in [no active file]:0
+Fatal error: Uncaught Exception: Fiber stack allocate failed: %s in [no active file]:0
 Stack trace:
 #0 {main}
   thrown in [no active file] on line 0

@@ -196,7 +196,26 @@ ZEND_FUNCTION(Async_spawn)
 
 	async_coroutine_t *coroutine = async_coroutine_new();
 
-	ZEND_ASYNC_FCALL_DEFINE(fcall, fci, fcc, args, args_count, named_args);
+	/* ZEND_ASYNC_FCALL_DEFINE into the coroutine's own block. */
+	zend_fcall_t *fcall = &coroutine->spawn_fcall;
+	fcall->fci = fci;
+	fcall->fci_cache = fcc;
+
+	if (args_count != 0) {
+		fcall->fci.param_count = args_count;
+		fcall->fci.params = safe_emalloc(args_count, sizeof(zval), 0);
+
+		for (uint32_t i = 0; i < args_count; i++) {
+			ZVAL_COPY(&fcall->fci.params[i], &args[i]);
+		}
+	}
+
+	if (UNEXPECTED(named_args != NULL)) {
+		fcall->fci.named_params = named_args;
+		GC_ADDREF(named_args);
+	}
+
+	Z_TRY_ADDREF(fcall->fci.function_name);
 	coroutine->coroutine.fcall = fcall;
 
 	zend_string *filename = zend_get_executed_filename_ex();

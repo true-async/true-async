@@ -3,8 +3,7 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-03. Active step: **S3.11** (not started); S3.10 (shutdown windows and bailout)
-closed. S3.15-S3.18 (health check) run after S3.14 (Edmond).
+Written 2026-10-03. Active step: **S3.12** (not started); S3.11 (measurements) closed. S3.15-S3.18 (health check) run after S3.14 (Edmond).
 
 ## State
 
@@ -32,6 +31,13 @@ closed. S3.15-S3.18 (health check) run after S3.14 (Edmond).
   destructor may wait; the bailout walk survives a bailout of its own; finalize leaves the registry
   as it sets FINISHED; RSHUTDOWN unmaps what a bailout out of the last from_main call leaves (U6).
   Test hook `add_throwing_finish_handler($coroutine, bailout: true)`. S3.md section 7 "As built".
+- S3.11: `dev/BENCHMARKS.md`; D2 holds on B1-B5. O6 taken (`spawn_fcall`), the context pool floor
+  1024 with TrueAsync's run-queue rule, every context's first VM stack page on its C stack
+  (`context_vm_stack_start`; the context's stack is `fiber.stack_size` + 16 KiB), tests
+  `scheduler/055`, `056`; the no-stack tests use `fiber.stack_size=64G`, which mmap refuses. Benchmarks: `bench/`, `tools/bench.py --count`
+  (cachegrind; the container has no hardware counters) and `--wall`. The reference builds only into
+  the fork core's tree (`ext/async` lacks `ZEND_TSRMLS_CACHE_DEFINE`); our in-tree build needs the
+  configure header check removed.
 - Reviews: after the code, Critic and the Sage (`general-purpose`, model `fable`) compare it with
   TrueAsync (`/root/php-async` in the container) and hunt inventions; one plan step is one commit.
 - Container notes: the ASAN lane needs `TRUE_ASYNC_CORE_SRC=/root/core-asan`; `gen_stub.php`
@@ -78,6 +84,12 @@ closed. S3.15-S3.18 (health check) run after S3.14 (Edmond).
 - Next core update: `ZEND_ASYNC_DEACTIVATE` also clears `in_scheduler_context`.
 - Nested notifies recurse with no depth limit (S3.md 3.6 "As built").
 
+- O6 costs 5.8 % wall time on the unbatched B1 (100 000 live coroutines, 16 B more fresh memory
+  each) while it saves 4.9 % of instructions; D17's condition is the instruction count.
+- The shared build pays 9 `__tls_get_addr` calls per suspend (B2 +40 % over the static build). The
+  core declares the modules' TLS cache without a model; an initial-exec model for the module, as the
+  core uses for itself, is a lever not tried (Edmond's call).
+
 ## Next
 
-1. S3.11.
+1. S3.12.

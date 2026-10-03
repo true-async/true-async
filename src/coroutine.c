@@ -28,7 +28,7 @@ static zend_object_handlers coroutine_handlers;
 
 static zend_object *coroutine_object_create(zend_class_entry *class_entry)
 {
-	/* 304 B: a class without properties takes the inline properties slot off the size. */
+	/* 408 B: a class without properties takes the inline properties slot off the size. */
 	async_coroutine_t *coroutine = zend_object_alloc(sizeof(async_coroutine_t), class_entry);
 
 	ZVAL_UNDEF(&coroutine->coroutine.result);
@@ -51,7 +51,17 @@ static zend_object *coroutine_release_values(async_coroutine_t *coroutine)
 	zend_coroutine_t *zend_coroutine = &coroutine->coroutine;
 	zend_fcall_t *fcall = zend_coroutine->fcall;
 
-	if (fcall != NULL) {
+	if (EXPECTED(fcall == &coroutine->spawn_fcall)) {
+		/* ZEND_ASYNC_FCALL_FREE without the free: the block is part of the coroutine. */
+		zend_coroutine->fcall = NULL;
+		zend_fcall_info_args_clear(&fcall->fci, true);
+
+		if (fcall->fci.named_params != NULL) {
+			zend_array_release(fcall->fci.named_params);
+		}
+
+		zval_ptr_dtor(&fcall->fci.function_name);
+	} else if (UNEXPECTED(fcall != NULL)) {
 		zend_coroutine->fcall = NULL;
 		ZEND_ASYNC_FCALL_FREE(fcall);
 	}

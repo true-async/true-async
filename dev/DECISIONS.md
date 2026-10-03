@@ -361,3 +361,33 @@ stack options were shown with the code).
   coroutine in the registry, and a later drain in the request counted it as a waiter forever
   (Critic). A PHP-level finish handler (a later step) will not see its own coroutine in
   `Async\get_coroutines()`, unlike TrueAsync (the Sage). Test `internal/026`.
+- 2026-10-03 O6 taken: spawn's `zend_fcall_t` lives in the coroutine (`spawn_fcall`; 424 B, the
+  448 B bin), a Fiber's coroutine keeps the core's block. Why: D17's condition met, B1 -4.8 %
+  instructions and one allocation less per spawn, the unbatched run -4.9 %; its wall time is 5.8 %
+  slower (16 B more fresh memory per live coroutine), recorded in `dev/BENCHMARKS.md`. A Fiber's
+  coroutine, main and the scheduler carry the unused block (+128 B each); a second layout for them
+  would be machinery for bytes (the Sage).
+- 2026-10-03 The context pool keeps TrueAsync's rule with a floor of 1024 for its 4 (D23 changed by
+  its own condition). Why: B4 -20.7 % instructions per link at depth 100 and -2.2 % at 10 000, B5
+  -11.5 % and a tenth of the wall time; a cap alone lost to the rule on B5 (+9.7 % at 128); the
+  cost is about 20 KiB of resident stack per pooled context, kept until the scheduler ends; the
+  Critic's trim when the loop goes idle was rejected as new machinery that re-maps every burst
+  (the Sage). The pool buffer starts empty and never shrinks, as the run queue.
+- 2026-10-03 Every context starts its VM stack with the first page on its C stack, as TrueAsync's
+  `fiber_entry` (only the scheduler coroutine did). Why: the core's `zend_fiber_vm_stack_start`
+  took 16 KiB of the request's memory per live coroutine (10 000 parked: 168 MiB, the reference
+  14 MiB, and B4 at that depth hit the default memory_limit). Test `scheduler/055`.
+- 2026-10-03 The callbacks vector keeps its inline element. Why: a plain heap vector costs one
+  allocation and 1.9 % per B4 link, and on B5 it allocates more for 0.6 % fewer instructions.
+- 2026-10-03 D31 unchanged, the hot state stays in extension globals. Why: the shared build's
+  extra cost (9 `__tls_get_addr` calls per suspend) comes from the core's per-module TLS cache,
+  through which the extension reaches the core's globals too.
+- 2026-10-03 A coroutine context's stack is `fiber.stack_size` plus the 16 KiB VM page that
+  `fiber_entry` keeps on it, so the ini value stays the C budget the core's stack limit measures.
+  Why: with the page on the stack a size up to about 20 KiB overran into the guard page (SIGSEGV;
+  TrueAsync crashes the same way) where a Fiber throws the stack-limit Error (Critic). Test
+  `scheduler/056`. `fiber.stack_size=1` is now a valid size, so the no-stack tests take 64G, which
+  mmap refuses, set after the spawn that creates the scheduler where the scheduler did not exist
+  yet (Critic and Sage): `scheduler/005-no_stack_for_coroutine.phpt`,
+  `scheduler/007-no_stack_with_exception_handler.phpt`, `scheduler/016-no_stack_full_gc_buffer.phpt`,
+  `scheduler/017-no_stack_in_shutdown_suspend.phpt`, `scheduler/018-no_stack_in_coroutine_suspend.phpt`.

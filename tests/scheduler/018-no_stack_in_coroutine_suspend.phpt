@@ -9,7 +9,7 @@ register_shutdown_function(function () use (&$first, &$second) {
 
 $first = Async\spawn(function () use (&$second) {
     echo "first\n";
-    ini_set('fiber.stack_size', '1');
+    ini_set('fiber.stack_size', '64G'); // mmap refuses it (vm.overcommit_memory 0 or 2)
     $second = Async\spawn(fn() => print("never\n"));
     Async\suspend();
     echo "not reached\n";
@@ -21,7 +21,7 @@ echo "end\n";
 end
 first
 
-Fatal error: Uncaught Exception: Fiber stack size is too small, it needs to be at least %d bytes in %s:%d
+Fatal error: Uncaught Exception: Fiber stack allocate failed: %s in %s:%d
 Stack trace:
 #0 %s(%d): Async\suspend()
 #1 [internal function]: {closure:%s:%d}()

@@ -50,3 +50,6 @@ tools/mull/*.sh
 
 # Python
 __pycache__/
+
+# The benchmarks allocation counter, built by hand (bench/alloc_count.c)
+/bench/*.so

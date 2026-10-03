@@ -1,0 +1,51 @@
+The callbacks vector without its inline element (dev/BENCHMARKS.md, 2026-10-03). Made against 89e4fe7; apply with patch -p1.
+
+--- a/src/true_async_API.h
++++ b/src/true_async_API.h
+@@ -110,7 +110,7 @@
+ /* The element array, inline or on the heap. */
+ static zend_always_inline async_event_callback_t **async_callbacks_slots(async_callbacks_vector_t *vector)
+ {
+-	return ASYNC_CALLBACKS_CAPACITY(vector) == 0 ? &vector->inline_callback : vector->data;
++	return vector->data;
+ }
+ 
+ /* Makes room for `count` more elements; may allocate, and so bail out on OOM. A push into
+@@ -124,7 +124,7 @@
+ {
+ 	const uint32_t capacity = ASYNC_CALLBACKS_CAPACITY(vector);
+ 
+-	ZEND_ASSERT(vector->length < (capacity == 0 ? 1 : capacity));
++	ZEND_ASSERT(vector->length < capacity);
+ 	async_callbacks_slots(vector)[vector->length++] = callback;
+ }
+ 
+--- a/src/true_async_API.c
++++ b/src/true_async_API.c
+@@ -27,7 +27,7 @@
+ 	const uint32_t capacity = ASYNC_CALLBACKS_CAPACITY(vector);
+ 	const uint32_t needed = vector->length + count;
+ 
+-	if (EXPECTED(needed <= (capacity == 0 ? 1 : capacity))) {
++	if (EXPECTED(needed <= capacity)) {
+ 		return;
+ 	}
+ 
+@@ -37,16 +37,7 @@
+ 		new_capacity *= 2;
+ 	}
+ 
+-	if (capacity == 0) {
+-		async_event_callback_t *inline_callback = vector->inline_callback;
+-		vector->data = safe_emalloc(new_capacity, sizeof(async_event_callback_t *), 0);
+-
+-		if (vector->length == 1) {
+-			vector->data[0] = inline_callback;
+-		}
+-	} else {
+-		vector->data = safe_erealloc(vector->data, new_capacity, sizeof(async_event_callback_t *), 0);
+-	}
++	vector->data = safe_erealloc(vector->data, new_capacity, sizeof(async_event_callback_t *), 0);
+ 
+ 	vector->capacity = new_capacity | (vector->capacity & ASYNC_CALLBACKS_F_NOTIFYING);
+ }

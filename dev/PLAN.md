@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-02 · Active: S3.11
+Updated: 2026-10-03 · Active: S3.12
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -331,10 +331,22 @@ section 14); a step that finds a test needs more moves it on with a note.
         leaves as it finishes); weak tests and doc wording fixed. Sage: kept the walk's retry, the
         stack unmapping at RSHUTDOWN and the early registry delete (DECISIONS). Own tests `scheduler/050`-`054`,
         `internal/024`-`026`.
-- [ ] S3.11 Measurements of S3.md section 12: B0-B5 against the reference, known answer first;
+- [x] S3.11 Measurements of S3.md section 12: B0-B5 against the reference, known answer first;
       the open items of its table decided by their runs.
       done: numbers with date in `BENCHMARKS.md`; D2 holds, or each excess has a DECISIONS line
       tier: T2 · role: —
+      handoff: done 2026-10-03 on core `82df2fc6ccc`, release builds, `dev/BENCHMARKS.md`: D2 holds on
+        B1-B5, shared build against the static reference, 0.15-0.97 of its instructions per operation
+        and no more allocations (cachegrind's count: the container has no hardware counters). Taken:
+        O6 (`spawn_fcall`, -1 allocation per spawn; its unbatched wall time 5.8 % slower, recorded);
+        the pool floor 1024 with TrueAsync's rule (D23 changed: B4 -21 % at depth 100, B5 a tenth of
+        the wall time, about 20 KiB resident per pooled context). Found: every context took its first
+        VM stack page (16 KiB) from the request's memory, TrueAsync puts it on the C stack; fixed,
+        test `scheduler/055`. Kept: the inline vector element, D31. Critic: a small `fiber.stack_size`
+        crashed with the page on the stack (TrueAsync too); the context now takes the page on top,
+        test `scheduler/056`, the no-stack tests moved to a size mmap refuses; the pool buffer no
+        longer allocated per request. Sage: pool 1024 and O6 kept. dbg 251 PASS; asan 237 PASS,
+        14 SKIP, also with `detect_stack_use_after_return=1`.
 - [ ] S3.12 Fault injection and fuzz: hooks for U1-U6 (layer 3); the fuzz hook
       (`--enable-true-async-fuzz`, `TRUE_ASYNC_SEED`) and `test.py --seeds N`.
       done: one passing test per site U1-U6; 100 seeds over the S3 list on dbg and asan with no

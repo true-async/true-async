@@ -13,6 +13,10 @@ Where to look in this repository and around it. Pointers only.
   decisions, open findings.
 - `dev/WORKFLOW.md`: branches, commits, how the core and ior are built.
 - `dev/HEALTH.md`: the weekly health check: how it is run, the open findings, its journal.
+- `dev/BENCHMARKS.md`: the results journal of the benchmarks, with dates, builds and outcomes.
+- `bench/`: the benchmarks B0-B5 of `dev/plans/S3.md` section 12, the allocation counter, the
+  test_scheduler control and the variant patches measured against the code; `tools/bench.py` runs
+  them.
 - `tools/results.py`: per-test statuses from run-tests output, and a diff of two runs.
 - `tools/plan-page.py`: renders `dev/PLAN.md` as the progress page
   (https://claude.ai/artifact/2NzNg5GSZo25MbdDY5PgSE); a daily routine republishes it from `main`.
