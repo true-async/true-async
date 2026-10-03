@@ -50,8 +50,8 @@ PHP_INI_BEGIN()
 						true_async_globals)
 PHP_INI_END()
 
-zend_class_entry *async_ce_awaitable = NULL;
-zend_class_entry *async_ce_completable = NULL;
+static zend_class_entry *async_ce_awaitable = NULL;
+static zend_class_entry *async_ce_completable = NULL;
 
 /* False when the extension is disabled or the core refused its scheduler: RINIT and RSHUTDOWN do
  * nothing then. */

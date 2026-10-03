@@ -227,12 +227,12 @@ static void async_finish_handler_dispose(async_event_callback_t *callback, async
 	efree(callback);
 }
 
-uint32_t async_finish_handler_add(async_coroutine_t *coroutine,
+uint32_t async_finish_handler_add(zend_coroutine_t *zend_coroutine,
 								  const zend_coroutine_finish_handler_fn handler,
 								  zend_coroutine_t *waiter,
 								  void *data)
 {
-	async_callbacks_vector_t *vector = &coroutine->callbacks;
+	async_callbacks_vector_t *vector = &((async_coroutine_t *) zend_coroutine)->callbacks;
 	async_callbacks_reserve(vector, 1);
 
 	async_finish_handler_callback_t *finish_handler = emalloc(sizeof(async_finish_handler_callback_t));
@@ -249,9 +249,9 @@ uint32_t async_finish_handler_add(async_coroutine_t *coroutine,
 	return finish_handler->handler_id;
 }
 
-bool async_finish_handler_remove(async_coroutine_t *coroutine, const uint32_t handler_id)
+bool async_finish_handler_remove(zend_coroutine_t *zend_coroutine, const uint32_t handler_id)
 {
-	async_callbacks_vector_t *vector = &coroutine->callbacks;
+	async_callbacks_vector_t *vector = &((async_coroutine_t *) zend_coroutine)->callbacks;
 	async_event_callback_t **slots = async_callbacks_slots(vector);
 
 	for (uint32_t i = 0; i < vector->length; i++) {
@@ -272,8 +272,9 @@ bool async_finish_handler_remove(async_coroutine_t *coroutine, const uint32_t ha
 /// Switch handlers
 ///////////////////////////////////////////////////////////////////
 
-uint32_t async_switch_handler_add(async_coroutine_t *coroutine, const zend_coroutine_switch_handler_fn handler)
+uint32_t async_switch_handler_add(zend_coroutine_t *zend_coroutine, const zend_coroutine_switch_handler_fn handler)
 {
+	async_coroutine_t *coroutine = (async_coroutine_t *) zend_coroutine;
 	async_coroutine_switch_handlers_vector_t *vector = coroutine->switch_handlers;
 
 	if (vector == NULL) {
@@ -304,8 +305,9 @@ uint32_t async_switch_handler_add(async_coroutine_t *coroutine, const zend_corou
 	return switch_handler->handler_id;
 }
 
-bool async_switch_handler_remove(async_coroutine_t *coroutine, const uint32_t handler_id)
+bool async_switch_handler_remove(zend_coroutine_t *zend_coroutine, const uint32_t handler_id)
 {
+	async_coroutine_t *coroutine = (async_coroutine_t *) zend_coroutine;
 	async_coroutine_switch_handlers_vector_t *vector = coroutine->switch_handlers;
 
 	if (UNEXPECTED(vector == NULL)) {

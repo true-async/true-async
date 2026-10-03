@@ -3,7 +3,7 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-03. Active step: **S3.15** (not started); S3.14 (security pass) closed. S3.15-S3.18 (health check) run now (Edmond).
+Written 2026-10-03. Active step: **S3.16** (not started); S3.15 (health fixes, extension) closed. S3.15-S3.18 (health check) run now (Edmond).
 
 ## State
 
@@ -62,6 +62,13 @@ Written 2026-10-03. Active step: **S3.15** (not started); S3.14 (security pass) 
   `ini_error_reporting`); a main
   parked at from_main ends as a bailout; `await()` and `getResult()` dereference. run-tests gets
   `TEST_ENV_NAMES` only. Open findings with owners are in `dev/SECURITY.md`.
+- S3.15: the finish and switch handler functions take `zend_coroutine_t *` and sit in the core's
+  slots; `test_trace` left the module globals (a test finish handler's data carries the trace, a
+  test switch handler finds it beside its coroutine); the class entries of `Awaitable` and
+  `Completable` are static; `dev/INDEX.md` lists the sources, the build files and every tool.
+  The deadlock report's output (`dev/SECURITY.md`, open finding) waits for Edmond's answer, asked
+  in the S3.15 thread with three options: default off, keep as TrueAsync, report through the
+  error system; owner S3.16. A default of off also changes `module/002-info`'s INI line.
 - Reviews: after the code, Critic and the Sage (`general-purpose`, model `fable`) compare it with
   TrueAsync (`/root/php-async` in the container) and hunt inventions; one plan step is one commit.
 - Container notes: the ASAN lane needs `TRUE_ASYNC_CORE_SRC=/root/core-asan`; `gen_stub.php`
@@ -142,4 +149,4 @@ Written 2026-10-03. Active step: **S3.15** (not started); S3.14 (security pass) 
 
 ## Next
 
-1. S3.15-S3.18 (health fixes); S3.16's enqueue and finish-handler tests came in S3.13.
+1. S3.16-S3.18 (health fixes); S3.16's enqueue and finish-handler tests came in S3.13.

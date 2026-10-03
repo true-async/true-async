@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-03 · Active: S3.15
+Updated: 2026-10-03 · Active: S3.16
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -403,7 +403,7 @@ section 14); a step that finds a test needs more moves it on with a note.
         unreferenced callable cache (S3.18), the deadlock report's paths (S3.15, as Edmond answers).
         Critic on the commit: the Windows lane lost the hooks (`=yes` now), the `@` leak (fixed by
         the Sage's shape), weak tests strengthened, owners written into S3.15 and S3.18.
-- [ ] S3.15 Health fixes, extension (health check 2026-10-02, `dev/HEALTH.md`; S3.15-S3.18 run after S3.14, Edmond 2026-10-02): `test_trace` becomes a
+- [x] S3.15 Health fixes, extension (health check 2026-10-02, `dev/HEALTH.md`; S3.15-S3.18 run after S3.14, Edmond 2026-10-02): `test_trace` becomes a
       field of `test_finish_t`; `async_ce_awaitable` and `async_ce_completable` static; the finish
       handler functions take `zend_coroutine_t *` and sit in the slots, the two forwarders in
       `scheduler.c` go; S3.md "As built" on the scheduler-context flag follows DECISIONS 2026-10-02;
@@ -412,10 +412,19 @@ section 14); a step that finds a test needs more moves it on with a note.
       the notify stops at the first throw, P1.4 and its gate, the P1.1 and P2.2 gate fields.
       done: the S3 list passes as before; `check-gates.py` and `check-lists.py` clean
       tier: T1 · role: —
+      handoff: done 2026-10-03 on core `82df2fc6ccc`: dbg 299 PASS; asan 285 PASS, 14 SKIP, as at
+        S3.14; both checks clean. The switch handler functions went into their slots the same way,
+        with their two forwarders. A test hook's switch handler finds its trace beside its
+        coroutine (`test_switch_coroutine_t`).
+        The deadlock report's output waits for Edmond's answer (asked 2026-10-03) and moves to
+        S3.16.
 - [ ] S3.16 Health tests: own tests for the refusals of `true_async.c` (extension off, async off, scheduler
       context, no current coroutine), enqueue of a finished or running coroutine, finalize moving
       what finish handlers threw into the exit exception; `tools/test.py` fails the coverage lane
-      when `lcov --summary` gives no number.
+      when `lcov --summary` gives no number; the deadlock report's output
+      (`true_async.debug_deadlock`, open finding of S3.14) as Edmond answers, moved from S3.15; a
+      test that main's adopt clears the scheduler-context flag a bailout out of a notify on the OS
+      stack left set (no test fails without the reset, S3.15).
       Done ahead in S3.13: the enqueue refusals (`internal/039`, `043`, `scheduler/066`) and the
       finish handlers' exception (`internal/041`).
       done: the new tests pass on dbg, asan and win; those lines covered on `pocs-dbg-cov`

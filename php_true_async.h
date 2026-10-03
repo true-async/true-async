@@ -26,7 +26,6 @@ extern zend_module_entry true_async_module_entry;
 #ifdef TRUE_ASYNC_FUZZ
 #include "src/internal/fuzz.h"
 #endif
-#include "Zend/zend_smart_str_public.h"
 
 ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	circular_buffer_t run_queue;            /* QUEUED coroutines, one entry each; borrowed pointers */
@@ -38,8 +37,7 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	bool graceful_shutdown;                 /* the graceful shutdown started: once per request */
 	bool debug_deadlock;                    /* true_async.debug_deadlock: the deadlock report lists every coroutine */
 #ifdef TRUE_ASYNC_TEST_HOOKS
-	smart_str *test_trace; /* where a test hook's C callback writes; NULL outside a scenario */
-	uint8_t fault_site;    /* the armed async_test_fault_site_t; ASYNC_TEST_FAULT_NONE when unarmed */
+	uint8_t fault_site; /* the armed async_test_fault_site_t; ASYNC_TEST_FAULT_NONE when unarmed */
 #endif
 #ifdef TRUE_ASYNC_FUZZ
 	async_fuzz_state_t fuzz; /* TRUE_ASYNC_SCHED of this request */

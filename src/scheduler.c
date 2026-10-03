@@ -1597,16 +1597,6 @@ static bool scheduler_await(zend_coroutine_t *zend_coroutine)
 	return finished;
 }
 
-static uint32_t scheduler_add_switch_handler(zend_coroutine_t *coroutine, zend_coroutine_switch_handler_fn handler)
-{
-	return async_switch_handler_add((async_coroutine_t *) coroutine, handler);
-}
-
-static bool scheduler_remove_switch_handler(zend_coroutine_t *coroutine, uint32_t handler_id)
-{
-	return async_switch_handler_remove((async_coroutine_t *) coroutine, handler_id);
-}
-
 static uint32_t
 scheduler_add_awaiting_info(zend_coroutine_t *coroutine, zend_coroutine_awaiting_info_fn handler, void *data)
 {
@@ -1684,19 +1674,6 @@ static zend_execute_data *scheduler_coroutine_execute_data(zend_coroutine_t *zen
 	return coroutine->fiber_context->execute_data;
 }
 
-static uint32_t scheduler_add_finish_handler(zend_coroutine_t *coroutine,
-											 zend_coroutine_finish_handler_fn handler,
-											 zend_coroutine_t *waiter,
-											 void *data)
-{
-	return async_finish_handler_add((async_coroutine_t *) coroutine, handler, waiter, data);
-}
-
-static bool scheduler_remove_finish_handler(zend_coroutine_t *coroutine, uint32_t handler_id)
-{
-	return async_finish_handler_remove((async_coroutine_t *) coroutine, handler_id);
-}
-
 /* call_on_main_stack is left to the core's default, which calls the function where it is. */
 static const zend_async_scheduler_api_t scheduler_api = {
 	.size = sizeof(zend_async_scheduler_api_t),
@@ -1714,10 +1691,10 @@ static const zend_async_scheduler_api_t scheduler_api = {
 	.coroutine_from_object = scheduler_coroutine_from_object,
 	.intercept_fiber = scheduler_intercept_fiber,
 	.coroutine_execute_data = scheduler_coroutine_execute_data,
-	.add_switch_handler = scheduler_add_switch_handler,
-	.remove_switch_handler = scheduler_remove_switch_handler,
-	.add_finish_handler = scheduler_add_finish_handler,
-	.remove_finish_handler = scheduler_remove_finish_handler,
+	.add_switch_handler = async_switch_handler_add,
+	.remove_switch_handler = async_switch_handler_remove,
+	.add_finish_handler = async_finish_handler_add,
+	.remove_finish_handler = async_finish_handler_remove,
 	.await = scheduler_await,
 	.add_awaiting_info = scheduler_add_awaiting_info,
 	.remove_awaiting_info = scheduler_remove_awaiting_info,

@@ -443,37 +443,45 @@ static void scenario_free_disposes(smart_str *trace)
 	smart_str_append_printf(trace, " length=%u", target.callbacks.length);
 }
 
-/* A switch handler traces its name; A, C, D and E stay registered, B goes after its first call. */
-static bool switch_handler_traced(const char name, const bool keep)
+/* A coroutine for the switch handler scenarios: a switch handler gets only its coroutine, so the
+ * trace it writes to sits beside it. */
+typedef struct
 {
-	smart_str_appendc(ASYNC_G(test_trace), name);
+	async_coroutine_t coroutine;
+	smart_str *trace;
+} test_switch_coroutine_t;
+
+/* A switch handler traces its name; A, C, D and E stay registered, B goes after its first call. */
+static bool switch_handler_traced(zend_coroutine_t *coroutine, const char name, const bool keep)
+{
+	smart_str_appendc(((test_switch_coroutine_t *) coroutine)->trace, name);
 
 	return keep;
 }
 
 static bool switch_handler_a(zend_coroutine_t *coroutine, bool is_enter)
 {
-	return switch_handler_traced('A', true);
+	return switch_handler_traced(coroutine, 'A', true);
 }
 
 static bool switch_handler_b(zend_coroutine_t *coroutine, bool is_enter)
 {
-	return switch_handler_traced('B', false);
+	return switch_handler_traced(coroutine, 'B', false);
 }
 
 static bool switch_handler_c(zend_coroutine_t *coroutine, bool is_enter)
 {
-	return switch_handler_traced('C', true);
+	return switch_handler_traced(coroutine, 'C', true);
 }
 
 static bool switch_handler_d(zend_coroutine_t *coroutine, bool is_enter)
 {
-	return switch_handler_traced('D', true);
+	return switch_handler_traced(coroutine, 'D', true);
 }
 
 static bool switch_handler_e(zend_coroutine_t *coroutine, bool is_enter)
 {
-	return switch_handler_traced('E', true);
+	return switch_handler_traced(coroutine, 'E', true);
 }
 
 /* Switch handlers A-E on one coroutine: the vector grows past its first four, an add of a handler
@@ -481,46 +489,44 @@ static bool switch_handler_e(zend_coroutine_t *coroutine, bool is_enter)
  * handlers that return true, and the vector goes with the last one. */
 static void scenario_switch_handlers(smart_str *trace)
 {
-	async_coroutine_t coroutine = { 0 };
+	test_switch_coroutine_t test_coroutine = { .trace = trace };
+	async_coroutine_t *coroutine = &test_coroutine.coroutine;
+	zend_coroutine_t *zend_coroutine = &coroutine->coroutine;
 
-	ASYNC_G(test_trace) = trace;
-	smart_str_append_printf(trace, "remove-none=%d ", async_switch_handler_remove(&coroutine, 1));
+	smart_str_append_printf(trace, "remove-none=%d ", async_switch_handler_remove(zend_coroutine, 1));
 
-	const uint32_t id_a = async_switch_handler_add(&coroutine, switch_handler_a);
-	async_switch_handler_add(&coroutine, switch_handler_b);
-	const uint32_t id_c = async_switch_handler_add(&coroutine, switch_handler_c);
-	const uint32_t id_d = async_switch_handler_add(&coroutine, switch_handler_d);
-	const uint32_t id_e = async_switch_handler_add(&coroutine, switch_handler_e);
+	const uint32_t id_a = async_switch_handler_add(zend_coroutine, switch_handler_a);
+	async_switch_handler_add(zend_coroutine, switch_handler_b);
+	const uint32_t id_c = async_switch_handler_add(zend_coroutine, switch_handler_c);
+	const uint32_t id_d = async_switch_handler_add(zend_coroutine, switch_handler_d);
+	const uint32_t id_e = async_switch_handler_add(zend_coroutine, switch_handler_e);
 
 	smart_str_append_printf(trace,
 							"same=%d,%d ",
-							async_switch_handler_add(&coroutine, switch_handler_a) == id_a,
-							async_switch_handler_add(&coroutine, switch_handler_e) == id_e);
-	smart_str_append_printf(trace, "removed-c=%d ", async_switch_handler_remove(&coroutine, id_c));
-	smart_str_append_printf(trace, "again=%d ", async_switch_handler_remove(&coroutine, id_c));
-	smart_str_append_printf(trace, "length=%u leave:", coroutine.switch_handlers->length);
-	async_switch_handlers_call(&coroutine, false);
-	smart_str_append_printf(trace, " length=%u enter:", coroutine.switch_handlers->length);
-	async_switch_handlers_call(&coroutine, true);
+							async_switch_handler_add(zend_coroutine, switch_handler_a) == id_a,
+							async_switch_handler_add(zend_coroutine, switch_handler_e) == id_e);
+	smart_str_append_printf(trace, "removed-c=%d ", async_switch_handler_remove(zend_coroutine, id_c));
+	smart_str_append_printf(trace, "again=%d ", async_switch_handler_remove(zend_coroutine, id_c));
+	smart_str_append_printf(trace, "length=%u leave:", coroutine->switch_handlers->length);
+	async_switch_handlers_call(coroutine, false);
+	smart_str_append_printf(trace, " length=%u enter:", coroutine->switch_handlers->length);
+	async_switch_handlers_call(coroutine, true);
 	/* The last one removed leaves its copy behind the length: a search for it again finds nothing. */
-	smart_str_append_printf(trace, " removed-e=%d ", async_switch_handler_remove(&coroutine, id_e));
-	smart_str_append_printf(trace, "again-e=%d", async_switch_handler_remove(&coroutine, id_e));
-	async_switch_handler_remove(&coroutine, id_a);
-	smart_str_append_printf(trace, " length=%u", coroutine.switch_handlers->length);
-	async_switch_handler_remove(&coroutine, id_d);
-	smart_str_append_printf(trace, " freed=%d", coroutine.switch_handlers == NULL);
-	ASYNC_G(test_trace) = NULL;
+	smart_str_append_printf(trace, " removed-e=%d ", async_switch_handler_remove(zend_coroutine, id_e));
+	smart_str_append_printf(trace, "again-e=%d", async_switch_handler_remove(zend_coroutine, id_e));
+	async_switch_handler_remove(zend_coroutine, id_a);
+	smart_str_append_printf(trace, " length=%u", coroutine->switch_handlers->length);
+	async_switch_handler_remove(zend_coroutine, id_d);
+	smart_str_append_printf(trace, " freed=%d", coroutine->switch_handlers == NULL);
 }
 
 /* A switch handler that adds and removes switch handlers of its coroutine while the handlers run. */
 static bool switch_handler_changes_handlers(zend_coroutine_t *coroutine, bool is_enter)
 {
-	async_coroutine_t *async_coroutine = (async_coroutine_t *) coroutine;
+	const uint32_t added_id = async_switch_handler_add(coroutine, switch_handler_a);
+	const bool removed = async_switch_handler_remove(coroutine, 1);
 
-	const uint32_t added_id = async_switch_handler_add(async_coroutine, switch_handler_a);
-	const bool removed = async_switch_handler_remove(async_coroutine, 1);
-
-	smart_str_append_printf(ASYNC_G(test_trace), "add=%u remove=%d", added_id, removed);
+	smart_str_append_printf(((test_switch_coroutine_t *) coroutine)->trace, "add=%u remove=%d", added_id, removed);
 
 	return false;
 }
@@ -528,28 +534,30 @@ static bool switch_handler_changes_handlers(zend_coroutine_t *coroutine, bool is
 /* The switch handlers of a coroutine cannot change while they run: both calls warn and refuse. */
 static void scenario_switch_handlers_running(smart_str *trace)
 {
-	async_coroutine_t coroutine = { 0 };
+	test_switch_coroutine_t test_coroutine = { .trace = trace };
+	async_coroutine_t *coroutine = &test_coroutine.coroutine;
+	zend_coroutine_t *zend_coroutine = &coroutine->coroutine;
 
-	ASYNC_G(test_trace) = trace;
-	async_switch_handler_add(&coroutine, switch_handler_changes_handlers);
-	async_switch_handlers_call(&coroutine, false);
-	smart_str_append_printf(trace, " freed=%d", coroutine.switch_handlers == NULL);
-	ASYNC_G(test_trace) = NULL;
+	async_switch_handler_add(zend_coroutine, switch_handler_changes_handlers);
+	async_switch_handlers_call(coroutine, false);
+	smart_str_append_printf(trace, " freed=%d", coroutine->switch_handlers == NULL);
 }
 
-/* data of a test finish handler: its name, what it returns, and an id to remove on its run. */
+/* data of a test finish handler: its name, what it returns, the trace it writes to, and an id to
+ * remove on its run. */
 typedef struct
 {
 	char name;
 	bool keep;
-	async_coroutine_t *coroutine;
+	smart_str *trace;
+	zend_coroutine_t *coroutine;
 	uint32_t remove_id;
 } test_finish_t;
 
 static bool finish_handler_named(zend_coroutine_t *coroutine, zend_coroutine_t *waiter, void *data, bool is_bailout)
 {
-	test_finish_t *handler = data;
-	smart_str *trace = ASYNC_G(test_trace);
+	const test_finish_t *handler = data;
+	smart_str *trace = handler->trace;
 	smart_str_appendc(trace, handler->name);
 
 	if (handler->remove_id != 0) {
@@ -565,22 +573,19 @@ static bool finish_handler_named(zend_coroutine_t *coroutine, zend_coroutine_t *
 static void scenario_finish_ids(smart_str *trace)
 {
 	async_coroutine_t coroutine = { 0 };
-	test_finish_t handlers[3] = { { 'A' }, { 'B' }, { 'C' } };
+	test_finish_t handlers[3] = { { 'A', false, trace }, { 'B', false, trace }, { 'C', false, trace } };
 	uint32_t ids[3];
 
-	ASYNC_G(test_trace) = trace;
-
 	for (int i = 0; i < 3; i++) {
-		ids[i] = async_finish_handler_add(&coroutine, finish_handler_named, NULL, &handlers[i]);
+		ids[i] = async_finish_handler_add(&coroutine.coroutine, finish_handler_named, NULL, &handlers[i]);
 	}
 
-	smart_str_append_printf(trace, "removed A=%d ", async_finish_handler_remove(&coroutine, ids[0]));
-	smart_str_append_printf(trace, "B=%d ", async_finish_handler_remove(&coroutine, ids[1]));
-	smart_str_append_printf(trace, "again A=%d ran:", async_finish_handler_remove(&coroutine, ids[0]));
+	smart_str_append_printf(trace, "removed A=%d ", async_finish_handler_remove(&coroutine.coroutine, ids[0]));
+	smart_str_append_printf(trace, "B=%d ", async_finish_handler_remove(&coroutine.coroutine, ids[1]));
+	smart_str_append_printf(trace, "again A=%d ran:", async_finish_handler_remove(&coroutine.coroutine, ids[0]));
 	async_callbacks_notify((async_awaitable_t *) &coroutine, &coroutine.callbacks, NULL, NULL);
 	smart_str_append_printf(trace, " left=%u", coroutine.callbacks.length);
 	async_callbacks_free((async_awaitable_t *) &coroutine, &coroutine.callbacks);
-	ASYNC_G(test_trace) = NULL;
 }
 
 /* Finish handlers A B; B, the last, is removed by its id and searched for again: its slot behind the
@@ -588,17 +593,15 @@ static void scenario_finish_ids(smart_str *trace)
 static void scenario_finish_remove_last(smart_str *trace)
 {
 	async_coroutine_t coroutine = { 0 };
-	test_finish_t handlers[2] = { { 'A' }, { 'B' } };
+	test_finish_t handlers[2] = { { 'A', false, trace }, { 'B', false, trace } };
 
-	ASYNC_G(test_trace) = trace;
-	async_finish_handler_add(&coroutine, finish_handler_named, NULL, &handlers[0]);
-	const uint32_t id_b = async_finish_handler_add(&coroutine, finish_handler_named, NULL, &handlers[1]);
-	smart_str_append_printf(trace, "removed B=%d ", async_finish_handler_remove(&coroutine, id_b));
-	smart_str_append_printf(trace, "again B=%d ran:", async_finish_handler_remove(&coroutine, id_b));
+	async_finish_handler_add(&coroutine.coroutine, finish_handler_named, NULL, &handlers[0]);
+	const uint32_t id_b = async_finish_handler_add(&coroutine.coroutine, finish_handler_named, NULL, &handlers[1]);
+	smart_str_append_printf(trace, "removed B=%d ", async_finish_handler_remove(&coroutine.coroutine, id_b));
+	smart_str_append_printf(trace, "again B=%d ran:", async_finish_handler_remove(&coroutine.coroutine, id_b));
 	async_callbacks_notify((async_awaitable_t *) &coroutine, &coroutine.callbacks, NULL, NULL);
 	smart_str_append_printf(trace, " left=%u", coroutine.callbacks.length);
 	async_callbacks_free((async_awaitable_t *) &coroutine, &coroutine.callbacks);
-	ASYNC_G(test_trace) = NULL;
 }
 
 /* A returns true, B false, C removes itself by its own id: each runs once whatever it returns, C is
@@ -606,12 +609,12 @@ static void scenario_finish_remove_last(smart_str *trace)
 static void scenario_finish_once(smart_str *trace)
 {
 	async_coroutine_t coroutine = { 0 };
-	test_finish_t handlers[3] = { { 'A', true }, { 'B', false }, { 'C', false, &coroutine } };
-
-	ASYNC_G(test_trace) = trace;
+	test_finish_t handlers[3] = { { 'A', true, trace },
+								  { 'B', false, trace },
+								  { 'C', false, trace, &coroutine.coroutine } };
 
 	for (int i = 0; i < 3; i++) {
-		const uint32_t id = async_finish_handler_add(&coroutine, finish_handler_named, NULL, &handlers[i]);
+		const uint32_t id = async_finish_handler_add(&coroutine.coroutine, finish_handler_named, NULL, &handlers[i]);
 
 		if (i == 2) {
 			handlers[i].remove_id = id;
@@ -623,7 +626,6 @@ static void scenario_finish_once(smart_str *trace)
 	async_callbacks_notify((async_awaitable_t *) &coroutine, &coroutine.callbacks, NULL, NULL);
 	smart_str_append_printf(trace, " left=%u", coroutine.callbacks.length);
 	async_callbacks_free((async_awaitable_t *) &coroutine, &coroutine.callbacks);
-	ASYNC_G(test_trace) = NULL;
 }
 
 typedef struct

@@ -173,17 +173,17 @@ typedef struct
 	uint32_t handler_id; /* never 0 */
 } async_finish_handler_callback_t;
 
-/* Adds an RFC finish handler to the coroutine's vector; returns its id, stable across the removal
- * of other handlers (a position would shift). The handler fires at most once, on the coroutine's
- * notify (not when a callback before it throws), and is dropped before it runs; its return value
- * has no meaning (the core's own handlers return false). */
-uint32_t async_finish_handler_add(async_coroutine_t *coroutine,
+/* The add_finish_handler slot: adds an RFC finish handler to the coroutine's vector; returns its id, stable across the
+ * removal of other handlers (a position would shift). The handler fires at most once, on the coroutine's notify (not
+ * when a callback before it throws), and is dropped before it runs; its return value has no meaning (the core's own
+ * handlers return false). */
+uint32_t async_finish_handler_add(zend_coroutine_t *coroutine,
 								  zend_coroutine_finish_handler_fn handler,
 								  zend_coroutine_t *waiter,
 								  void *data);
 
-/* Removes the finish handler `handler_id`; false when there is none. */
-bool async_finish_handler_remove(async_coroutine_t *coroutine, uint32_t handler_id);
+/* The remove_finish_handler slot: removes the finish handler `handler_id`; false when there is none. */
+bool async_finish_handler_remove(zend_coroutine_t *coroutine, uint32_t handler_id);
 
 ///////////////////////////////////////////////////////////////////
 /// Switch handlers
@@ -206,12 +206,12 @@ struct _async_coroutine_switch_handlers_vector_s
 	bool in_execution; /* adds and removes refuse while the handlers run */
 };
 
-/* Adds `handler` once: a second add of the same function returns its id. 0 with a warning while the
- * coroutine's handlers run. */
-uint32_t async_switch_handler_add(async_coroutine_t *coroutine, zend_coroutine_switch_handler_fn handler);
+/* The add_switch_handler slot: adds `handler` once; a second add of the same function returns its id. 0 with a warning
+ * while the coroutine's handlers run. */
+uint32_t async_switch_handler_add(zend_coroutine_t *coroutine, zend_coroutine_switch_handler_fn handler);
 
-/* Removes the switch handler `handler_id`; false when there is none. */
-bool async_switch_handler_remove(async_coroutine_t *coroutine, uint32_t handler_id);
+/* The remove_switch_handler slot: removes the switch handler `handler_id`; false when there is none. */
+bool async_switch_handler_remove(zend_coroutine_t *coroutine, uint32_t handler_id);
 
 /* Calls every switch handler of a coroutine that has some: is_enter false when it gives up the CPU,
  * true when it runs again. A handler that returns false is dropped. */
