@@ -483,8 +483,9 @@ static bool scheduler_coroutine_create(void)
 	async_coroutine_t *scheduler_coroutine = async_coroutine_new();
 	/* Never below the core's default fiber stack: a script may shrink fiber.stack_size to nothing,
 	 * and the scheduler still reports that failure. test_scheduler.c's 128 KiB floor is not enough under ASAN,
-	 * whose reserved stack (zend.c, OnUpdateReservedStackSize) is ten times larger. */
-	const size_t stack_size = MAX(EG(fiber_stack_size), ZEND_FIBER_DEFAULT_C_STACK_SIZE);
+	 * whose reserved stack (zend.c, OnUpdateReservedStackSize) is ten times larger. The first VM page
+	 * sits on this stack too (scheduler_fiber_entry) and gets its own room, as in fiber_context_take. */
+	const size_t stack_size = MAX(EG(fiber_stack_size), ZEND_FIBER_DEFAULT_C_STACK_SIZE) + ZEND_FIBER_VM_STACK_SIZE;
 
 	scheduler_coroutine->fiber_context = fiber_context_create(scheduler_fiber_entry, stack_size);
 
@@ -506,14 +507,10 @@ static zend_always_inline bool scheduler_coroutine_ensure(void)
 	return EXPECTED(ASYNC_G(scheduler_coroutine) != NULL) || scheduler_coroutine_create();
 }
 
-/* A context's VM stack, with its first page on the context's own C stack, as TrueAsync's fiber_entry
- * does for every context (scheduler.c:1796-1829): no allocation, so the scheduler starts even after
- * an out-of-memory bailout, and a context, pooled or running, holds no page of the request's memory
- * (the core's zend_fiber_vm_stack_start allocates 16 KiB). The root frame has no caller. The pages
- * the VM adds go with context_vm_stack_free(). */
-static void context_vm_stack_start(zend_fiber_context *context, zval *vm_stack_memory)
+/* The INI value of error_reporting, as zend_fiber_vm_stack_start reads it: an empty ini value means
+ * "never configured". */
+static zend_long ini_error_reporting(void)
 {
-	/* Determined as zend_fiber_vm_stack_start does: an empty ini value means "never configured". */
 	zend_long error_reporting = zend_ini_long_literal("error_reporting");
 
 	if (UNEXPECTED(!error_reporting)) {
@@ -523,6 +520,18 @@ static void context_vm_stack_start(zend_fiber_context *context, zval *vm_stack_m
 			error_reporting = E_ALL;
 		}
 	}
+
+	return error_reporting;
+}
+
+/* A context's VM stack, with its first page on the context's own C stack, as TrueAsync's fiber_entry
+ * does for every context (scheduler.c:1796-1829): no allocation, so the scheduler starts even after
+ * an out-of-memory bailout, and a context, pooled or running, holds no page of the request's memory
+ * (the core's zend_fiber_vm_stack_start allocates 16 KiB). The root frame has no caller. The pages
+ * the VM adds go with context_vm_stack_free(). */
+static void context_vm_stack_start(zend_fiber_context *context, zval *vm_stack_memory)
+{
+	const zend_long error_reporting = ini_error_reporting();
 
 	zend_vm_stack stack = (zend_vm_stack) vm_stack_memory;
 	stack->top = ZEND_VM_STACK_ELEMENTS(stack);
@@ -962,9 +971,18 @@ static void main_coroutine_finish(async_coroutine_t *coroutine, const bool is_ba
  * queue on its own stack and comes back here, a new main is minted on this stack. A bailout, the
  * call's or the drain's, is re-raised on the way out after the new main exists, so whatever runs
  * after the core's catch has a current coroutine. */
-static bool scheduler_main_suspend(const bool is_bailout)
+static bool scheduler_main_suspend(bool is_bailout)
 {
 	async_coroutine_t *main_coroutine = (async_coroutine_t *) ZEND_ASYNC_MAIN_COROUTINE;
+
+	/* Main calls from_main running. A main still parked was left by a bailout raised on its stack during
+	 * its suspend (a release in its pop, its tick) and caught by a zend_try of the core's that does not
+	 * re-raise it (a shutdown function's, the destructors'): it may sit in the queue, and finishing it
+	 * as a plain end would free it there. The call is that bailout's. */
+	if (UNEXPECTED(main_coroutine != NULL && !ZEND_COROUTINE_IS_RUNNING(&main_coroutine->coroutine))) {
+		is_bailout = true;
+	}
+
 	bool reraise_bailout = is_bailout;
 
 	/* A bailout out of the previous call's main_coroutine_finish left no main to finish. */
@@ -1305,6 +1323,22 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 	zend_object *saved_exception = NULL;
 	async_exception_save_fast(exception_ptr, &saved_exception);
 
+	/* An EH_THROW window this coroutine suspends in (an internal function's call into user code) is its
+	 * own: the switch handlers, the tick and the pop below run other coroutines' code on this stack, and
+	 * inside the window a warning of theirs would become this coroutine's exception class. The core's
+	 * switch leaves the window behind the same way (zend_fibers.c, zend_fiber_switch_context). */
+	zend_error_handling saved_error_handling;
+	zend_replace_error_handling(EH_NORMAL, NULL, &saved_error_handling);
+
+	/* An @ it suspends inside is its own too: the core keeps error_reporting per context
+	 * (zend_fiber_vm_state), so the code below sees the INI value, as a new context does. Outside an @
+	 * the two are equal already: error_reporting() and ini_set() write the ini entry. */
+	const int saved_error_reporting = EG(error_reporting);
+
+	if (UNEXPECTED(E_HAS_ONLY_FATAL_ERRORS(saved_error_reporting))) {
+		EG(error_reporting) = (int) ini_error_reporting();
+	}
+
 	/* getTrace(), the suspend location and the GC read the parked frame from here. */
 	coroutine->fiber_context->execute_data = EG(current_execute_data);
 
@@ -1393,6 +1427,8 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 		waker_error_throw(error);
 	}
 
+	zend_restore_error_handling(&saved_error_handling);
+	EG(error_reporting) = saved_error_reporting;
 	async_exception_restore_fast(exception_ptr, &saved_exception);
 
 	return *exception_ptr == NULL;

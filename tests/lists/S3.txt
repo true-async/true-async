@@ -42,6 +42,7 @@ spawn/012-spawn_error-from-await.phpt  ref:f8651da51d490625c1fbfc6295a2ed14deeea
 spawn/013-spawn_in_shutdown.phpt  ref:f6eece5ea600722f4bc2005f4596930e5c075890a9f9e05a51eb1b89f74c2ab0
 spawn/014-spawn-1000.phpt  ref:9c3776e17946dec083fdbcdda23035c0a6f4ffdd28ae88a17c6422ce2cdcaaac
 spawn/020-spawn_trampoline_call.phpt  ref:b7d4bb24bee7b00c487bc412d59389c0b4b569a708069732becface1d9f50589
+spawn/021-spawn_keeps_object_of_class_string_callable.phpt  own:95f7d50dc40a45f36016a43fb2723cd0dad18be1c50aefe97a57ec0db2bf6c5b
 
 # suspend
 suspend/001-suspend_basic.phpt  ref:52307af1f1f582839c69d46f715b9ff7cc63bc6ae4afd70fc3ae565be64ab671
@@ -60,6 +61,7 @@ await/066-await_cancelled_coroutine.phpt  ref:4243e2be60541868aca3db24574c56ca15
 await/067-await_completed_coroutine.phpt  ref:51a0ac153a73a917be019f6bd926b531b8b6eb8d40d072913b539e8b9e27e485
 await/068-await_multiple_times.phpt  ref:b7610143755e6b6a347df88cb31376fbe68ebf5a964ed0f7bf83dd78299e65f0
 await/070-await_state_transitions.phpt  ref:b920b949773bd483d4c4636d9539e21a378616b813d7b7c808e1225f5603de87
+await/096-await_result_returned_by_reference.phpt  own:37ee41bdb0549ddc9dee888c4a98df5faaf76f224bbedf439056b8d6bf1d59c5
 
 # protect
 protect/001-protect_basic.phpt  ref:7293f96c8892b439e3c7cb63fc2428792ca79cdbb09520f14d87c0ebf5db15db
@@ -210,6 +212,7 @@ internal/044-finish_handler_remove_last.phpt  own:17740f8c4f4ce8895974753c4fb983
 internal/045-finish_handler_takes_exception.phpt  own:2b2a29f96f2b1c7726c2a17051c21460753ac0633c0de7f4132a6b88f08c461c
 internal/046-callbacks_remove_past_cursor.phpt  own:bf03ba130be6a702761c8fcbf51f3480aefc6153837640cf3f21c097099640b8
 internal/047-second_wake_of_current_in_its_own_tick_accepted.phpt  own:25af3eaeee37fae50ac2ed647bdddb7504982905f5a1b1ac45edfc0e518e42d7
+internal/048-main_parked_by_bailout_in_shutdown_function.phpt  own:a3d65ce486280191d161f3449ba28de63b39be84c4f520a93d3fa9048aeea385
 
 # classes: own tests of the S3.4 classes (Awaitable refuses foreign classes: section 13, bug 10)
 classes/001-awaitable_user_class.phpt  own:6c394d09952d247b4567fb247ff84de4c38ac1702b94fba3c3a5945660fa20e2
@@ -299,6 +302,8 @@ scheduler/073-cancelled_running_coroutine_outcome.phpt  own:f50faf955bf635023fb2
 scheduler/074-unrun_coroutine_finishes_in_shutdown_destructors.phpt  own:a6c514bc6dc67cd29636de815cb847e5fc63ec71185d19556b2a9c920d1ace2d
 scheduler/075-deadlock_report_lists_suspended_fiber.phpt  own:f518fcfad1166c28f27e3ee70a5dc7e287b4ea382851ceb2991bfbccc9ef33bb
 scheduler/076-uncaught_coroutine_error_in_shutdown_destructors.phpt  own:f83cf7b8573756dcc5fdb0d31fff8653dd87d5c0c924425cf071abf7359a8da7
+scheduler/077-eh_throw_window_left_at_suspend.phpt  own:f4f3fa5b7a8e619f9912a427bdbf3c06e5a87196af52ff51804274d88cbf47ca
+scheduler/078-silence_left_at_suspend.phpt  own:49967aa67703101f3f4066aa8a9b022d9dc85975b6f946c8901126bbfdd2f5b0
 
 # wait: blind tests of S3.7 by test-author from dev/plans/S3.7-spec.md
 wait/001-await_returns_value.phpt  own:70f84840fa7d7b9ffae161380d6ce6a14dcecfc7a9361c528c9adb646a5fe341

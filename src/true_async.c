@@ -195,7 +195,7 @@ ZEND_FUNCTION(Async_spawn)
 	THROW_IF_UNAVAILABLE();
 
 	ZEND_PARSE_PARAMETERS_START(1, -1)
-		Z_PARAM_FUNC(fci, fcc)
+		Z_PARAM_FUNC_NO_TRAMPOLINE_FREE(fci, fcc)
 		Z_PARAM_VARIADIC_WITH_NAMED(args, args_count, named_args)
 	ZEND_PARSE_PARAMETERS_END();
 
@@ -221,6 +221,11 @@ ZEND_FUNCTION(Async_spawn)
 	}
 
 	Z_TRY_ADDREF(fcall->fci.function_name);
+
+	/* The call comes after this frame, and the callable's name alone may not resolve again: the cache
+	 * keeps the object a class-string callable resolved to ($this of the spawning method) and a __call
+	 * trampoline, which the call consumes. */
+	zend_fcc_addref(&fcall->fci_cache);
 	coroutine->coroutine.fcall = fcall;
 
 	zend_string *filename = zend_get_executed_filename_ex();
@@ -270,7 +275,7 @@ ZEND_FUNCTION(Async_await)
 		RETURN_NULL();
 	}
 
-	RETURN_COPY(&target->coroutine.result);
+	RETURN_COPY_DEREF(&target->coroutine.result);
 }
 
 /* A yield (S3.md 4.1, TrueAsync's async.c:223-235): refused before the enqueue, so a refusal leaves the coroutine

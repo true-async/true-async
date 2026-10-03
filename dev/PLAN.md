@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-03 · Active: S3.14
+Updated: 2026-10-03 · Active: S3.15
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -386,15 +386,29 @@ section 14); a step that finds a test needs more moves it on with a note.
         model. Mull 0.34.1 on the stage diff: 196 mutants, 167 killed, 29 survived; 5 then killed by
         tests, 24 explained in S3.md section 9. Code Reviewer: comments, hints and names fixed.
         Tests `scheduler/058`-`076`, `internal/034`-`047`, `classes/008`, `009`.
-- [ ] S3.14 Security pass over the stage diff by `dev/SECURITY.md`; findings fixed with a test or
+- [x] S3.14 Security pass over the stage diff by `dev/SECURITY.md`; findings fixed with a test or
       recorded with the reason; the open finding on the runner's secret filter closed.
       done: every checklist item has an outcome in `dev/SECURITY.md`
       tier: T2 · role: —
+      handoff: done 2026-10-03 on core `82df2fc6ccc`: dbg 299 PASS; asan 285 PASS, 14 SKIP. Four
+        reviewers by checklist item. Fixed with tests: `$this` of a class-string callable freed
+        before `spawn()`'s coroutine ran (`spawn/021`), main freed in the queue after a bailout a
+        shutdown function's zend_try caught (`internal/048`), a suspend's EH_THROW window and `@`
+        covering other coroutines' code on its stack (`scheduler/077`, `078`), a by-reference result handed out as a
+        reference (`await/096`). Fixed without a test: the Windows snapshot build compiled the test
+        hooks in; run-tests gets an allowlist of variables (the open finding, checked with a planted
+        secret); checkouts drop the token; Windows builds ior at `IOR_REF`; `--end-of-options` in
+        the tools' git calls; the scheduler stack's room for its VM page. Open, with owners in
+        `dev/SECURITY.md`: the stale current coroutine after such a bailout and the core Fiber's
+        unreferenced callable cache (S3.18), the deadlock report's paths (S3.15, as Edmond answers).
+        Critic on the commit: the Windows lane lost the hooks (`=yes` now), the `@` leak (fixed by
+        the Sage's shape), weak tests strengthened, owners written into S3.15 and S3.18.
 - [ ] S3.15 Health fixes, extension (health check 2026-10-02, `dev/HEALTH.md`; S3.15-S3.18 run after S3.14, Edmond 2026-10-02): `test_trace` becomes a
       field of `test_finish_t`; `async_ce_awaitable` and `async_ce_completable` static; the finish
       handler functions take `zend_coroutine_t *` and sit in the slots, the two forwarders in
       `scheduler.c` go; S3.md "As built" on the scheduler-context flag follows DECISIONS 2026-10-02;
-      `dev/INDEX.md` lists `src/`, the build files and every tool. Done ahead with Edmond's answers:
+      `dev/INDEX.md` lists `src/`, the build files and every tool; the deadlock report's output
+      (`true_async.debug_deadlock`, open finding of S3.14) as Edmond answers. Done ahead with Edmond's answers:
       the notify stops at the first throw, P1.4 and its gate, the P1.1 and P2.2 gate fields.
       done: the S3 list passes as before; `check-gates.py` and `check-lists.py` clean
       tier: T1 · role: —
@@ -422,8 +436,12 @@ section 14); a step that finds a test needs more moves it on with a note.
       "Backward Incompatible Changes" its fourth item (Edmond, 2026-10-02, DECISIONS); the finish
       handler contract in `zend_async_API.h` and the RFC reads "at most once: a handler that throws
       ends the notify", as the notify now does (DECISIONS 2026-10-02); a fault seam
-      in the test scheduler for enqueue and spawn failures.
-      done: `ext/test_scheduler/tests` equal per test on dbg and ASAN; `CORE_REF` and "Pinned core" moved
+      in the test scheduler for enqueue and spawn failures. On Edmond's word, the two core findings
+      of S3.14 (`dev/SECURITY.md`, open findings): `ZEND_ASYNC_FCALL_DEFINE` keeps references for
+      its callable's cache, and `main.c` ends the scheduler as a bailout after a shutdown function
+      that bailed out, so no finished coroutine stays current.
+      done: `ext/test_scheduler/tests` equal per test on dbg and ASAN; `CORE_REF` and "Pinned core"
+        moved; each S3.14 core finding fixed with a test or closed by Edmond
       tier: T2 · role: Critic
 
 ## S4 — Reactor on Poll, Poll additions and Ring  [ ]

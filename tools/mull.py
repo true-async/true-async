@@ -119,7 +119,8 @@ def known_answer():
 def changed_lines(ref):
     """{path: set of line numbers} of src/ lines added or changed since `ref`, new files included."""
     # Fixed prefixes and no colour, whatever the user's git config says.
-    cmd = ['git', 'diff', '--no-color', '--no-ext-diff', '--src-prefix=a/', '--dst-prefix=b/', '-U0', ref, '--', 'src']
+    cmd = ['git', 'diff', '--no-color', '--no-ext-diff', '--src-prefix=a/', '--dst-prefix=b/', '-U0',
+           '--end-of-options', ref, '--', 'src']
     diff_text = subprocess.run(cmd, cwd=ROOT, stdout=subprocess.PIPE, text=True, check=True).stdout
     changed, path = {}, None
 

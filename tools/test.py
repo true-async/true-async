@@ -60,7 +60,22 @@ MULL_PLUGIN = '/usr/lib/mull-ir-frontend-18'
 MULL_CONFIGURE = ['CC=clang-18', f'CFLAGS=-g -O0 -grecord-command-line -fpass-plugin={MULL_PLUGIN}', 'LDFLAGS=',
                   '--enable-true-async-known-answer']
 
-SECRET = re.compile(r'TOKEN|SECRET|PRIVATE|_KEY$|^GITHUB_|^GH_|^ANTHROPIC_|^CLAUDE_', re.I)
+# The only variables run-tests gets: it writes its environment into a .sh next to every failed
+# test, and results/ is uploaded, so a secret under any name would reach the artifact. Each name is
+# read by run-tests.php, a test (USE_ZEND_ALLOC), the sanitizers, ior or Windows itself.
+TEST_ENV_NAMES = {
+    'PATH', 'TMPDIR', 'TMP', 'TEMP',
+    'SYSTEMROOT', 'SYSTEMDRIVE', 'WINDIR', 'COMSPEC', 'PATHEXT', 'NUMBER_OF_PROCESSORS',
+    'NO_INTERACTION', 'REPORT_EXIT_STATUS', 'SHOW_ONLY_GROUPS', 'NO_PHPTEST_SUMMARY', 'NO_COLOR',
+    'TEST_TIMEOUT', 'DISABLE_SKIP_CACHE',
+    'USE_ZEND_ALLOC', 'USE_TRACKED_ALLOC', 'ZEND_DONT_UNLOAD_MODULES',
+    'ASAN_OPTIONS', 'UBSAN_OPTIONS', 'LSAN_OPTIONS', 'MSAN_OPTIONS', 'ASAN_SYMBOLIZER_PATH',
+    'LLVM_SYMBOLIZER_PATH',
+    'IOR_BACKEND', 'TRUE_ASYNC_SCHED',
+}
+
+# run-tests' own switches: TEST_PHP_ARGS, TEST_PHP_JUNIT, ..., SKIP_SLOW_TESTS, ...
+TEST_ENV_PREFIXES = ('TEST_PHP', 'SKIP_')
 
 ASAN_ENV = {
     'ASAN_OPTIONS': 'abort_on_error=1',
@@ -254,8 +269,9 @@ def patched_runner(lane):
 
 
 def test_env():
-    """The environment for run-tests: run-tests writes it into a .sh next to every failed test."""
-    return {k: v for k, v in os.environ.items() if not SECRET.search(k)}
+    """The environment for run-tests: the variables of TEST_ENV_NAMES and TEST_ENV_PREFIXES."""
+    return {name: value for name, value in os.environ.items()
+            if name.upper() in TEST_ENV_NAMES or name.upper().startswith(TEST_ENV_PREFIXES)}
 
 
 def run_tests(lane, entries, jobs, sched=None):

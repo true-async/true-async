@@ -3,7 +3,7 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-03. Active step: **S3.14** (not started); S3.13 (stage review) closed. S3.15-S3.18 (health check) run after S3.14 (Edmond).
+Written 2026-10-03. Active step: **S3.15** (not started); S3.14 (security pass) closed. S3.15-S3.18 (health check) run now (Edmond).
 
 ## State
 
@@ -56,6 +56,12 @@ Written 2026-10-03. Active step: **S3.14** (not started); S3.13 (stage review) c
   `switch-handlers`, `switch-handlers-running`, `finish-remove-last`, `remove-past-cursor`. Mull's stage run: a driver with
   three workers, each with its own copy of `tests/`, run-tests `-j1`, `--timeout 120000` (the
   default 3 s timed out the warm-up run); about 20 minutes on 4 cores.
+- S3.14: the security pass by `dev/SECURITY.md` (journal entry of 2026-10-03 per checklist item).
+  `spawn()` keeps its callable's cache with references (`spawn_fcall_cache_release` drops them with
+  the callable); a suspend leaves its EH_THROW window and its `@` behind (`zend_replace_error_handling`,
+  `ini_error_reporting`); a main
+  parked at from_main ends as a bailout; `await()` and `getResult()` dereference. run-tests gets
+  `TEST_ENV_NAMES` only. Open findings with owners are in `dev/SECURITY.md`.
 - Reviews: after the code, Critic and the Sage (`general-purpose`, model `fable`) compare it with
   TrueAsync (`/root/php-async` in the container) and hunt inventions; one plan step is one commit.
 - Container notes: the ASAN lane needs `TRUE_ASYNC_CORE_SRC=/root/core-asan`; `gen_stub.php`
@@ -90,7 +96,11 @@ Written 2026-10-03. Active step: **S3.14** (not started); S3.13 (stage review) c
   last from_main call is then a plain one, and coroutines queued before the fatal run their bodies
   after it. TrueAsync's fork has the same structure; the fix is a core one (main.c passes
   `is_bailout` to the last call when `CG(unclean_shutdown)` flipped during the shutdown functions;
-  the Sage). Kept as TrueAsync until Edmond wants the core change.
+  the Sage). Kept as TrueAsync until Edmond wants the core change. S3.14: the same catch while
+  main suspends left main queued and freed it (fixed in the extension, `internal/048`), and leaves
+  the current coroutine at a finished one, whose switch handlers the shutdown destructors then fill
+  (open in `dev/SECURITY.md`; reproducer: a shutdown function spawns a coroutine with an argument
+  whose destructor bails out, cancels it, then `Async\await()`s another coroutine).
 - Two coroutines that catch the deadlock's cancellation and await each other again loop, each
   round adding a `DeadlockError`; TrueAsync does the same (Critic, minor).
 - D16's 5 s deadline after `exit()` needs a clock and a reactor timeout (S4).
@@ -126,7 +136,10 @@ Written 2026-10-03. Active step: **S3.14** (not started); S3.13 (stage review) c
   expectations assume FIFO); two were read, `scheduler/034` (the lost coroutine, fixed) and
   `scheduler/037` (an order artifact); the others are not read.
 
+- The core's `ZEND_ASYNC_FCALL_DEFINE` and upstream `Fiber::__construct` keep the callable's cache
+  without references (S3.14, open in `dev/SECURITY.md`): `async-core` in S3.18, the upstream report
+  on Edmond's word.
+
 ## Next
 
-1. S3.14: the security pass over the stage diff by `dev/SECURITY.md`.
-2. S3.15-S3.18 (health fixes); S3.16's enqueue and finish-handler tests came in S3.13.
+1. S3.15-S3.18 (health fixes); S3.16's enqueue and finish-handler tests came in S3.13.

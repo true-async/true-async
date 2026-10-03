@@ -182,7 +182,7 @@ def recent_commits(ref):
     """[(short hash, date, subject)] of the latest commits of `ref`; empty outside a git checkout."""
     try:
         out = subprocess.run(
-            ['git', '-C', str(ROOT), 'log', f'-n{COMMITS}', '--format=%h%x09%as%x09%s', ref],
+            ['git', '-C', str(ROOT), 'log', f'-n{COMMITS}', '--format=%h%x09%as%x09%s', '--end-of-options', ref],
             capture_output=True, text=True, check=True).stdout
     except (OSError, subprocess.CalledProcessError):
         return []

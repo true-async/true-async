@@ -25,6 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          persist-credentials: false
           # check-lists.py finds the commit that froze each list.
           fetch-depth: 0
 
@@ -57,6 +58,8 @@ jobs:
         tree: [dbg, asan]
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Packages
         run: |
@@ -120,6 +123,8 @@ jobs:
             seeds: 20
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Packages
         run: |
@@ -168,6 +173,8 @@ jobs:
       MULL_SHA256: 983ea9c84ecab621414d5442a66c1a1ce4127491b79d42fd5e2fd6fe01d02699
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Packages
         run: |
@@ -215,19 +222,21 @@ jobs:
       PLATFORM: x64
       THREAD_SAFE: '1'
       INTRINSICS: AVX2
-      ADD_CONF: --enable-true-async=shared --enable-true-async-test-hooks
+      ADD_CONF: --enable-true-async=shared --enable-true-async-test-hooks=yes
     steps:
       - name: git config
         run: git config --global core.autocrlf false && git config --global core.eol lf
 
       - uses: actions/checkout@v5
         with:
+          persist-credentials: false
           path: true-async
 
       - uses: actions/checkout@v5
         with:
           repository: true-async/php-src
           ref: ${{ env.CORE_REF }}
+          persist-credentials: false
           path: php-src
 
       - name: Copy the extension into ext/true_async
@@ -240,6 +249,7 @@ jobs:
       - name: Build ior
         uses: ./php-src/.github/actions/build-ior-windows
         with:
+          ref: ${{ env.IOR_REF }}
           arch: x64
 
       - name: Build

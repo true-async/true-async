@@ -35,8 +35,9 @@ struct _async_coroutine_s
 	zend_object *deferred_cancellation;                        /* the cancel that arrived inside protect() */
 	async_coroutine_switch_handlers_vector_t *switch_handlers; /* lazy */
 	/* The callable and arguments of spawn(), which coroutine.fcall points to: one allocation less per
-	 * spawn than the core's separate block (O6, measured in dev/BENCHMARKS.md). A Fiber's coroutine
-	 * keeps the core's block. */
+	 * spawn than the core's separate block (O6, measured in dev/BENCHMARKS.md). Its cache owns a
+	 * reference to its object and closure and a copy of a __call trampoline; the core's block of a
+	 * Fiber's coroutine owns none of them. */
 	zend_fcall_t spawn_fcall;
 	zend_object std; /* last: the properties table runs past the end */
 };

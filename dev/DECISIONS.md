@@ -435,3 +435,13 @@ stack options were shown with the code).
   marked in the source with `mull-off`. Why: D34 asks for killed or explained, and
   the next Mull run mutates only the lines its stage changes, so a marker in the source has no reader;
   the circular buffer's survivors go with the code S3.17 deletes (the Sage).
+- 2026-10-03 A suspend leaves its EH_THROW window behind for what it runs on its own stack (switch
+  handlers, tick, pop) and takes it back on return. Why: the core's switch does the same, and a
+  warning of another coroutine became this one's exception class (S3.14, `scheduler/077`). An `@`
+  it suspends inside is left the same way: that code gets the INI error_reporting, read only when
+  the mask is silenced (`scheduler/078`; the Sage).
+- 2026-10-03 A main that calls from_main parked is ended as a bailout. Why: only a bailout on its
+  stack that a core zend_try caught leaves it parked, and a plain end freed it in the queue (S3.14).
+- 2026-10-03 `spawn()` keeps the references of its callable's cache and drops them with the
+  callable after the run. Why: a class-string callable's `$this` lives only there, and a `__call`
+  trampoline does not resolve again from the name (S3.14, `spawn/021`).

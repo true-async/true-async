@@ -42,6 +42,24 @@ static zend_object *coroutine_object_create(zend_class_entry *class_entry)
 	return &coroutine->std;
 }
 
+/* Drops what spawn()'s cache owns (Async_spawn): the object, the closure and a __call trampoline
+ * copy, and leaves the cache empty, so a second call does nothing. zend_fcc_dtor would assert a
+ * handler, and a run consumed the trampoline and cleared it. */
+static void spawn_fcall_cache_release(zend_fcall_t *fcall)
+{
+	zend_fcall_info_cache cache = fcall->fci_cache;
+	fcall->fci_cache = empty_fcall_info_cache;
+	zend_release_fcall_info_cache(&cache);
+
+	if (cache.object != NULL) {
+		OBJ_RELEASE(cache.object);
+	}
+
+	if (cache.closure != NULL) {
+		OBJ_RELEASE(cache.closure);
+	}
+}
+
 /* Releases the values a coroutine holds that can run PHP code when they go: its arguments, result,
  * outcome, contexts and wait state. Each field is cleared before its release, so a destructor that
  * the release runs finds the coroutine without it. Returns the outcome exception, still referenced,
@@ -61,6 +79,8 @@ static zend_object *coroutine_release_values(async_coroutine_t *coroutine)
 		}
 
 		zval_ptr_dtor(&fcall->fci.function_name);
+
+		spawn_fcall_cache_release(fcall);
 	} else if (UNEXPECTED(fcall != NULL)) {
 		zend_coroutine->fcall = NULL;
 		ZEND_ASYNC_FCALL_FREE(fcall);
@@ -206,6 +226,17 @@ static HashTable *coroutine_object_gc(zend_object *object, zval **table, int *nu
 		if (UNEXPECTED(fcall->fci.named_params != NULL)) {
 			zend_get_gc_buffer_add_ht(gc_buffer, fcall->fci.named_params);
 		}
+
+		/* Only spawn()'s cache holds its references (Async_spawn). */
+		if (EXPECTED(fcall == &coroutine->spawn_fcall)) {
+			if (fcall->fci_cache.object != NULL) {
+				zend_get_gc_buffer_add_obj(gc_buffer, fcall->fci_cache.object);
+			}
+
+			if (fcall->fci_cache.closure != NULL) {
+				zend_get_gc_buffer_add_obj(gc_buffer, fcall->fci_cache.closure);
+			}
+		}
 	}
 
 	if (UNEXPECTED(coroutine->coroutine.context != NULL)) {
@@ -301,6 +332,10 @@ void async_coroutine_execute(async_coroutine_t *coroutine)
 			ZVAL_COPY_VALUE(&function_name, &zend_coroutine->fcall->fci.function_name);
 			ZVAL_UNDEF(&zend_coroutine->fcall->fci.function_name);
 			zval_ptr_dtor(&function_name);
+
+			if (EXPECTED(zend_coroutine->fcall == &coroutine->spawn_fcall)) {
+				spawn_fcall_cache_release(zend_coroutine->fcall);
+			}
 		}
 	}
 	zend_catch
@@ -444,7 +479,7 @@ ZEND_METHOD(Async_Coroutine, getResult)
 		RETURN_NULL();
 	}
 
-	RETURN_COPY(&coroutine->coroutine.result);
+	RETURN_COPY_DEREF(&coroutine->coroutine.result);
 }
 
 ZEND_METHOD(Async_Coroutine, getException)
