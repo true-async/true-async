@@ -121,5 +121,5 @@ finding left open gets an owner step in `PLAN.md`.
   the upstream report is Edmond's call (php-src's policy treats it as a bug, not a security issue).
 - `true_async.debug_deadlock` (default on, `PHP_INI_ALL`) writes the deadlock report with
   `PHPWRITE`, whatever `display_errors` says, so a deadlock prints the script paths of every
-  coroutine into the response. TrueAsync does the same (`scheduler.c:695`). Owner: S3.16, as Edmond
+  coroutine into the response. TrueAsync does the same (`scheduler.c:695`). Owner: S3.18, as Edmond
   answers.

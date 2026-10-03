@@ -445,3 +445,6 @@ stack options were shown with the code).
 - 2026-10-03 `spawn()` keeps the references of its callable's cache and drops them with the
   callable after the run. Why: a class-string callable's `$this` lives only there, and a `__call`
   trampoline does not resolve again from the name (S3.14, `spawn/021`).
+- 2026-10-03 `scheduler/065-no_stack_refusals.phpt` expects `Fiber stack allocate failed: %s`, as the
+  other no-stack tests. Why: its "mmap failed" names the POSIX allocator, and Windows reports
+  VirtualAlloc (S3.16, Critic).

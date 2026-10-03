@@ -170,18 +170,27 @@ static PHP_MINFO_FUNCTION(true_async)
 ///////////////////////////////////////////////////////////////////
 
 /* Refuses while no scheduler runs (php -r launches none; after the request's last drain the core
- * turns async off) and in scheduler context, as TrueAsync. */
-#define THROW_IF_UNAVAILABLE() \
+ * turns async off), as TrueAsync. */
+#define THROW_IF_ASYNC_OFF() \
 	do { \
 		if (UNEXPECTED(!ZEND_ASYNC_IS_ACTIVE)) { \
 			zend_throw_error(NULL, "The operation cannot be executed while async is off"); \
 			RETURN_THROWS(); \
 		} \
-\
+	} while (0)
+
+#define THROW_IF_SCHEDULER_CONTEXT() \
+	do { \
 		if (UNEXPECTED(ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) { \
 			zend_throw_error(NULL, "The operation cannot be executed in the scheduler context"); \
 			RETURN_THROWS(); \
 		} \
+	} while (0)
+
+#define THROW_IF_UNAVAILABLE() \
+	do { \
+		THROW_IF_ASYNC_OFF(); \
+		THROW_IF_SCHEDULER_CONTEXT(); \
 	} while (0)
 
 ZEND_FUNCTION(Async_spawn)
@@ -289,7 +298,7 @@ ZEND_FUNCTION(Async_suspend)
 		return;
 	}
 
-	THROW_IF_UNAVAILABLE();
+	THROW_IF_SCHEDULER_CONTEXT();
 
 	async_coroutine_t *coroutine = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
 

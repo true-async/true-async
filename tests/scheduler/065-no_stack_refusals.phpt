@@ -31,7 +31,7 @@ echo "end\n";
 ?>
 --EXPECTF--
 released a
-defer: Fiber stack allocate failed: mmap failed: %s
-spawn: Fiber stack allocate failed: mmap failed: %s
-wake: Fiber stack allocate failed: mmap failed: %s
+defer: Fiber stack allocate failed: %s
+spawn: Fiber stack allocate failed: %s
+wake: Fiber stack allocate failed: %s
 end

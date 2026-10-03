@@ -505,8 +505,8 @@ def main():
     wrong = verdict(lane, entries, left_out, output)
     junit_add_files()
 
-    if lane.variant == 'cov':
-        coverage(lane, output.parent)
+    if lane.variant == 'cov' and not coverage(lane, output.parent):
+        return 1
 
     return 1 if wrong else 0
 
@@ -524,14 +524,22 @@ def junit_add_files():
 
 
 def coverage(lane, out_dir):
-    """Line coverage of src/ by this run, as lcov data and a summary line."""
+    """Line coverage of src/ by this run, as lcov data and a summary line. False when lcov gives no
+    number: the lane then fails rather than pass with no coverage measured."""
     info = out_dir / 'coverage.info'
     run(['lcov', '--quiet', '--capture', '--directory', lane.build, '--output-file', info], ROOT)
     run(['lcov', '--quiet', '--extract', info, f'{ROOT}/src/*', '--output-file', info], ROOT)
     summary = subprocess.run(['lcov', '--summary', info], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              text=True).stdout
-    lines = re.search(r'lines\.*:\s*(.+)', summary)
-    print(f'{lane.name}: src/ line coverage {lines.group(1) if lines else "unknown"}; data {info}')
+    lines = re.search(r'lines\.*:\s*(\d.*)', summary)
+
+    if not lines:
+        print(f'{lane.name}: lcov --summary gave no line coverage; data {info}:\n{summary}')
+        return False
+
+    print(f'{lane.name}: src/ line coverage {lines.group(1)}; data {info}')
+
+    return True
 
 
 if __name__ == '__main__':

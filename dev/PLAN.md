@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-03 · Active: S3.16
+Updated: 2026-10-03 · Active: S3.17
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -418,17 +418,29 @@ section 14); a step that finds a test needs more moves it on with a note.
         coroutine (`test_switch_coroutine_t`).
         The deadlock report's output waits for Edmond's answer (asked 2026-10-03) and moves to
         S3.16.
-- [ ] S3.16 Health tests: own tests for the refusals of `true_async.c` (extension off, async off, scheduler
+- [x] S3.16 Health tests: own tests for the refusals of `true_async.c` (extension off, async off, scheduler
       context, no current coroutine), enqueue of a finished or running coroutine, finalize moving
       what finish handlers threw into the exit exception; `tools/test.py` fails the coverage lane
-      when `lcov --summary` gives no number; the deadlock report's output
-      (`true_async.debug_deadlock`, open finding of S3.14) as Edmond answers, moved from S3.15; a
-      test that main's adopt clears the scheduler-context flag a bailout out of a notify on the OS
-      stack left set (no test fails without the reset, S3.15).
+      when `lcov --summary` gives no number; a test that main's adopt clears the scheduler-context
+      flag a bailout out of a notify on the OS stack left set (no test fails without the reset, S3.15).
       Done ahead in S3.13: the enqueue refusals (`internal/039`, `043`, `scheduler/066`) and the
       finish handlers' exception (`internal/041`).
       done: the new tests pass on dbg, asan and win; those lines covered on `pocs-dbg-cov`
       tier: T1 · role: —
+      handoff: done 2026-10-03 on core `82df2fc6ccc`: dbg 306 PASS; asan 292 PASS, 14 SKIP;
+        `pocs-dbg-cov` 96.5 % of `src/` (2119 of 2196); win runs in CI after the push, `module/004`
+        skips there (no `test_scheduler` loaded). Tests `module/003`, `004`, `scheduler/079`-`082`,
+        `internal/049` (fails with the adopt's reset removed, checked). Left uncovered in
+        `true_async.c`, with reasons in S3.md section 14: the failed function registration and
+        `current_coroutine()` with no current coroutine. The coverage lane now fails on "no data
+        found" too, which the old pattern took as a number. CI on 8fa582c failed in win and
+        mutants-coverage: `getResult()` copied a result out of a `const` coroutine (`coroutine.c`
+        482, an error under MSVC `/WX` and Mull's clang), fixed. Critic: `scheduler/065` and `081`
+        expected the POSIX allocator's message, which Windows does not print (fixed, DECISIONS);
+        line 275 is reached by a coroutine ended by `exit()` (`scheduler/082`). The deadlock
+        report's output still waits for Edmond's answer and moves to S3.18. The Sage: `suspend()`
+        checks only the scheduler context after its async-off return, as TrueAsync's `async.c:223-235`
+        (`THROW_IF_ASYNC_OFF`, `THROW_IF_SCHEDULER_CONTEXT`).
 - [ ] S3.17 Circular buffer cut to what S3 uses (DECISIONS 2026-10-01): `circular_buffer_clean`,
       `_new`, `_destroy`, the explicit count of `circular_buffer_realloc` and the persistent allocator
       go; `circular_buffer_ctor` returns void; the `internal/012`-`017` hooks drive the production
@@ -448,7 +460,9 @@ section 14); a step that finds a test needs more moves it on with a note.
       in the test scheduler for enqueue and spawn failures. On Edmond's word, the two core findings
       of S3.14 (`dev/SECURITY.md`, open findings): `ZEND_ASYNC_FCALL_DEFINE` keeps references for
       its callable's cache, and `main.c` ends the scheduler as a bailout after a shutdown function
-      that bailed out, so no finished coroutine stays current.
+      that bailed out, so no finished coroutine stays current. The extension's deadlock report output
+      (`true_async.debug_deadlock`, open finding of S3.14) as Edmond answers, moved from S3.16; a default
+      of off also changes `module/002-info`'s INI line.
       done: `ext/test_scheduler/tests` equal per test on dbg and ASAN; `CORE_REF` and "Pinned core"
         moved; each S3.14 core finding fixed with a test or closed by Edmond
       tier: T2 · role: Critic

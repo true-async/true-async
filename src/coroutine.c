@@ -473,7 +473,7 @@ ZEND_METHOD(Async_Coroutine, getResult)
 {
 	ZEND_PARSE_PARAMETERS_NONE();
 
-	const async_coroutine_t *coroutine = THIS_COROUTINE;
+	async_coroutine_t *coroutine = THIS_COROUTINE;
 
 	if (!ZEND_COROUTINE_IS_FINISHED(&coroutine->coroutine) || Z_ISUNDEF(coroutine->coroutine.result)) {
 		RETURN_NULL();

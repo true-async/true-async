@@ -3,7 +3,7 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-03. Active step: **S3.16** (not started); S3.15 (health fixes, extension) closed. S3.15-S3.18 (health check) run now (Edmond).
+Written 2026-10-03. Active step: **S3.17** (not started); S3.16 (health tests) closed. S3.15-S3.18 (health check) run now (Edmond).
 
 ## State
 
@@ -68,7 +68,15 @@ Written 2026-10-03. Active step: **S3.16** (not started); S3.15 (health fixes, e
   `Completable` are static; `dev/INDEX.md` lists the sources, the build files and every tool.
   The deadlock report's output (`dev/SECURITY.md`, open finding) waits for Edmond's answer, asked
   in the S3.15 thread with three options: default off, keep as TrueAsync, report through the
-  error system; owner S3.16. A default of off also changes `module/002-info`'s INI line.
+  error system; owner S3.18 (moved from S3.16, still unanswered). A default of off also changes `module/002-info`'s INI line.
+- S3.16: own tests of the refusals (`module/003`, `004`, `scheduler/079`-`082`) and of main's adopt
+  clearing the scheduler-context flag (`internal/049`); the coverage lane fails when `lcov --summary`
+  gives no number. Uncovered lines of `true_async.c` with reasons: S3.md section 14. Two test.py runs
+  at once share `tests/` and break each other's `.php` files: run lanes one after another. CI was
+  red on win and mutants-coverage at 8fa582c (a `const` coroutine in `getResult()`, fixed); look at
+  CI of the previous push before closing a step, even without waiting for the current one.
+  `module/004` skips on win: the snapshot build makes `php_test_scheduler.dll`, but the lane loads
+  only true_async; loading that DLL first there would run the test (the Sage, not done).
 - Reviews: after the code, Critic and the Sage (`general-purpose`, model `fable`) compare it with
   TrueAsync (`/root/php-async` in the container) and hunt inventions; one plan step is one commit.
 - Container notes: the ASAN lane needs `TRUE_ASYNC_CORE_SRC=/root/core-asan`; `gen_stub.php`
@@ -149,4 +157,4 @@ Written 2026-10-03. Active step: **S3.16** (not started); S3.15 (health fixes, e
 
 ## Next
 
-1. S3.16-S3.18 (health fixes); S3.16's enqueue and finish-handler tests came in S3.13.
+1. S3.17 (circular buffer), then S3.18 (core health fixes, the deadlock report as Edmond answers).
