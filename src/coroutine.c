@@ -227,7 +227,8 @@ static HashTable *coroutine_object_gc(zend_object *object, zval **table, int *nu
 			zend_get_gc_buffer_add_ht(gc_buffer, fcall->fci.named_params);
 		}
 
-		/* Only spawn()'s cache holds its references (Async_spawn). */
+		/* spawn()'s cache holds its references (Async_spawn). The core's fcall, a Fiber's, holds the
+		 * object its callable resolved to from API 20261003 on (ZEND_ASYNC_FCALL_DEFINE). */
 		if (EXPECTED(fcall == &coroutine->spawn_fcall)) {
 			if (fcall->fci_cache.object != NULL) {
 				zend_get_gc_buffer_add_obj(gc_buffer, fcall->fci_cache.object);
@@ -237,6 +238,11 @@ static HashTable *coroutine_object_gc(zend_object *object, zval **table, int *nu
 				zend_get_gc_buffer_add_obj(gc_buffer, fcall->fci_cache.closure);
 			}
 		}
+#if ZEND_ASYNC_API_VERSION >= 20261003
+		else if (fcall->fci.object != NULL) {
+			zend_get_gc_buffer_add_obj(gc_buffer, fcall->fci.object);
+		}
+#endif
 	}
 
 	if (UNEXPECTED(coroutine->coroutine.context != NULL)) {

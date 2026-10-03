@@ -457,3 +457,7 @@ stack options were shown with the code).
   `internal/015-buffer_ptr.phpt` (a second swap) and `internal/016-buffer_front_full.phpt` changed
   to pointer items and the scheduler's calls. Why: HEALTH 2026-10-02 finding 7 and DECISIONS
   2026-10-01 ("what S3 does not need is cut"); the Sage.
+- 2026-10-03 The deadlock report prints only where the error it explains shows: `display_errors`
+  on (Edmond), `error_reporting` with `E_ERROR`, stderr for `display_errors=stderr` as php_error_cb.
+  Why: it names the script path of every coroutine, which a production response must not show
+  (`scheduler/083`-`085`).

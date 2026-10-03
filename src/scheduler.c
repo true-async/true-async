@@ -41,6 +41,7 @@
 #endif
 
 #include "php.h"
+#include "SAPI.h"
 #include "php_true_async.h"
 #include "Zend/zend_observer.h"
 #include "scheduler.h"
@@ -630,7 +631,20 @@ static void scheduler_deadlock_report(const uint32_t waiting)
 
 	smart_str_appends(&report, "=== DEADLOCK REPORT END   ===\n\n");
 	smart_str_0(&report);
-	PHPWRITE(ZSTR_VAL(report.s), ZSTR_LEN(report.s));
+
+	/* Written where php_error_cb (main/main.c) writes the error it explains: display_errors=stderr sends
+	 * the command-line SAPIs' errors to stderr, not to the response. */
+	if (UNEXPECTED(PG(display_errors) == PHP_DISPLAY_ERRORS_STDERR &&
+				   (strcmp(sapi_module.name, "cli") == 0 || strcmp(sapi_module.name, "cgi") == 0 ||
+					strcmp(sapi_module.name, "phpdbg") == 0))) {
+		fwrite(ZSTR_VAL(report.s), 1, ZSTR_LEN(report.s), stderr);
+#ifdef PHP_WIN32
+		fflush(stderr);
+#endif
+	} else {
+		PHPWRITE(ZSTR_VAL(report.s), ZSTR_LEN(report.s));
+	}
+
 	smart_str_free(&report);
 }
 
@@ -701,7 +715,9 @@ static void scheduler_resolve_deadlock(const uint32_t waiting)
 		return;
 	}
 
-	if (EXPECTED(ASYNC_G(debug_deadlock))) {
+	/* The report names script paths, so it is shown only where the error it explains is. That error
+	 * is raised on main's stack: error_reporting is read from INI, not from this stack's own copy. */
+	if (EXPECTED(ASYNC_G(debug_deadlock) && PG(display_errors) && (ini_error_reporting() & E_ERROR))) {
 		scheduler_deadlock_report(waiting);
 
 		/* An output handler that threw (the report runs in scheduler context, where waits refuse). An

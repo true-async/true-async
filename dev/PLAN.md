@@ -467,14 +467,13 @@ section 14); a step that finds a test needs more moves it on with a note.
       "Backward Incompatible Changes" its fourth item (Edmond, 2026-10-02, DECISIONS); the finish
       handler contract in `zend_async_API.h` and the RFC reads "at most once: a handler that throws
       ends the notify", as the notify now does (DECISIONS 2026-10-02); a fault seam
-      in the test scheduler for enqueue and spawn failures. On Edmond's word, the two core findings
-      of S3.14 (`dev/SECURITY.md`, open findings): `ZEND_ASYNC_FCALL_DEFINE` keeps references for
-      its callable's cache, and `main.c` ends the scheduler as a bailout after a shutdown function
-      that bailed out, so no finished coroutine stays current. The extension's deadlock report output
-      (`true_async.debug_deadlock`, open finding of S3.14) as Edmond answers, moved from S3.16; a default
-      of off also changes `module/002-info`'s INI line.
+      in the test scheduler for enqueue and spawn failures. Done ahead in the S3.14 thread on
+      Edmond's word (`dev/SECURITY.md` journal 2026-10-03): the two core findings of S3.14, `async-core`
+      `2cb30e538e4` (`ZEND_ASYNC_FCALL_DEFINE` and `Fiber` hold the callable's object, API 20261003)
+      and `c43060ea12d` (a bailout in a shutdown function ends the scheduler as a bailout), and the
+      deadlock report shown only where its error is; the core update here brings them in.
       done: `ext/test_scheduler/tests` equal per test on dbg and ASAN; `CORE_REF` and "Pinned core"
-        moved; each S3.14 core finding fixed with a test or closed by Edmond
+        moved
       tier: T2 · role: Critic
 
 ## S4 — Reactor on Poll, Poll additions and Ring  [ ]

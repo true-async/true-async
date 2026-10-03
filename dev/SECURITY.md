@@ -104,22 +104,16 @@ finding left open gets an owner step in `PLAN.md`.
   `ASYNC_CALLBACKS_F_NOTIFYING` bit at 2^31 entries; `circular_buffer_dtor` leaves `head`, `tail` and
   `capacity`, and nothing pops after it; no CI lane builds the default configuration, and the
   guards of the test-only code were checked by reading.
+- 2026-10-03 The three open findings of S3.14 closed on Edmond's word (S3.18's core items done
+  ahead, the core not pinned yet). Core `async-core` `2cb30e538e4`: `Fiber::__construct` and
+  `ZEND_ASYNC_FCALL_DEFINE` hold the object a class-string callable resolved to (upstream `Fiber` too:
+  reproduced on PHP 8.3.6 and master; the upstream report waits for Edmond); `ZEND_ASYNC_API_VERSION`
+  20261003, and `coroutine_object_gc` reports that object from that version (`gc/023`). Core
+  `c43060ea12d`: `php_call_shutdown_functions` ends the scheduler as a bailout when a shutdown
+  function bails out, `exit()` included, so no finished coroutine stays current. The deadlock report
+  shows only where its error does (`scheduler/083`-`085`).
 
 ## Open findings
 
-- A bailout that a zend_try of the core catches without re-raising it (a shutdown function's, the
-  destructors') while main suspends leaves the current coroutine at a finished one or the scheduler
-  context flag set; the core's shutdown destructors then attach their switch handlers to that
-  coroutine (the debug build's assertion at `coroutine.c` `coroutine_object_free`, a leaked handler
-  vector in a release build). The use-after-free it also caused is fixed (`internal/048`). The fix
-  is a core one: `main.c` calls from_main with `is_bailout` right after the shutdown functions
-  that bailed out (handoff, "Later steps"). Owner: S3.18 (its text names it), on Edmond's word.
-- The core's `ZEND_ASYNC_FCALL_DEFINE` (a Fiber's coroutine) and upstream `Fiber::__construct`
-  copy the callable's cache without its references: a Fiber made from `[A::class, 'm']` in a method
-  of `A` reads a freed `$this` when `A` dies before `start()` (valgrind, no extension loaded).
-  `Async\spawn()` had the same defect, fixed with `spawn/021`. Owner: S3.18 for `async-core`;
-  the upstream report is Edmond's call (php-src's policy treats it as a bug, not a security issue).
-- `true_async.debug_deadlock` (default on, `PHP_INI_ALL`) writes the deadlock report with
-  `PHPWRITE`, whatever `display_errors` says, so a deadlock prints the script paths of every
-  coroutine into the response. TrueAsync does the same (`scheduler.c:695`). Owner: S3.18, as Edmond
-  answers.
+None.
+
