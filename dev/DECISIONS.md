@@ -409,3 +409,29 @@ stack options were shown with the code).
   runs on, and the popped coroutine goes back to the front of the queue. Why: it switched into the
   popped one and stayed RUNNING with no context to come back to, and the deadlock resolution looped;
   found by seed 37, reproduced without the hook. Test `scheduler/057`.
+- 2026-10-03 Outside scheduler context the enqueue refuses a wake with an error of the running
+  current coroutine, before the error is applied; its own enqueue with no error is the yield of `Async\suspend()`. A coroutine
+  woken in its own pop, RUNNING and not current, takes a wake as it takes a cancel: its `suspend()`
+  throws the error. Why: TrueAsync's `async_coroutine_resume` refuses a coroutine that is not
+  suspended and takes one after its short path; an accepted wake of the running coroutine left it in
+  the queue after it finished, and the drain switched into it (a heap corruption, found in S3.13);
+  refusing the woken one broke the GC's own wake (Critic). In scheduler context the short path takes a
+  wake of the current coroutine and pushes nothing, as TrueAsync's refusal is also outside it (the
+  Sage). Tests
+  `internal/043`, `047`, `scheduler/066`.
+- 2026-10-03 A coroutine woken with any error before it ran finishes with that error at the pop, the
+  error thrown when the stack has a frame, so finalize's clear restores the opline of a frame parked
+  mid-opline, and stored when it has none (shutdown destructors), where a throw ends the request; `scheduler_suspend`
+  throws a waker's error by the same rule.
+  Why: the core's STARTED contract, test_scheduler.c and TrueAsync skip the body; the stored error
+  corrupted parked main, the thrown one bailed out with no frame (Critic in S3.13). Tests
+  `scheduler/060`-`062`, `074`, `076`.
+- 2026-10-03 The scheduler coroutine is current for the tick and the pop after a coroutine's body,
+  and the cancelling walks over the registry hold a hash iterator and take at most the coroutines
+  present at their start, as TrueAsync's foreach. Why: with no current coroutine a
+  collection there did not defer; a cancel may start the GC coroutine, whose insert resized the
+  table under the walk (Critic in S3.13, an ASAN use-after-free). Tests `scheduler/058`, `059`.
+- 2026-10-03 Mull survivors on the stage diff are explained in `dev/plans/S3.md` section 9, not
+  marked in the source with `mull-off`. Why: D34 asks for killed or explained, and
+  the next Mull run mutates only the lines its stage changes, so a marker in the source has no reader;
+  the circular buffer's survivors go with the code S3.17 deletes (the Sage).

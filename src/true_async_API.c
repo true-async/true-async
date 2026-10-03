@@ -22,6 +22,9 @@
 /* First heap array of a vector that outgrows its inline element: 4 slots, 32 B. */
 #define ASYNC_CALLBACKS_FIRST_CAPACITY 4
 
+/* First array of a coroutine's switch handlers. */
+#define ASYNC_SWITCH_HANDLERS_FIRST_CAPACITY 4
+
 void async_callbacks_reserve(async_callbacks_vector_t *vector, const uint32_t count)
 {
 	const uint32_t capacity = ASYNC_CALLBACKS_CAPACITY(vector);
@@ -89,7 +92,11 @@ void async_callbacks_notify(async_awaitable_t *target,
 							void *result,
 							zend_object *exception)
 {
-	if (UNEXPECTED(vector->capacity & ASYNC_CALLBACKS_F_NOTIFYING) || vector->length == 0) {
+	if (UNEXPECTED(vector->capacity & ASYNC_CALLBACKS_F_NOTIFYING)) {
+		return;
+	}
+
+	if (vector->length == 0) {
 		return;
 	}
 
@@ -286,7 +293,7 @@ uint32_t async_switch_handler_add(async_coroutine_t *coroutine, const zend_corou
 	}
 
 	if (vector->length == vector->capacity) {
-		vector->capacity = vector->capacity == 0 ? 4 : vector->capacity * 2;
+		vector->capacity = vector->capacity == 0 ? ASYNC_SWITCH_HANDLERS_FIRST_CAPACITY : vector->capacity * 2;
 		vector->data = safe_erealloc(vector->data, vector->capacity, sizeof(async_switch_handler_t), 0);
 	}
 
@@ -301,7 +308,7 @@ bool async_switch_handler_remove(async_coroutine_t *coroutine, const uint32_t ha
 {
 	async_coroutine_switch_handlers_vector_t *vector = coroutine->switch_handlers;
 
-	if (vector == NULL) {
+	if (UNEXPECTED(vector == NULL)) {
 		return false;
 	}
 
@@ -352,7 +359,7 @@ void async_switch_handlers_free(async_coroutine_t *coroutine)
 {
 	async_coroutine_switch_handlers_vector_t *vector = coroutine->switch_handlers;
 
-	if (vector == NULL) {
+	if (EXPECTED(vector == NULL)) {
 		return;
 	}
 

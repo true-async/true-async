@@ -8,9 +8,11 @@ Time budget: 15 minutes per run
 Suite: `tools/test.py --lane pocs-dbg`, 169 tests (69 PASS, 100 XFAIL), run-tests 1.06 s on the CI
   `ubuntu-24.04` runner (run 37017719803, ece91a6, 2026-10-02); the asan lane's Test step 19 s
 Coverage: CI lane `pocs-dbg-cov`, `coverage.info` in the `results-mutants-coverage` artifact;
-  last: 88.9 % of `src/` lines (1,165 of 1,311), run 37017719803 at ece91a6
+  last: 96.1 % of `src/` lines (2,094 of 2,180), local `pocs-dbg-cov` at the S3.13 commit
+  (2026-10-03); the uncovered lines and their reasons in dev/plans/S3.md section 14
 Mutants: Mull 0.34.1 (`tools/mull.py`); CI runs only the known-answer check (4 of 4 killed, 4 of 4
-  survived); the stage-diff run comes at a stage close (S3.13); no reference run
+  survived); reference run S3.13 (2026-10-03), the S3 stage diff from 6478f20: 196 mutants, 167
+  killed, 29 survived (5 killed by tests after it, 24 explained in dev/plans/S3.md section 9)
 Practices: mutation tool, fault tests (engine-limit bailouts, test hooks; injection points due S3.12),
   dev/PRINCIPLES.md, CI; missing: specification tests (dev/TESTING.md)
 Scope: the extension (`src/`, `tests/`, `tools/`, `dev/`) and our core diff on `async-core`

@@ -25,16 +25,16 @@ static uint64_t parse_seed(const char *text)
 
 void async_fuzz_init(async_fuzz_state_t *state)
 {
-	const char *sched = getenv("TRUE_ASYNC_SCHED");
+	const char *scheduler_mode = getenv("TRUE_ASYNC_SCHED");
 
 	state->mode = ASYNC_FUZZ_MODE_FIFO;
 	state->rng_state = 0;
 
-	if (sched == NULL || strncmp(sched, "random", 6) != 0) {
+	if (scheduler_mode == NULL || strncmp(scheduler_mode, "random", sizeof("random") - 1) != 0) {
 		return;
 	}
 
-	const char *colon = strchr(sched, ':');
+	const char *colon = strchr(scheduler_mode, ':');
 	const uint64_t seed = colon != NULL ? parse_seed(colon + 1) : 0;
 
 	state->mode = ASYNC_FUZZ_MODE_RANDOM;

@@ -91,7 +91,7 @@ flowchart TB
 |---|---|---:|
 | S1 · Core branch `async-core-io` | `████████░░` | 80 % |
 | ✓ S2 · Repository and test system | `██████████` | 100 % |
-| ▶ **S3 · Scheduler on the scheduler API** | `███████░░░` | 68 % |
+| ▶ **S3 · Scheduler on the scheduler API** | `███████░░░` | 74 % |
 | S4 · Reactor on Poll, Poll additions and Ring | `░░░░░░░░░░` | 0 % |
 | S5 · Futures, timeouts and combinators | `░░░░░░░░░░` | 0 % |
 | S6 · IO hooks provider | `░░░░░░░░░░` | 0 % |

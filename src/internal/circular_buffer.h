@@ -26,8 +26,8 @@ struct _circular_buffer_s
 	size_t item_size;
 	size_t min_size;
 	size_t capacity; /* a power of 2 */
-	/* Halve the buffer on a push once it is used below decrease_t; off for the run queue
-	 * (dev/plans/S3.md, section 11). */
+	/* Halve the buffer on a push once it is used below decrease_t; off for the run queue and the
+	 * context pool (dev/plans/S3.md, section 11). */
 	bool auto_optimize;
 	/* About a quarter of the capacity, recalculated on every resize: 0 once a resize reaches the
 	 * minimum size, but the constructor sets it for any count above 4, so the first shrink of such
@@ -107,9 +107,9 @@ static zend_always_inline void circular_buffer_swap_ptr_at(circular_buffer_t *bu
 	const size_t mask = buffer->capacity - 1;
 	void **slot_i = (void **) ((char *) buffer->data + ((buffer->tail + i) & mask) * sizeof(void *));
 	void **slot_j = (void **) ((char *) buffer->data + ((buffer->tail + j) & mask) * sizeof(void *));
-	void *tmp = *slot_i;
+	void *swapped_item = *slot_i;
 	*slot_i = *slot_j;
-	*slot_j = tmp;
+	*slot_j = swapped_item;
 }
 
 /* The fast push, growing the buffer when it is full. */

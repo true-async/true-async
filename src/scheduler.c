@@ -76,12 +76,13 @@ static void fiber_context_cleanup(zend_fiber_context *context)
 	efree((async_fiber_context_t *) context);
 }
 
-/* A new context whose first entry runs `entry`; NULL with an exception when the stack cannot be
+/* A new context whose first entry runs `entry_function`; NULL with an exception when the stack cannot be
  * allocated (zend_fiber_init_context throws). */
-static async_fiber_context_t *fiber_context_create(zend_fiber_coroutine entry, const size_t stack_size)
+static async_fiber_context_t *fiber_context_create(zend_fiber_coroutine entry_function, const size_t stack_size)
 {
 	async_fiber_context_t *fiber_context = ecalloc(1, sizeof(async_fiber_context_t));
-	const zend_result result = zend_fiber_init_context(&fiber_context->context, async_ce_coroutine, entry, stack_size);
+	const zend_result result =
+			zend_fiber_init_context(&fiber_context->context, async_ce_coroutine, entry_function, stack_size);
 
 	if (UNEXPECTED(result == FAILURE)) {
 		efree(fiber_context);
@@ -171,7 +172,7 @@ static zend_always_inline bool is_exit_object(const zend_object *error)
  * coroutine.c:807-829): a new error goes on top, with the pending one as its previous, except that a
  * cancellation never replaces a pending cancellation, and a wake never brings a cancellation over a
  * pending error. An exit object wins over any other error and is never chained, unlike TrueAsync's
- * (S3.9: a Fiber dropped while a throw() into it waits). Takes a reference to `error`. */
+ * (a Fiber dropped while a throw() into it waits). Takes a reference to `error`. */
 static void waker_apply_error(async_coroutine_t *coroutine, zend_object *error, const bool for_cancellation)
 {
 	zend_object *pending_error = coroutine->waker.error;
@@ -221,8 +222,21 @@ static void exception_to_exit_exception(void)
 	async_scheduler_exit_with(exception);
 }
 
-/* A coroutine cancelled before it ran has no body to run and needs no stack: it finishes where it
- * is popped, with its cancellation as the outcome (TrueAsync's IGNORED path, scheduler.c:507-513,
+/* Throws a waker's error as TrueAsync's async_rethrow_exception does: the clear that takes it gives a
+ * frame parked in the middle of an opline the opline the throw saved. With no frame (the request's
+ * shutdown destructors) a throw would end the request as uncaught, and there is no opline to give
+ * back: the error is stored. */
+static void waker_error_throw(zend_object *error)
+{
+	if (EXPECTED(EG(current_execute_data) != NULL)) {
+		zend_throw_exception_internal(error);
+	} else {
+		EG(exception) = error;
+	}
+}
+
+/* A coroutine woken with an error before it ran (a cancellation) has no body to run and needs no
+ * stack: it finishes where it is popped, with the error as the outcome (TrueAsync's IGNORED path, scheduler.c:507-513,
  * coroutine.c:466-499). It is current while it finishes, outside scheduler context, as when a body
  * ends, whoever pops it. What its releases throw is folded as the tick folds it: the next
  * coroutine's call would return at once with it set. */
@@ -233,9 +247,12 @@ static void coroutine_finish_unrun(async_coroutine_t *coroutine)
 
 	ZEND_ASSERT(coroutine->waker.error != NULL && EG(exception) == NULL);
 
-	/* finalize takes it as a thrown one: an exit or a cancellation by the rules of an outcome. */
-	EG(exception) = coroutine->waker.error;
+	/* finalize takes it as a thrown one: an exit or a cancellation by the rules of an outcome. The pop
+	 * runs on a stack whose frame may be in the middle of an opline (main parked by a collection
+	 * inside a handler). */
+	zend_object *error = coroutine->waker.error;
 	coroutine->waker.error = NULL;
+	waker_error_throw(error);
 
 	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = false;
 	ZEND_ASYNC_CURRENT_COROUTINE = &coroutine->coroutine;
@@ -252,8 +269,8 @@ static void coroutine_finish_unrun(async_coroutine_t *coroutine)
 	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = was_in_scheduler_context;
 }
 
-/* The next coroutine to run, or NULL when the queue is empty; the ones cancelled before they ran
- * finish on the way. */
+/* The next coroutine to run, or NULL when the queue is empty; the ones woken with an error before they
+ * ran finish on the way. */
 static async_coroutine_t *run_queue_pop(void)
 {
 	async_coroutine_t *coroutine = NULL;
@@ -271,9 +288,10 @@ static async_coroutine_t *run_queue_pop(void)
 			return NULL;
 		}
 
-		const uint32_t flags = coroutine->coroutine.flags;
-
-		if (EXPECTED(!(flags & ZEND_COROUTINE_F_CANCELLED) || (flags & ZEND_COROUTINE_F_STARTED))) {
+		/* Any error a coroutine that never ran was enqueued with is its outcome, a cancellation or not: the
+		 * core skips the body of a first entry that carries an error (zend_async_API.h, the STARTED flag),
+		 * test_scheduler.c too, and TrueAsync throws it before the body (coroutine.c:513-520). */
+		if (EXPECTED(ZEND_COROUTINE_IS_STARTED(&coroutine->coroutine) || coroutine->waker.error == NULL)) {
 			return coroutine;
 		}
 
@@ -290,8 +308,9 @@ static zend_always_inline void make_current(async_coroutine_t *coroutine)
 }
 
 /* The scheduler coroutine runs from here on; returns its context, where a coroutine or a context goes
- * when it has nothing to run. It exists while any coroutine does: every coroutine was enqueued, and
- * the enqueue creates it. */
+ * when it has nothing to run. It exists while a coroutine other than main runs: every such coroutine
+ * was enqueued, and the enqueue creates it; main's own calls create it first
+ * (scheduler_coroutine_ensure). */
 static zend_always_inline zend_fiber_context *make_scheduler_current(void)
 {
 	async_coroutine_t *scheduler_coroutine = ASYNC_G(scheduler_coroutine);
@@ -370,6 +389,11 @@ static zend_fiber_context *run_coroutines(async_fiber_context_t *fiber_context)
 
 		ZEND_ASSERT(coroutine->fiber_context == fiber_context);
 		async_coroutine_execute(coroutine);
+
+		/* The tick and the pop are scheduler work: the scheduler coroutine is current for them, as in
+		 * test_scheduler.c. With none, a collection there would not defer (zend_gc.c:2245 compares the
+		 * current coroutine with the GC's, both NULL) and its destructors would suspend nobody. */
+		make_scheduler_current();
 		scheduler_tick();
 
 		async_coroutine_t *next_coroutine = run_queue_pop();
@@ -392,7 +416,7 @@ static zend_fiber_context *run_coroutines(async_fiber_context_t *fiber_context)
 			target = make_scheduler_current();
 		}
 
-		if (!fiber_pool_keep(fiber_context)) {
+		if (UNEXPECTED(!fiber_pool_keep(fiber_context))) {
 			return target;
 		}
 
@@ -599,6 +623,26 @@ static void scheduler_deadlock_report(const uint32_t waiting)
 	smart_str_free(&report);
 }
 
+/* The next coroutine of a cancelling walk over the registry, or NULL at its end. A cancel releases
+ * errors, whose release may start a collection; it defers in scheduler context, and the enqueue of
+ * its GC coroutine adds it to the registry under the walk: the engine's iterator follows the table
+ * through a resize, as foreach by reference does (ext/standard/array.c, php_array_walk). Each walk
+ * takes at most the count present at its start, as TrueAsync's foreach visits only the coroutines it
+ * started with; a coroutine added under the walk is run by the queue instead. */
+static async_coroutine_t *registry_walk_next(const uint32_t iterator)
+{
+	HashTable *coroutines = &ASYNC_G(coroutines);
+	HashPosition position = zend_hash_iterator_pos(iterator, coroutines);
+	async_coroutine_t *coroutine = zend_hash_get_current_data_ptr_ex(coroutines, &position);
+
+	if (EXPECTED(coroutine != NULL)) {
+		zend_hash_move_forward_ex(coroutines, &position);
+		EG(ht_iterators)[iterator].pos = position;
+	}
+
+	return coroutine;
+}
+
 /* A fiber parked in Fiber::suspend(): it handed control back to whoever resumed it, and only that
  * code, not an event, can wake it (S3.md section 6, D6; the core sets the status in
  * zend_fiber_coroutine_yield). */
@@ -631,14 +675,17 @@ static void scheduler_resolve_deadlock(const uint32_t waiting)
 	ZEND_HASH_FOREACH_END();
 
 	if (UNEXPECTED(suspended_fibers == waiting)) {
-		ZEND_HASH_FOREACH_PTR(&ASYNC_G(coroutines), coroutine)
-		{
+		const uint32_t iterator = zend_hash_iterator_add(&ASYNC_G(coroutines), 0);
+		uint32_t remaining = zend_hash_num_elements(&ASYNC_G(coroutines));
+
+		while (remaining-- > 0 && (coroutine = registry_walk_next(iterator)) != NULL) {
 			/* Cleared as for a deadlock: a deferred cancellation would never come, and the loop would
 			 * find the same fibers again. */
 			coroutine->coroutine.flags &= ~ASYNC_COROUTINE_F_PROTECTED;
 			async_coroutine_cancel(coroutine, zend_create_graceful_exit(), true);
 		}
-		ZEND_HASH_FOREACH_END();
+
+		zend_hash_iterator_del(iterator);
 
 		return;
 	}
@@ -666,12 +713,15 @@ static void scheduler_resolve_deadlock(const uint32_t waiting)
 
 	/* One cancellation for each coroutine, as TrueAsync's resolve_deadlocks (scheduler.c:860-879): a
 	 * pending error is chained under it, which must not reach another coroutine. */
-	ZEND_HASH_FOREACH_PTR(&ASYNC_G(coroutines), coroutine)
-	{
+	const uint32_t iterator = zend_hash_iterator_add(&ASYNC_G(coroutines), 0);
+	uint32_t remaining = zend_hash_num_elements(&ASYNC_G(coroutines));
+
+	while (remaining-- > 0 && (coroutine = registry_walk_next(iterator)) != NULL) {
 		coroutine->coroutine.flags &= ~ASYNC_COROUTINE_F_PROTECTED;
 		async_coroutine_cancel(coroutine, async_new_exception(async_ce_cancellation, "Deadlock detected"), true);
 	}
-	ZEND_HASH_FOREACH_END();
+
+	zend_hash_iterator_del(iterator);
 }
 
 /* The scheduler coroutine's loop (TrueAsync's fiber_entry with is_scheduler): the tick, then a switch
@@ -1025,6 +1075,21 @@ bool async_scheduler_enqueue(zend_coroutine_t *zend_coroutine, zend_object *erro
 		return false;
 	}
 
+	/* Outside scheduler context the running current coroutine takes only the yield, its own enqueue
+	 * with no error: a wake with an error is refused before the error is applied, as TrueAsync's
+	 * async_coroutine_resume refuses a coroutine that is not suspended outside scheduler context
+	 * (coroutine.c:804-808). Accepted, it would leave the coroutine in the queue after it finishes. In
+	 * scheduler context the short path below takes it and pushes nothing. */
+	if (UNEXPECTED(error != NULL && zend_coroutine == ZEND_ASYNC_CURRENT_COROUTINE &&
+				   ZEND_COROUTINE_IS_RUNNING(zend_coroutine) && !ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) {
+		if (transfer_error) {
+			OBJ_RELEASE(error);
+		}
+
+		zend_throw_error(NULL, "Cannot resume a coroutine that has not been suspended");
+		return false;
+	}
+
 	if (UNEXPECTED(error != NULL)) {
 		if (!transfer_error) {
 			GC_ADDREF(error);
@@ -1035,8 +1100,9 @@ bool async_scheduler_enqueue(zend_coroutine_t *zend_coroutine, zend_object *erro
 
 	ASYNC_TEST_FAULT(ASYNC_TEST_FAULT_ENQUEUE);
 
-	/* The current coroutine woken inside its own tick (U2): it is SUSPENDED or QUEUED there, and a
-	 * push by the status would switch into the running context later. */
+	/* The current coroutine woken inside its own tick (U2): it is SUSPENDED or QUEUED there, or RUNNING
+	 * after an earlier wake in the same tick, and a push by the status would switch into the running
+	 * context later. */
 	if (UNEXPECTED(zend_coroutine == ZEND_ASYNC_CURRENT_COROUTINE && ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) {
 		async_wait_unlink(coroutine);
 
@@ -1061,14 +1127,17 @@ bool async_scheduler_enqueue(zend_coroutine_t *zend_coroutine, zend_object *erro
 		case ZEND_COROUTINE_STATUS_QUEUED:
 			return true;
 		case ZEND_COROUTINE_STATUS_RUNNING:
-			/* The yield of Async\suspend(): the current coroutine goes to the back of the queue. */
-			if (zend_coroutine == ZEND_ASYNC_CURRENT_COROUTINE) {
-				run_queue_push(coroutine);
+			/* Woken in its own pop and not current again yet (scheduler_suspend finishes the unrun
+			 * coroutines popped with it): it runs on, and its suspend() throws the error as it returns,
+			 * as TrueAsync accepts a wake after its short path (coroutine.c:845-852). */
+			if (UNEXPECTED(zend_coroutine != ZEND_ASYNC_CURRENT_COROUTINE)) {
 				return true;
 			}
 
-			zend_throw_error(NULL, "Cannot resume a coroutine that has not been suspended");
-			return false;
+			/* The yield of Async\suspend(): the current coroutine goes to the back of the queue, and its
+			 * caller suspends next (TrueAsync's Async\suspend, async.c:232-233). */
+			run_queue_push(coroutine);
+			return true;
 		default:
 			ZEND_UNREACHABLE();
 			return false;
@@ -1148,13 +1217,15 @@ static void scheduler_cancel_all(zend_object *cancellation)
 	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
 
 	async_coroutine_t *coroutine = NULL;
+	const uint32_t iterator = zend_hash_iterator_add(&ASYNC_G(coroutines), 0);
+	uint32_t remaining = zend_hash_num_elements(&ASYNC_G(coroutines));
 
-	ZEND_HASH_FOREACH_PTR(&ASYNC_G(coroutines), coroutine)
-	{
+	while (remaining-- > 0 && (coroutine = registry_walk_next(iterator)) != NULL) {
 		coroutine->coroutine.flags &= ~ASYNC_COROUTINE_F_PROTECTED;
 		async_coroutine_cancel(coroutine, cancellation, false);
 	}
-	ZEND_HASH_FOREACH_END();
+
+	zend_hash_iterator_del(iterator);
 
 	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = was_in_scheduler_context;
 	OBJ_RELEASE(cancellation);
@@ -1194,7 +1265,7 @@ void async_scheduler_exit_with(zend_object *exception)
  * yield, it runs on with no switch. */
 static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 {
-	if (from_main) {
+	if (UNEXPECTED(from_main)) {
 		return scheduler_main_suspend(is_bailout);
 	}
 
@@ -1207,7 +1278,7 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 	}
 
 	/* Finalize releases what a finished coroutine held while it is still current: a destructor run
-	 * there has no context to park. */
+	 * there has no context to park (a Fiber's resume() or throw() reaches here). */
 	if (UNEXPECTED(ZEND_COROUTINE_IS_FINISHED(zend_coroutine))) {
 		async_wait_unlink(coroutine);
 		zend_throw_error(NULL, "There is no coroutine to suspend");
@@ -1268,7 +1339,7 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 
 		/* Nothing queued: the scheduler coroutine waits for what comes next (TrueAsync's
 		 * scheduler_next_tick, scheduler.c:1610-1613). */
-		if (next_coroutine == NULL) {
+		if (UNEXPECTED(next_coroutine == NULL)) {
 			if (UNEXPECTED(switch_to(make_scheduler_current(), 0) & ZEND_FIBER_TRANSFER_FLAG_BAILOUT)) {
 				async_wait_unlink(coroutine);
 				zend_bailout();
@@ -1312,14 +1383,14 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 
 	async_wait_unlink(coroutine);
 
-	/* Woken with an error (a cancellation, S3.8): it is thrown here, and a result that came with it
+	/* Woken with an error (a cancellation): it is thrown here, and a result that came with it
 	 * is dropped. */
 	if (UNEXPECTED(coroutine->waker.error != NULL)) {
 		zend_object *error = coroutine->waker.error;
 		coroutine->waker.error = NULL;
 		zval_ptr_dtor(&coroutine->waker.result);
 		ZVAL_UNDEF(&coroutine->waker.result);
-		zend_throw_exception_internal(error);
+		waker_error_throw(error);
 	}
 
 	async_exception_restore_fast(exception_ptr, &saved_exception);
@@ -1389,10 +1460,8 @@ static zend_coroutine_t *scheduler_intercept_fiber(zend_fiber *fiber)
  * zend_async_waker_callback_resolve: the woken waiter may be cancelled before it reads the outcome.
  * Its frame holds the target, so the outcome is not the request's yet; await() marks it when it
  * reads it. */
-static void await_record_wake(async_awaitable_t *target,
-							  async_event_callback_t *callback,
-							  void *result,
-							  zend_object *exception)
+static void
+await_record_wake(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
 {
 	(void) target;
 	(void) result;
@@ -1432,8 +1501,8 @@ bool async_await_coroutine(async_coroutine_t *target)
 		return false;
 	}
 
-	/* A bailout that a shutdown function's zend_try caught can leave main's record linked, as
-	 * TrueAsync's ZEND_ASYNC_WAKER_NEW cleans a stale waker (Sage). */
+	/* A bailout that a shutdown function's zend_try caught can leave main's record linked: it is
+	 * unlinked first, as TrueAsync's ZEND_ASYNC_WAKER_NEW cleans a stale waker. */
 	async_wait_unlink(waiter);
 
 	async_coroutine_event_callback_t *record = &waiter->waker.record;
@@ -1475,9 +1544,11 @@ static bool scheduler_await(zend_coroutine_t *zend_coroutine)
 		return false;
 	}
 
-	/* A finished coroutine is still current while finalize releases what it held: await() would
-	 * refuse with an Error, and the GC collects later instead. */
-	if (UNEXPECTED(waiter != NULL && ZEND_COROUTINE_IS_FINISHED(&waiter->coroutine))) {
+	/* A finished coroutine is still current while finalize releases what it held, and one that never
+	 * ran finishes with no context (coroutine_finish_unrun): suspend() would refuse with an Error, and
+	 * the GC collects later instead. */
+	if (UNEXPECTED(waiter != NULL &&
+				   (ZEND_COROUTINE_IS_FINISHED(&waiter->coroutine) || waiter->fiber_context == NULL))) {
 		return false;
 	}
 
@@ -1556,7 +1627,7 @@ static zend_class_entry *scheduler_get_class_ce(const zend_async_class type)
 
 static zend_coroutine_t *scheduler_coroutine_from_object(zend_object *object)
 {
-	if (object->ce != async_ce_coroutine) {
+	if (UNEXPECTED(object->ce != async_ce_coroutine)) {
 		return NULL;
 	}
 

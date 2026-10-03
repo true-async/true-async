@@ -3,7 +3,7 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-03. Active step: **S3.13** (not started); S3.12 (fault injection and fuzz) closed. S3.15-S3.18 (health check) run after S3.14 (Edmond).
+Written 2026-10-03. Active step: **S3.14** (not started); S3.13 (stage review) closed. S3.15-S3.18 (health check) run after S3.14 (Edmond).
 
 ## State
 
@@ -44,6 +44,18 @@ Written 2026-10-03. Active step: **S3.13** (not started); S3.12 (fault injection
   builds into `_build/<lane>-fuzz`, fails a seed on a crash, an assertion, a sanitizer or leak report,
   a timeout or a missing test, and lists the tests whose output gained a diagnostic. A suspender
   woken in its own tick by its pop runs on (`scheduler/057`, found by seed 37).
+- S3.13: the cancelling walks over the registry hold a hash iterator; the scheduler coroutine is
+  current for the tick and the pop after a body; a coroutine woken with any error before it ran
+  finishes with it at the pop (the error thrown with a frame on the stack, stored without one, as
+  `scheduler_suspend` does too); outside scheduler context the enqueue refuses a wake with an error
+  of the running current coroutine, before the error is applied; each walk takes only the
+  coroutines present at its start. Coverage and Mull results,
+  the uncovered lines and the explained survivors: S3.md sections 9 and 14. New test hooks:
+  `add_printing_switch_handler`, `add_clearing_finish_handler`, the `transfer` argument of
+  `enqueue_with_error`, callbacks scenarios `remove-pending`, `remove-absent`, `free-disposes`,
+  `switch-handlers`, `switch-handlers-running`, `finish-remove-last`, `remove-past-cursor`. Mull's stage run: a driver with
+  three workers, each with its own copy of `tests/`, run-tests `-j1`, `--timeout 120000` (the
+  default 3 s timed out the warm-up run); about 20 minutes on 4 cores.
 - Reviews: after the code, Critic and the Sage (`general-purpose`, model `fable`) compare it with
   TrueAsync (`/root/php-async` in the container) and hunt inventions; one plan step is one commit.
 - Container notes: the ASAN lane needs `TRUE_ASYNC_CORE_SRC=/root/core-asan`; `gen_stub.php`
@@ -96,15 +108,25 @@ Written 2026-10-03. Active step: **S3.13** (not started); S3.12 (fault injection
   core declares the modules' TLS cache without a model; an initial-exec model for the module, as the
   core uses for itself, is a lever not tried (Edmond's call).
 
-- S3.13 (Mull): U4's unlink before `zend_bailout()` in `scheduler_suspend` will survive mutation: the
-  finalize on the same unwinding unlinks too (Sage); explain it there. The tests 027 and 030 cannot
-  tell the two apart.
 - The nightly `seeds` CI job (dbg 100, asan 20 seeds) was added without a run; its first nightly or
   dispatch run is its check.
+- Two leaks found by the Sage in S3.13, for S3.18 or Edmond's call on ownership: a coroutine the
+  core creates and fails to enqueue is never released. The GC coroutine (`gc_collect_cycles()` on
+  a cycle under `-d fiber.stack_size=64G`: "Freeing ... (408 bytes)", the core's
+  `new_gc_coroutine`, `zend_gc.c:2234`) and a Fiber's coroutine (`new Fiber` + `start()` under 64G,
+  `zend_fiber_adopt`, `zend_fibers.c:1079`). Both core callers release only their own reference,
+  as test_scheduler.c's rule expects: the live table owns a coroutine from its creation
+  (`test_scheduler.c:810-818`). Ours inserts into the registry at the first enqueue and drops the
+  birth reference in finalize. The fix by test_scheduler.c's rule must keep the deadlock count,
+  which reads the registry. Reproducers: `/tmp/claude-0/sage/r6_gc_no_stack.php`, `r8_fiber_no_stack.php`
+  (the container's scratch, gone with it).
+- `ZEND_ASYNC_NEW_COROUTINE`'s `extra_size` is ignored, as `test_scheduler.c:1373` ignores it; no
+  core caller passes it. S3.18 drops the parameter from the core API or defines it.
 - Seeds 1-100 on dbg list 16 tests whose output gains a diagnostic under some order (their
   expectations assume FIFO); two were read, `scheduler/034` (the lost coroutine, fixed) and
   `scheduler/037` (an order artifact); the others are not read.
 
 ## Next
 
-1. S3.13.
+1. S3.14: the security pass over the stage diff by `dev/SECURITY.md`.
+2. S3.15-S3.18 (health fixes); S3.16's enqueue and finish-handler tests came in S3.13.

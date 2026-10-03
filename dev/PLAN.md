@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-03 · Active: S3.13
+Updated: 2026-10-03 · Active: S3.14
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -363,11 +363,29 @@ section 14); a step that finds a test needs more moves it on with a note.
         site (fixed), crashes passing under `%A`, stray artifacts, no wall timeout; Sage: kept the fix
         and the hook as a plain call, dropped the order matcher for a new-diagnostic list, added the
         nightly `seeds` CI job (dbg 100, asan 20; not run yet).
-- [ ] S3.13 Stage review: Critic on the stage diff; coverage of every wait-model line except the
+- [x] S3.13 Stage review: Critic on the stage diff; coverage of every wait-model line except the
       out-of-memory branches listed in S3.md section 14; Mull on the stage diff, survivors killed
       or explained (D34); Code Reviewer.
       done: Critic's findings answered; coverage and survivors recorded with date
       tier: T2 · role: Critic, Code Reviewer
+      handoff: done 2026-10-03 on core `82df2fc6ccc`: dbg 294 PASS; asan 280 PASS, 14 SKIP. Critic
+        on the stage diff: the cancelling walks broke on a registry insert (ASAN use-after-free; a
+        hash iterator now), no current coroutine in the tick after a body (the scheduler coroutine
+        now), a coroutine woken with an error before it ran ran its body, a refused wake left its
+        error in the waker; all fixed with tests. Found along the way: the stored error of an unrun
+        coroutine corrupted parked main's opline (thrown now), its finalize awaited the GC with no
+        context, and a wake with an error of the running coroutine left it queued after it finished
+        (refused now, TrueAsync's rule). Second Critic, on the commit: the thrown error bailed out in
+        shutdown destructors (stored there now), the refusal broke the GC's wake of a coroutine woken
+        in its own pop (taken now), wrong "unreachable" claims (fixed, tests). The Sage: the refusal
+        narrowed to outside scheduler context, the walks bounded to the coroutines present at their
+        start, the suspend's error stored with no frame (tests); two leaks of a coroutine the core
+        fails to enqueue recorded in the handoff for S3.18.
+        Coverage 96.1 % of `src/` (2094 of 2180), every uncovered
+        line listed with its reason in S3.md section 14; no out-of-memory branch left in the wait
+        model. Mull 0.34.1 on the stage diff: 196 mutants, 167 killed, 29 survived; 5 then killed by
+        tests, 24 explained in S3.md section 9. Code Reviewer: comments, hints and names fixed.
+        Tests `scheduler/058`-`076`, `internal/034`-`047`, `classes/008`, `009`.
 - [ ] S3.14 Security pass over the stage diff by `dev/SECURITY.md`; findings fixed with a test or
       recorded with the reason; the open finding on the runner's secret filter closed.
       done: every checklist item has an outcome in `dev/SECURITY.md`
@@ -384,6 +402,8 @@ section 14); a step that finds a test needs more moves it on with a note.
       context, no current coroutine), enqueue of a finished or running coroutine, finalize moving
       what finish handlers threw into the exit exception; `tools/test.py` fails the coverage lane
       when `lcov --summary` gives no number.
+      Done ahead in S3.13: the enqueue refusals (`internal/039`, `043`, `scheduler/066`) and the
+      finish handlers' exception (`internal/041`).
       done: the new tests pass on dbg, asan and win; those lines covered on `pocs-dbg-cov`
       tier: T1 · role: —
 - [ ] S3.17 Circular buffer cut to what S3 uses (DECISIONS 2026-10-01): `circular_buffer_clean`,

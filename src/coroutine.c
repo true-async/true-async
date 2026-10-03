@@ -56,7 +56,7 @@ static zend_object *coroutine_release_values(async_coroutine_t *coroutine)
 		zend_coroutine->fcall = NULL;
 		zend_fcall_info_args_clear(&fcall->fci, true);
 
-		if (fcall->fci.named_params != NULL) {
+		if (UNEXPECTED(fcall->fci.named_params != NULL)) {
 			zend_array_release(fcall->fci.named_params);
 		}
 
@@ -203,12 +203,12 @@ static HashTable *coroutine_object_gc(zend_object *object, zval **table, int *nu
 			zend_get_gc_buffer_add_zval(gc_buffer, &fcall->fci.params[i]);
 		}
 
-		if (fcall->fci.named_params != NULL) {
+		if (UNEXPECTED(fcall->fci.named_params != NULL)) {
 			zend_get_gc_buffer_add_ht(gc_buffer, fcall->fci.named_params);
 		}
 	}
 
-	if (coroutine->coroutine.context != NULL) {
+	if (UNEXPECTED(coroutine->coroutine.context != NULL)) {
 		zend_get_gc_buffer_add_obj(gc_buffer, coroutine->coroutine.context);
 	}
 
@@ -314,8 +314,8 @@ void async_coroutine_execute(async_coroutine_t *coroutine)
 
 	async_coroutine_finalize(coroutine);
 
-	/* Finished and maybe freed: not current for the tick that follows, nor for the bailout's drop
-	 * (TrueAsync, coroutine.c:567). */
+	/* Finished and maybe freed: not current for the tick that follows (the caller makes the scheduler
+	 * current), nor for the bailout's drop (TrueAsync, coroutine.c:567). */
 	ZEND_ASYNC_CURRENT_COROUTINE = NULL;
 
 	if (UNEXPECTED(is_bailout)) {
@@ -367,8 +367,9 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 		GC_ADDREF(exception);
 	}
 
-	/* Bit 17 has no setter in S3: the await record marks nothing (scheduler.c, await_record_wake). The
-	 * callbacks of a wait for several targets set it from S5, as TrueAsync's (async_API.c:390, 487). */
+	/* Nothing sets ASYNC_COROUTINE_F_EXCEPTION_HANDLED in S3: the await record marks nothing
+	 * (scheduler.c, await_record_wake). The callbacks of a wait for several targets set it from S5, as
+	 * TrueAsync's (async_API.c:390, 487). */
 	zend_coroutine->flags &= ~ASYNC_COROUTINE_F_EXCEPTION_HANDLED;
 	async_callbacks_notify((async_awaitable_t *) coroutine, &coroutine->callbacks, &zend_coroutine->result, exception);
 
@@ -400,7 +401,7 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 		async_scheduler_exit_with(handler_exception);
 	}
 
-	if (exception != NULL) {
+	if (UNEXPECTED(exception != NULL)) {
 		OBJ_RELEASE(exception);
 	}
 

@@ -19,7 +19,10 @@
  * vector and returns the names of the callbacks in the order they ran;
  * TrueAsync\Test\buffer_scenario(string $name): string runs one on the circular buffer and returns
  * what it popped and the sizes it saw;
- * TrueAsync\Test\fail_at(string $site): void arms a fault site of the scheduler. */
+ * TrueAsync\Test\fail_at(string $site): void arms a fault site of the scheduler. The rest reach the
+ * core API a PHP script has no path to: defer() queues a microtask; add_throwing_finish_handler(),
+ * add_clearing_finish_handler() and add_printing_switch_handler() add handlers to a coroutine;
+ * enqueue_with_error() wakes one with an error. Each says more above its definition. */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -74,6 +77,13 @@ test_callback_fire(async_awaitable_t *target, async_event_callback_t *callback, 
 	if (test_callback->action != NULL) {
 		test_callback->action(test_callback, target);
 	}
+}
+
+/* Traces the callback's name in lower case as the vector disposes it. */
+static void test_callback_dispose(async_event_callback_t *callback, async_awaitable_t *target)
+{
+	const test_callback_t *test_callback = (test_callback_t *) callback;
+	smart_str_appendc(test_callback->trace, (char) (test_callback->name + 'a' - 'A'));
 }
 
 static void test_callback_init(test_callback_t *callback, const char name, smart_str *trace)
@@ -359,6 +369,174 @@ static void scenario_sched_kept(smart_str *trace)
 	async_callbacks_free((async_awaitable_t *) &target, &target.callbacks);
 }
 
+/* A B C D; A removes B, which has not run yet and sits at the cursor: B never runs, D and C do. */
+static void scenario_remove_pending(smart_str *trace)
+{
+	test_target_t target = { ASYNC_AWAITABLE_F_EVENT };
+	test_callback_t callbacks[4];
+
+	for (int i = 0; i < 4; i++) {
+		test_callback_init(&callbacks[i], (char) ('A' + i), trace);
+	}
+
+	callbacks[0].action = action_remove_other;
+	callbacks[0].other_vector = &target.callbacks;
+	callbacks[0].other_callback = &callbacks[1];
+	test_vector_fill(&target.callbacks, callbacks, 4);
+	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
+	smart_str_append_printf(trace, " length=%u", target.callbacks.length);
+	async_callbacks_free((async_awaitable_t *) &target, &target.callbacks);
+}
+
+/* A B C D; A removes C, one past the cursor: C never runs, B and D do. */
+static void scenario_remove_past_cursor(smart_str *trace)
+{
+	test_target_t target = { ASYNC_AWAITABLE_F_EVENT };
+	test_callback_t callbacks[4];
+
+	for (int i = 0; i < 4; i++) {
+		test_callback_init(&callbacks[i], (char) ('A' + i), trace);
+	}
+
+	callbacks[0].action = action_remove_other;
+	callbacks[0].other_vector = &target.callbacks;
+	callbacks[0].other_callback = &callbacks[2];
+	test_vector_fill(&target.callbacks, callbacks, 4);
+	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
+	smart_str_append_printf(trace, " length=%u", target.callbacks.length);
+	async_callbacks_free((async_awaitable_t *) &target, &target.callbacks);
+}
+
+/* A B C; removing D, never added, finds nothing and changes nothing. */
+static void scenario_remove_absent(smart_str *trace)
+{
+	test_target_t target = { ASYNC_AWAITABLE_F_EVENT };
+	test_callback_t callbacks[4];
+
+	for (int i = 0; i < 4; i++) {
+		test_callback_init(&callbacks[i], (char) ('A' + i), trace);
+	}
+
+	test_vector_fill(&target.callbacks, callbacks, 3);
+	smart_str_append_printf(trace,
+							"removed=%d length=%u ran:",
+							async_callbacks_remove(&target.callbacks, &callbacks[3].event_callback),
+							target.callbacks.length);
+	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
+	async_callbacks_free((async_awaitable_t *) &target, &target.callbacks);
+}
+
+/* A B C, never notified: freeing the vector disposes each of them once. */
+static void scenario_free_disposes(smart_str *trace)
+{
+	test_target_t target = { ASYNC_AWAITABLE_F_EVENT };
+	test_callback_t callbacks[3];
+
+	for (int i = 0; i < 3; i++) {
+		test_callback_init(&callbacks[i], (char) ('A' + i), trace);
+		callbacks[i].event_callback.dispose = test_callback_dispose;
+	}
+
+	test_vector_fill(&target.callbacks, callbacks, 3);
+	smart_str_appends(trace, "disposed:");
+	async_callbacks_free((async_awaitable_t *) &target, &target.callbacks);
+	smart_str_append_printf(trace, " length=%u", target.callbacks.length);
+}
+
+/* A switch handler traces its name; A, C, D and E stay registered, B goes after its first call. */
+static bool switch_handler_traced(const char name, const bool keep)
+{
+	smart_str_appendc(ASYNC_G(test_trace), name);
+
+	return keep;
+}
+
+static bool switch_handler_a(zend_coroutine_t *coroutine, bool is_enter)
+{
+	return switch_handler_traced('A', true);
+}
+
+static bool switch_handler_b(zend_coroutine_t *coroutine, bool is_enter)
+{
+	return switch_handler_traced('B', false);
+}
+
+static bool switch_handler_c(zend_coroutine_t *coroutine, bool is_enter)
+{
+	return switch_handler_traced('C', true);
+}
+
+static bool switch_handler_d(zend_coroutine_t *coroutine, bool is_enter)
+{
+	return switch_handler_traced('D', true);
+}
+
+static bool switch_handler_e(zend_coroutine_t *coroutine, bool is_enter)
+{
+	return switch_handler_traced('E', true);
+}
+
+/* Switch handlers A-E on one coroutine: the vector grows past its first four, an add of a handler
+ * already there returns its id, a removal by id keeps the order of the others, a call keeps the
+ * handlers that return true, and the vector goes with the last one. */
+static void scenario_switch_handlers(smart_str *trace)
+{
+	async_coroutine_t coroutine = { 0 };
+
+	ASYNC_G(test_trace) = trace;
+	smart_str_append_printf(trace, "remove-none=%d ", async_switch_handler_remove(&coroutine, 1));
+
+	const uint32_t id_a = async_switch_handler_add(&coroutine, switch_handler_a);
+	async_switch_handler_add(&coroutine, switch_handler_b);
+	const uint32_t id_c = async_switch_handler_add(&coroutine, switch_handler_c);
+	const uint32_t id_d = async_switch_handler_add(&coroutine, switch_handler_d);
+	const uint32_t id_e = async_switch_handler_add(&coroutine, switch_handler_e);
+
+	smart_str_append_printf(trace,
+							"same=%d,%d ",
+							async_switch_handler_add(&coroutine, switch_handler_a) == id_a,
+							async_switch_handler_add(&coroutine, switch_handler_e) == id_e);
+	smart_str_append_printf(trace, "removed-c=%d ", async_switch_handler_remove(&coroutine, id_c));
+	smart_str_append_printf(trace, "again=%d ", async_switch_handler_remove(&coroutine, id_c));
+	smart_str_append_printf(trace, "length=%u leave:", coroutine.switch_handlers->length);
+	async_switch_handlers_call(&coroutine, false);
+	smart_str_append_printf(trace, " length=%u enter:", coroutine.switch_handlers->length);
+	async_switch_handlers_call(&coroutine, true);
+	/* The last one removed leaves its copy behind the length: a search for it again finds nothing. */
+	smart_str_append_printf(trace, " removed-e=%d ", async_switch_handler_remove(&coroutine, id_e));
+	smart_str_append_printf(trace, "again-e=%d", async_switch_handler_remove(&coroutine, id_e));
+	async_switch_handler_remove(&coroutine, id_a);
+	smart_str_append_printf(trace, " length=%u", coroutine.switch_handlers->length);
+	async_switch_handler_remove(&coroutine, id_d);
+	smart_str_append_printf(trace, " freed=%d", coroutine.switch_handlers == NULL);
+	ASYNC_G(test_trace) = NULL;
+}
+
+/* A switch handler that adds and removes switch handlers of its coroutine while the handlers run. */
+static bool switch_handler_changes_handlers(zend_coroutine_t *coroutine, bool is_enter)
+{
+	async_coroutine_t *async_coroutine = (async_coroutine_t *) coroutine;
+
+	const uint32_t added_id = async_switch_handler_add(async_coroutine, switch_handler_a);
+	const bool removed = async_switch_handler_remove(async_coroutine, 1);
+
+	smart_str_append_printf(ASYNC_G(test_trace), "add=%u remove=%d", added_id, removed);
+
+	return false;
+}
+
+/* The switch handlers of a coroutine cannot change while they run: both calls warn and refuse. */
+static void scenario_switch_handlers_running(smart_str *trace)
+{
+	async_coroutine_t coroutine = { 0 };
+
+	ASYNC_G(test_trace) = trace;
+	async_switch_handler_add(&coroutine, switch_handler_changes_handlers);
+	async_switch_handlers_call(&coroutine, false);
+	smart_str_append_printf(trace, " freed=%d", coroutine.switch_handlers == NULL);
+	ASYNC_G(test_trace) = NULL;
+}
+
 /* data of a test finish handler: its name, what it returns, and an id to remove on its run. */
 typedef struct
 {
@@ -405,6 +583,24 @@ static void scenario_finish_ids(smart_str *trace)
 	ASYNC_G(test_trace) = NULL;
 }
 
+/* Finish handlers A B; B, the last, is removed by its id and searched for again: its slot behind the
+ * length is not searched. A runs alone. */
+static void scenario_finish_remove_last(smart_str *trace)
+{
+	async_coroutine_t coroutine = { 0 };
+	test_finish_t handlers[2] = { { 'A' }, { 'B' } };
+
+	ASYNC_G(test_trace) = trace;
+	async_finish_handler_add(&coroutine, finish_handler_named, NULL, &handlers[0]);
+	const uint32_t id_b = async_finish_handler_add(&coroutine, finish_handler_named, NULL, &handlers[1]);
+	smart_str_append_printf(trace, "removed B=%d ", async_finish_handler_remove(&coroutine, id_b));
+	smart_str_append_printf(trace, "again B=%d ran:", async_finish_handler_remove(&coroutine, id_b));
+	async_callbacks_notify((async_awaitable_t *) &coroutine, &coroutine.callbacks, NULL, NULL);
+	smart_str_append_printf(trace, " left=%u", coroutine.callbacks.length);
+	async_callbacks_free((async_awaitable_t *) &coroutine, &coroutine.callbacks);
+	ASYNC_G(test_trace) = NULL;
+}
+
 /* A returns true, B false, C removes itself by its own id: each runs once whatever it returns, C is
  * already gone when it runs, and a second notify finds nothing. */
 static void scenario_finish_once(smart_str *trace)
@@ -437,12 +633,15 @@ typedef struct
 } test_scenario_t;
 
 static const test_scenario_t test_scenarios[] = {
-	{ "remove-run", scenario_remove_run },   { "remove-self", scenario_remove_self },
-	{ "single-self", scenario_single_self }, { "add-during", scenario_add_during },
-	{ "nested-same", scenario_nested_same }, { "nested-other", scenario_nested_other },
-	{ "finish-ids", scenario_finish_ids },   { "finish-once", scenario_finish_once },
-	{ "throw-stops", scenario_throw_stops }, { "bailout-caught", scenario_bailout_caught },
-	{ "sched-kept", scenario_sched_kept },
+	{ "remove-run", scenario_remove_run },           { "remove-self", scenario_remove_self },
+	{ "single-self", scenario_single_self },         { "add-during", scenario_add_during },
+	{ "nested-same", scenario_nested_same },         { "nested-other", scenario_nested_other },
+	{ "finish-ids", scenario_finish_ids },           { "finish-remove-last", scenario_finish_remove_last },
+	{ "finish-once", scenario_finish_once },         { "throw-stops", scenario_throw_stops },
+	{ "bailout-caught", scenario_bailout_caught },   { "sched-kept", scenario_sched_kept },
+	{ "remove-pending", scenario_remove_pending },   { "remove-past-cursor", scenario_remove_past_cursor },
+	{ "remove-absent", scenario_remove_absent },     { "free-disposes", scenario_free_disposes },
+	{ "switch-handlers", scenario_switch_handlers }, { "switch-handlers-running", scenario_switch_handlers_running },
 };
 
 static void test_buffer_push(circular_buffer_t *buffer, const zend_long from, const zend_long to)
@@ -707,10 +906,8 @@ static ZEND_FUNCTION(defer)
 }
 
 /* A finish handler that throws "finish handler" when its coroutine finishes. */
-static bool test_throwing_finish_handler(zend_coroutine_t *coroutine,
-										 zend_coroutine_t *waiter,
-										 void *data,
-										 const bool is_bailout)
+static bool
+test_throwing_finish_handler(zend_coroutine_t *coroutine, zend_coroutine_t *waiter, void *data, const bool is_bailout)
 {
 	(void) coroutine;
 	(void) waiter;
@@ -761,21 +958,89 @@ static ZEND_FUNCTION(add_throwing_finish_handler)
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_enqueue_with_error, 0, 2, _IS_BOOL, 0)
 	ZEND_ARG_OBJ_INFO(0, coroutine, Async\\Coroutine, 0)
 	ZEND_ARG_OBJ_INFO(0, error, Throwable, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, transfer, _IS_BOOL, 0, "false")
 ZEND_END_ARG_INFO()
 
 /* The core's wake with an error (ZEND_ASYNC_ENQUEUE_WITH_ERROR, the fibers' path): the waker rule of
- * a resume, beside the cancel's. */
+ * a resume, beside the cancel's. With `transfer` the enqueue takes a reference of its own, as the
+ * fibers' path hands over a caught exception (zend_fibers.c, zend_fiber_coroutine_finish). */
 static ZEND_FUNCTION(enqueue_with_error)
 {
 	zend_object *coroutine;
 	zend_object *error;
+	bool transfer = false;
 
-	ZEND_PARSE_PARAMETERS_START(2, 2)
+	ZEND_PARSE_PARAMETERS_START(2, 3)
 		Z_PARAM_OBJ_OF_CLASS(coroutine, async_ce_coroutine)
 		Z_PARAM_OBJ_OF_CLASS(error, zend_ce_throwable)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_BOOL(transfer)
 	ZEND_PARSE_PARAMETERS_END();
 
-	RETURN_BOOL(ZEND_ASYNC_ENQUEUE_WITH_ERROR(&async_coroutine_from_object(coroutine)->coroutine, error, false));
+	if (transfer) {
+		GC_ADDREF(error);
+	}
+
+	RETURN_BOOL(ZEND_ASYNC_ENQUEUE_WITH_ERROR(&async_coroutine_from_object(coroutine)->coroutine, error, transfer));
+}
+
+/* Prints each switch of its coroutine, "leave #<id>" or "enter #<id>", and stays registered. */
+static bool test_printing_switch_handler(zend_coroutine_t *coroutine, const bool is_enter)
+{
+	php_printf("%s #%u\n", is_enter ? "enter" : "leave", ((async_coroutine_t *) coroutine)->std.handle);
+
+	return true;
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_add_printing_switch_handler, 0, 1, IS_VOID, 0)
+	ZEND_ARG_OBJ_INFO(0, coroutine, Async\\Coroutine, 0)
+ZEND_END_ARG_INFO()
+
+static ZEND_FUNCTION(add_printing_switch_handler)
+{
+	zend_object *coroutine;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_OBJ_OF_CLASS(coroutine, async_ce_coroutine)
+	ZEND_PARSE_PARAMETERS_END();
+
+	ZEND_ASYNC_ADD_SWITCH_HANDLER(&async_coroutine_from_object(coroutine)->coroutine, test_printing_switch_handler);
+}
+
+/* A finish handler that takes the coroutine's exception: clearing it marks it handled (the finish
+ * handler contract, Zend/zend_async_API.h). */
+static bool
+test_clearing_finish_handler(zend_coroutine_t *coroutine, zend_coroutine_t *waiter, void *data, const bool is_bailout)
+{
+	(void) waiter;
+	(void) data;
+	(void) is_bailout;
+
+	zend_object *exception = coroutine->exception;
+
+	if (exception != NULL) {
+		php_printf("finish handler takes %s\n", ZSTR_VAL(exception->ce->name));
+		coroutine->exception = NULL;
+		OBJ_RELEASE(exception);
+	}
+
+	return false;
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_add_clearing_finish_handler, 0, 1, IS_VOID, 0)
+	ZEND_ARG_OBJ_INFO(0, coroutine, Async\\Coroutine, 0)
+ZEND_END_ARG_INFO()
+
+static ZEND_FUNCTION(add_clearing_finish_handler)
+{
+	zend_object *coroutine;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_OBJ_OF_CLASS(coroutine, async_ce_coroutine)
+	ZEND_PARSE_PARAMETERS_END();
+
+	ZEND_ASYNC_ADD_FINISH_HANDLER(
+			&async_coroutine_from_object(coroutine)->coroutine, test_clearing_finish_handler, NULL, NULL);
 }
 
 /* Indexed by async_test_fault_site_t. */
@@ -825,6 +1090,8 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_throwing_finish_handler", ZEND_FN(add_throwing_finish_handler), arginfo_add_throwing_finish_handler, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\enqueue_with_error", ZEND_FN(enqueue_with_error), arginfo_enqueue_with_error, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\fail_at", ZEND_FN(fail_at), arginfo_fail_at, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_printing_switch_handler", ZEND_FN(add_printing_switch_handler), arginfo_add_printing_switch_handler, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_clearing_finish_handler", ZEND_FN(add_clearing_finish_handler), arginfo_add_clearing_finish_handler, 0, NULL, NULL)
 	ZEND_FE_END
 };
 /* clang-format on */

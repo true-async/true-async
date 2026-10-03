@@ -19,7 +19,8 @@
  * (dev/plans/S3.md, section 3, which also gives the offsets).
  *
  * Codes in the extension's comments: Dn is item n of dev/reviews/s3-structures/EDMOND-DECISIONS.md,
- * Un an unlink site (dev/plans/S3.md, section 4.4), Bn a benchmark (dev/plans/S3.md, section 12). */
+ * Un an unlink site (dev/plans/S3.md, section 4.4), Bn a benchmark and On an optimisation option
+ * (dev/plans/S3.md, section 12). */
 
 #include "php.h"
 #include "Zend/zend_async_API.h"
@@ -145,7 +146,7 @@ bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callba
  * exception is chained over the one pending at entry and left in EG(exception). A bailout out of
  * a callback leaves the vector marked, so later notifies of it run nothing (as in TrueAsync). A vector
  * already being notified further up the stack is not notified again. The caller holds a reference
- * to `target` for the call (S3.5's finalize does), so no callback frees the vector. */
+ * to `target` for the call (async_coroutine_finalize does), so no callback frees the vector. */
 void async_callbacks_notify(async_awaitable_t *target,
 							async_callbacks_vector_t *vector,
 							void *result,

@@ -38,12 +38,13 @@ void async_scheduler_request_shutdown(void);
  * birth reference until it finishes. */
 async_coroutine_t *async_coroutine_new(void);
 
-/* The enqueue slot (S3.md 4.3): CREATED or SUSPENDED to QUEUED. False with an exception on
- * refusal; a transferred `error` is then released. */
+/* The enqueue slot (S3.md 4.3): CREATED or SUSPENDED to QUEUED; the running current coroutine with
+ * no error goes to the back of the queue (a yield). False with an exception on refusal; a
+ * transferred `error` is then released. */
 bool async_scheduler_enqueue(zend_coroutine_t *coroutine, zend_object *error, bool transfer_error);
 
 /* Requests the cancellation of `coroutine` (S3.md section 6, TrueAsync's async_coroutine_cancel,
- * coroutine.c:900-1003). `error`, or a new AsyncCancellation("Coroutine cancelled") when it is NULL,
+ * coroutine.c:871-1004). `error`, or a new AsyncCancellation("Coroutine cancelled") when it is NULL,
  * is thrown inside the coroutine's suspend() when it next runs; one that never ran finishes without
  * running its body. Inside protect() the first request waits for protect() to return. The running
  * coroutine is not interrupted: the error becomes its outcome. A finished coroutine ignores it. A
@@ -67,8 +68,8 @@ void async_scheduler_exit_with(zend_object *exception);
 
 /* Parks the current coroutine until `target` finishes (S3.md 4.1); the caller holds a reference to
  * `target` and reads the outcome from it. Never called in scheduler context. True once the target
- * finished; false with an exception when there is no current coroutine, on a self-await, or when
- * the wait is aborted (a cancellation of the waiter, S3.8). */
+ * finished; false with an exception when there is no running current coroutine, on a self-await, or when
+ * the wait is aborted (a cancellation of the waiter). */
 bool async_await_coroutine(async_coroutine_t *target);
 
 #endif /* TRUE_ASYNC_SCHEDULER_H */
