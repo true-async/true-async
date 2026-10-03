@@ -391,3 +391,21 @@ stack options were shown with the code).
   yet (Critic and Sage): `scheduler/005-no_stack_for_coroutine.phpt`,
   `scheduler/007-no_stack_with_exception_handler.phpt`, `scheduler/016-no_stack_full_gc_buffer.phpt`,
   `scheduler/017-no_stack_in_shutdown_suspend.phpt`, `scheduler/018-no_stack_in_coroutine_suspend.phpt`.
+- 2026-10-03 The fuzz hook is TrueAsync's (`internal/fuzz.{h,c}`, a swap of the run queue's head
+  before each pop) with its variable `TRUE_ASYNC_SCHED=random:<seed>`, not the plan's
+  `TRUE_ASYNC_SEED`; only its FIFO and random modes, without the PCT placeholder, the second seed
+  variable and the verbose line. Why: P1.4; one variable drives both extensions.
+- 2026-10-03 Fault injection is three sites the test hook `fail_at()` arms (`enqueue`, `reserve`,
+  `link`), each raising the fatal error running out of memory raises; a test per unlink site U1-U6
+  picks the site and the moment. Why: with the record in the waker (S3.7) the sites of S3.md 4.4
+  are the moments a bailout meets a half-made wait, and a hook needs no `memory_limit`, so the tests
+  run under asan, where the `bailout/` tests skip.
+- 2026-10-03 A seed run fails a test only by a crash, an assertion, a sanitizer report, a leak or a
+  timeout; an output with the expected lines in another order passes, and one that differs
+  otherwise is listed. Why: S3.12's Done when; a random order changes what order-dependent tests
+  print (which coroutine reports first, whether a target finished).
+- 2026-10-03 A coroutine woken in its own tick while its `suspend()` pops the next coroutine (U2:
+  the pop finishes a coroutine cancelled before it ran, whose release starts the graceful shutdown)
+  runs on, and the popped coroutine goes back to the front of the queue. Why: it switched into the
+  popped one and stayed RUNNING with no context to come back to, and the deadlock resolution looped;
+  found by seed 37, reproduced without the hook. Test `scheduler/057`.

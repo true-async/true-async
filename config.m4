@@ -18,6 +18,13 @@ PHP_ARG_ENABLE([true-async-test-hooks],
   [no],
   [no])
 
+PHP_ARG_ENABLE([true-async-fuzz],
+  [whether to build the scheduler's fuzz hook],
+  [AS_HELP_STRING([--enable-true-async-fuzz],
+    [Let TRUE_ASYNC_SCHED=random:<seed> permute the run queue (tools/test.py --seeds)])],
+  [no],
+  [no])
+
 if test "$PHP_TRUE_ASYNC" != "no"; then
   dnl The scheduler API exists only in a core built from async-core-io; a stock php-src fails
   dnl here instead of at the first compile error.
@@ -38,6 +45,11 @@ if test "$PHP_TRUE_ASYNC" != "no"; then
   if test "$PHP_TRUE_ASYNC_TEST_HOOKS" != "no"; then
     AC_DEFINE([TRUE_ASYNC_TEST_HOOKS], [1], [Define to 1 to build the test hooks.])
     true_async_sources="$true_async_sources src/test_hooks.c"
+  fi
+
+  if test "$PHP_TRUE_ASYNC_FUZZ" != "no"; then
+    AC_DEFINE([TRUE_ASYNC_FUZZ], [1], [Define to 1 to build the scheduler's fuzz hook.])
+    true_async_sources="$true_async_sources src/internal/fuzz.c"
   fi
 
   dnl An event helper applied to a coroutine must not compile (dev/plans/S3.md, section 3);

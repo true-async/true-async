@@ -104,6 +104,60 @@ jobs:
           name: results-pocs-${{ matrix.tree }}
           path: results/
 
+  seeds:
+    # The scheduler fuzz of dev/plans/S2.md section 4: nightly or by hand, after linux, which leaves
+    # both cores in the cache. A full asan list takes minutes per seed, so it runs fewer seeds.
+    needs: linux
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - tree: dbg
+            seeds: 100
+          - tree: asan
+            seeds: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends autoconf bison re2c pkg-config cmake \
+            libxml2-dev libsqlite3-dev libcurl4-openssl-dev libssl-dev liburing-dev
+
+      - name: Restore the core
+        id: core
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/ta-prefix/pocs-${{ matrix.tree }}
+          key: core-${{ matrix.tree }}-${{ env.CORE_REF }}-${{ env.IOR_REF }}-${{ hashFiles('tools/ci/build-core.sh') }}
+
+      - name: Build the core
+        if: steps.core.outputs.cache-hit != 'true'
+        run: tools/ci/build-core.sh ${{ matrix.tree }} "$CORE_REF" "$IOR_REF"
+
+      - name: Core sources for the tests
+        run: |
+          git init -q "$RUNNER_TEMP/core-src"
+          cd "$RUNNER_TEMP/core-src"
+          git sparse-checkout set --no-cone /.github/ /ext/curl/tests/ /ext/ftp/tests/ /sapi/cli/tests/
+          git fetch -q --depth 1 --filter=blob:none https://github.com/true-async/php-src.git "$CORE_REF"
+          git checkout -q FETCH_HEAD
+
+      - name: Seeds
+        env:
+          TRUE_ASYNC_CORE_SRC: ${{ runner.temp }}/core-src
+        run: python3 tools/test.py --lane pocs-${{ matrix.tree }} --seeds ${{ matrix.seeds }}
+
+      - name: Keep the results
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: results-seeds-pocs-${{ matrix.tree }}
+          path: results/
+
   mutants-coverage:
     # Runs after linux, which leaves the debug core in the cache, even when a linux lane failed.
     needs: linux

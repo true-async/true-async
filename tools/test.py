@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the extension for a lane and run the listed tests on it (dev/plans/S2.md, section 2).
 
-    test.py --lane pocs-dbg [--stage N] [--jobs N] [TEST...]
+    test.py --lane pocs-dbg [--stage N] [--jobs N] [--seeds N] [TEST...]
 
 A lane is <core>-<tree>[-cov|-mull]; the core is installed in $TRUE_ASYNC_PREFIXES/<core>-<tree>
 (default ~/ta-prefix). TEST narrows the run to listed tests. ASAN lanes need $TRUE_ASYNC_CORE_SRC,
@@ -13,12 +13,19 @@ php_true_async.dll; run-tests.php comes from $TRUE_ASYNC_CORE_SRC.
 
 The exit code is the verdict: 0 only when every listed test has its expected status. run-tests'
 own exit code ignores SKIP and WARN and is not used.
+
+--seeds N builds the module with the fuzz hook (--enable-true-async-fuzz) into _build/<lane>-fuzz
+and runs the tests once per seed 1..N with TRUE_ASYNC_SCHED=random:<seed>. A seed fails a test only
+by a crash, an assertion, a sanitizer report, a leak or a timeout; any other change of the output
+passes, since a random order changes what order-dependent tests print. A diagnostic (a fatal error,
+a warning, a notice) the expected output lacks is listed for reading.
 """
 import argparse
 import hashlib
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -79,6 +86,7 @@ class Lane:
         # Text that also decides the build, beside the core and the flags (mull.py's config).
         self.extra_key = ''
         self.env = {}
+        self.fuzz = False
         self.build = BUILD / name
 
         if self.tree == 'win':
@@ -105,7 +113,15 @@ class Lane:
         if self.variant == 'cov':
             return COV_CONFIGURE
 
-        return [f'CFLAGS={LANE_CFLAGS[self.tree]}', f'LDFLAGS={LANE_LDFLAGS[self.tree]}']
+        args = [f'CFLAGS={LANE_CFLAGS[self.tree]}', f'LDFLAGS={LANE_LDFLAGS[self.tree]}']
+
+        return args + ['--enable-true-async-fuzz'] if self.fuzz else args
+
+    def with_fuzz(self):
+        """The lane's fuzz build, beside its own: a seed run does not rebuild the lane's module."""
+        self.fuzz = True
+        self.build = BUILD / f'{self.name}-fuzz'
+        self.module = self.build / 'modules' / 'true_async.so'
 
 
 def require_env(name, what):
@@ -242,8 +258,9 @@ def test_env():
     return {k: v for k, v in os.environ.items() if not SECRET.search(k)}
 
 
-def run_tests(lane, entries, jobs):
-    """Run the entries with the lane's core; returns the path of the saved output."""
+def run_tests(lane, entries, jobs, sched=None):
+    """Run the entries with the lane's core; returns the path of the saved output. `sched` is the
+    TRUE_ASYNC_SCHED of a seed run."""
     runner = patched_runner(lane)
 
     lane.build.mkdir(parents=True, exist_ok=True)
@@ -253,6 +270,9 @@ def run_tests(lane, entries, jobs):
            '-d', f'extension={lane.module}', '-d', 'true_async.enable=1', '-r', list_file]
     env = test_env()
 
+    if sched is not None:
+        env['TRUE_ASYNC_SCHED'] = sched
+
     if lane.tree == 'asan':
         cmd[2:2] = ['--asan', '-x']
         env.update(ASAN_ENV)
@@ -260,7 +280,7 @@ def run_tests(lane, entries, jobs):
 
     # Two runs within one second get -2, -3, ... rather than a crash.
     stamp = time.strftime('%Y%m%d-%H%M%S')
-    out_dir = RESULTS / lane.name / stamp
+    out_dir = RESULTS / lane.build.name / stamp
     suffix = 1
 
     while True:
@@ -269,14 +289,26 @@ def run_tests(lane, entries, jobs):
             break
         except FileExistsError:
             suffix += 1
-            out_dir = RESULTS / lane.name / f'{stamp}-{suffix}'
+            out_dir = RESULTS / lane.build.name / f'{stamp}-{suffix}'
     output = out_dir / 'run.out'
 
-    with output.open('w') as out:
-        subprocess.run(cmd, cwd=ROOT, stdout=out, stderr=subprocess.STDOUT, env=env)
+    # An interrupted run leaves its artifacts in tests/ too, where no list names them.
+    try:
+        with output.open('w') as out:
+            runner_process = subprocess.Popen(cmd, cwd=ROOT, stdout=out, stderr=subprocess.STDOUT, env=env,
+                                              start_new_session=True)
 
-    shutil.rmtree(runner.parent)
-    keep_artifacts(entries, out_dir)
+            # run-tests' own timeout waits for silence: a test that loops printing never ends. Its
+            # tests are MISSING from the output and the seed fails.
+            try:
+                runner_process.wait(timeout=SEED_RUN_TIMEOUT if sched is not None else None)
+            except subprocess.TimeoutExpired:
+                os.killpg(runner_process.pid, signal.SIGKILL)
+                runner_process.wait()
+                out.write(f'\ntest.py: the run did not end in {SEED_RUN_TIMEOUT} s and was killed\n')
+    finally:
+        shutil.rmtree(runner.parent)
+        keep_artifacts(entries, out_dir)
 
     return output
 
@@ -351,6 +383,73 @@ def verdict(lane, entries, left_out, output):
     return wrong
 
 
+# Seconds a seed run may take (a whole list on asan takes about 2 minutes here).
+SEED_RUN_TIMEOUT = 1800
+
+# What fails a test under a seed: a crash, a debug assertion, a sanitizer report, a leak of the debug
+# allocator, a hang.
+SEED_FAILURE = re.compile(r'Termsig=|AddressSanitizer|LeakSanitizer|runtime error:|Assertion `|'
+                          r'memory leaks detected|process timed out')
+
+# A diagnostic line of the output: its kind and message, without the location.
+DIAGNOSTIC = re.compile(r'^((?:Fatal error|Warning|Notice|Deprecated): .*?)(?: in \S+(?: on line |:)\d+)?$', re.M)
+
+
+def seed_verdict(entries, output, seed, findings):
+    """Print each test the seed failed; adds to `findings` the tests whose output has a diagnostic
+    the expected output lacks (an order change alone adds nothing). Returns the number it failed and
+    the number of other failed tests, whose output only changed."""
+    statuses = {name.replace('\\', '/'): status for name, status in results.parse(output).items()}
+    failed = 0
+    changed = 0
+
+    for entry in entries:
+        status = statuses.get(f'tests/{entry.path}', 'MISSING')
+
+        if status in ('PASS', 'SKIP') or (status == 'XFAIL' and lists.has_xfail(TESTS / entry.path)):
+            continue
+
+        out = output.parent / Path(entry.path).with_suffix('.out')
+        exp = output.parent / Path(entry.path).with_suffix('.exp')
+        actual = out.read_text(errors='replace') if out.is_file() else ''
+
+        if status != 'FAIL' or SEED_FAILURE.search(actual) or not exp.is_file():
+            failed += 1
+            print(f'seed {seed}: {status} tests/{entry.path}')
+            continue
+
+        expected = exp.read_text(errors='replace')
+        new_diagnostics = [line for line in DIAGNOSTIC.findall(actual) if line not in expected]
+
+        if new_diagnostics:
+            findings.setdefault(entry.path, (seed, new_diagnostics[0]))
+        else:
+            changed += 1
+
+    return failed, changed
+
+
+def run_seeds(lane, entries, jobs, seeds):
+    """Run the entries once per seed; returns the number of seeds that failed a test."""
+    failed_seeds = 0
+    changed = 0
+    findings = {}
+
+    for seed in range(1, seeds + 1):
+        output = run_tests(lane, entries, jobs, f'random:{seed}')
+        seed_failed, seed_changed = seed_verdict(entries, output, seed, findings)
+        failed_seeds += 1 if seed_failed else 0
+        changed += seed_changed
+
+    for path, (seed, diagnostic) in sorted(findings.items()):
+        print(f'new diagnostic, first in seed {seed}: tests/{path}: {diagnostic}')
+
+    print(f'{lane.name}: {seeds} seeds over {len(entries)} tests, {failed_seeds} failed; {len(findings)} tests with a '
+          f'new diagnostic, {changed} other changed outputs; output {RESULTS / lane.build.name}')
+
+    return failed_seeds
+
+
 def skip_allowed(lane, entry):
     return any(fnmatchcase(lane.name, pattern) for pattern, _ in entry.skip_on)
 
@@ -360,6 +459,7 @@ def main():
     parser.add_argument('--lane', required=True)
     parser.add_argument('--stage', type=int, help='last stage list to take (default: all)')
     parser.add_argument('--jobs', type=int, default=os.cpu_count())
+    parser.add_argument('--seeds', type=int, help='run the tests once per seed 1..N with the fuzz hook')
     parser.add_argument('tests', nargs='*')
     args = parser.parse_args()
 
@@ -369,6 +469,15 @@ def main():
         sys.exit(f'{lane.name}: run it with tools/mull.py')
 
     entries, left_out = compose(lane, args.stage, args.tests)
+
+    if args.seeds is not None:
+        if lane.variant or lane.tree == 'win':
+            sys.exit(f'{lane.name}: seeds run on a plain dbg or asan lane')
+
+        lane.with_fuzz()
+        build(lane)
+
+        return 1 if run_seeds(lane, entries, args.jobs, args.seeds) else 0
 
     if lane.tree != 'win':
         build(lane)

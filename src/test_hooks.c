@@ -18,7 +18,8 @@
  * TrueAsync\Test\callbacks_scenario(string $name): string runs one scenario on the callbacks
  * vector and returns the names of the callbacks in the order they ran;
  * TrueAsync\Test\buffer_scenario(string $name): string runs one on the circular buffer and returns
- * what it popped and the sizes it saw. */
+ * what it popped and the sizes it saw;
+ * TrueAsync\Test\fail_at(string $site): void arms a fault site of the scheduler. */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -777,6 +778,45 @@ static ZEND_FUNCTION(enqueue_with_error)
 	RETURN_BOOL(ZEND_ASYNC_ENQUEUE_WITH_ERROR(&async_coroutine_from_object(coroutine)->coroutine, error, false));
 }
 
+/* Indexed by async_test_fault_site_t. */
+static const char *const fault_site_names[] = { NULL, "enqueue", "reserve", "link" };
+
+void async_test_fault_hit(const async_test_fault_site_t site)
+{
+	if (EXPECTED(ASYNC_G(fault_site) != site)) {
+		return;
+	}
+
+	ASYNC_G(fault_site) = ASYNC_TEST_FAULT_NONE;
+	zend_error_noreturn(E_ERROR, "Fault injected at %s", fault_site_names[site]);
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_fail_at, 0, 1, IS_VOID, 0)
+	ZEND_ARG_TYPE_INFO(0, site, IS_STRING, 0)
+ZEND_END_ARG_INFO()
+
+/* The next pass through `site` ends the request with "Fault injected at <site>", a fatal error as
+ * running out of memory raises; one site is armed at a time. */
+static ZEND_FUNCTION(fail_at)
+{
+	zend_string *site_name;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_STR(site_name)
+	ZEND_PARSE_PARAMETERS_END();
+
+	const uint8_t site_count = sizeof(fault_site_names) / sizeof(fault_site_names[0]);
+
+	for (uint8_t site = ASYNC_TEST_FAULT_ENQUEUE; site < site_count; site++) {
+		if (zend_string_equals_cstr(site_name, fault_site_names[site], strlen(fault_site_names[site]))) {
+			ASYNC_G(fault_site) = site;
+			return;
+		}
+	}
+
+	zend_argument_value_error(1, "must be \"enqueue\", \"reserve\" or \"link\"");
+}
+
 /* clang-format off */
 const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\callbacks_scenario", ZEND_FN(callbacks_scenario), arginfo_callbacks_scenario, 0, NULL, NULL)
@@ -784,6 +824,7 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\defer", ZEND_FN(defer), arginfo_defer, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_throwing_finish_handler", ZEND_FN(add_throwing_finish_handler), arginfo_add_throwing_finish_handler, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\enqueue_with_error", ZEND_FN(enqueue_with_error), arginfo_enqueue_with_error, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\fail_at", ZEND_FN(fail_at), arginfo_fail_at, 0, NULL, NULL)
 	ZEND_FE_END
 };
 /* clang-format on */

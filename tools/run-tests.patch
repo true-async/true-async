@@ -39,13 +39,17 @@
      }
      if ($stat["exitcode"] > 128 && $stat["exitcode"] < 160) {
          $data .= "\nTermsig=" . ($stat["exitcode"] - 128) . "\n";
-@@ -2885,7 +2901,17 @@
+@@ -2885,7 +2901,21 @@
  
          $wanted_re = null;
      }
-+    /* true_async runner: a test the timeout killed never passes, even when a trailing %A takes
-+     * whatever output it left; such a pass would also lift the XFAIL of a step still to come. */
-+    if ($passed && str_contains($output, '** ERROR: process timed out **')) {
++    /* true_async runner: a test the timeout or a signal killed, or with a sanitizer or leak report,
++     * never passes, even when a trailing %A takes whatever output it left; such a pass would also
++     * lift the XFAIL of a step still to come. */
++    if ($passed && (str_contains($output, '** ERROR: process timed out **')
++            || preg_match('/^Termsig=\d+$/m', $output) || str_contains($output, 'ERROR: AddressSanitizer')
++            || str_contains($output, 'ERROR: LeakSanitizer') || str_contains($output, 'runtime error:')
++            || str_contains($output, 'memory leaks detected ==='))) {
 +        $passed = false;
 +    }
 +

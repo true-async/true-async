@@ -23,6 +23,9 @@ extern zend_module_entry true_async_module_entry;
 
 #include "src/true_async_API.h"
 #include "src/internal/circular_buffer.h"
+#ifdef TRUE_ASYNC_FUZZ
+#include "src/internal/fuzz.h"
+#endif
 #include "Zend/zend_smart_str_public.h"
 
 ZEND_BEGIN_MODULE_GLOBALS(true_async)
@@ -36,6 +39,10 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	bool debug_deadlock;                    /* true_async.debug_deadlock: the deadlock report lists every coroutine */
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	smart_str *test_trace; /* where a test hook's C callback writes; NULL outside a scenario */
+	uint8_t fault_site;    /* the armed async_test_fault_site_t; ASYNC_TEST_FAULT_NONE when unarmed */
+#endif
+#ifdef TRUE_ASYNC_FUZZ
+	async_fuzz_state_t fuzz; /* TRUE_ASYNC_SCHED of this request */
 #endif
 ZEND_END_MODULE_GLOBALS(true_async)
 

@@ -131,6 +131,11 @@ static PHP_RINIT_FUNCTION(true_async)
 		async_scheduler_request_startup();
 	}
 
+#ifdef TRUE_ASYNC_TEST_HOOKS
+	/* A fault armed and never reached stays with the request that armed it. */
+	ASYNC_G(fault_site) = ASYNC_TEST_FAULT_NONE;
+#endif
+
 	return SUCCESS;
 }
 

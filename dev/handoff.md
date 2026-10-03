@@ -3,7 +3,7 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-03. Active step: **S3.12** (not started); S3.11 (measurements) closed. S3.15-S3.18 (health check) run after S3.14 (Edmond).
+Written 2026-10-03. Active step: **S3.13** (not started); S3.12 (fault injection and fuzz) closed. S3.15-S3.18 (health check) run after S3.14 (Edmond).
 
 ## State
 
@@ -38,6 +38,12 @@ Written 2026-10-03. Active step: **S3.12** (not started); S3.11 (measurements) c
   (cachegrind; the container has no hardware counters) and `--wall`. The reference builds only into
   the fork core's tree (`ext/async` lacks `ZEND_TSRMLS_CACHE_DEFINE`); our in-tree build needs the
   configure header check removed.
+- S3.12: `TrueAsync\Test\fail_at('enqueue'|'reserve'|'link')` arms a fault site (a fatal error, as out
+  of memory); `internal/027`-`033` take the unlink sites U1-U6. The fuzz hook is TrueAsync's
+  (`--enable-true-async-fuzz`, `TRUE_ASYNC_SCHED=random:<seed>`); `tools/test.py --lane L --seeds N`
+  builds into `_build/<lane>-fuzz`, fails a seed on a crash, an assertion, a sanitizer or leak report,
+  a timeout or a missing test, and lists the tests whose output gained a diagnostic. A suspender
+  woken in its own tick by its pop runs on (`scheduler/057`, found by seed 37).
 - Reviews: after the code, Critic and the Sage (`general-purpose`, model `fable`) compare it with
   TrueAsync (`/root/php-async` in the container) and hunt inventions; one plan step is one commit.
 - Container notes: the ASAN lane needs `TRUE_ASYNC_CORE_SRC=/root/core-asan`; `gen_stub.php`
@@ -90,6 +96,15 @@ Written 2026-10-03. Active step: **S3.12** (not started); S3.11 (measurements) c
   core declares the modules' TLS cache without a model; an initial-exec model for the module, as the
   core uses for itself, is a lever not tried (Edmond's call).
 
+- S3.13 (Mull): U4's unlink before `zend_bailout()` in `scheduler_suspend` will survive mutation: the
+  finalize on the same unwinding unlinks too (Sage); explain it there. The tests 027 and 030 cannot
+  tell the two apart.
+- The nightly `seeds` CI job (dbg 100, asan 20 seeds) was added without a run; its first nightly or
+  dispatch run is its check.
+- Seeds 1-100 on dbg list 16 tests whose output gains a diagnostic under some order (their
+  expectations assume FIFO); two were read, `scheduler/034` (the lost coroutine, fixed) and
+  `scheduler/037` (an order artifact); the others are not read.
+
 ## Next
 
-1. S3.12.
+1. S3.13.

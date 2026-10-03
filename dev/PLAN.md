@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-03 · Active: S3.12
+Updated: 2026-10-03 · Active: S3.13
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -347,11 +347,22 @@ section 14); a step that finds a test needs more moves it on with a note.
         test `scheduler/056`, the no-stack tests moved to a size mmap refuses; the pool buffer no
         longer allocated per request. Sage: pool 1024 and O6 kept. dbg 251 PASS; asan 237 PASS,
         14 SKIP, also with `detect_stack_use_after_return=1`.
-- [ ] S3.12 Fault injection and fuzz: hooks for U1-U6 (layer 3); the fuzz hook
-      (`--enable-true-async-fuzz`, `TRUE_ASYNC_SEED`) and `test.py --seeds N`.
+- [x] S3.12 Fault injection and fuzz: hooks for U1-U6 (layer 3); the fuzz hook
+      (`--enable-true-async-fuzz`, `TRUE_ASYNC_SCHED=random:<seed>`, TrueAsync's) and `test.py --seeds N`.
       done: one passing test per site U1-U6; 100 seeds over the S3 list on dbg and asan with no
         crash, assertion, sanitizer report or leak (output order differences do not count)
       tier: T2 · role: —
+      handoff: done 2026-10-03 on core `82df2fc6ccc`: dbg 259 PASS; asan 245 PASS, 14 SKIP; seeds
+        1-100 over all lists: dbg 0 failed, asan 0 failed. Fault sites `enqueue`, `reserve`, `link`
+        armed by `TrueAsync\Test\fail_at()` (a fatal error, as out of memory); tests `internal/027`-`033`,
+        where each record is unlinked checked under gdb (S3.md section 9). The fuzz hook is TrueAsync's
+        swap before the pop. Seed 37 found a lost coroutine: a suspender woken in its own tick by its
+        pop (an unrun coroutine's release starts the shutdown) switched away RUNNING and the deadlock
+        resolution looped; fixed, `scheduler/057`. run-tests.patch now fails a crash, sanitizer or leak
+        report a trailing `%A` used to take (known answer checked). Critic: U2's test never reached its
+        site (fixed), crashes passing under `%A`, stray artifacts, no wall timeout; Sage: kept the fix
+        and the hook as a plain call, dropped the order matcher for a new-diagnostic list, added the
+        nightly `seeds` CI job (dbg 100, asan 20; not run yet).
 - [ ] S3.13 Stage review: Critic on the stage diff; coverage of every wait-model line except the
       out-of-memory branches listed in S3.md section 14; Mull on the stage diff, survivors killed
       or explained (D34); Code Reviewer.

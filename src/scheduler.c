@@ -48,6 +48,7 @@
 #include "exceptions.h"
 #include "Zend/zend_smart_str.h"
 #include "internal/circular_buffer.h"
+#include "test_hooks.h"
 
 /* Contexts the pool keeps however short the run queue is: TrueAsync's policy (D23) with 1024 for its
  * 4. A chain of awaits up to that deep, or that many waiters woken together, then take no new stack:
@@ -257,7 +258,19 @@ static async_coroutine_t *run_queue_pop(void)
 {
 	async_coroutine_t *coroutine = NULL;
 
-	while (EXPECTED(circular_buffer_pop_ptr(&ASYNC_G(run_queue), (void **) &coroutine) == SUCCESS)) {
+	for (;;) {
+#ifdef TRUE_ASYNC_FUZZ
+		/* TrueAsync's next_coroutine (scheduler.c:442-452): another queued coroutine may go first. */
+		const size_t queued = circular_buffer_count(&ASYNC_G(run_queue));
+		const uint32_t position = async_fuzz_scheduler_pick(&ASYNC_G(fuzz), (uint32_t) queued);
+
+		circular_buffer_swap_ptr_at(&ASYNC_G(run_queue), 0, position);
+#endif
+
+		if (UNEXPECTED(circular_buffer_pop_ptr(&ASYNC_G(run_queue), (void **) &coroutine) == FAILURE)) {
+			return NULL;
+		}
+
 		const uint32_t flags = coroutine->coroutine.flags;
 
 		if (EXPECTED(!(flags & ZEND_COROUTINE_F_CANCELLED) || (flags & ZEND_COROUTINE_F_STARTED))) {
@@ -266,8 +279,6 @@ static async_coroutine_t *run_queue_pop(void)
 
 		coroutine_finish_unrun(coroutine);
 	}
-
-	return NULL;
 }
 
 /* The coroutine runs from here on: the current-coroutine slot is how its context learns whom it
@@ -1022,6 +1033,8 @@ bool async_scheduler_enqueue(zend_coroutine_t *zend_coroutine, zend_object *erro
 		waker_apply_error(coroutine, error, false);
 	}
 
+	ASYNC_TEST_FAULT(ASYNC_TEST_FAULT_ENQUEUE);
+
 	/* The current coroutine woken inside its own tick (U2): it is SUSPENDED or QUEUED there, and a
 	 * push by the status would switch into the running context later. */
 	if (UNEXPECTED(zend_coroutine == ZEND_ASYNC_CURRENT_COROUTINE && ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) {
@@ -1242,6 +1255,17 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 	while (!ZEND_COROUTINE_IS_RUNNING(zend_coroutine)) {
 		async_coroutine_t *next_coroutine = run_queue_pop();
 
+		/* The pop finishes the coroutines cancelled before they ran, and what their release throws may
+		 * start the graceful shutdown, which wakes this coroutine in its own tick (U2): it runs on, and
+		 * the popped one keeps its turn. */
+		if (UNEXPECTED(ZEND_COROUTINE_IS_RUNNING(zend_coroutine))) {
+			if (next_coroutine != NULL) {
+				circular_buffer_push_front(&ASYNC_G(run_queue), &next_coroutine, true);
+			}
+
+			break;
+		}
+
 		/* Nothing queued: the scheduler coroutine waits for what comes next (TrueAsync's
 		 * scheduler_next_tick, scheduler.c:1610-1613). */
 		if (next_coroutine == NULL) {
@@ -1253,7 +1277,7 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 			continue;
 		}
 
-		/* A yield with nobody ahead (B3). */
+		/* A yield with nobody ahead (B3), or one the fuzz hook picked first. */
 		if (next_coroutine == coroutine) {
 			ZEND_COROUTINE_SET_STATUS(zend_coroutine, ZEND_COROUTINE_STATUS_RUNNING);
 			break;
@@ -1419,6 +1443,7 @@ bool async_await_coroutine(async_coroutine_t *target)
 	 * gets it: one cancelled before the target finishes never sees it, and the target's exception
 	 * then still ends the request. */
 	while (!ZEND_COROUTINE_IS_FINISHED(&target->coroutine)) {
+		ASYNC_TEST_FAULT(ASYNC_TEST_FAULT_RESERVE);
 		async_callbacks_reserve(&target->callbacks, 1);
 
 		record->event_callback.flags = ASYNC_CALLBACK_F_RECORD;
@@ -1427,6 +1452,7 @@ bool async_await_coroutine(async_coroutine_t *target)
 		record->coroutine = waiter;
 		record->event = (async_awaitable_t *) target;
 		async_callbacks_push_reserved(&target->callbacks, &record->event_callback);
+		ASYNC_TEST_FAULT(ASYNC_TEST_FAULT_LINK);
 
 		if (UNEXPECTED(!ZEND_ASYNC_SUSPEND())) {
 			return false;
@@ -1613,6 +1639,10 @@ void async_scheduler_request_startup(void)
 	zend_hash_init(&ASYNC_G(coroutines), 8, NULL, NULL, false);
 	ASYNC_G(scheduler_coroutine) = NULL;
 	ASYNC_G(graceful_shutdown) = false;
+
+#ifdef TRUE_ASYNC_FUZZ
+	async_fuzz_init(&ASYNC_G(fuzz));
+#endif
 
 	/* The core turns async off at every request end (main.c). */
 	ZEND_ASYNC_INITIALIZE;
