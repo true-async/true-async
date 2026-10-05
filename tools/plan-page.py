@@ -3,7 +3,7 @@
 
     plan-page.py [--out FILE] [--ref REV]
 
-The page shows the overall progress, every stage with its steps and status, the active stage in
+The page shows the overall progress, every stage with its steps and status, each active stage in
 detail (with the count of list tests each step still owes, read from their --XFAIL-- sections), the
 fog and the latest commits of REV (HEAD by default). It writes to FILE, or to stdout without --out.
 The artifact wraps the page in its own document skeleton, so the output has no <html> or <body>.
@@ -46,7 +46,7 @@ STEP_HEAD = re.compile(r'^- \[(.)\] (S\d+\.\d+) (.*)$')
 # Fields inside a step: `done:`, `tier:`, `handoff:`, `Notes:`, or a dated record such as
 # "Critic 2026-10-01:" and "Core update 2026-10-02:".
 STEP_FIELD = re.compile(r'^(done|tier|handoff|Notes|[A-Z][a-z]+(?: [a-z]+)? \d{4}-\d{2}-\d{2}):\s*(.*)$')
-STAGE_FIELD = re.compile(r'^(Goal|Done when|Tier|Trees|Test ownership|Notes|Base):\s*(.*)$')
+STAGE_FIELD = re.compile(r'^(Goal|Done when|Tier|Trees|Test ownership|Notes|Base|Active):\s*(.*)$')
 XFAIL_STEP = re.compile(rb'^--XFAIL--\r?\n[^\n]*?(S\d+\.\d+)', re.M)
 
 STATUS_LABEL = {'done': 'готово', 'active': 'в работе', 'todo': 'впереди', 'deferred': 'отложено'}
@@ -102,8 +102,7 @@ def parse_steps(body):
 def parse_plan(plan):
     """Plan header facts and the stages with their steps and statuses."""
     updated = re.search(r'^Updated:\s*(\S+)', plan, re.M)
-    active = re.search(r'Active:\s*(S\d+\.\d+)', plan)
-    active_step = active.group(1) if active else None
+    active_steps = [item for item in roadmap.active_ids(plan) if '.' in item]
     progress = {number: value for number, _, value in roadmap.stages(plan)}
     heads = list(STAGE_HEAD.finditer(plan))
     stages = []
@@ -119,7 +118,7 @@ def parse_plan(plan):
         for step in steps:
             if step['mark'] == 'x':
                 step['status'] = 'done'
-            elif step['id'] == active_step:
+            elif step['id'] in active_steps:
                 step['status'] = 'active'
             elif 'Deferred' in step['summary']:
                 step['status'] = 'deferred'
@@ -130,7 +129,7 @@ def parse_plan(plan):
 
         if mark.startswith(('x', 'done')):
             status = 'done'
-        elif active_step and active_step.startswith(number + '.'):
+        elif any(step_id.startswith(number + '.') for step_id in active_steps):
             status = 'active'
         else:
             status = 'todo'
@@ -147,7 +146,7 @@ def parse_plan(plan):
 
     return {
         'updated': updated.group(1) if updated else '?',
-        'active': active_step,
+        'active': active_steps,
         'stages': stages,
         'fog': [' '.join(item[2:].split()) for item in fog_items if item.startswith('- ')],
     }
@@ -278,39 +277,41 @@ def render_stage(stage, owed):
             f'<div class="stage-body">{"".join(parts)}</div></details>')
 
 
-def render(data, owed_total, owed, commits, generated):
+def render(data, owed_by_stage, commits, generated):
     stages = data['stages']
     total = round(sum(stage['progress'] for stage in stages) / len(stages) * 100)
-    active_stage = next((stage for stage in stages if stage['status'] == 'active'), None)
-    active_step = None
-
-    if active_stage:
-        active_step = next((step for step in active_stage['steps'] if step['id'] == data['active']), None)
-
-    waiting = sum(owed.values())
-    stage_done = sum(1 for step in active_stage['steps'] if step['status'] == 'done') if active_stage else 0
+    active_stages = [stage for stage in stages if stage['status'] == 'active']
+    owed = {step: count for _, stage_owed in owed_by_stage.values() for step, count in stage_owed.items()}
 
     summary = [
         f'<div class="stat"><span class="stat-value">{total} %</span>'
         f'<span class="stat-label">весь план, среднее по {len(stages)} этапам</span></div>',
     ]
-
-    if active_stage:
-        summary.append(
-            f'<div class="stat"><span class="stat-value">{stage_done} / {len(active_stage["steps"])}</span>'
-            f'<span class="stat-label">шагов {active_stage["number"]} закрыто</span></div>')
-
-    if owed_total:
-        summary.append(
-            f'<div class="stat"><span class="stat-value">{owed_total - waiting} / {owed_total}</span>'
-            f'<span class="stat-label">тестов списка {active_stage["number"]} без XFAIL, CI требует PASS</span></div>')
-
     now = ''
 
-    if active_step:
-        now = (f'<section class="now" aria-labelledby="now-h"><div class="eyebrow" id="now-h">Сейчас в работе</div>'
-               f'<h2>{active_step["id"]} · {inline(active_stage["title"])}</h2>'
-               f'<p>{inline(active_step["summary"])}</p>')
+    for active_stage in active_stages:
+        number = active_stage['number']
+        stage_done = sum(1 for step in active_stage['steps'] if step['status'] == 'done')
+        owed_total, stage_owed = owed_by_stage.get(number, (0, {}))
+        summary.append(
+            f'<div class="stat"><span class="stat-value">{stage_done} / {len(active_stage["steps"])}</span>'
+            f'<span class="stat-label">шагов {number} закрыто</span></div>')
+
+        if owed_total:
+            passing = owed_total - sum(stage_owed.values())
+            summary.append(
+                f'<div class="stat"><span class="stat-value">{passing} / {owed_total}</span>'
+                f'<span class="stat-label">тестов списка {number} без XFAIL, CI требует PASS</span></div>')
+
+        active_step = next((step for step in active_stage['steps'] if step['id'] in data['active']), None)
+
+        if active_step is None:
+            continue
+
+        now += (f'<section class="now" aria-labelledby="now-{number.lower()}"><div class="eyebrow" '
+                f'id="now-{number.lower()}">Сейчас в работе</div>'
+                f'<h2>{active_step["id"]} · {inline(active_stage["title"])}</h2>'
+                f'<p>{inline(active_step["summary"])}</p>')
         done_when = dict(active_step['fields']).get('done')
 
         if done_when:
@@ -493,10 +494,10 @@ def main():
     args = parser.parse_args()
 
     data = parse_plan(PLAN.read_text())
-    active = next((stage['number'] for stage in data['stages'] if stage['status'] == 'active'), None)
-    owed_total, owed = owed_tests(active) if active else (0, {})
+    owed_by_stage = {stage['number']: owed_tests(stage['number'])
+                     for stage in data['stages'] if stage['status'] == 'active'}
     generated = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
-    page = render(data, owed_total, owed, recent_commits(args.ref), generated)
+    page = render(data, owed_by_stage, recent_commits(args.ref), generated)
 
     if args.out:
         args.out.write_text(page)

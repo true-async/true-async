@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-05 · Active: none; every S3 step is closed, the next stage waits for Edmond
+Updated: 2026-10-05 · Active: per stage, under its `Tier:` line (Parallel tracks)
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -49,6 +49,60 @@ Waiting for Edmond's call; nothing here is being worked on.
   nested slot call, the fiber's stack limit or a bailout breaks one of the stacks. If Java
   embeddings need such callbacks, the slot's contract in the core changes; Edmond's call.
 
+## Parallel tracks
+
+Stages run as parallel threads where neither waits for the other's code (decided 2026-10-05, under
+Edmond's coordinator mandate of the same day). Now: S4, S5 and S6.1. A gate names a result on
+`main`, never a step number, since a design note may re-split its stage. No track waits for another
+track's test runs: each tests against the same pinned core, in its own container.
+
+| Stage | Starts | Because |
+|---|---|---|
+| S4 | now; its design note closes once S5's note has stated its needs | S4's design note covers the wait-record layer for both (D25, `DECISIONS.md` 2026-10-02: events are S4's) |
+| S5 | S5.1 now; S5.2 once the wait-record layer is on `main`; `timeout()` once `delay()` is; closes after S4 | Futures and `await_*` need no reactor: 87 of the 97 `component:S5` lines of `tests/lists/S3.excluded` call neither `delay()` nor `timeout()` (counted 2026-10-05 in the reference at `REFERENCE`); `await_*` over a Traversable needs typed kinds; Done when includes S4's list |
+| S6 | S6.1 now; S6.2 once S4's design note is pushed; S6.3 once `delay()` and `await_*` are on `main`; closes after S5 | the fixtures need no extension code; S4's note designs completion dispatch for provider ops too; the `io`, `exec`, `socket_ext` tests call `await_all` |
+| S7 | once the S5 and S6 design notes are pushed | its roots are provider ops, timers, signals and wakeups, its edges Futures and channels |
+| S8 | after S6 | measured on a real provider |
+| S9 | after S5, each layer once Edmond agrees its plan | Scope's `awaitCompletion`, task groups and channels wait on Futures, cancellations and timeouts; Context hangs off Scope |
+| S10 | after S6 | each outcome is a core or RFC change; the pool needs S9, the `zend_sigaction` hook S6, the thread pool the Fog's ZTS line |
+
+While tracks run in parallel:
+
+- A track edits only its own stage section of this file, its `Active:` line included; on the
+  header's `Updated:` date the later one wins. Before a push the unpushed step commit is rebased
+  on `origin/main` (`git pull --rebase`, WORKFLOW "Branches"). A conflict in this file, `config.m4`,
+  `config.w32`, `CHANGELOG.md`, `dev/DECISIONS.md` or `dev/handoff.md` keeps both sides; the README
+  roadmap is regenerated with `tools/roadmap.py` and `*_arginfo.h` from its stub, never merged by
+  hand. A rebase that changed code, not only these files, runs the lanes again before the push.
+- `dev/handoff.md`: a track adds its own section (`## S4`, `## S5`, `## S6`) in its first commit and
+  replaces only that one. The shared sections stay S3's until the thread that closes S3 condenses
+  them.
+- New sources: their own `true_async_sources="$true_async_sources ..."` line in `config.m4` and
+  their own `ADD_SOURCES` line in `config.w32`, so two tracks never edit one line.
+- The wait-record layer has one owner, S4: the record struct, `async_wait_kind_t`, `F_COUNTED` and
+  `F_TYPED`, unlink and abort, the counted accounting, the storage of a wait of several records
+  and the event header (`dev/plans/S3.md` 3.3-3.7, section 4). S5's design note writes down what
+  S5 needs from it; S5 defines its own kinds (FUTURE, AWAIT_ITER, the cancellation record) and
+  their functions in its own files, and asks for changes to the layer through the coordinator
+  instead of editing it. The scheduler loop's "nothing runnable" branch (`src/scheduler.c`) is
+  S4's too; S5 puts no drain of its own there.
+- One core update at a time, announced to the coordinator before it starts. It branches from the
+  core `CORE_REF` names on `main` at that moment and takes the next free
+  `async-core-io-<date>-<n>`; if `CORE_REF` moved before its push, the newer branch is merged in and
+  the suites rediffed. The bridge `ext-scheduler-hook` builds and passes on every new core. The
+  `rfc` tree (`dev/plans/S2.md` section 5) is S4's: the owned `NotifyHandle` request is its first
+  RFC change.
+- A ported test goes to the list of the stage its `S3.excluded` line names and leaves that file in
+  the same commit; a test listed twice fails `check-lists.py`. A test that needs both tracks names
+  in its `--XFAIL--` the step of its own stage that needs the other track's result; whichever push
+  makes it pass removes the section, in either track's file. A new test in a shared group
+  (`internal/`, `scheduler/`) takes its number at the push and is renumbered if a rebase took it.
+- Long runs inside a step: one clone's lanes run one after another (two `test.py` runs share
+  `tests/`, handoff S3.16), and each already takes every core (`--jobs` and `make -j` default to
+  the CPU count). The Critic and the Sage read the local commit while the lanes run, not after;
+  a fix amended from their findings reruns the lanes it touches before the push. 100-seed fuzz
+  runs only in a stage review. Timer tests wait on the clock, not the CPU: S4.4
+  times a lane with `--jobs` above the core count (assumption until then, not measured).
 
 ## S1 — Core branch `async-core-io`  [x] (S1.5 deferred)
 
@@ -194,25 +248,72 @@ Goal: the scheduler's idle wait and timers on one per-thread `php_io_queue` (the
 with ior, the Poll queue otherwise), coded only against `php_io_queue_ops`; the S6 provider
 submits to the same queue, so completion dispatch is designed here once for both.
 Done when: S3 + S4 lists pass; `delay(1000)` costs under 50 ms of user CPU; a test-only C
-function wakes the loop from another pthread through `NotifyHandle`.
-Tier: T2. Roles: Critic on S4.1, Critic after S4.2.
+function wakes the loop from another pthread (through the own eventfd/pipe until the core has an
+owned `NotifyHandle`).
+Tier: T2. Roles: Critic on S4.1, Critic after S4.2 and after S4.3.
+Active: S4.1
 
-- [ ] S4.1 Design note: completion dispatch for scheduler-owned ops and provider ops; idle wait
-      in `queue->wait()` with its `EDEADLK` and `EINTR` answers; deadlock decided from the
-      scheduler's own count of parked user waits (a wakeup op is always pending, review M5);
-      `delay`/`timeout` as Timer ops; the Windows path (IOCP Ring for pipes, console, processes); cross-thread wakeup on an own eventfd/pipe (no C API for an
-      owned `NotifyHandle`; an RFC change request); the queue rebuilt lazily after fork by pid;
-      frozen list and core-dependency table.
-- [ ] S4.2 Implementation; `Async\delay`.
+- [ ] S4.1 Design note `dev/plans/S4.md`: completion dispatch for scheduler-owned ops and provider
+      ops; idle wait in `queue->wait()` with its `EDEADLK` and `EINTR` answers; deadlock decided
+      from the scheduler's own count of parked user waits (a wakeup op is always pending, review
+      M5); `delay`/`timeout` as Timer ops; the wait-record layer for S4 and S5 (Parallel tracks),
+      D25 decided (kinds or event methods); the Windows path (IOCP Ring for pipes, console,
+      processes); cross-thread wakeup on an own eventfd/pipe (no C API for an owned `NotifyHandle`;
+      an RFC change request); the queue rebuilt lazily after fork by pid; frozen list
+      `tests/lists/S4.txt` and core-dependency table. It may re-split S4.3-S4.5.
+      done: the note and the list pushed; S5.1's needs answered in it; every Critic finding fixed
+        or answered in the note
+- [ ] S4.2 The wait-record layer and the event header as S4.1 designs them, no reactor yet.
+      done: the S3 list passes unchanged on `pocs-dbg`, `pocs-asan` and `pocs-win`; internal tests
+        link and unlink a wait of several records, and a counted record's count is back to 0
+        after a wake, a cancel and a bailout
+- [ ] S4.3 The per-thread queue and the idle wait: the scheduler parks in `queue->wait()` when
+      nothing is runnable and counted waits are parked, deadlock from its own count, the queue
+      rebuilt after fork.
+      done: the S3 list passes unchanged on the three lanes; a test parks the scheduler in the
+        queue and is woken by a pending op
+- [ ] S4.4 Timer ops: `Async\delay()` and the TIMER kind.
+      done: the `component:S4` tests of `S3.excluded` listed in S4.txt and passing on debug and
+        ASAN; `delay(1000)` measured under 50 ms of user CPU and a lane with `--jobs` above the
+        core count timed, both in `dev/BENCHMARKS.md`
+- [ ] S4.5 Cross-thread wakeup on the own eventfd/pipe; the `NotifyHandle` request filed by
+      `RFC-CHANGES.md`.
+      done: a test-only C function wakes the parked loop from another pthread, on debug and ASAN
+- [ ] S4.6 Stage review: Critic after S4.2-S4.5, coverage of the reactor code, Mull on the stage
+      diff, fuzz over 100 seeds.
+      done: Done when of S4 holds on the day; survivors killed or explained
+- [ ] S4.7 Security pass by `dev/SECURITY.md`.
+      done: a journal entry per checklist item; findings fixed with a test or recorded
 
 ## S5 — Futures, timeouts and combinators  [ ]
 
 Goal: the API the ported tests use everywhere.
 Done when: S3–S5 lists pass, including the `await` group's combinator tests.
 Tier: T2. Roles: Critic on S5.1, Critic after S5.2.
+Active: S5.1
 
-- [ ] S5.1 Design note, frozen list, core-dependency table.
-- [ ] S5.2 Minimal `Future`, `timeout()` with `TimeoutException`, the `await_*` family.
+- [ ] S5.1 Design note `dev/plans/S5.md`: `Future` and `FutureState` as TrueAsync has them within one
+      thread (the remote and cross-thread futures wait for S10's thread pool), `map`/`catch`/
+      `finally` chains completed without recursion (`dev/plans/S3.md` 3.6), `await()` on any
+      awaitable with `$cancellation`, the `await_*` family over arrays and Traversables (S3.md
+      section 4 table), `OperationCanceledException`; S5's kinds (FUTURE, AWAIT_ITER, the
+      cancellation record) and what they need from S4's wait-record layer, the storage of N
+      records included; frozen list `tests/lists/S5.txt` with each test that
+      needs `delay()` or `timeout()` marked; core-dependency table.
+      done: the note and the list pushed; every Critic finding fixed or answered in the note
+- [ ] S5.2 `Future` and `FutureState` with their chains; `await()` and `Future::await()` on a Future
+      (once the wait-record layer is on `main`).
+      done: S5.txt's `future/` tests pass on debug and ASAN; the S3 list unchanged
+- [ ] S5.3 `$cancellation` on `await()` and the `await_*` family.
+      done: every S5.txt test that needs no timer passes on debug and ASAN
+- [ ] S5.4 `timeout()` and `TimeoutException` on Timer ops (once `delay()` is on `main`).
+      done: the S5.txt tests marked for timers pass on debug and ASAN
+- [ ] S5.5 Stage review: Critic after S5.2-S5.4, coverage, Mull on the stage diff, the S3.md section
+      12 benchmarks of `await_*` (N in 1, 2, 8, 100, 10 000).
+      done: Done when of S5 holds on the day; survivors killed or explained; results in
+        `dev/BENCHMARKS.md`
+- [ ] S5.6 Security pass by `dev/SECURITY.md`.
+      done: a journal entry per checklist item; findings fixed with a test or recorded
 
 ## S6 — IO hooks provider  [ ]
 
@@ -222,17 +323,22 @@ Done when: S3–S6 lists (from `sleep`, `io`, `stream`, `socket_ext`, `dns`, `cu
 `mysqli`, `pdo_mysql` without the pool, `signal`) pass on debug and ASAN; IO chaos runs clean
 over 100 seeds; tests that fail because of the hooks design are listed against the review item;
 `dns` counted only on the Ring configuration (the Poll queue answers Unsupported for lookups).
-Tier: T2. Roles: Critic on S6.1, Critic after S6.3.
+Tier: T2. Roles: Critic on S6.2, Critic after S6.4.
+Active: S6.1
 
-- [ ] S6.1 Design note: install point per request and thread, readiness ops, deadlines, the
+- [ ] S6.1 Fixtures: MySQL with two connections and an HTTP server with
+      `PHP_CLI_SERVER_WORKERS`, started by `tools/test.py` locally and by the CI lanes.
+      done: a smoke test per fixture, listed in `tests/lists/S6.txt` (two MySQL connections; a request to the server) passes on
+        `pocs-dbg` and `pocs-asan` in a fresh container and in CI, with no async code involved
+- [ ] S6.2 Design note: install point per request and thread, readiness ops, deadlines, the
       suspend predicate, `zend_try` around the suspend (M12), Unsupported when async is off (M13),
       DNS and files on the Ring, SigWait on `SignalHandle` and WaitPid on `ProcessHandle` with
       the core's reaped-status table; signal ownership with threads decided (a live
       `SignalHandle` blocks the signal in its own thread only; until decided, `signal/*` is
-      excluded with that reason); fixtures (MySQL with two connections, HTTP server with
-      `PHP_CLI_SERVER_WORKERS`); frozen list; core-dependency table.
-- [ ] S6.2 Pipe tests (`io` pipes, `proc_open`, STDIN) on Linux and Windows first, then Timer, Poll, Recv, Send, Accept, Connect, Any, WaitPid, SigWait, GetAddrInfo.
-- [ ] S6.3 IO shutdown windows (the `ts_suspend` NULL case), run everything, record failures.
+      excluded with that reason); frozen list; core-dependency table.
+- [ ] S6.3 Pipe tests (`io` pipes, `proc_open`, STDIN) on Linux and Windows first, then Timer,
+      Poll, Recv, Send, Accept, Connect, Any, WaitPid, SigWait, GetAddrInfo.
+- [ ] S6.4 IO shutdown windows (the `ts_suspend` NULL case), run everything, record failures.
 
 ## S7 — Async object collector  [ ]
 

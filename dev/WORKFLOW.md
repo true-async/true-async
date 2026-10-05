@@ -11,7 +11,9 @@ How work is done in this repository and in the core branch it builds on.
   bare `git push` fails instead of landing in php/php-src#22561. Gate: no upstream set
   (`git rev-parse @{u}` fails). It is published in true-async/php-src under the same name for CI,
   by explicit refspec only: `git push origin <branch>:<branch>`.
-- Merge, never rebase; force-push only on Edmond's explicit word. Held by discipline, no gate.
+- Merge, never rebase pushed history; force-push only on Edmond's explicit word. An unpushed step
+  commit is rebased on `origin/main` before its push, since several threads push to `main`
+  (`dev/PLAN.md`, "Parallel tracks"). Held by discipline, no gate.
 - Ownership (Edmond, 2026-10-01). The scheduler RFC and its PoC are ours: a bug in it is fixed
   on `async-core` in true-async/php-src (the head of php/php-src#22561) and merged into
   `async-core-io`. bukka's projects (the IO hooks PoC php/php-src#23997, ior) are fixed through

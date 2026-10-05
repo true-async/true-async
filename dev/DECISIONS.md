@@ -587,3 +587,9 @@ stack options were shown with the code).
   x86-64 or AArch64, and not on a ucontext core (S3.23). Why: GCC 13 ignores `naked` on AArch64 and
   the asm returns with its prologue's stack; clang-built Android keeps the switch; a ucontext
   handle is no stack pointer.
+- 2026-10-05 S4, S5 and S6 run as parallel threads, gated on results on `main`, with the rules of
+  `dev/PLAN.md` "Parallel tracks". Why: tests are long (Edmond), and Futures and `await_*` need no
+  reactor (87 of 97 `component:S5` tests call neither `delay()` nor `timeout()`).
+- 2026-10-05 S4 owns the whole wait-record layer, the storage of a wait of several records included
+  (moved from S5, entry of 2026-10-02); S5 states its needs and writes its own kinds. Why: D25
+  (events) is S4's, and two owners of one struct merge without a conflict into a missed count.

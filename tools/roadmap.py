@@ -5,8 +5,8 @@
     roadmap.py --check   exit 1 when the block is out of date
 
 A stage's progress is its closed steps over its listed steps; a stage marked done counts 100 %,
-one without steps 0 %. The total is the mean over all stages. The current stage is the plan's
-`Active:` one.
+one without steps 0 %. The total is the mean over all stages. The current stages are those the
+plan's `Active:` lines name: the header's, or one per stage while tracks run in parallel.
 """
 import re
 import sys
@@ -18,6 +18,8 @@ README = ROOT / 'README.md'
 BEGIN, END = '<!-- roadmap:begin -->', '<!-- roadmap:end -->'
 
 STAGE = re.compile(r'^## (S\d+) — (.+?)\s+\[([^\]]*)\]', re.M)
+# The ids leading an `Active:` line, comma-separated; "Active: none; ..." names none.
+ACTIVE = re.compile(r'Active:[ \t]*((?:S\d+(?:\.\d+)?,?[ \t]*)*)')
 BAR_CELLS = 10
 
 
@@ -43,6 +45,24 @@ def stages(plan):
     return found
 
 
+def active_ids(plan):
+    """Stage and step ids of every `Active:` line, in plan order; parallel tracks keep one per stage."""
+    return [item for line in ACTIVE.finditer(plan) for item in re.findall(r'\bS\d+(?:\.\d+)?\b', line.group(1))]
+
+
+def active_stages(plan):
+    """Stage numbers of the active ids, in plan order."""
+    found = []
+
+    for item in active_ids(plan):
+        number = item.split('.')[0]
+
+        if number not in found:
+            found.append(number)
+
+    return found
+
+
 def bar(progress):
     filled = round(progress * BAR_CELLS)
 
@@ -50,8 +70,7 @@ def bar(progress):
 
 
 def render(plan):
-    active = re.search(r'Active:\s*(S\d+)', plan)
-    current = active.group(1) if active else None
+    current = active_stages(plan)
     rows = stages(plan)
     total = sum(p for _, _, p in rows) / len(rows)
     percent = round(total * 100)
@@ -59,8 +78,8 @@ def render(plan):
     badges = f'![Progress {percent}%](https://img.shields.io/badge/progress-{percent}%25-2ea44f.svg)'
 
     # "Active: none" between stages: no current-stage badge.
-    if current is not None:
-        badges += f' ![Current stage {current}](https://img.shields.io/badge/current%20stage-{current}-orange.svg)'
+    for number in current:
+        badges += f' ![Current stage {number}](https://img.shields.io/badge/current%20stage-{number}-orange.svg)'
 
     lines = [
         BEGIN,
@@ -72,7 +91,7 @@ def render(plan):
 
     # No empty header cell: some renderers drop a table whose header has one.
     for number, title, progress in rows:
-        if number == current:
+        if number in current:
             name = f'▶ **{number} · {title}**'
         else:
             name = f'{"✓ " if progress == 1.0 else ""}{number} · {title}'
