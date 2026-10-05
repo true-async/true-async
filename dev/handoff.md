@@ -156,3 +156,5 @@ open until the S3.14 thread's open items close ("Next").
    Edmond opened (2026-10-05) from true-async/php-src `fiber-callable-object-8.4`. With the
    open question in PLAN answered, stage S3 closes; ask Edmond what comes next (S4 is planned, not
    started on its own).
+2. Health check 2026-10-05 (`dev/HEALTH.md`): S3.19 (extension) and S3.20 (core) wait for Edmond's
+   word, the P1.4 question in PLAN "Open questions" for his answer. Next check: passes 6 and 10.

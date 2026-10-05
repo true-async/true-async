@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-05 · Active: none (S3 steps closed; the stage waits for Edmond on "Open questions", handoff "Next")
+Updated: 2026-10-05 · Active: none (S3.19-S3.20 wait for Edmond's word; the stage waits for Edmond on "Open questions", handoff "Next")
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -41,7 +41,13 @@ true-async/
 
 ## Open questions
 
-Waiting for Edmond's call; nothing here is being worked on. None open.
+Waiting for Edmond's call; nothing here is being worked on.
+
+- P1.4 (health check 2026-10-05, pass 9): 13 of the 71 DECISIONS entries since 2026-10-02 depart
+  from TrueAsync, one names P1.4, two carry Edmond's word. The principle's body asks for "a
+  recorded reason", its Flips field for "Edmond's word". Either Flips becomes a recorded reason
+  (a TrueAsync bug, a core contract, an RFC rule) and every departure names its principle, or the
+  11 entries resting on the Critic, the Sage or a test go back to Edmond.
 
 ## S1 — Core branch `async-core-io`  [x] (S1.5 deferred)
 
@@ -491,6 +497,25 @@ section 14); a step that finds a test needs more moves it on with a note.
         `async-core-io-2026-10-02-2`. Extension: pocs-dbg 312 PASS, pocs-asan 298 PASS, 14 SKIP.
         The runs were on `8acdc9a45d2`, which differs from the pinned head only in two comments.
         Critic, Code Reviewer, the Sage (finish handler wording).
+- [ ] S3.19 Health fixes, extension (health check 2026-10-05, `dev/HEALTH.md`; waits for Edmond's
+      word): `async_composite_exception_add_exception` loses `transfer`, it and
+      `async_ce_composite_exception` become static; `async_callbacks_add()` moves to test_hooks.c or
+      goes; the circular buffer holds pointers only (no `item_size`, no zero-filled `count`
+      branch); the gc_new_coroutine slot left NULL or set to new_coroutine; `check-gates.py` drops
+      the two removed core types; PRINCIPLES P3.2 names the `windows` job; S3.md 621-623 and
+      DECISIONS 202-203 restate the main-last reason after `c43060ea12d`.
+      done: the S3 list passes as before; `check-gates.py` and `check-lists.py` clean
+- [ ] S3.20 Health fixes, core (`async-core`, one topic per commit, then a core update by
+      `WORKFLOW.md`; waits for Edmond's word): `is_safely` and the `gc_new_coroutine` slot removed or
+      given RFC text; the object-less coroutine branch and the uncalled surface
+      (`zend_async_get_scheduler_module`, `IS_OFF`, `IS_READY`, `CLASS_NO`, the context and
+      new-coroutine aliases, `SCHEDULER_LAUNCH`, the second caller named by
+      `zend_async_scheduler_unregister`'s comment) removed; the two VM-stack `ZEND_API` functions
+      made static; the objects-store iterator's forwarder removed; `ZEND_ASYNC_DEACTIVATE` clears
+      the scheduler-context flag (S3.md 318-319); tests 027, 037, 038, 040, 041, 042-045 get the
+      reason of their departure from upstream and comments that match.
+      done: `ext/test_scheduler/tests` equal per test on dbg and ASAN; `CORE_REF` and "Pinned core"
+        moved
 
 ## S4 — Reactor on Poll, Poll additions and Ring  [ ]
 
