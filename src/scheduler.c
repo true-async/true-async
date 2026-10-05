@@ -1167,8 +1167,12 @@ static bool scheduler_main_suspend(bool is_bailout)
 	}
 
 	/* Only the last call runs in the shutdown, after the destructors. A bailout's call never gets here, a
-	 * shutdown function's included (it re-raises above). */
-	if (UNEXPECTED(EG(flags) & EG_FLAGS_IN_SHUTDOWN)) {
+	 * shutdown function's included (it re-raises above). After a fatal error nothing is printed: a
+	 * print runs the exception's __toString(), unbounded after a timeout, and it may exhaust the memory
+	 * limit again. The test is the request's last recorded error, as error_get_last() reads it: an
+	 * exit() in a shutdown function bails out without one and still prints. */
+	if (UNEXPECTED(EG(flags) & EG_FLAGS_IN_SHUTDOWN) &&
+		EXPECTED(!CG(unclean_shutdown) || PG(last_error_message) == NULL || !(PG(last_error_type) & E_FATAL_ERRORS))) {
 		scheduler_print_unobserved_exceptions();
 	}
 
