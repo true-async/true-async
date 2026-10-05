@@ -8,7 +8,7 @@ open until the S3.14 thread's open items close ("Next").
 
 ## State
 
-- Core pinned: `async-core-io-2026-10-03` (`5d29d253d05`, S3.18). CI gates every lane on every list; a
+- Core pinned: `async-core-io-2026-10-05` (`a9de8425106`). CI gates every lane on every list; a
   test that cannot pass yet carries `--XFAIL--` naming its step, and the commit that makes it pass
   removes the section. run-tests (`tools/run-tests.patch`) fails a test the timeout killed.
 - S3.3-S3.6a: internal API, classes, the `Coroutine` object, the 21 slots, the FIFO run queue,
@@ -121,8 +121,8 @@ open until the S3.14 thread's open items close ("Next").
   before it ran reports nothing (only the coroutine that starts a pass is recorded in
   `EG(shutdown_context)`; Critic in S3.10); a destructor that waits for a later destructor and
   catches a graceful shutdown's cancellation, then waits again, spins (user-dependent).
-- After a fatal error, coroutines in the queue run on: TrueAsync's design (Edmond, 2026-10-05).
-  Shutdown functions differ since S3.14 (`c43060ea12d`); open question in `dev/PLAN.md`.
+- After a fatal error no queued coroutine runs, the shutdown phase included (DECISIONS
+  2026-10-05). TrueAsync runs them on there.
 - Two coroutines that catch the deadlock's cancellation and await each other again loop, each
   round adding a `DeadlockError`; TrueAsync does the same (Critic, minor).
 - D16's 5 s deadline after `exit()` needs a clock and a reactor timeout (S4).

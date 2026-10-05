@@ -482,10 +482,19 @@ stack options were shown with the code).
   `test_scheduler.fail_enqueue` (n-th call from now fails) (S3.18). Why: the core's paths for a
   coroutine it cannot create or queue had no test (HEALTH finding 6); the seam found a crash
   (`ts_suspend` with no loop started), fixed in test_scheduler.c.
-- 2026-10-05 After a fatal error in a shutdown destructor, the coroutines already queued still run;
-  not changed. Why: Edmond, "это устройство тру асинка": code in other coroutines runs on after a
-  fatal error, as in TrueAsync. Whether shutdown functions (stopped by S3.14, `c43060ea12d`) follow
-  it is asked in `dev/PLAN.md`, "Open questions".
+- 2026-10-05 After a fatal error (a bailout: `E_ERROR` and the other levels `php_error_cb()` bails
+  out on) no queued coroutine runs, in the script, a shutdown function or a shutdown destructor;
+  core `async-core` `ab94befe389`: `shutdown_destructors()` re-raises a destructor's bailout, so it
+  ends the shutdown iterator coroutine as a bailout and `zend_call_destructors()` returns it to the
+  last from_main call, as `c43060ea12d` does for shutdown functions (`scheduler/093`-`095`; RFC `22f5c49`). An
+  `exit()` or an uncaught exception in a shutdown destructor bails out in plain PHP too (the rest of
+  the destructors are skipped), so it also stops the queue. Why: Edmond, after the Critic: PHP
+  runs no user code after a fatal error but shutdown functions, and `php_error_cb()` marks every
+  object destructed first, so a queued coroutine ran with its destructors silently off. An uncaught
+  exception and `exit()` keep the graceful shutdown with cancellation. Rejected: running `finally`
+  blocks after a fatal error (the core's `fatal-error-with-multiple-fibers.phpt`, an OOM repeats),
+  and a cancellation that rethrows at every later suspend (Edmond: "очень очень плохая идея").
+  TrueAsync runs the queue on in the shutdown phase: a departure from P1.4.
 - 2026-10-05 An exception nobody observed, of a coroutine alive at the request's end, is printed as
   uncaught (Edmond: "да печатать", over TrueAsync's silence), once per object, even after a fatal
   error or an `exit()` in a shutdown function. Released without a frame, it goes into

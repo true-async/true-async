@@ -41,13 +41,7 @@ true-async/
 
 ## Open questions
 
-Waiting for Edmond's call; nothing here is being worked on.
-
-- After a fatal error, shutdown functions and destructors differ: after one in a shutdown
-  function the queued coroutines no longer run (`async-core` `c43060ea12d`, S3.14; it also stops
-  the destructors from running with a finished coroutine as the current one); after one in a
-  shutdown destructor they still run. Edmond, 2026-10-05: coroutines running on after a fatal
-  error is TrueAsync's design, not a bug. Asked whether shutdown functions go back to it.
+Waiting for Edmond's call; nothing here is being worked on. None open.
 
 ## S1 — Core branch `async-core-io`  [x] (S1.5 deferred)
 
