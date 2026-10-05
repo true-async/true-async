@@ -23,7 +23,9 @@
  * core API a PHP script has no path to: defer() queues a microtask; add_throwing_finish_handler(),
  * add_clearing_finish_handler() and add_printing_switch_handler() add handlers to a coroutine;
  * enqueue_with_error() wakes one with an error; call_on_main_stack() runs a probe through the
- * call_on_main_stack slot. Each says more above its definition. */
+ * call_on_main_stack slot. The class TrueAsync\Test\Event, await_records(), link_into_wait(),
+ * subscriber_count() and wait_counters() drive the wait-record layer (dev/plans/S4.md section 2) before any event type
+ * of the extension exists. Each says more above its definition. */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -36,6 +38,7 @@
 #include "php_true_async.h"
 #include "test_hooks.h"
 #include "coroutine.h"
+#include "scheduler.h"
 #include "src/internal/circular_buffer.h"
 
 /* A stand-in awaitable: the flags word and a vector, as the event header will have. */
@@ -1156,6 +1159,400 @@ static ZEND_FUNCTION(fail_at)
 	zend_argument_value_error(1, "must be \"enqueue\", \"reserve\" or \"link\"");
 }
 
+///////////////////////////////////////////////////////////////////
+/// The wait-record layer
+///////////////////////////////////////////////////////////////////
+
+/* A one-shot event shared through a reference prefix, as S5's future event is: the object holds
+ * one reference, a fire() in progress another. */
+typedef struct
+{
+	async_event_t event;
+	uint32_t handle; /* its first object's, for the awaiting info */
+} test_event_t;
+
+typedef struct
+{
+	async_event_ref_t ref;
+	zend_object std;
+} test_event_object_t;
+
+static zend_class_entry *test_event_ce;
+static zend_object_handlers test_event_handlers;
+
+/* Frees the event with its last reference: a record still linked is woken by the teardown. */
+static void test_event_release(test_event_t *event)
+{
+	if (--event->event.ref_count > 0) {
+		return;
+	}
+
+	async_callbacks_free((async_awaitable_t *) event, &event->event.callbacks);
+	efree(event);
+}
+
+static zend_object *test_event_create(zend_class_entry *class_entry)
+{
+	test_event_object_t *object = zend_object_alloc(sizeof(test_event_object_t), class_entry);
+	test_event_t *event = emalloc(sizeof(test_event_t));
+
+	async_event_init(&event->event, 0);
+	object->ref.flags = ASYNC_EVENT_REFERENCE_PREFIX;
+	object->ref.event = &event->event;
+
+	zend_object_std_init(&object->std, class_entry);
+	object->std.handlers = &test_event_handlers;
+	event->handle = object->std.handle;
+
+	return &object->std;
+}
+
+static void test_event_free(zend_object *object)
+{
+	test_event_object_t *event_object = (test_event_object_t *) ((char *) object - offsetof(test_event_object_t, std));
+	test_event_release((test_event_t *) event_object->ref.event);
+	zend_object_std_dtor(object);
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_test_event_fire, 0, 0, IS_VOID, 0)
+ZEND_END_ARG_INFO()
+
+/* Closes the event and wakes its waiters, once. */
+static ZEND_METHOD(TrueAsync_Test_Event, fire)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	test_event_t *event = (test_event_t *) async_awaitable_from_object(Z_OBJ_P(ZEND_THIS));
+
+	if (UNEXPECTED(event->event.flags & ASYNC_EVENT_F_CLOSED)) {
+		zend_throw_error(NULL, "The event has fired already");
+		RETURN_THROWS();
+	}
+
+	event->event.flags |= ASYNC_EVENT_F_CLOSED;
+	event->event.ref_count++;
+	async_callbacks_notify((async_awaitable_t *) event, &event->event.callbacks, NULL, NULL);
+	test_event_release(event);
+}
+
+/* clang-format off */
+static const zend_function_entry test_event_methods[] = {
+	ZEND_ME(TrueAsync_Test_Event, fire, arginfo_test_event_fire, ZEND_ACC_PUBLIC)
+	ZEND_FE_END
+};
+/* clang-format on */
+
+void async_test_hooks_register_classes(void)
+{
+	zend_class_entry class_entry;
+	INIT_NS_CLASS_ENTRY(class_entry, "TrueAsync\\Test", "Event", test_event_methods);
+	test_event_ce = zend_register_internal_class_with_flags(
+			&class_entry, NULL, ZEND_ACC_FINAL | ZEND_ACC_NO_DYNAMIC_PROPERTIES | ZEND_ACC_NOT_SERIALIZABLE);
+	test_event_ce->create_object = test_event_create;
+
+	memcpy(&test_event_handlers, &std_object_handlers, sizeof(zend_object_handlers));
+	test_event_handlers.offset = offsetof(test_event_object_t, std);
+	test_event_handlers.free_obj = test_event_free;
+	test_event_handlers.clone_obj = NULL;
+}
+
+/* The records of a test wait past two, or of any size with a capacity asked for; another coroutine may
+ * link into it until the wait's unlink. */
+typedef struct
+{
+	async_wait_block_t head;
+	uint32_t capacity;
+	uint32_t count; /* records used */
+	bool finished;  /* the wait was unlinked: nothing links any more */
+	async_coroutine_event_callback_t records[];
+} test_wait_block_t;
+
+static void test_wait_block_unlink(async_wait_block_t *head)
+{
+	test_wait_block_t *block = (test_wait_block_t *) head;
+
+	if (block->finished) {
+		return;
+	}
+
+	block->finished = true;
+
+	for (uint32_t i = 0; i < block->count; i++) {
+		async_wait_record_unlink(&block->records[i]);
+	}
+}
+
+static void test_wait_block_release(async_wait_block_t *head)
+{
+	ASYNC_G(test_block_releases)++;
+	efree(head);
+}
+
+static void test_wait_block_walk(async_wait_block_t *head,
+								 void (*visit)(const async_coroutine_event_callback_t *record, void *arg),
+								 void *arg)
+{
+	test_wait_block_t *block = (test_wait_block_t *) head;
+
+	for (uint32_t i = 0; i < block->count; i++) {
+		if (block->records[i].event != NULL) {
+			visit(&block->records[i], arg);
+		}
+	}
+}
+
+static const async_wait_block_ops_t test_wait_block_ops = {
+	.unlink = test_wait_block_unlink,
+	.release = test_wait_block_release,
+	.walk = test_wait_block_walk,
+};
+
+static void
+test_record_wake(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
+{
+	(void) target;
+	(void) result;
+	(void) exception;
+
+	async_scheduler_enqueue(&((async_coroutine_event_callback_t *) callback)->coroutine->coroutine, NULL, false);
+}
+
+static zend_string *test_record_info(const async_coroutine_event_callback_t *record)
+{
+	if (ASYNC_AWAITABLE_IS_COROUTINE(record->event)) {
+		return zend_strpprintf(0, "await: coroutine #%u", ((const async_coroutine_t *) record->event)->std.handle);
+	}
+
+	return zend_strpprintf(0, "await: test event #%u", ((const test_event_t *) record->event)->handle);
+}
+
+/* The typed path: a kind whose unlink does the generic removal and counts itself, and whose abort
+ * only counts. */
+static void test_record_typed_unlink(async_coroutine_event_callback_t *record)
+{
+	async_wait_record_remove(record);
+	ASYNC_G(test_typed_unlinks)++;
+}
+
+static void test_record_typed_abort(async_coroutine_event_callback_t *record)
+{
+	(void) record;
+	ASYNC_G(test_aborts)++;
+}
+
+static const async_wait_kind_t test_kind = {
+	.info = test_record_info,
+};
+
+static const async_wait_kind_t test_kind_typed = {
+	.info = test_record_info,
+	.unlink = test_record_typed_unlink,
+	.abort = test_record_typed_abort,
+};
+
+/* The awaitable of a Coroutine or a TrueAsync\Test\Event; NULL with a TypeError for anything else. */
+static async_awaitable_t *test_wait_target(zval *value)
+{
+	if (EXPECTED(Z_TYPE_P(value) == IS_OBJECT &&
+				 (Z_OBJCE_P(value) == async_ce_coroutine || Z_OBJCE_P(value) == test_event_ce))) {
+		return async_awaitable_from_object(Z_OBJ_P(value));
+	}
+
+	zend_type_error("A wait target must be an Async\\Coroutine or a TrueAsync\\Test\\Event, %s given",
+					zend_zval_value_name(value));
+	return NULL;
+}
+
+/* Reserves a slot for one more record on `target`, after the `earlier_on_target` records of this wait
+ * that go to the same vector and are not pushed yet. */
+static void test_wait_reserve(async_awaitable_t *target, const uint32_t earlier_on_target)
+{
+	async_callbacks_reserve(async_awaitable_callbacks(target), earlier_on_target + 1);
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_await_records, 0, 1, IS_VOID, 0)
+	ZEND_ARG_TYPE_INFO(0, targets, IS_ARRAY, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, typed, _IS_BOOL, 0, "false")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, block_capacity, IS_LONG, 0, "0")
+ZEND_END_ARG_INFO()
+
+/* Parks the current coroutine on one record per target until the first of them wakes it (or a
+ * cancel does): the waker's two records for up to two targets, a test block past two. With
+ * `block_capacity` the wait has a block of that capacity in any case, empty beside the waker's records
+ * for up to two targets, which link_into_wait() fills. With `typed` the records take a kind with an
+ * unlink and an abort of its own. Every slot is reserved before the first link (dev/plans/S3.md 4.1,
+ * invariant L), a duplicate target's once per record. */
+static ZEND_FUNCTION(await_records)
+{
+	HashTable *targets;
+	bool typed = false;
+	zend_long block_capacity = 0;
+
+	ZEND_PARSE_PARAMETERS_START(1, 3)
+		Z_PARAM_ARRAY_HT(targets)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_BOOL(typed)
+		Z_PARAM_LONG(block_capacity)
+	ZEND_PARSE_PARAMETERS_END();
+
+	const uint32_t count = zend_hash_num_elements(targets);
+
+	if (UNEXPECTED(count == 0 || block_capacity < 0 || block_capacity > 64)) {
+		zend_value_error("await_records() takes 1 or more targets and a block capacity of 0 to 64");
+		RETURN_THROWS();
+	}
+
+	async_coroutine_t *waiter = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
+
+	if (UNEXPECTED(waiter == NULL || ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) {
+		zend_throw_error(NULL, "await_records() requires a running coroutine");
+		RETURN_THROWS();
+	}
+
+	async_awaitable_t **awaitables = safe_emalloc(count, sizeof(async_awaitable_t *), 0);
+	uint32_t index = 0;
+	zval *value;
+
+	ZEND_HASH_FOREACH_VAL(targets, value)
+	{
+		awaitables[index] = test_wait_target(value);
+
+		if (UNEXPECTED(awaitables[index] == NULL)) {
+			efree(awaitables);
+			RETURN_THROWS();
+		}
+
+		index++;
+	}
+	ZEND_HASH_FOREACH_END();
+
+	async_wait_end(waiter);
+
+	async_coroutine_event_callback_t *records = waiter->waker.records;
+
+	/* The block goes into the waker before the reservations: a bailout out of one leaves it there,
+	 * and the finish releases it. */
+	if (count > ASYNC_WAKER_INLINE_RECORDS || block_capacity > 0) {
+		const uint32_t capacity = MAX(count, (uint32_t) block_capacity);
+		test_wait_block_t *block =
+				ecalloc(1, sizeof(test_wait_block_t) + capacity * sizeof(async_coroutine_event_callback_t));
+		block->head.ops = &test_wait_block_ops;
+		block->capacity = capacity;
+		waiter->waker.block = &block->head;
+
+		if (count > ASYNC_WAKER_INLINE_RECORDS) {
+			block->count = count;
+			records = block->records;
+		}
+	}
+
+	for (uint32_t i = 0; i < count; i++) {
+		uint32_t earlier_on_target = 0;
+
+		for (uint32_t j = 0; j < i; j++) {
+			earlier_on_target += awaitables[j] == awaitables[i];
+		}
+
+		test_wait_reserve(awaitables[i], earlier_on_target);
+	}
+
+	for (uint32_t i = 0; i < count; i++) {
+		async_wait_link(&records[i], waiter, awaitables[i], typed ? &test_kind_typed : &test_kind, test_record_wake);
+	}
+
+	efree(awaitables);
+
+	const bool woken = ZEND_ASYNC_SUSPEND();
+	async_wait_block_t *block = async_wait_take_block(waiter);
+
+	if (block != NULL) {
+		block->ops->release(block);
+	}
+
+	if (UNEXPECTED(!woken)) {
+		RETURN_THROWS();
+	}
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_link_into_wait, 0, 2, _IS_BOOL, 0)
+	ZEND_ARG_OBJ_INFO(0, waiter, Async\\Coroutine, 0)
+	ZEND_ARG_TYPE_INFO(0, target, IS_OBJECT, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, typed, _IS_BOOL, 0, "false")
+ZEND_END_ARG_INFO()
+
+/* Links one more record (`typed` as in await_records()) into a parked waiter's test block, as S5's
+ * iterator coroutine links into an await_* wait; false when the waiter has no such block, its wait was unlinked, or the
+ * block is full. */
+static ZEND_FUNCTION(link_into_wait)
+{
+	zend_object *waiter_object;
+	zval *target_value;
+	bool typed = false;
+
+	ZEND_PARSE_PARAMETERS_START(2, 3)
+		Z_PARAM_OBJ_OF_CLASS(waiter_object, async_ce_coroutine)
+		Z_PARAM_OBJECT(target_value)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_BOOL(typed)
+	ZEND_PARSE_PARAMETERS_END();
+
+	async_awaitable_t *target = test_wait_target(target_value);
+
+	if (UNEXPECTED(target == NULL)) {
+		RETURN_THROWS();
+	}
+
+	async_coroutine_t *waiter = async_coroutine_from_object(waiter_object);
+	test_wait_block_t *block = (test_wait_block_t *) waiter->waker.block;
+
+	if (block == NULL || block->head.ops != &test_wait_block_ops || block->finished ||
+		block->count == block->capacity) {
+		RETURN_FALSE;
+	}
+
+	test_wait_reserve(target, 0);
+	async_wait_link(
+			&block->records[block->count++], waiter, target, typed ? &test_kind_typed : &test_kind, test_record_wake);
+	RETURN_TRUE;
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_subscriber_count, 0, 1, IS_LONG, 0)
+	ZEND_ARG_TYPE_INFO(0, target, IS_OBJECT, 0)
+ZEND_END_ARG_INFO()
+
+/* The length of a Coroutine's or a TrueAsync\Test\Event's vector: its waiters' records and its
+ * other subscribers. */
+static ZEND_FUNCTION(subscriber_count)
+{
+	zval *target_value;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_OBJECT(target_value)
+	ZEND_PARSE_PARAMETERS_END();
+
+	async_awaitable_t *target = test_wait_target(target_value);
+
+	if (UNEXPECTED(target == NULL)) {
+		RETURN_THROWS();
+	}
+
+	RETURN_LONG(async_awaitable_callbacks(target)->length);
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_wait_counters, 0, 0, IS_ARRAY, 0)
+ZEND_END_ARG_INFO()
+
+/* The request's counts of released test blocks, typed unlinks and aborts. */
+static ZEND_FUNCTION(wait_counters)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	array_init(return_value);
+	add_assoc_long(return_value, "block_releases", ASYNC_G(test_block_releases));
+	add_assoc_long(return_value, "typed_unlinks", ASYNC_G(test_typed_unlinks));
+	add_assoc_long(return_value, "aborts", ASYNC_G(test_aborts));
+}
+
 /* clang-format off */
 const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\callbacks_scenario", ZEND_FN(callbacks_scenario), arginfo_callbacks_scenario, 0, NULL, NULL)
@@ -1167,6 +1564,10 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_printing_switch_handler", ZEND_FN(add_printing_switch_handler), arginfo_add_printing_switch_handler, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_clearing_finish_handler", ZEND_FN(add_clearing_finish_handler), arginfo_add_clearing_finish_handler, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\coroutine_count", ZEND_FN(coroutine_count), arginfo_coroutine_count, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\await_records", ZEND_FN(await_records), arginfo_await_records, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\link_into_wait", ZEND_FN(link_into_wait), arginfo_link_into_wait, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\wait_counters", ZEND_FN(wait_counters), arginfo_wait_counters, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\subscriber_count", ZEND_FN(subscriber_count), arginfo_subscriber_count, 0, NULL, NULL)
 #ifdef ZEND_CHECK_STACK_LIMIT
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\call_on_main_stack", ZEND_FN(call_on_main_stack), arginfo_call_on_main_stack, 0, NULL, NULL)
 #endif

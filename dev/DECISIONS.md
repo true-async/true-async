@@ -649,3 +649,14 @@ stack options were shown with the code).
   an unsigned value, about 49 days; no test relies on it.
 - 2026-10-05 `edge_cases/016` and `017` stay in `S3.excluded` until S4.4 builds the core with zlib.
   Why: they need zlib, and a listed test may not skip.
+- 2026-10-05 The waiter takes its wait's block with `async_wait_take_block()` as its `suspend()`
+  returns and releases it itself; `async_wait_end()` only ends a wait a bailout cut short (S4.2).
+  Why: a wait started while the waiter reads its outcome (a destructor's `await()`) would release the
+  block under it (the Critic).
+- 2026-10-05 A coroutine that finishes with a record still linked aborts its wait first, as the
+  bailout's transfer (U4) and the request's end do (S4.2). Why: its frame never runs again (the
+  Critic).
+- 2026-10-05 A target's teardown unlinks a record left in its vector through the record's kind (S4.2).
+  Why: a typed kind's unlink is where a TIMEOUT disarms (the Critic).
+- 2026-10-05 The layer is tested through `TrueAsync\Test\Event`, a one-shot event behind a reference
+  prefix, in the test hooks (S4.2). Why: no event type of the extension exists before S4.4 and S5.2.

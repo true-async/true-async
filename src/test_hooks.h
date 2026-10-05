@@ -18,6 +18,9 @@
 /* Registered at MINIT in a build with --enable-true-async-test-hooks. */
 extern const zend_function_entry true_async_test_hooks_functions[];
 
+/* Registers TrueAsync\Test\Event at MINIT, beside the functions. */
+void async_test_hooks_register_classes(void);
+
 /* Where TrueAsync\Test\fail_at() makes the scheduler fail: a fatal error there, as running out of
  * memory raises, while a wait is half made (dev/plans/S3.md 4.4, the unlink sites U1-U6). A new
  * site also goes into fault_site_names and the message of fail_at() (test_hooks.c). */

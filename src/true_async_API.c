@@ -143,11 +143,10 @@ void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *v
 	while (index < vector->length) {
 		async_event_callback_t *callback = async_callbacks_slots(vector)[index];
 
-		/* Detached before the wake, whatever the wake does: the waiter's unlink finds it gone, and the
-		 * last element takes its slot. */
+		/* Detached before the wake (through its kind's unlink when it has one), whatever the wake does:
+		 * the waiter's unlink finds it gone, and the last element takes its slot. */
 		if (UNEXPECTED(callback->flags & ASYNC_CALLBACK_F_RECORD)) {
-			async_callbacks_remove(vector, callback);
-			((async_coroutine_event_callback_t *) callback)->event = NULL;
+			async_wait_record_unlink((async_coroutine_event_callback_t *) callback);
 			callback->callback(target, callback, NULL, NULL);
 			continue;
 		}
@@ -169,22 +168,113 @@ void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *v
 	vector->cursor = 0;
 }
 
-void async_wait_unlink(async_coroutine_t *coroutine)
+void async_wait_link(async_coroutine_event_callback_t *record,
+					 async_coroutine_t *waiter,
+					 async_awaitable_t *target,
+					 const async_wait_kind_t *kind,
+					 const async_event_callback_fn wake)
 {
-	async_coroutine_event_callback_t *record = &coroutine->waker.record;
-	async_awaitable_t *target = record->event;
+	ZEND_ASSERT(record->event == NULL && "a record links once per wait");
 
-	if (EXPECTED(target == NULL)) {
-		return;
-	}
+	record->event_callback.flags =
+			kind->unlink != NULL ? ASYNC_CALLBACK_F_RECORD | ASYNC_CALLBACK_F_TYPED : ASYNC_CALLBACK_F_RECORD;
+	record->event_callback.callback = wake;
+	record->event_callback.kind = kind;
+	record->coroutine = waiter;
+	record->event = target;
+	async_callbacks_push_reserved(async_awaitable_callbacks(target), &record->event_callback);
+}
 
-	/* Only coroutines are awaited until events come (S4). */
-	ZEND_ASSERT(ASYNC_AWAITABLE_IS_COROUTINE(target));
-
-	const bool removed = async_callbacks_remove(&((async_coroutine_t *) target)->callbacks, &record->event_callback);
+void async_wait_record_remove(async_coroutine_event_callback_t *record)
+{
+	const bool removed = async_callbacks_remove(async_awaitable_callbacks(record->event), &record->event_callback);
 	ZEND_ASSERT(removed && "a linked record is in its target's vector");
 	(void) removed;
 	record->event = NULL;
+}
+
+void async_wait_record_unlink(async_coroutine_event_callback_t *record)
+{
+	async_awaitable_t *target = record->event;
+
+	if (target == NULL) {
+		return;
+	}
+
+	if (UNEXPECTED(record->event_callback.flags & ASYNC_CALLBACK_F_TYPED)) {
+		record->event_callback.kind->unlink(record);
+		ZEND_ASSERT(record->event == NULL && "a kind's unlink clears the record's event");
+		return;
+	}
+
+	async_wait_record_remove(record);
+}
+
+void async_wait_unlink_linked(async_coroutine_t *coroutine)
+{
+	async_waker_t *waker = &coroutine->waker;
+
+	for (uint32_t i = 0; i < ASYNC_WAKER_INLINE_RECORDS; i++) {
+		async_wait_record_unlink(&waker->records[i]);
+	}
+
+	if (UNEXPECTED(waker->block != NULL)) {
+		waker->block->ops->unlink(waker->block);
+	}
+}
+
+void async_wait_abort(async_coroutine_t *coroutine)
+{
+	async_waker_t *waker = &coroutine->waker;
+
+	for (uint32_t i = 0; i < ASYNC_WAKER_INLINE_RECORDS; i++) {
+		async_coroutine_event_callback_t *record = &waker->records[i];
+
+		if (record->event != NULL && UNEXPECTED(record->event_callback.kind->abort != NULL)) {
+			record->event_callback.kind->abort(record);
+		}
+	}
+
+	async_wait_unlink(coroutine);
+}
+
+void async_wait_walk(async_coroutine_t *coroutine,
+					 void (*visit)(const async_coroutine_event_callback_t *record, void *arg),
+					 void *arg)
+{
+	const async_waker_t *waker = &coroutine->waker;
+
+	for (uint32_t i = 0; i < ASYNC_WAKER_INLINE_RECORDS; i++) {
+		if (waker->records[i].event != NULL) {
+			visit(&waker->records[i], arg);
+		}
+	}
+
+	if (UNEXPECTED(waker->block != NULL)) {
+		waker->block->ops->walk(waker->block, visit, arg);
+	}
+}
+
+async_wait_block_t *async_wait_take_block(async_coroutine_t *coroutine)
+{
+	async_wait_unlink(coroutine);
+
+	async_wait_block_t *block = coroutine->waker.block;
+	coroutine->waker.block = NULL;
+
+	return block;
+}
+
+void async_wait_end(async_coroutine_t *coroutine)
+{
+	async_wait_unlink(coroutine);
+
+	async_wait_block_t *block = coroutine->waker.block;
+
+	if (UNEXPECTED(block != NULL)) {
+		coroutine->waker.block = NULL;
+		block->ops->release(block);
+	}
 }
 
 /* The id of a new finish or switch handler: one counter per thread, so an id is never reused while

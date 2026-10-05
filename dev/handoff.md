@@ -121,13 +121,14 @@ Written 2026-10-05. S3.23 (`call_on_main_stack`) done; every S3 step is closed, 
 
 ## S4
 
-S4.1 done 2026-10-05: `dev/plans/S4.md` and `tests/lists/S4.txt` (9 tests with `--XFAIL--` naming
-S4.4). Next is S4.2, the wait-record layer of the note's section 2 with no reactor; S5.2 starts once
-it is on `main`, and S5.4 once `delay()` (S4.4) is. S5.md section 6 still says `F_COUNTED` for the
-TIMEOUT: the note's 2.5 answers N7 with the reactor's `waits` list instead, which S5.4 words in. The
-S6 provider's op on `run()`'s frame under a bailout is S6.2's question for Edmond (S4.md 3.2: a
-`zend_try`, or a heap op copied as the TIMER does). Full local runs need `mysql-server-core-8.0`
-(S6.1's fixture).
+S4.2 done 2026-10-05: the wait-record layer (`dev/plans/S4.md` 2.3 "As built"), tests
+`internal/052`-`061` through `TrueAsync\Test\Event`. Next is S4.3, the per-thread queue, the idle
+wait, the lists of waits and the interrupt coroutine (S4.md 3.1-3.4, 3.7); S5.2 may start now. S5.md
+section 6 still says `F_COUNTED` for the TIMEOUT: S4.md 2.5 answers N7 with the reactor's `waits`
+list, which S5.4 words in. S5's await_* takes its block with `async_wait_take_block()` as its
+`suspend()` returns (S4.md 2.3). The S6 provider's op on `run()`'s frame under a bailout is S6.2's
+question for Edmond (S4.md 3.2). Full local runs need `mysql-server-core-8.0`; the B1 count needs a
+release core (`dev/BENCHMARKS.md`, S4.2 entry) and `bench/alloc_count.so`.
 
 ## S5
 

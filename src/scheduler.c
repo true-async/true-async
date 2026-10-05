@@ -1562,7 +1562,7 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 		 * scheduler_next_tick, scheduler.c:1610-1613). */
 		if (UNEXPECTED(next_coroutine == NULL)) {
 			if (UNEXPECTED(switch_to(make_scheduler_current(), 0) & ZEND_FIBER_TRANSFER_FLAG_BAILOUT)) {
-				async_wait_unlink(coroutine);
+				async_wait_abort(coroutine);
 				zend_bailout();
 			}
 
@@ -1583,7 +1583,7 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 			 * in whatever zend_try this stack has (a shutdown function's) and leave the queue behind. */
 			if (UNEXPECTED(next_coroutine->fiber_context == NULL)) {
 				switch_to(make_scheduler_current(), ZEND_FIBER_TRANSFER_FLAG_BAILOUT);
-				async_wait_unlink(coroutine);
+				async_wait_abort(coroutine);
 				zend_bailout();
 			}
 		}
@@ -1593,7 +1593,7 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 		/* The scheduler hands the bailout to a parked coroutine (scheduler_bailout_all) or to a parked
 		 * main (its end): it is re-raised on this stack, which unwinds through its own try. */
 		if (UNEXPECTED(switch_to(&next_coroutine->fiber_context->context, 0) & ZEND_FIBER_TRANSFER_FLAG_BAILOUT)) {
-			async_wait_unlink(coroutine);
+			async_wait_abort(coroutine);
 			zend_bailout();
 		}
 	}
@@ -1696,6 +1696,16 @@ await_record_wake(async_awaitable_t *target, async_event_callback_t *callback, v
 	async_scheduler_enqueue(&record->coroutine->coroutine, NULL, false);
 }
 
+static zend_string *await_record_info(const async_coroutine_event_callback_t *record)
+{
+	return zend_strpprintf(0, "await: coroutine #%u", ((const async_coroutine_t *) record->event)->std.handle);
+}
+
+/* A wait for a coroutine: its outcome is in the target, so nothing but the vector to leave. */
+static const async_wait_kind_t async_wait_kind_coroutine = {
+	.info = await_record_info,
+};
+
 bool async_await_coroutine(async_coroutine_t *target)
 {
 	async_coroutine_t *waiter = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
@@ -1726,11 +1736,9 @@ bool async_await_coroutine(async_coroutine_t *target)
 		return false;
 	}
 
-	/* A bailout that a shutdown function's zend_try caught can leave main's record linked: it is
-	 * unlinked first, as TrueAsync's ZEND_ASYNC_WAKER_NEW cleans a stale waker. */
-	async_wait_unlink(waiter);
-
-	async_coroutine_event_callback_t *record = &waiter->waker.record;
+	/* A bailout that a shutdown function's zend_try caught can leave main's wait linked: it is ended
+	 * first, as TrueAsync's ZEND_ASYNC_WAKER_NEW cleans a stale waker. */
+	async_wait_end(waiter);
 
 	/* Another enqueue than the target's finish (a foreign one) wakes the waiter early: it waits
 	 * again, as the core's test_scheduler.c does. The outcome is marked observed only when the waiter
@@ -1739,13 +1747,11 @@ bool async_await_coroutine(async_coroutine_t *target)
 	while (!ZEND_COROUTINE_IS_FINISHED(&target->coroutine)) {
 		ASYNC_TEST_FAULT(ASYNC_TEST_FAULT_RESERVE);
 		async_callbacks_reserve(&target->callbacks, 1);
-
-		record->event_callback.flags = ASYNC_CALLBACK_F_RECORD;
-		record->event_callback.callback = await_record_wake;
-		record->event_callback.dispose = NULL;
-		record->coroutine = waiter;
-		record->event = (async_awaitable_t *) target;
-		async_callbacks_push_reserved(&target->callbacks, &record->event_callback);
+		async_wait_link(&waiter->waker.records[0],
+						waiter,
+						(async_awaitable_t *) target,
+						&async_wait_kind_coroutine,
+						await_record_wake);
 		ASYNC_TEST_FAULT(ASYNC_TEST_FAULT_LINK);
 
 		if (UNEXPECTED(!ZEND_ASYNC_SUSPEND())) {
@@ -1804,24 +1810,25 @@ static bool scheduler_remove_awaiting_info(zend_coroutine_t *coroutine, uint32_t
 	return false;
 }
 
-/* One line for the coroutine's wait (S3.md 4.7), as the core's test_scheduler.c words it; NULL when
- * nothing is linked: a yield, a park of the core's, no wait. The add slot keeps nothing, so there are
- * no foreign lines: nothing in the core adds one. */
+static void awaiting_info_add(const async_coroutine_event_callback_t *record, void *arg)
+{
+	zval line;
+	ZVAL_STR(&line, record->event_callback.kind->info(record));
+	zend_hash_next_index_insert_new((zend_array *) arg, &line);
+}
+
+/* One line per linked record of the coroutine's wait (S3.md 4.7, S4.md 2.4), worded by its kind; NULL
+ * when nothing is linked: a yield, a park of the core's, no wait. The add slot keeps nothing, so there
+ * are no foreign lines: nothing in the core adds one. */
 static zend_array *scheduler_get_awaiting_info(zend_coroutine_t *zend_coroutine)
 {
-	const async_awaitable_t *target = ((async_coroutine_t *) zend_coroutine)->waker.record.event;
+	zend_array *info = zend_new_array(0);
+	async_wait_walk((async_coroutine_t *) zend_coroutine, awaiting_info_add, info);
 
-	if (target == NULL) {
+	if (zend_hash_num_elements(info) == 0) {
+		zend_array_destroy(info);
 		return NULL;
 	}
-
-	/* Only coroutines are awaited until events come (S4). */
-	ZEND_ASSERT(ASYNC_AWAITABLE_IS_COROUTINE(target));
-
-	zend_array *info = zend_new_array(1);
-	zval line;
-	ZVAL_STR(&line, zend_strpprintf(0, "await: coroutine #%u", ((const async_coroutine_t *) target)->std.handle));
-	zend_hash_next_index_insert_new(info, &line);
 
 	return info;
 }
@@ -2016,6 +2023,10 @@ void async_scheduler_request_shutdown(void)
 		async_fiber_context_t *fiber_context = coroutine->fiber_context;
 		coroutine->fiber_context = NULL;
 
+		/* No frame runs again: what a wait holds goes while its stack is still mapped (S9's channel
+		 * waiter lives there, D29). */
+		async_wait_abort(coroutine);
+
 		/* Main's is a copy of the engine's context, and the OS stack behind it is not ours; NULL when a
 		 * bailout came out of main's own finish. */
 		if (ZEND_COROUTINE_IS_MAIN(&coroutine->coroutine)) {
@@ -2027,7 +2038,7 @@ void async_scheduler_request_shutdown(void)
 			zend_fiber_destroy_context(&fiber_context->context);
 		}
 
-		async_wait_unlink(coroutine);
+		async_wait_end(coroutine);
 		async_switch_handlers_free(coroutine);
 		ZEND_COROUTINE_SET_STATUS(&coroutine->coroutine, ZEND_COROUTINE_STATUS_FINISHED);
 	}

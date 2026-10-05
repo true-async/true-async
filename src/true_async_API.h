@@ -65,14 +65,24 @@ typedef void (*async_event_callback_fn)(async_awaitable_t *target,
 /* Frees a heap subscriber that leaves a vector by teardown or removal. */
 typedef void (*async_event_callback_dispose_fn)(async_event_callback_t *callback, async_awaitable_t *target);
 
-/* A wait record: part of the waiting coroutine, never disposed. */
+/* A wait record: part of the waiting coroutine's wait, never disposed. */
 #define ASYNC_CALLBACK_F_RECORD (1u << 0)
+/* A record whose kind has an unlink: the generic unlink calls it instead of removing the record from
+ * the target's vector itself. */
+#define ASYNC_CALLBACK_F_TYPED (1u << 1)
+
+typedef struct _async_wait_kind_s async_wait_kind_t;
 
 struct _async_event_callback_s
 {
 	uint32_t flags; /* 4 B of padding follow */
 	async_event_callback_fn callback;
-	async_event_callback_dispose_fn dispose; /* heap subscribers; NULL for a record */
+
+	union
+	{
+		async_event_callback_dispose_fn dispose; /* a heap subscriber; may be NULL */
+		const async_wait_kind_t *kind;           /* a record (F_RECORD) */
+	};
 };
 
 /* One wait-graph edge: the waiter and the target. */
@@ -84,6 +94,22 @@ typedef struct
 	 * removes the record clears it. */
 	async_awaitable_t *event;
 } async_coroutine_event_callback_t;
+
+/* What a wait does with its target beyond its vector, one const table per kind (dev/plans/S4.md 2.1):
+ * the code that links a record knows its target's type and picks the kind, so events carry no
+ * methods (D28). */
+struct _async_wait_kind_s
+{
+	/* One line of getAwaitingInfo() and of the deadlock report for a linked record. */
+	zend_string *(*info)(const async_coroutine_event_callback_t *record);
+	/* Removes a linked record from its target and clears its `event`, for a target that holds more
+	 * than the vector (an op to orphan, a list to leave). NULL: the generic removal. */
+	void (*unlink)(async_coroutine_event_callback_t *record);
+	/* Runs before the unlink when the waiting frame never runs again (a bailout's transfer, the
+	 * request's end) and removes the typed state that frame would remove after its wake (S9's
+	 * channel queue entry, D29). NULL: nothing. */
+	void (*abort)(async_coroutine_event_callback_t *record);
+};
 
 ///////////////////////////////////////////////////////////////////
 /// The callbacks vector
@@ -154,6 +180,69 @@ void async_callbacks_notify(async_awaitable_t *target,
 void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *vector);
 
 ///////////////////////////////////////////////////////////////////
+/// Events
+///////////////////////////////////////////////////////////////////
+
+/* Event flags at the positions of TrueAsync's fork (dev/plans/S3.md 3.7); bits 13-30 are an event
+ * type's own. */
+#define ASYNC_EVENT_F_CLOSED (1u << 0)            /* a one-shot event fired; a new waiter reads its outcome */
+#define ASYNC_EVENT_F_RESULT_USED (1u << 1)       /* somebody took the outcome */
+#define ASYNC_EVENT_F_EXC_CAUGHT (1u << 2)        /* somebody took the exception */
+#define ASYNC_EVENT_F_ZEND_OBJ (1u << 4)          /* inside its object: `object_offset`, not `ref_count` */
+#define ASYNC_EVENT_F_EXCEPTION_HANDLED (1u << 6) /* a waiter woken with the exception */
+#define ASYNC_EVENT_F_REFERENCE (1u << 7)         /* only in an object's reference prefix */
+#define ASYNC_EVENT_F_TYPE_SHIFT 13
+
+/* An awaitable that is not a coroutine (32 B). Its type's code allocates, references and frees it;
+ * the last release tears the vector down with async_callbacks_free(), which wakes a waiter whose
+ * record is still linked. */
+typedef struct _async_event_s
+{
+	uint32_t flags; /* ASYNC_AWAITABLE_F_EVENT and the ASYNC_EVENT_F_ bits */
+
+	union
+	{
+		uint32_t ref_count;     /* without ZEND_OBJ: the holders, records excluded */
+		uint32_t object_offset; /* with ZEND_OBJ: from the event to its zend_object */
+	};
+
+	async_callbacks_vector_t callbacks;
+} async_event_t;
+
+/* The prefix of an object that points at an event it does not contain (a Future and its state share
+ * one, S5): the object's handlers->offset leads here. */
+typedef struct
+{
+	uint32_t flags; /* ASYNC_EVENT_REFERENCE_PREFIX */
+	async_event_t *event;
+} async_event_ref_t;
+
+#define ASYNC_EVENT_REFERENCE_PREFIX (ASYNC_AWAITABLE_F_EVENT | ASYNC_EVENT_F_REFERENCE)
+
+/* Starts an event with one reference and no subscribers; `type_flags` are its type's own bits. */
+static zend_always_inline void async_event_init(async_event_t *event, const uint32_t type_flags)
+{
+	event->flags = ASYNC_AWAITABLE_F_EVENT | type_flags;
+	event->ref_count = 1;
+	memset(&event->callbacks, 0, sizeof(event->callbacks));
+}
+
+/* The awaitable of an object of this extension: a coroutine, an event inside the object, or the
+ * event its reference prefix points at. The object's handlers->offset leads to one of the three. */
+static zend_always_inline async_awaitable_t *async_awaitable_from_object(zend_object *object)
+{
+	ZEND_ASSERT(object->handlers->offset != 0 && "an object without an awaitable before it");
+
+	async_awaitable_t *base = (async_awaitable_t *) ((char *) object - object->handlers->offset);
+
+	if (UNEXPECTED((base->flags & ASYNC_EVENT_REFERENCE_PREFIX) == ASYNC_EVENT_REFERENCE_PREFIX)) {
+		return (async_awaitable_t *) ((async_event_ref_t *) base)->event;
+	}
+
+	return base;
+}
+
+///////////////////////////////////////////////////////////////////
 /// Finish handlers
 ///////////////////////////////////////////////////////////////////
 
@@ -218,21 +307,96 @@ void async_switch_handlers_free(async_coroutine_t *coroutine);
 /// The waker
 ///////////////////////////////////////////////////////////////////
 
-/* Per-coroutine wait state (64 B). Owns `error` and `result`. */
+typedef struct _async_wait_block_s async_wait_block_t;
+
+/* How the layer reaches the records of a block (dev/plans/S4.md 2.2). */
+typedef struct
+{
+	/* Unlinks every record the block holds and ends linking into it (S5 sets its `finished` here);
+	 * returns at once once it has run. Allocates nothing, runs no PHP code. */
+	void (*unlink)(async_wait_block_t *block);
+	/* Drops the waiter's reference; may run PHP code (a reference to an item the block held). Reads
+	 * nothing from the waker: another holder (S5's iterator coroutine) may keep the block after the
+	 * waiter has moved on. */
+	void (*release)(async_wait_block_t *block);
+	/* Calls `visit` for each linked record of the block (getAwaitingInfo(), S7's walk of the wait
+	 * graph). */
+	void (*walk)(async_wait_block_t *block,
+				 void (*visit)(const async_coroutine_event_callback_t *record, void *arg),
+				 void *arg);
+} async_wait_block_ops_t;
+
+/* The head of the records of a wait past the waker's two. The stage that waits embeds it in a block
+ * of its own, which holds the records (and S5's await_* context), and links them with
+ * async_wait_link(); the layer only calls `ops`. A wait may use the waker's records and a block
+ * together (S5's cancellation record beside its items). */
+struct _async_wait_block_s
+{
+	const async_wait_block_ops_t *ops;
+};
+
+#define ASYNC_WAKER_INLINE_RECORDS 2
+
+/* Per-coroutine wait state (112 B). Owns `error`, `result` and the waiter's reference to `block`. */
 typedef struct
 {
 	zend_object *error; /* delivered at the next switch-in */
 	zval result;        /* moved out by the waiter; cleared on the error exit */
-	/* The record of the wait; linked while `record.event` is set. It lives in the coroutine, as
-	 * TrueAsync's inline callbacks of the waker do, not on the waiting frame's stack: a bailout that
-	 * unwinds the frame leaves it intact, and the coroutine's finish unlinks it. A wait for several
-	 * targets comes with its stage (S5). */
-	async_coroutine_event_callback_t record;
+	/* The records of a wait for one or two targets, each linked while its `event` is set, as
+	 * TrueAsync's inline callbacks of the waker (two, ZEND_ASYNC_WAKER_INLINE_SLOTS). They live in the
+	 * coroutine, not on the waiting frame's stack: a bailout that unwinds the frame leaves them
+	 * intact, and the coroutine's finish unlinks them. */
+	async_coroutine_event_callback_t records[ASYNC_WAKER_INLINE_RECORDS];
+	/* The records past two; NULL without. Kept after the unlink: the waiter takes it with
+	 * async_wait_take_block() when its suspend() returns and reads its outcome there. */
+	async_wait_block_t *block;
 } async_waker_t;
 
-/* Removes the record of the coroutine's wait from its target (dev/plans/S3.md, section 4.4).
- * Allocates nothing, runs no PHP code; nothing to do without a wait. */
-void async_wait_unlink(async_coroutine_t *coroutine);
+/* Links `record` of `waiter`'s wait into `target`'s vector, into a slot that
+ * async_callbacks_reserve() made (no allocation, nothing to undo). `record` is one of the waker's
+ * records or one of its block's, and another coroutine may link into a parked waiter's block. No PHP
+ * code runs in the waiter between its first link and its suspend(): a wait started there would end
+ * this one. `wake` runs on the target's notify. One that enqueues the waiter leaves the unlink to
+ * the enqueue, which unlinks the whole wait (D26); one that only records (S5's gathering record short
+ * of its count) may unlink its own record. A wake run by the target's teardown finds its record
+ * unlinked already (`event` NULL). */
+void async_wait_link(async_coroutine_event_callback_t *record,
+					 async_coroutine_t *waiter,
+					 async_awaitable_t *target,
+					 const async_wait_kind_t *kind,
+					 async_event_callback_fn wake);
+
+/* Removes a linked record from its target's vector and clears its `event`: the generic unlink, and
+ * the part a kind's unlink shares with it. */
+void async_wait_record_remove(async_coroutine_event_callback_t *record);
+
+/* Unlinks one record when it is linked: its kind's unlink, or the removal from the target's vector.
+ * A block's ops->unlink calls it for its records, the target's teardown for a record left there. */
+void async_wait_record_unlink(async_coroutine_event_callback_t *record);
+
+/* async_wait_unlink() (coroutine.h) past its check that nothing is linked: unlinks the waker's
+ * records and the block's; keeps the block. Allocates nothing, runs no PHP code. */
+void async_wait_unlink_linked(async_coroutine_t *coroutine);
+
+/* The unlink for a frame that never runs again (U4, finalize, U6): each linked record's kind abort
+ * first. A block's records have no abort: no kind S5 links into a block needs one. */
+void async_wait_abort(async_coroutine_t *coroutine);
+
+/* Calls `visit` for each linked record of the coroutine's wait, the block's included. */
+void async_wait_walk(async_coroutine_t *coroutine,
+					 void (*visit)(const async_coroutine_event_callback_t *record, void *arg),
+					 void *arg);
+
+/* Unlinks the coroutine's wait and hands its block to the caller, who owns the waiter's reference
+ * from then on; NULL without a block. The waiter calls it as its suspend() returns, so a wait it
+ * starts later (a destructor run while it reads the outcome) finds no block to end. Between the
+ * wake and this call no PHP code may run in the waiter either: suspend()'s error exit drops
+ * `waker.result`, which holds nothing today; whoever sets it first moves that drop past this call. */
+async_wait_block_t *async_wait_take_block(async_coroutine_t *coroutine);
+
+/* Ends a wait its frame never ended: the unlink, then the waiter's reference to a block left in the
+ * waker. A new wait and the coroutine's finish call it after a bailout cut a wait short. */
+void async_wait_end(async_coroutine_t *coroutine);
 
 ///////////////////////////////////////////////////////////////////
 /// Exceptions across a park

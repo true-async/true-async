@@ -116,6 +116,8 @@ static PHP_MINIT_FUNCTION(true_async)
 	if (UNEXPECTED(zend_register_functions(NULL, true_async_test_hooks_functions, NULL, type) == FAILURE)) {
 		return FAILURE;
 	}
+
+	async_test_hooks_register_classes();
 #endif
 
 	return SUCCESS;
@@ -134,6 +136,9 @@ static PHP_RINIT_FUNCTION(true_async)
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	/* A fault armed and never reached stays with the request that armed it. */
 	ASYNC_G(fault_site) = ASYNC_TEST_FAULT_NONE;
+	ASYNC_G(test_block_releases) = 0;
+	ASYNC_G(test_typed_unlinks) = 0;
+	ASYNC_G(test_aborts) = 0;
 #endif
 
 	return SUCCESS;

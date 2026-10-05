@@ -28,7 +28,7 @@ static zend_object_handlers coroutine_handlers;
 
 static zend_object *coroutine_object_create(zend_class_entry *class_entry)
 {
-	/* 408 B: a class without properties takes the inline properties slot off the size. */
+	/* 456 B: a class without properties takes the inline properties slot off the size. */
 	async_coroutine_t *coroutine = zend_object_alloc(sizeof(async_coroutine_t), class_entry);
 
 	ZVAL_UNDEF(&coroutine->coroutine.result);
@@ -392,8 +392,12 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 	const bool is_bailout = (zend_coroutine->flags & ASYNC_COROUTINE_F_BAILOUT) != 0;
 
 	/* Linked only when a bailout unwound the waiting frame, main's included when a shutdown function's
-	 * zend_try caught it (TrueAsync's finalize destroys the waker the same way). */
-	async_wait_unlink(coroutine);
+	 * zend_try caught it (TrueAsync's finalize destroys the waker the same way): that frame never runs
+	 * again, so the wait is aborted, and its block released. */
+	if (UNEXPECTED(!async_wait_is_empty(coroutine))) {
+		async_wait_abort(coroutine);
+		async_wait_end(coroutine);
+	}
 
 	bool is_exit = false;
 

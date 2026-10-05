@@ -3,6 +3,24 @@
 The results journal: every measurement with its date, builds and outcome. The method and the
 benchmarks are `dev/plans/S3.md`, section 12; the scripts are `bench/`, the runner `tools/bench.py`.
 
+## 2026-10-05, S4.2: B1 with the waker of two records and a block
+
+**Builds.** Release, ZTS, `-O2`, gcc 13.3, the pinned core `async-core-io-2026-10-05-4` `9531d5b0b1f`
+configured as in S3.11; our extension as a `phpize` module (`shared`), `before` at `7a9c99a` (S4.1)
+and `after` with S4.2's change, the test hooks off on both. Machine and metric as in S3.11 (its
+known answers not run again); one count per side.
+
+| Bench | N | before | after | after / before |
+|---|---|---|---|---|
+| B1 | 100 000 | 2,617.2 / 1.020 / 0 / 0 | 2,624.7 / 1.020 / 0 / 0 | 1.003 |
+
+Per operation: instructions / allocations / page faults / system calls. The first version of the
+change counted 2,646.1 (1.011): the finish called the abort and the end of the wait out of line for
+every coroutine. With the inline test that nothing is linked (`async_wait_is_empty`, `coroutine.h`)
+before both and before every unlink, 7.5 instructions per spawn remain, no allocation more. The
+coroutine's allocation grows from 408 to 456 B, from the 448 B to the 512 B bin. B1 stays below the
+reference's 3,128.9 of S3.11 (that count was taken on the core of that day).
+
 ## 2026-10-03, S3.11: B0-B5 against the reference
 
 **Builds.** Release, ZTS, `-O2`, gcc 13.3, `./configure --enable-zts --disable-all --disable-cgi

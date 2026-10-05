@@ -251,7 +251,7 @@ Done when: S3 + S4 lists pass; `delay(1000)` costs under 50 ms of user CPU; a te
 function wakes the loop from another pthread (through the core's `NotifyHandle`, found by class
 name until the core has a C constructor for it).
 Tier: T2. Roles: Critic on S4.1, Critic after S4.2 and after S4.3.
-Active: S4.2
+Active: S4.3
 
 - [x] S4.1 Design note `dev/plans/S4.md`: completion dispatch for scheduler-owned ops and provider
       ops; idle wait in `queue->wait()` with its `EDEADLK` and `EINTR` answers; deadlock decided
@@ -272,12 +272,19 @@ Active: S4.2
         `edge_cases/016`, `017` stay excluded until zlib in S4.4. On core `9531d5b0b1f` after the
         rebase on S5.1: `pocs-dbg` 333 PASS, 144 XFAIL; `pocs-asan` 318 PASS, 16 SKIP, 143 XFAIL.
         The Critic's 2 critical and 6 major findings and the Sage's six rulings are in the note.
-- [ ] S4.2 The wait-record layer and the event header as S4.1 designs them (`dev/plans/S4.md`
+- [x] S4.2 The wait-record layer and the event header as S4.1 designs them (`dev/plans/S4.md`
       section 2), no reactor yet.
       done: the S3 list passes unchanged on `pocs-dbg`, `pocs-asan` and `pocs-win`; internal tests
         link and unlink waits of one, two and five records (a test block, records linked into a
         parked waiter's block by another coroutine) by a wake, a cancel and a bailout out of the
         tick, with no record left linked and the block released once; B1 measured again
+      handoff: done 2026-10-05: the layer in `src/true_async_API.h`/`.c` and `src/coroutine.h`
+        (as built: `dev/plans/S4.md` 2.3), `TrueAsync\Test\Event` and three test functions in the
+        hooks, tests `internal/052`-`061` in `S4.txt`. `pocs-dbg` 343 PASS, 144 XFAIL; `pocs-asan`
+        328 PASS, 16 SKIP, 143 XFAIL; `pocs-win` left to CI. B1 7.5 instructions more per spawn, no
+        allocation more (`dev/BENCHMARKS.md`). The Critic's 8 findings fixed (the waiter takes its
+        block as `suspend()` returns, the finish aborts a wait still linked, a teardown unlinks by the
+        kind), each fix caught by a test when reverted.
 - [ ] S4.3 The per-thread queue and the idle wait: the scheduler parks in `queue->wait()` when
       nothing is runnable and the reactor's lists of waits are not empty, deadlock from those
       lists, the interrupt coroutine, the queue rebuilt after fork.

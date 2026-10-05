@@ -42,11 +42,11 @@ struct _async_coroutine_s
 	zend_object std; /* last: the properties table runs past the end */
 };
 
-/* The sizes of section 3.1, checked at compile time on 64-bit targets: 424 B, allocated as 408 in
- * the 448 B bin. */
+/* The sizes of dev/plans/S3.md 3.1 with the waker of dev/plans/S4.md 2.2, checked at compile time on
+ * 64-bit targets: 472 B, allocated as 456 in the 512 B bin. */
 #if SIZEOF_SIZE_T == 8
-typedef char async_coroutine_size_check[sizeof(async_coroutine_t) == 424 ? 1 : -1];
-typedef char async_coroutine_std_offset_check[offsetof(async_coroutine_t, std) == 368 ? 1 : -1];
+typedef char async_coroutine_size_check[sizeof(async_coroutine_t) == 472 ? 1 : -1];
+typedef char async_coroutine_std_offset_check[offsetof(async_coroutine_t, std) == 416 ? 1 : -1];
 #endif
 
 extern zend_class_entry *async_ce_coroutine;
@@ -54,6 +54,33 @@ extern zend_class_entry *async_ce_coroutine;
 static zend_always_inline async_coroutine_t *async_coroutine_from_object(zend_object *object)
 {
 	return (async_coroutine_t *) ((char *) object - offsetof(async_coroutine_t, std));
+}
+
+/* The vector of an awaitable's subscribers: a coroutine's or an event's, by the type bit. */
+static zend_always_inline async_callbacks_vector_t *async_awaitable_callbacks(async_awaitable_t *awaitable)
+{
+	return ASYNC_AWAITABLE_IS_COROUTINE(awaitable) ? &((async_coroutine_t *) awaitable)->callbacks
+												   : &((async_event_t *) awaitable)->callbacks;
+}
+
+/* No record of the coroutine is linked and no block is left: the common case at a suspend()'s return
+ * and at a finish. */
+static zend_always_inline bool async_wait_is_empty(const async_coroutine_t *coroutine)
+{
+	const async_waker_t *waker = &coroutine->waker;
+
+	return waker->records[0].event == NULL && waker->records[1].event == NULL && waker->block == NULL;
+}
+
+/* Unlinks every record of the coroutine's wait (the unlink sites, dev/plans/S3.md 4.4) and its
+ * block's; keeps the block. Allocates nothing, runs no PHP code; nothing to do without a wait. */
+static zend_always_inline void async_wait_unlink(async_coroutine_t *coroutine)
+{
+	if (EXPECTED(async_wait_is_empty(coroutine))) {
+		return;
+	}
+
+	async_wait_unlink_linked(coroutine);
 }
 
 void async_register_coroutine_ce(zend_class_entry *completable_interface);
