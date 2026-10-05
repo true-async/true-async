@@ -23,6 +23,7 @@ php-src plus the async RFCs, with no php-src patches of its own.
 - [Build](#build)
 - [Tests](#tests)
 - [Repository layout](#repository-layout)
+- [Support the project](#support-the-project)
 - [License](#license)
 
 ---
@@ -165,6 +166,14 @@ tests/                                    tests by group; tests/lists/ holds the
 tools/                                    runner, list checker, mutation and CI scripts
 dev/                                      plan, principles, decisions, workflow
 ```
+
+---
+
+## Support the project
+
+If you find TrueAsync useful, you can support its development:
+
+[Donate via Giveth](https://giveth.io/project/trueasync-php)
 
 ---
 
