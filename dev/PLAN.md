@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-03 · Active: none (S3 steps closed; the stage waits for the S3.14 follow-ups, handoff "Next")
+Updated: 2026-10-05 · Active: none (S3 steps closed; the stage waits for Edmond on "Open questions", handoff "Next")
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO

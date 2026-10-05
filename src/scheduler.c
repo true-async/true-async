@@ -1011,6 +1011,100 @@ static void main_coroutine_finish(async_coroutine_t *coroutine, const bool is_ba
 	ZEND_ASYNC_CURRENT_COROUTINE = NULL;
 }
 
+/* A value is an exception to print, or, as a pointer, one printed (here, or by main.c as the exit
+ * exception), which the walk skips. Each holds a reference: no other exception takes its handle. */
+static void unobserved_exception_dtor(zval *value)
+{
+	zend_object *exception = Z_TYPE_P(value) == IS_PTR ? Z_PTR_P(value) : Z_OBJ_P(value);
+
+	OBJ_RELEASE(exception);
+}
+
+static void scheduler_exit_exception_printed(zend_object *exception)
+{
+	zval value;
+
+	GC_ADDREF(exception);
+	ZVAL_PTR(&value, exception);
+	zend_hash_index_update(&ASYNC_G(unobserved_exceptions), exception->handle, &value);
+}
+
+/* After the request's last drain. A finished coroutine still alive (in an array, a static property, a
+ * cycle) whose exception nobody observed adds it to the table; the plain globals added theirs in
+ * coroutine_object_destroy. Each is printed as uncaught. */
+static void scheduler_print_unobserved_exceptions(void)
+{
+	const zend_objects_store *objects = &EG(objects_store);
+
+	for (uint32_t i = 1; i < objects->top; i++) {
+		zend_object *object = objects->object_buckets[i];
+
+		if (EXPECTED(!IS_OBJ_VALID(object) || object->ce != async_ce_coroutine)) {
+			continue;
+		}
+
+		async_coroutine_t *coroutine = async_coroutine_from_object(object);
+		zend_object *exception = coroutine->coroutine.exception;
+
+		if (EXPECTED(exception == NULL || !ZEND_COROUTINE_IS_FINISHED(&coroutine->coroutine) ||
+					 (coroutine->coroutine.flags & ASYNC_COROUTINE_F_EXC_CAUGHT) ||
+					 instanceof_function(exception->ce, async_ce_cancellation))) {
+			continue;
+		}
+
+		coroutine->coroutine.flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
+		GC_ADDREF(exception);
+		async_unobserved_exception_add(exception);
+	}
+
+	/* main.c prints EG(exception) after this call. */
+	zend_object *pending_exception = EG(exception);
+	EG(exception) = NULL;
+
+	/* Uncaught at the request's end, as main.c prints it: a throwing __toString() is not handed to
+	 * set_exception_handler()'s handler. */
+	zval user_exception_handler;
+	ZVAL_COPY_VALUE(&user_exception_handler, &EG(user_exception_handler));
+	ZVAL_UNDEF(&EG(user_exception_handler));
+
+	/* A print runs PHP code, which may add to the table: each pass looks it up again. */
+	while (true) {
+		zend_object *exception = NULL;
+		zval *value = NULL;
+
+		ZEND_HASH_FOREACH_VAL(&ASYNC_G(unobserved_exceptions), value)
+		{
+			if (Z_TYPE_P(value) == IS_OBJECT) {
+				exception = Z_OBJ_P(value);
+				ZVAL_PTR(value, exception);
+				break;
+			}
+		}
+		ZEND_HASH_FOREACH_END();
+
+		if (exception == NULL) {
+			break;
+		}
+
+		/* The entry keeps its reference; zend_exception_error() releases this one. With no frame, a
+		 * throwing __toString() bails out before that, as an exit() or a fatal error in it. */
+		GC_ADDREF(exception);
+
+		zend_try
+		{
+			zend_exception_error(exception, E_ERROR);
+		}
+		zend_catch
+		{
+			OBJ_RELEASE(exception);
+		}
+		zend_end_try();
+	}
+
+	ZVAL_COPY_VALUE(&EG(user_exception_handler), &user_exception_handler);
+	EG(exception) = pending_exception;
+}
+
 /* The suspend slot's from_main calls (section 7): main finishes, the scheduler coroutine drains the
  * queue on its own stack and comes back here, a new main is minted on this stack. A bailout, the
  * call's or the drain's, is re-raised on the way out after the new main exists, so whatever runs
@@ -1063,12 +1157,19 @@ static bool scheduler_main_suspend(bool is_bailout)
 	if (UNEXPECTED(ZEND_ASYNC_EXIT_EXCEPTION != NULL)) {
 		zend_object *exit_exception = ZEND_ASYNC_EXIT_EXCEPTION;
 		ZEND_ASYNC_EXIT_EXCEPTION = NULL;
+		scheduler_exit_exception_printed(exit_exception);
 
 		if (UNEXPECTED(EG(exception) != NULL)) {
 			zend_exception_set_previous(EG(exception), exit_exception);
 		} else {
 			EG(exception) = exit_exception;
 		}
+	}
+
+	/* Only the last call runs in the shutdown, after the destructors. A bailout's call never gets here, a
+	 * shutdown function's included (it re-raises above). */
+	if (UNEXPECTED(EG(flags) & EG_FLAGS_IN_SHUTDOWN)) {
+		scheduler_print_unobserved_exceptions();
 	}
 
 	return EG(exception) == NULL;
@@ -1753,6 +1854,7 @@ void async_scheduler_request_startup(void)
 	zend_hash_init(&ASYNC_G(coroutines), 8, NULL, NULL, false);
 	ASYNC_G(scheduler_coroutine) = NULL;
 	ASYNC_G(graceful_shutdown) = false;
+	zend_hash_init(&ASYNC_G(unobserved_exceptions), 0, NULL, unobserved_exception_dtor, false);
 
 #ifdef TRUE_ASYNC_FUZZ
 	async_fuzz_init(&ASYNC_G(fuzz));
@@ -1833,6 +1935,9 @@ void async_scheduler_request_shutdown(void)
 	}
 
 	circular_buffer_dtor(&ASYNC_G(microtasks));
+
+	/* The printed exceptions and what a bailout left unprinted. */
+	zend_hash_destroy(&ASYNC_G(unobserved_exceptions));
 
 	if (UNEXPECTED(ZEND_ASYNC_EXIT_EXCEPTION != NULL)) {
 		OBJ_RELEASE(ZEND_ASYNC_EXIT_EXCEPTION);

@@ -151,6 +151,8 @@ open until the S3.14 thread's open items close ("Next").
 
 ## Next
 
-1. The S3.14 thread's open items: main kept when nothing ran, an unobserved exception printed as
-   Fatal (waits for Edmond), the php/php-src report. Then stage S3 closes; ask Edmond what comes
-   next (S4 is planned, not started on its own).
+1. The S3.14 thread's open items: main kept when nothing ran (rejected, DECISIONS 2026-10-05) and
+   an unobserved exception printed as Fatal are done; the Fiber bug fix went to php/php-src as a PR
+   Edmond opened (2026-10-05) from true-async/php-src `fiber-callable-object-8.4`. With the
+   open question in PLAN answered, stage S3 closes; ask Edmond what comes next (S4 is planned, not
+   started on its own).

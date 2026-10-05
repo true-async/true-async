@@ -308,7 +308,7 @@ stack options were shown with the code).
   TrueAsync's `coroutine.c:219-230`); and the graceful shutdown hands one cancellation object to
   every coroutine, so pending errors of two coroutines share its previous chain
   (`cancel_queued_coroutines`), while the deadlock gives each its own. Edmond may want the first
-  reported instead.
+  reported instead. (He did: the first is replaced by the entry of 2026-10-05.)
 - 2026-10-02 Every Fiber is adopted (S3.9): `intercept_fiber` returns a new coroutine, as the
   core's test_scheduler.c. Why: a legacy fiber switches stacks the scheduler does not know about.
   The refusals of `suspend()` and `await()` inside an unadopted Fiber go, as TrueAsync has none;
@@ -486,3 +486,22 @@ stack options were shown with the code).
   not changed. Why: Edmond, "это устройство тру асинка": code in other coroutines runs on after a
   fatal error, as in TrueAsync. Whether shutdown functions (stopped by S3.14, `c43060ea12d`) follow
   it is asked in `dev/PLAN.md`, "Open questions".
+- 2026-10-05 An exception nobody observed, of a coroutine alive at the request's end, is printed as
+  uncaught (Edmond: "да печатать", over TrueAsync's silence), each as its own `Fatal error:
+  Uncaught`, once even when several coroutines carry it (the waiters of one failed coroutine).
+  The globals the shutdown's destructors release go from `coroutine_object_destroy` (no frame)
+  into `ASYNC_G(unobserved_exceptions)`, by object handle; the rest (arrays, static properties,
+  cycles) are found by a walk of the object store in the last from_main call, which prints the
+  table. An exit exception stays in the table as printed, so a coroutine still holding it does
+  not print it twice. Printed after a fatal error and after an `exit()` in a shutdown function
+  too: the error is otherwise lost. Each print runs in `zend_try`: with no frame, a throwing
+  `__toString()` bails out, and the next report still prints. `set_exception_handler()`'s
+  handler is not called, as for the exit exception: it is set aside during the print. Nothing
+  is cancelled; the exit status becomes 255. `getException()` marks the exception observed. Why: the error vanished with exit status 0
+  (`scheduler/088`-`092`). Rejected: chaining them into the exit exception (the Critic:
+  `zend_exception_set_previous` drops an exception already in the chain, and the waiters share
+  one object); a table of the coroutines (the Sage: removal at every observer and at `free_obj`).
+- 2026-10-05 Main is re-minted at every from_main call, as before. Rejected: keeping main when
+  nothing ran (efficiency report 2026-10-03): the call after the destructors re-mints it anyway
+  (the core's destructors give main a switch handler), and a shutdown function awaiting the
+  script's main deadlocked, or not, by whether a GC run or a `defer` came first (the Critic).

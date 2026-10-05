@@ -42,7 +42,8 @@ can see goes here; tests, tools and CI are in the git history.
 - A deadlock ends the request with `Async\DeadlockError` after every waiting coroutine gets
   `AsyncCancellation("Deadlock detected")`; `true_async.debug_deadlock` (default on) prints which
   coroutine waits for which, where `display_errors` shows the error.
-- An exception nobody observed is thrown where the last reference to its coroutine goes.
+- An exception nobody observed (by `await()` or `getException()`) is thrown where the last
+  reference to its coroutine goes; one still unobserved at the request's end is printed as uncaught.
 - A `Fiber` runs as a coroutine of the scheduler: `Async\suspend()` and `Async\await()` work inside
   it, its caller waits for it as for any coroutine, and `exit()` in it ends the request as in a
   coroutine. Fibers left suspended when nothing else runs are closed with no deadlock reported.

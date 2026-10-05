@@ -32,6 +32,7 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	circular_buffer_t fiber_context_pool;   /* contexts parked with nothing to run */
 	circular_buffer_t microtasks;           /* deferred through the defer slot; one reference each, the tick's */
 	HashTable coroutines;                   /* enqueued, unfinished coroutines by object handle; borrowed */
+	HashTable unobserved_exceptions;        /* by object handle, printed at the request's end; one reference each */
 	async_coroutine_t *scheduler_coroutine; /* runs the loop on its own fiber; NULL until work needs it */
 	uint32_t last_handler_id;               /* the id of the newest finish or switch handler; 0 is never handed out */
 	bool graceful_shutdown;                 /* the graceful shutdown started: once per request */

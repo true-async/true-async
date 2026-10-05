@@ -132,7 +132,9 @@ static zend_object *coroutine_release_values(async_coroutine_t *coroutine)
  * its refcount (zend_objects_store_del). The store's destructor pass at shutdown skips coroutine
  * objects (zend_objects_store_call_destructors_async), so a queued one keeps its arguments until it
  * runs. An exception nobody observed is thrown where the last reference went
- * (coroutine.c:219-230), unless it is a cancellation or no PHP code runs there. */
+ * (TrueAsync's coroutine.c:219-230), unless it is a cancellation. Where no PHP code runs (the
+ * shutdown's destructors release the globals) it is printed at the request's end, which TrueAsync
+ * does not do (DECISIONS 2026-10-05). */
 static void coroutine_object_destroy(zend_object *object)
 {
 	async_coroutine_t *coroutine = async_coroutine_from_object(object);
@@ -142,9 +144,20 @@ static void coroutine_object_destroy(zend_object *object)
 		return;
 	}
 
-	if (UNEXPECTED(!(coroutine->coroutine.flags & ASYNC_COROUTINE_F_EXC_CAUGHT) &&
-				   !instanceof_function(exception->ce, async_ce_cancellation) && EG(current_execute_data) != NULL)) {
+	if ((coroutine->coroutine.flags & ASYNC_COROUTINE_F_EXC_CAUGHT) ||
+		instanceof_function(exception->ce, async_ce_cancellation)) {
+		OBJ_RELEASE(exception);
+		return;
+	}
+
+	if (EXPECTED(EG(current_execute_data) != NULL)) {
 		zend_throw_exception_internal(exception);
+		return;
+	}
+
+	/* Async is off only after the request's last print. */
+	if (EXPECTED(ZEND_ASYNC_IS_ACTIVE)) {
+		async_unobserved_exception_add(exception);
 		return;
 	}
 
@@ -269,6 +282,18 @@ static HashTable *coroutine_object_gc(zend_object *object, zval **table, int *nu
 ///////////////////////////////////////////////////////////////////
 /// Running and finishing
 ///////////////////////////////////////////////////////////////////
+
+/* Takes the reference. The waiters of one failed coroutine rethrow one object: it is printed once. */
+void async_unobserved_exception_add(zend_object *exception)
+{
+	zval value;
+
+	ZVAL_OBJ(&value, exception);
+
+	if (UNEXPECTED(zend_hash_index_add(&ASYNC_G(unobserved_exceptions), exception->handle, &value) == NULL)) {
+		OBJ_RELEASE(exception);
+	}
+}
 
 void async_exit_exception_add(zend_object *exception)
 {
@@ -492,12 +517,14 @@ ZEND_METHOD(Async_Coroutine, getException)
 {
 	ZEND_PARSE_PARAMETERS_NONE();
 
-	const async_coroutine_t *coroutine = THIS_COROUTINE;
+	async_coroutine_t *coroutine = THIS_COROUTINE;
 
 	if (!ZEND_COROUTINE_IS_FINISHED(&coroutine->coroutine) || coroutine->coroutine.exception == NULL) {
 		RETURN_NULL();
 	}
 
+	/* Read, the exception is observed: neither its release nor the request's end reports it. */
+	coroutine->coroutine.flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
 	RETURN_OBJ_COPY(coroutine->coroutine.exception);
 }
 

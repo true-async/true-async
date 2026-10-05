@@ -56,10 +56,15 @@ def render(plan):
     total = sum(p for _, _, p in rows) / len(rows)
     percent = round(total * 100)
 
+    badges = f'![Progress {percent}%](https://img.shields.io/badge/progress-{percent}%25-2ea44f.svg)'
+
+    # "Active: none" between stages: no current-stage badge.
+    if current is not None:
+        badges += f' ![Current stage {current}](https://img.shields.io/badge/current%20stage-{current}-orange.svg)'
+
     lines = [
         BEGIN,
-        f'![Progress {percent}%](https://img.shields.io/badge/progress-{percent}%25-2ea44f.svg)'
-        f' ![Current stage {current}](https://img.shields.io/badge/current%20stage-{current}-orange.svg)',
+        badges,
         '',
         '| Stage | Progress | Done |',
         '|---|---|---:|',
