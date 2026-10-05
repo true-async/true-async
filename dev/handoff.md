@@ -3,8 +3,8 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-03. S3.18 (core health fixes) closed, the last step of S3; the stage header stays
-open until the S3.14 thread's open items close ("Next").
+Written 2026-10-05. Health check 2026-10-05 recorded; S3.19 and S3.20 approved, not started; the
+plan's closed steps cut to one line each (details in git history).
 
 ## State
 
@@ -147,14 +147,14 @@ open until the S3.14 thread's open items close ("Next").
   `scheduler/037` (an order artifact); the others are not read.
 
 - The upstream report on `Fiber::__construct` keeping its callable's object without a reference
-  (fixed on `async-core` by S3.14, `2cb30e538e4`) waits for Edmond's word on its text.
+  (fixed on `async-core` by S3.14, `2cb30e538e4`) went upstream as php/php-src#24134 (Edmond,
+  2026-10-05).
 
 ## Next
 
-1. The S3.14 thread's open items: main kept when nothing ran (rejected, DECISIONS 2026-10-05) and
-   an unobserved exception printed as Fatal are done; the Fiber bug fix went to php/php-src as a PR
-   Edmond opened (2026-10-05) from true-async/php-src `fiber-callable-object-8.4`. With the
-   open question in PLAN answered, stage S3 closes; ask Edmond what comes next (S4 is planned, not
-   started on its own).
-2. Health check 2026-10-05 (`dev/HEALTH.md`): S3.19 (extension) and S3.20 (core) wait for Edmond's
-   word, the P1.4 question in PLAN "Open questions" for his answer. Next check: passes 6 and 10.
+1. S3.19 (extension health fixes), then S3.20 (core health fixes, one topic per commit, then a core
+   update): Edmond's go, 2026-10-05; both listed in PLAN with their `done:` lines, findings in
+   `dev/HEALTH.md` "Open findings".
+2. PLAN "Open questions": the P1.4 question waits for Edmond's answer.
+3. After S3.20, stage S3 closes; ask Edmond what comes next (S4 is planned, not started on its own).
+   Next health check: passes 6 and 10.
