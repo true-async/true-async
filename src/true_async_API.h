@@ -129,12 +129,6 @@ static zend_always_inline void async_callbacks_push_reserved(async_callbacks_vec
 	async_callbacks_slots(vector)[vector->length++] = callback;
 }
 
-static zend_always_inline void async_callbacks_add(async_callbacks_vector_t *vector, async_event_callback_t *callback)
-{
-	async_callbacks_reserve(vector, 1);
-	async_callbacks_push_reserved(vector, callback);
-}
-
 /* Removes `callback`; false when it is not in the vector. Order is not kept. During a notify of
  * the vector, every callback the notify has not reached yet still runs at most once, and the
  * removed one does not run again. Allocates nothing, runs no PHP code. */

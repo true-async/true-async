@@ -94,6 +94,12 @@ static void test_callback_init(test_callback_t *callback, const char name, smart
 	callback->trace = trace;
 }
 
+static void test_callbacks_add(async_callbacks_vector_t *vector, async_event_callback_t *callback)
+{
+	async_callbacks_reserve(vector, 1);
+	async_callbacks_push_reserved(vector, callback);
+}
+
 static void action_remove_other(test_callback_t *test_callback, async_awaitable_t *target)
 {
 	async_callbacks_remove(test_callback->other_vector, &test_callback->other_callback->event_callback);
@@ -106,7 +112,7 @@ static void action_remove_self(test_callback_t *test_callback, async_awaitable_t
 
 static void action_add_other(test_callback_t *test_callback, async_awaitable_t *target)
 {
-	async_callbacks_add(test_callback->other_vector, &test_callback->other_callback->event_callback);
+	test_callbacks_add(test_callback->other_vector, &test_callback->other_callback->event_callback);
 }
 
 static void action_notify_other(test_callback_t *test_callback, async_awaitable_t *target)
@@ -180,7 +186,7 @@ static void test_trace_exception(smart_str *trace)
 static void test_vector_fill(async_callbacks_vector_t *vector, test_callback_t *callbacks, const uint32_t count)
 {
 	for (uint32_t i = 0; i < count; i++) {
-		async_callbacks_add(vector, &callbacks[i].event_callback);
+		test_callbacks_add(vector, &callbacks[i].event_callback);
 	}
 }
 
@@ -231,7 +237,7 @@ static void scenario_single_self(smart_str *trace)
 	test_callback_init(&callback, 'A', trace);
 	callback.action = action_remove_self;
 	callback.other_vector = &target.callbacks;
-	async_callbacks_add(&target.callbacks, &callback.event_callback);
+	test_callbacks_add(&target.callbacks, &callback.event_callback);
 	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
 	smart_str_append_printf(trace, " length=%u capacity=%u", target.callbacks.length, target.callbacks.capacity);
 }
@@ -291,11 +297,11 @@ static void scenario_nested_other(smart_str *trace)
 	w.action = action_remove_other;
 	w.other_vector = &outer.callbacks;
 	w.other_callback = &r;
-	async_callbacks_add(&outer.callbacks, &r.event_callback);
-	async_callbacks_add(&outer.callbacks, &a.event_callback);
-	async_callbacks_add(&outer.callbacks, &b.event_callback);
-	async_callbacks_add(&inner.callbacks, &w.event_callback);
-	async_callbacks_add(&inner.callbacks, &x.event_callback);
+	test_callbacks_add(&outer.callbacks, &r.event_callback);
+	test_callbacks_add(&outer.callbacks, &a.event_callback);
+	test_callbacks_add(&outer.callbacks, &b.event_callback);
+	test_callbacks_add(&inner.callbacks, &w.event_callback);
+	test_callbacks_add(&inner.callbacks, &x.event_callback);
 	async_callbacks_notify((async_awaitable_t *) &outer, &outer.callbacks, NULL, NULL);
 	smart_str_append_printf(trace, " length=%u", outer.callbacks.length);
 	async_callbacks_free((async_awaitable_t *) &outer, &outer.callbacks);
@@ -340,9 +346,9 @@ static void scenario_bailout_caught(smart_str *trace)
 	a.other_vector = &inner.callbacks;
 	a.other_target = &inner;
 	w.action = action_bailout_once;
-	async_callbacks_add(&outer.callbacks, &a.event_callback);
-	async_callbacks_add(&outer.callbacks, &b.event_callback);
-	async_callbacks_add(&inner.callbacks, &w.event_callback);
+	test_callbacks_add(&outer.callbacks, &a.event_callback);
+	test_callbacks_add(&outer.callbacks, &b.event_callback);
+	test_callbacks_add(&inner.callbacks, &w.event_callback);
 	async_callbacks_notify((async_awaitable_t *) &outer, &outer.callbacks, NULL, NULL);
 	smart_str_appends(trace, " again:");
 	async_callbacks_notify((async_awaitable_t *) &inner, &inner.callbacks, NULL, NULL);
@@ -358,7 +364,7 @@ static void scenario_sched_kept(smart_str *trace)
 	test_callback_t a;
 
 	test_callback_init(&a, 'A', trace);
-	async_callbacks_add(&target.callbacks, &a.event_callback);
+	test_callbacks_add(&target.callbacks, &a.event_callback);
 	smart_str_appends(trace, "outside:");
 	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
 	smart_str_append_printf(trace, " sched=%d inside:", (int) ZEND_ASYNC_IN_SCHEDULER_CONTEXT);
@@ -670,7 +676,7 @@ static void scenario_buffer_wrap_grow(smart_str *trace)
 {
 	circular_buffer_t buffer;
 
-	circular_buffer_ctor(&buffer, sizeof(void *));
+	circular_buffer_ctor(&buffer);
 	test_buffer_push(&buffer, 1, 3);
 	smart_str_append_printf(trace, "full=%d", circular_buffer_is_full(&buffer));
 	test_buffer_pop(&buffer, trace, 2);
@@ -680,7 +686,7 @@ static void scenario_buffer_wrap_grow(smart_str *trace)
 	smart_str_append_printf(trace, " count=%zu", circular_buffer_count(&buffer));
 	circular_buffer_dtor(&buffer);
 
-	circular_buffer_ctor(&buffer, sizeof(void *));
+	circular_buffer_ctor(&buffer);
 	test_buffer_push(&buffer, 1, 3);
 	test_buffer_pop(&buffer, trace, 1);
 	test_buffer_push(&buffer, 4, 5);
@@ -693,11 +699,10 @@ static void scenario_buffer_wrap_grow(smart_str *trace)
 static void scenario_buffer_push_front(smart_str *trace)
 {
 	circular_buffer_t buffer;
-	void *item = (void *) (uintptr_t) 0;
 
-	circular_buffer_ctor(&buffer, sizeof(void *));
+	circular_buffer_ctor(&buffer);
 	test_buffer_push(&buffer, 1, 2);
-	circular_buffer_push_front(&buffer, &item);
+	circular_buffer_push_front(&buffer, (void *) (uintptr_t) 0);
 	smart_str_append_printf(trace, "tail=%zu:", buffer.tail);
 	test_buffer_pop(&buffer, trace, SIZE_MAX);
 	circular_buffer_dtor(&buffer);
@@ -708,7 +713,7 @@ static void scenario_buffer_grow(smart_str *trace)
 {
 	circular_buffer_t buffer;
 
-	circular_buffer_ctor(&buffer, sizeof(void *));
+	circular_buffer_ctor(&buffer);
 	test_buffer_push(&buffer, 1, 8);
 	smart_str_append_printf(trace, "slots=%zu:", buffer.capacity);
 	test_buffer_pop(&buffer, trace, SIZE_MAX);
@@ -724,7 +729,7 @@ static void scenario_buffer_ptr(smart_str *trace)
 	circular_buffer_t buffer;
 	void *element;
 
-	circular_buffer_ctor(&buffer, sizeof(void *));
+	circular_buffer_ctor(&buffer);
 	smart_str_append_printf(trace, "empty=%d ", circular_buffer_pop_ptr(&buffer, &element) == FAILURE);
 
 	/* Tail 2: A B C take slots 2, 3 and 0. */
@@ -756,39 +761,45 @@ static void scenario_buffer_ptr(smart_str *trace)
 static void scenario_buffer_front_full(smart_str *trace)
 {
 	circular_buffer_t buffer;
-	void *item = (void *) (uintptr_t) 9;
 
-	circular_buffer_ctor(&buffer, sizeof(void *));
+	circular_buffer_ctor(&buffer);
 	test_buffer_push(&buffer, 1, 2);
 	test_buffer_pop(&buffer, trace, 2);
 	test_buffer_push(&buffer, 10, 12);
 	smart_str_append_printf(trace, " full=%d", circular_buffer_is_full(&buffer));
-	circular_buffer_push_front(&buffer, &item);
+	circular_buffer_push_front(&buffer, (void *) (uintptr_t) 9);
 	smart_str_append_printf(trace, " slots=%zu:", buffer.capacity);
 	test_buffer_pop(&buffer, trace, SIZE_MAX);
 	circular_buffer_dtor(&buffer);
 
-	circular_buffer_ctor(&buffer, sizeof(void *));
+	circular_buffer_ctor(&buffer);
 	test_buffer_push(&buffer, 1, 3);
-	item = (void *) (uintptr_t) 0;
-	circular_buffer_push_front(&buffer, &item);
+	circular_buffer_push_front(&buffer, (void *) (uintptr_t) 0);
 	smart_str_append_printf(trace, " slots=%zu tail=%zu:", buffer.capacity, buffer.tail);
 	test_buffer_pop(&buffer, trace, SIZE_MAX);
 	circular_buffer_dtor(&buffer);
 }
 
-/* A zero-filled buffer (a scheduler queue before the scheduler allocates it) reads as empty. */
-static void scenario_buffer_zeroed(smart_str *trace)
+/* count on a wrapped buffer, its head behind its tail: 1 2 3 fill 4 slots, 1 and 2 leave, 4 takes
+ * slot 3, 5 wraps to slot 0. */
+static void scenario_buffer_count_wrapped(smart_str *trace)
 {
-	circular_buffer_t buffer = { 0 };
-	void *element;
+	circular_buffer_t buffer;
 
+	circular_buffer_ctor(&buffer);
+	test_buffer_push(&buffer, 1, 3);
+	test_buffer_pop(&buffer, trace, 2);
+	test_buffer_push(&buffer, 4, 4);
+	smart_str_append_printf(
+			trace, " head=%zu tail=%zu count=%zu", buffer.head, buffer.tail, circular_buffer_count(&buffer));
+	test_buffer_push(&buffer, 5, 5);
 	smart_str_append_printf(trace,
-							"count=%zu empty=%d not_empty=%d pop=%d",
+							" head=%zu count=%zu full=%d:",
+							buffer.head,
 							circular_buffer_count(&buffer),
-							circular_buffer_is_empty(&buffer),
-							circular_buffer_is_not_empty(&buffer),
-							circular_buffer_pop_ptr(&buffer, &element) == FAILURE);
+							circular_buffer_is_full(&buffer));
+	test_buffer_pop(&buffer, trace, SIZE_MAX);
+	circular_buffer_dtor(&buffer);
 }
 
 static const test_scenario_t buffer_scenarios[] = {
@@ -797,7 +808,7 @@ static const test_scenario_t buffer_scenarios[] = {
 	{ "grow", scenario_buffer_grow },
 	{ "ptr", scenario_buffer_ptr },
 	{ "front-full", scenario_buffer_front_full },
-	{ "zeroed", scenario_buffer_zeroed },
+	{ "count-wrapped", scenario_buffer_count_wrapped },
 };
 
 static void

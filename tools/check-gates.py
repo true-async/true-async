@@ -18,10 +18,10 @@ ROOT = Path(__file__).resolve().parent.parent
 # pinned core); any other is a fork type, renamed async_* by D12. A core update that adds a type
 # adds it here.
 CORE_TYPES = {
-    'zend_async_call_on_main_stack_t', 'zend_async_cancel_t', 'zend_async_context_t',
+    'zend_async_cancel_t', 'zend_async_context_t',
     'zend_async_coroutine_add_awaiting_info_t', 'zend_async_coroutine_add_finish_handler_t',
     'zend_async_coroutine_add_switch_handler_t', 'zend_async_coroutine_await_t',
-    'zend_async_coroutine_execute_data_t', 'zend_async_coroutine_from_object_t',
+    'zend_async_coroutine_execute_data_t',
     'zend_async_coroutine_get_awaiting_info_t', 'zend_async_coroutine_remove_awaiting_info_t',
     'zend_async_coroutine_remove_finish_handler_t',
     'zend_async_coroutine_remove_switch_handler_t', 'zend_async_defer_t',

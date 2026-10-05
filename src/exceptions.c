@@ -22,7 +22,7 @@
 zend_class_entry *async_ce_cancellation = NULL;
 zend_class_entry *async_ce_async_exception = NULL;
 zend_class_entry *async_ce_deadlock_error = NULL;
-zend_class_entry *async_ce_composite_exception = NULL;
+static zend_class_entry *async_ce_composite_exception = NULL;
 
 /* The typed `$exceptions` property as an array, or NULL before the first write. Read with silent=1:
  * an uninitialised one gives UNDEF instead of an error, so an empty composite reads back as [];
@@ -36,20 +36,22 @@ static zval *composite_exceptions(zend_object *composite)
 	return Z_TYPE_P(exceptions) == IS_ARRAY ? exceptions : NULL;
 }
 
-void async_composite_exception_add_exception(zend_object *composite, zend_object *exception, const bool transfer)
+static void composite_exception_add_exception(zend_object *composite, zend_object *exception)
 {
 	zval *exceptions = composite_exceptions(composite);
 	zval element;
 
-	if (!transfer) {
-		GC_ADDREF(exception);
-	}
-
-	ZVAL_OBJ(&element, exception);
+	ZVAL_OBJ_COPY(&element, exception);
 
 	if (exceptions != NULL) {
 		SEPARATE_ARRAY(exceptions);
-		zend_hash_next_index_insert_new(Z_ARRVAL_P(exceptions), &element);
+
+		/* The array may come from user code (reflection, unserialize()) with PHP_INT_MAX taken. */
+		if (UNEXPECTED(zend_hash_next_index_insert(Z_ARRVAL_P(exceptions), &element) == NULL)) {
+			zval_ptr_dtor(&element);
+			zend_cannot_add_element();
+		}
+
 		return;
 	}
 
@@ -87,7 +89,7 @@ ZEND_METHOD(Async_CompositeException, addException)
 		Z_PARAM_OBJ_OF_CLASS(exception, zend_ce_throwable)
 	ZEND_PARSE_PARAMETERS_END();
 
-	async_composite_exception_add_exception(Z_OBJ_P(ZEND_THIS), exception, false);
+	composite_exception_add_exception(Z_OBJ_P(ZEND_THIS), exception);
 }
 
 ZEND_METHOD(Async_CompositeException, getExceptions)

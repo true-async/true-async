@@ -199,8 +199,9 @@ someone will propose again.
   (`zend_gc.c:2245` defers a GC only then); creating it at the end of main or in a bailout would
   allocate a stack where none can fail (Critic, Sage).
 - 2026-10-02 A bailout unwinds every coroutine but main first and hands main the flag last, the
-  core's ts.c order, not TrueAsync's main-first. Why: main's bailout may land in a `zend_try` of the
-  shutdown functions, and the from_main call that comes back is then a plain one (Critic); not
+  core's ts.c order, not TrueAsync's main-first. Why: main's bailout may land in a `zend_try` that no
+  from_main call follows, as the one around the last call (`main.c:1937-1945`), and the scheduler
+  parked mid-walk is never resumed (Critic; restated in S3.19); not
   copied from TrueAsync either: the unchecked scheduler creation (`scheduler.c:1313`), the lost
   bailout result (`:1374`), no unwinding after a bailout on the scheduler's own stack (`:2026`).
 - 2026-10-02 A stack that cannot be taken ends the request, as running out of memory does: the
@@ -506,3 +507,16 @@ stack options were shown with the code).
   nothing ran (efficiency report 2026-10-03): the call after the destructors re-mints it anyway
   (the core's destructors give main a switch handler), and a shutdown function awaiting the
   script's main deadlocked, or not, by whether a GC run or a `defer` came first (the Critic).
+- 2026-10-05 Health fixes of the extension (S3.19): the circular buffer holds pointers only, with no
+  `count` for a buffer never constructed (every queue is constructed at RINIT);
+  `internal/017-buffer_zeroed.phpt` keeps its name and counts a wrapped buffer (frozen lists, as
+  `014` in S3.17); the `gc_new_coroutine`
+  slot stays NULL and the core takes the GC's coroutines from `new_coroutine`, as our copy of it
+  did; `CompositeException`'s add lost `transfer` and is static with its class entry;
+  `async_callbacks_add()` is `test_callbacks_add()` in `test_hooks.c`. Why: every buffer held pointers, the slot copied
+  the fallback, the rest had no caller outside (HEALTH 2026-10-05, pass 8).
+- 2026-10-05 `CompositeException::addException()` throws `zend_cannot_add_element()`'s Error, as
+  `$array[] =`, when the list's next key is taken (reflection or `unserialize()` can set
+  `PHP_INT_MAX`); it asserted in a debug build and added a second bucket under the same key in a
+  release one (`classes/010`). TrueAsync warns with E_CORE_WARNING
+  and drops the exception: a departure (P1.4), since the user's call should fail as PHP's own does.

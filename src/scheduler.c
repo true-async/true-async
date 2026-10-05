@@ -856,7 +856,7 @@ static async_coroutine_t *bailout_next_coroutine(void)
  * (TrueAsync's bailout_all_coroutines, scheduler.c:949-995). The registry is scanned again after
  * each one, as test_scheduler.c does: a finalize removes entries and a new coroutine (a GC coroutine) may add one.
  * Main is left to the scheduler's end, which hands it the bailout, as the core's test_scheduler.c does: main's
- * bailout may land in any zend_try of main.c, so the scheduler must not be parked inside this loop
+ * bailout may land in any zend_try on main's stack, so the scheduler must not be parked inside this loop
  * while main unwinds. A bailout out of the walk itself (a finish handler of a coroutine that never
  * started) lands in the walk's own try and the walk goes on: the scheduler's catch has no bailout
  * address left, and TrueAsync's walk gives up there instead. A coroutine whose finalize bailed out
@@ -1193,12 +1193,6 @@ static zend_coroutine_t *scheduler_new_coroutine(void)
 	return &async_coroutine_new()->coroutine;
 }
 
-/* GC coroutines run in the same FIFO order as every other (D20). */
-static zend_coroutine_t *scheduler_gc_new_coroutine(void)
-{
-	return &async_coroutine_new()->coroutine;
-}
-
 static zend_coroutine_t *scheduler_launch(void)
 {
 	return &main_coroutine_adopt()->coroutine;
@@ -1209,7 +1203,7 @@ static zend_always_inline void run_queue_push(async_coroutine_t *coroutine)
 	/* The front once after asHiPriority() (D20, D35). */
 	if (UNEXPECTED(coroutine->coroutine.flags & ASYNC_COROUTINE_F_HI_PRIORITY)) {
 		coroutine->coroutine.flags &= ~ASYNC_COROUTINE_F_HI_PRIORITY;
-		circular_buffer_push_front(&ASYNC_G(run_queue), &coroutine);
+		circular_buffer_push_front(&ASYNC_G(run_queue), coroutine);
 	} else {
 		circular_buffer_push_ptr_with_resize(&ASYNC_G(run_queue), coroutine);
 	}
@@ -1510,7 +1504,7 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 		 * the popped one keeps its turn. */
 		if (UNEXPECTED(ZEND_COROUTINE_IS_RUNNING(zend_coroutine))) {
 			if (next_coroutine != NULL) {
-				circular_buffer_push_front(&ASYNC_G(run_queue), &next_coroutine);
+				circular_buffer_push_front(&ASYNC_G(run_queue), next_coroutine);
 			}
 
 			break;
@@ -1816,7 +1810,6 @@ static const zend_async_scheduler_api_t scheduler_api = {
 	.size = sizeof(zend_async_scheduler_api_t),
 	.version = ZEND_ASYNC_API_VERSION,
 	.new_coroutine = scheduler_new_coroutine,
-	.gc_new_coroutine = scheduler_gc_new_coroutine,
 	.enqueue_coroutine = async_scheduler_enqueue,
 	.suspend = scheduler_suspend,
 	.cancel = scheduler_cancel,
@@ -1847,10 +1840,10 @@ bool async_scheduler_register(void)
 
 void async_scheduler_request_startup(void)
 {
-	circular_buffer_ctor(&ASYNC_G(run_queue), sizeof(async_coroutine_t *));
+	circular_buffer_ctor(&ASYNC_G(run_queue));
 	/* Grows as contexts park, up to ASYNC_FIBER_POOL_SIZE and the run queue's length. */
-	circular_buffer_ctor(&ASYNC_G(fiber_context_pool), sizeof(async_fiber_context_t *));
-	circular_buffer_ctor(&ASYNC_G(microtasks), sizeof(zend_async_microtask_t *));
+	circular_buffer_ctor(&ASYNC_G(fiber_context_pool));
+	circular_buffer_ctor(&ASYNC_G(microtasks));
 	zend_hash_init(&ASYNC_G(coroutines), 8, NULL, NULL, false);
 	ASYNC_G(scheduler_coroutine) = NULL;
 	ASYNC_G(graceful_shutdown) = false;

@@ -20,13 +20,10 @@ static zend_always_inline size_t next_index(const size_t index, const size_t cap
 	return (index + 1) & (capacity - 1);
 }
 
-void circular_buffer_ctor(circular_buffer_t *buffer, const size_t item_size)
+void circular_buffer_ctor(circular_buffer_t *buffer)
 {
-	ZEND_ASSERT(item_size > 0);
-
-	buffer->item_size = item_size;
 	buffer->capacity = INITIAL_CAPACITY;
-	buffer->data = emalloc(INITIAL_CAPACITY * item_size);
+	buffer->data = emalloc(INITIAL_CAPACITY * sizeof(void *));
 	buffer->head = 0;
 	buffer->tail = 0;
 }
@@ -42,41 +39,40 @@ static void circular_buffer_grow(circular_buffer_t *buffer)
 {
 	ZEND_ASSERT(circular_buffer_is_full(buffer));
 
-	const size_t item_size = buffer->item_size;
 	const size_t capacity = buffer->capacity;
 
-	buffer->data = erealloc2(buffer->data, 2 * capacity * item_size, capacity * item_size);
+	buffer->data = erealloc2(buffer->data, 2 * capacity * sizeof(void *), capacity * sizeof(void *));
 
 	if (buffer->tail != 0) {
-		memcpy((char *) buffer->data + capacity * item_size, buffer->data, buffer->head * item_size);
+		memcpy(buffer->data + capacity, buffer->data, buffer->head * sizeof(void *));
 		buffer->head += capacity;
 	}
 
 	buffer->capacity = 2 * capacity;
 }
 
-void circular_buffer_push(circular_buffer_t *buffer, const void *value)
+void circular_buffer_push(circular_buffer_t *buffer, void *ptr)
 {
-	ZEND_ASSERT(buffer->data != NULL && value != NULL);
+	ZEND_ASSERT(buffer->data != NULL);
 
 	if (UNEXPECTED(circular_buffer_is_full(buffer))) {
 		circular_buffer_grow(buffer);
 	}
 
-	memcpy((char *) buffer->data + buffer->head * buffer->item_size, value, buffer->item_size);
+	buffer->data[buffer->head] = ptr;
 	buffer->head = next_index(buffer->head, buffer->capacity);
 }
 
-void circular_buffer_push_front(circular_buffer_t *buffer, const void *value)
+void circular_buffer_push_front(circular_buffer_t *buffer, void *ptr)
 {
-	ZEND_ASSERT(buffer->data != NULL && value != NULL);
+	ZEND_ASSERT(buffer->data != NULL);
 
 	if (UNEXPECTED(circular_buffer_is_full(buffer))) {
 		circular_buffer_grow(buffer);
 	}
 
 	buffer->tail = (buffer->tail == 0 ? buffer->capacity : buffer->tail) - 1;
-	memcpy((char *) buffer->data + buffer->tail * buffer->item_size, value, buffer->item_size);
+	buffer->data[buffer->tail] = ptr;
 }
 
 bool circular_buffer_is_empty(const circular_buffer_t *buffer)
@@ -91,11 +87,6 @@ bool circular_buffer_is_full(const circular_buffer_t *buffer)
 
 size_t circular_buffer_count(const circular_buffer_t *buffer)
 {
-	/* A buffer never constructed (all zero, as a scheduler global before RINIT) holds nothing. */
-	if (UNEXPECTED(buffer->capacity == 0)) {
-		return 0;
-	}
-
 	ZEND_ASSERT(buffer->head < buffer->capacity && buffer->tail < buffer->capacity);
 
 	return buffer->head >= buffer->tail ? buffer->head - buffer->tail : buffer->capacity - buffer->tail + buffer->head;

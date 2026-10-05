@@ -3,15 +3,15 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-05. Health check 2026-10-05 recorded; S3.19 and S3.20 approved, not started; the
-plan's closed steps cut to one line each (details in git history).
+Written 2026-10-05. S3.19 (extension health fixes) done; S3.20 (core health fixes) approved, not
+started.
 
 ## State
 
 - Core pinned: `async-core-io-2026-10-05` (`a9de8425106`). CI gates every lane on every list; a
   test that cannot pass yet carries `--XFAIL--` naming its step, and the commit that makes it pass
   removes the section. run-tests (`tools/run-tests.patch`) fails a test the timeout killed.
-- S3.3-S3.6a: internal API, classes, the `Coroutine` object, the 21 slots, the FIFO run queue,
+- S3.3-S3.6a: internal API, classes, the `Coroutine` object, the core's slots, the FIFO run queue,
   pooled contexts, main adopted as a copy, the suspend slot with the tick, the hybrid scheduler
   coroutine and `scheduler_bailout_all` (main last, the core's test_scheduler.c order).
 - S3.7: `Async\await()`, the await slot (one record in the waiter's waker), the GC waiting for its
@@ -91,6 +91,11 @@ plan's closed steps cut to one line each (details in git history).
   `test_scheduler.fail_enqueue`, tests `079`-`085`); a refused shutdown or GC iterator leaves no
   exception. Ours: the registry holds a coroutine from its creation, so a core coroutine whose
   enqueue fails is released at RSHUTDOWN; CREATED entries are no waiters (`scheduler/086`, `087`).
+- S3.19: the circular buffer holds pointers only (`push`, `push_front` take the pointer, no item
+  size, no `count` for a buffer never constructed; `internal/017` counts a wrapped buffer); the `gc_new_coroutine`
+  slot stays NULL; `CompositeException`'s add and class entry static; `async_callbacks_add()` is
+  `test_callbacks_add()` in `test_hooks.c`; `addException()` throws as `$array[] =` when the
+  list's next key is taken (`classes/010`). The core's API has 19 slots since S3.18.
 - Reviews: after the code, Critic and the Sage (`general-purpose`, model `fable`) compare it with
   TrueAsync (`/root/php-async` in the container) and hunt inventions; one plan step is one commit.
 - Container notes: the ASAN lane needs `TRUE_ASYNC_CORE_SRC=/root/core-asan`; `gen_stub.php`
@@ -152,9 +157,11 @@ plan's closed steps cut to one line each (details in git history).
 
 ## Next
 
-1. S3.19 (extension health fixes), then S3.20 (core health fixes, one topic per commit, then a core
-   update): Edmond's go, 2026-10-05; both listed in PLAN with their `done:` lines, findings in
-   `dev/HEALTH.md` "Open findings".
+1. S3.20 (core health fixes, one topic per commit, then a core update): Edmond's go, 2026-10-05;
+   listed in PLAN with its `done:` line, findings in `dev/HEALTH.md` "Open findings".
 2. PLAN "Open questions": the P1.4 question waits for Edmond's answer.
-3. After S3.20, stage S3 closes; ask Edmond what comes next (S4 is planned, not started on its own).
+3. `tools/check-lists.py` compares a frozen list only with its first commit, so a line added later
+   and then deleted passes (S2.md section 3 says the same; Critic and Sage in S3.19): for the next
+   health check.
+4. After S3.20, stage S3 closes; ask Edmond what comes next (S4 is planned, not started on its own).
    Next health check: passes 6 and 10.

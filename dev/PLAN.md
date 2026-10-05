@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-05 · Active: S3.19 (then S3.20; approved by Edmond 2026-10-05)
+Updated: 2026-10-05 · Active: S3.20 (approved by Edmond 2026-10-05)
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -110,7 +110,7 @@ needed (`dev/plans/S2.md`, section 5), and S3 needs none (scheduler RFC changes 
 - [x] S3.16 Health tests 2026-10-02: the refusals of `true_async.c` and others (cee7f53).
 - [x] S3.17 Circular buffer cut to what S3 uses (9b03cb3).
 - [x] S3.18 Health fixes 2026-10-02, core; pinned `async-core-io-2026-10-03` (4693b88).
-- [ ] S3.19 Health fixes, extension (health check 2026-10-05, `dev/HEALTH.md`; Edmond's go,
+- [x] S3.19 Health fixes, extension (health check 2026-10-05, `dev/HEALTH.md`; Edmond's go,
       2026-10-05): `async_composite_exception_add_exception` loses `transfer`, it and
       `async_ce_composite_exception` become static; `async_callbacks_add()` moves to test_hooks.c or
       goes; the circular buffer holds pointers only (no `item_size`, no zero-filled `count`
@@ -118,6 +118,11 @@ needed (`dev/plans/S2.md`, section 5), and S3 needs none (scheduler RFC changes 
       the two removed core types; PRINCIPLES P3.2 names the `windows` job; S3.md 621-623 and
       DECISIONS 202-203 restate the main-last reason after `c43060ea12d`.
       done: the S3 list passes as before; `check-gates.py` and `check-lists.py` clean
+      handoff: done 2026-10-05 on core `a9de8425106`: `pocs-dbg` 321 PASS, `pocs-asan` 307 PASS and
+        14 SKIP, 10 seeds on dbg 0 failed; gates, lists, roadmap and format clean. `internal/017`
+        counts a wrapped buffer now; `classes/010`: `addException()` asserted when the list's next
+        key was taken (the Critic), now throws as `$array[] =`. The gc slot stays NULL (it also survives S3.20 removing it). The main-last
+        reason now names `main.c:1937-1945`, the try around the last from_main call.
 - [ ] S3.20 Health fixes, core (`async-core`, one topic per commit, then a core update by
       `WORKFLOW.md`; Edmond's go, 2026-10-05): `is_safely` and the `gc_new_coroutine` slot removed or
       given RFC text; the object-less coroutine branch and the uncalled surface

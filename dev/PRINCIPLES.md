@@ -43,9 +43,9 @@ below); the table at the end shows where each of them went.
   before code, and lists are cumulative. Flips: never. Gate: the stage's list file in
   `tests/lists/` precedes its first code commit; held by discipline.
 - **P3.2 Windows parity over Linux-first speed.** Why: N11; every stage builds and runs its list
-  on Windows (local nmake env in `E:\php` with php-sdk, CI `windows-latest`), pipes are a
-  mandatory group on both OSes. Flips: a test excluded on Windows with
-  its reason named. Gate: the `windows-latest` CI job (S2.4).
+  on Windows (local nmake env in `E:\php` with php-sdk, CI job `windows` on
+  `windows-2025-vs2026`), pipes are a mandatory group on both OSes. Flips: a test excluded on
+  Windows with its reason named. Gate: the `windows` CI job (S2.4).
 
 ## P4. Process
 
