@@ -1,0 +1,46 @@
+--TEST--
+await_all() - all coroutines succeed
+--XFAIL--
+Not implemented yet: S5.3 of dev/PLAN.md
+--FILE--
+<?php
+
+use function Async\spawn;
+use function Async\await_all;
+
+echo "start\n";
+
+$coroutines = [
+    spawn(function() {
+        return "first";
+    }),
+    spawn(function() {
+        return "second";
+    }),
+    spawn(function() {
+        return "third";
+    }),
+];
+
+$result = await_all($coroutines);
+var_dump($result);
+
+echo "end\n";
+?>
+--EXPECT--
+start
+array(2) {
+  [0]=>
+  array(3) {
+    [0]=>
+    string(5) "first"
+    [1]=>
+    string(6) "second"
+    [2]=>
+    string(5) "third"
+  }
+  [1]=>
+  array(0) {
+  }
+}
+end

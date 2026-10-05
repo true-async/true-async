@@ -1,0 +1,39 @@
+--TEST--
+await_first_success() - when all coroutines throw errors
+--XFAIL--
+Not implemented yet: S5.3 of dev/PLAN.md
+--FILE--
+<?php
+
+use function Async\spawn;
+use function Async\await_first_success;
+use function Async\await;
+
+$coroutines = [
+    spawn(function() {
+        throw new RuntimeException("first error");
+    }),
+    
+    spawn(function() {
+        throw new InvalidArgumentException("second error");
+    }),
+    
+    spawn(function() {
+        throw new LogicException("third error");
+    })
+];
+
+echo "start\n";
+$result = await_first_success($coroutines);
+$error = $result[1] ?? null;
+$errorsCount = count($result[1] ?? []);
+echo "Result: " . ($result[0] === null ? "NULL" : "FAILED") . "\n";
+echo "Errors count: $errorsCount\n";
+echo "end\n";
+
+?>
+--EXPECT--
+start
+Result: NULL
+Errors count: 3
+end

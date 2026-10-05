@@ -290,9 +290,10 @@ Active: S4.1
 Goal: the API the ported tests use everywhere.
 Done when: S3–S5 lists pass, including the `await` group's combinator tests.
 Tier: T2. Roles: Critic on S5.1, Critic after S5.2.
-Active: S5.1
+Notes: dev/plans/S5.md
+Active: S5.2 (waits for the wait-record layer on `main`)
 
-- [ ] S5.1 Design note `dev/plans/S5.md`: `Future` and `FutureState` as TrueAsync has them within one
+- [x] S5.1 Design note `dev/plans/S5.md`: `Future` and `FutureState` as TrueAsync has them within one
       thread (the remote and cross-thread futures wait for S10's thread pool), `map`/`catch`/
       `finally` chains completed without recursion (`dev/plans/S3.md` 3.6), `await()` on any
       awaitable with `$cancellation`, the `await_*` family over arrays and Traversables (S3.md
@@ -301,6 +302,13 @@ Active: S5.1
       records included; frozen list `tests/lists/S5.txt` with each test that
       needs `delay()` or `timeout()` marked; core-dependency table.
       done: the note and the list pushed; every Critic finding fixed or answered in the note
+      handoff: done 2026-10-05: `dev/plans/S5.md`, needs N1-N9 for S4.1 in its section 7;
+        `tests/lists/S5.txt` holds 135 tests (97 from `S3.excluded`, 38 of `future/`), each with
+        `--XFAIL--` naming S5.2, S5.3 or S5.4; on core `9531d5b0b1f` `pocs-dbg` 330 PASS and 135
+        XFAIL, `pocs-asan` 315 PASS, 16 SKIP and 134 XFAIL. The Critic's 13 findings are in the
+        note; the Sage ruled on three: mappers run in one drain coroutine with TrueAsync's helper
+        microtask, a mapper's error goes only into its child, the shared event is reported to the
+        GC only by its sole holder. `iterate()` moves to S9.
 - [ ] S5.2 `Future` and `FutureState` with their chains; `await()` and `Future::await()` on a Future
       (once the wait-record layer is on `main`).
       done: S5.txt's `future/` tests pass on debug and ASAN; the S3 list unchanged

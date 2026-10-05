@@ -119,6 +119,16 @@ Written 2026-10-05. S3.23 (`call_on_main_stack`) done; every S3 step is closed, 
   (the stub hash is the stub's sha1); local `clang-format-18` (18.1.3) flags lines CI accepts, so
   check only changed lines (`git clang-format-18 --diff HEAD`).
 
+## S5
+
+S5.1 done 2026-10-05: `dev/plans/S5.md` and `tests/lists/S5.txt` (135 tests with `--XFAIL--`). Next
+is S5.2, which waits for S4's wait-record layer on `main` (needs N1, N2, N9 of the note's section
+7); `timeout()` (S5.4) waits for `delay()`. S4.1 answers N1-N9 in its note; a change S5 needs in the
+layer goes through the coordinator. In a fresh container: build both cores with
+`tools/ci/build-core.sh` (`RUNNER_TEMP=/root` for ASAN, then `TRUE_ASYNC_CORE_SRC=/root/core-asan/php-src`),
+`git fetch --unshallow` before `check-lists.py` (a shallow clone takes its oldest commit as a list's
+freeze), the reference clone at `REFERENCE` for `--reference`.
+
 ## Later steps
 
 - Core gaps found in S3.9 (test_scheduler.c has them too): its two context entries do not clear

@@ -601,3 +601,20 @@ stack options were shown with the code).
   `mysqld`, only for a run with `mysqli` or `pdo_mysql` tests and no `MYSQL_TEST_HOST` (S6.1). Why: a
   local run has no service, and a run of other groups should neither need MySQL installed nor wait
   for it.
+- 2026-10-05 `iterate()` moves from S5 to S9 with Scope and the iterator. Why: `$cancelPending`
+  cancels the coroutines its callable spawned, which needs a Scope, and `$concurrency` runs workers
+  (`iterate/012`, `013`, `016`-`018`).
+- 2026-10-05 Future chains run in one drain coroutine per completed source over a FIFO, with
+  TrueAsync's helper microtask that adds a coroutine when a mapper waits (`dev/plans/S5.md` 3). Why:
+  a notify never calls user code; one coroutine for any fan-out where one per child would allocate
+  above the reference (D2); breadth-first order as TrueAsync's iterator (the Critic, the Sage).
+- 2026-10-05 A mapper's error goes only into its child, and the child's release reports it when
+  nobody observed it. Why: TrueAsync cancels the `map()` caller's scope on a pending source and ends
+  the mapper coroutine uncaught on a completed one; no ported test covers either (the Sage).
+- 2026-10-05 The future event's result, exception and chain are reported to the GC only by an object
+  holding its only reference, and `new Future($state)` holds the `FutureState` object. Why:
+  TrueAsync reports them from every `Future`, so two `Future` objects on one state make the collector
+  free a live result (by reading); a user-made event then has one holder, which collects its cycles.
+- 2026-10-05 A Future is marked used and its exception caught when `await()` or `await_*` takes it,
+  as TrueAsync (`async.c:319-320`); a coroutine keeps S3's mark when its waiter reads the outcome.
+  Why: `future/004`, `012`, `035` expect no "Unhandled exception in Future" warning (the Critic).

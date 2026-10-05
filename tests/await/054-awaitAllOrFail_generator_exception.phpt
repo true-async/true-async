@@ -1,0 +1,43 @@
+--TEST--
+await_all_or_fail() - Exception in generator body should stop process immediately
+--XFAIL--
+Not implemented yet: S5.3 of dev/PLAN.md
+--FILE--
+<?php
+
+use function Async\spawn;
+use function Async\await_all_or_fail;
+use function Async\suspend;
+
+function exceptionGenerator($values) {
+    $count = 0;
+    foreach ($values as $value) {
+        // Throw exception on second iteration
+        if ($count === 1) {
+            throw new RuntimeException("Generator exception during iteration");
+        }
+        
+        yield spawn(fn() => $value);
+        $count++;
+    }
+}
+
+echo "start\n";
+
+$values = ["first", "second", "third"];
+$generator = exceptionGenerator($values);
+
+try {
+    $results = await_all_or_fail($generator);
+    echo "This should not be reached\n";
+} catch (RuntimeException $e) {
+    echo "Caught exception: " . $e->getMessage() . "\n";
+}
+
+echo "end\n";
+
+?>
+--EXPECT--
+start
+Caught exception: Generator exception during iteration
+end

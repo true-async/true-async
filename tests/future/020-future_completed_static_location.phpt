@@ -1,0 +1,27 @@
+--TEST--
+Future::completed() - location tracking
+--XFAIL--
+Not implemented yet: S5.2 of dev/PLAN.md
+--FILE--
+<?php
+
+use Async\Future;
+
+$future = Future::completed("value"); $line = __LINE__;
+
+$createdFileAndLine = $future->getCreatedFileAndLine();
+$completedFileAndLine = $future->getCompletedFileAndLine();
+
+var_dump(str_contains($createdFileAndLine[0], basename(__FILE__)));
+var_dump($createdFileAndLine[1] === $line);
+var_dump(str_contains($completedFileAndLine[0], basename(__FILE__)));
+var_dump($completedFileAndLine[1] === $line);
+
+$future->ignore();
+
+?>
+--EXPECT--
+bool(true)
+bool(true)
+bool(true)
+bool(true)
