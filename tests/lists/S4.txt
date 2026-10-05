@@ -1,0 +1,16 @@
+# S4: the reactor (dev/plans/S4.md, section 5). Reference: true-async/php-async at tests/lists/REFERENCE.
+
+# coroutine
+coroutine/039-await_after_finished_with_exception.phpt  ref:4a97644778020a409ef4776854679ce323a1f7848220e37eff93e2578f87be27
+
+# spawn
+spawn/015-spawn-1000-with-delay.phpt  ref:14913cd38ead88bdbac56b500b9f82b1af79a28c948d7498af16e70fe2083fb0
+
+# gc
+gc/015-gc_threshold_stable_in_async.phpt  ref:cab272f12da2b6c8fc1dc8acdd4f782cc5982119805d203ef73dad398f59fe60
+gc/016-gc_threshold_grows_when_nothing_collected.phpt  ref:005cb414b04bf9d1e0c53b578e64a6871c1dd179d1903095a75ee56b71a82305
+gc/017-gc_threshold_untouched_by_explicit_collect.phpt  ref:24d606b382acd42fa44d4960de6c7d7fae9a52ae0be75460eae18e0aba90c003
+gc/019-gc_threshold_returns_to_default_after_raise.phpt  ref:85d737b7cead009f82b4fa3577de6e83c987136b72eba9deaa008aedb57b41c9
+gc/020-gc_threshold_adjusts_when_buffer_fills_behind_explicit_collect.phpt  ref:8988a1a1d5cdb63b0ed08153edbc8e896ea6956c24215f55d48148d66db84fb9
+gc/021-gc_threshold_record_consumed_by_one_run.phpt  ref:a558c01c43096ee791b89260db70df7192f400be225bd88c80f5b2e94400b28b
+gc/023-gc_threshold_untouched_by_a_run_that_found_nothing.phpt  ref:2e8f790665e9d8c1dc537af92af2abb881ba766404a02323df2bce28ee0ef29a

@@ -14,10 +14,8 @@ coroutine/025-coroutine_gc_waker_scope.phpt  component:S9 (Scope)
 coroutine/032-coroutine_composite_exception.phpt  component:S9 (Scope and Coroutine::finally())
 coroutine/033-coroutine_finally_invalid_callback.phpt  component:S9 (Coroutine::finally(), D21)
 coroutine/036-coroutine_gc_circular_finally.phpt  component:S9 (Coroutine::finally(), D21)
-coroutine/039-await_after_finished_with_exception.phpt  component:S4 (delay)
 
 # spawn
-spawn/015-spawn-1000-with-delay.phpt  component:S4 (delay)
 spawn/016-spawn_invalid_scope_provider.phpt  component:S9 (spawn_with, ScopeProvider)
 spawn/017-spawn_closed_scope_error.phpt  component:S9 (Scope)
 spawn/018-spawn_scope_provider_exception.phpt  component:S9 (spawn_with, ScopeProvider)
@@ -31,22 +29,15 @@ bailout/014-stack-overflow-with-finally.phpt  component:S9 (Scope::finally())
 bailout/015-memory-exhaustion-finally-exception.phpt  component:S9 (Scope::finally())
 
 # gc
-gc/015-gc_threshold_stable_in_async.phpt  component:S4 (delay)
-gc/016-gc_threshold_grows_when_nothing_collected.phpt  component:S4 (delay)
-gc/017-gc_threshold_untouched_by_explicit_collect.phpt  component:S4 (delay)
 gc/018-gc_threshold_stable_without_coroutine.phpt  component:S6 (stream read switches the reference GC to async; see report)
-gc/019-gc_threshold_returns_to_default_after_raise.phpt  component:S4 (delay)
-gc/020-gc_threshold_adjusts_when_buffer_fills_behind_explicit_collect.phpt  component:S4 (delay)
-gc/021-gc_threshold_record_consumed_by_one_run.phpt  component:S4 (delay)
-gc/023-gc_threshold_untouched_by_a_run_that_found_nothing.phpt  component:S4 (delay)
 
 # edge_cases
 edge_cases/004-scope_provider_exceptions.phpt  component:S9 (spawn_with, ScopeProvider)
 edge_cases/010-deadlock-after-cancel-with-zombie.phpt  component:S9 (Scope::allowZombies)
 edge_cases/012-awaitCompletion_on_cancelled_scope.phpt  component:S9 (Scope::awaitCompletion; timeout() is S5)
 edge_cases/015-deadlock-caught-still-terminates.phpt  component:S9 (Channel)
-edge_cases/016-error_handling_window_not_shared.phpt  component:S4 (delay; EH_THROW window, see S3.md section 5)
-edge_cases/017-error_handling_window_not_inherited_on_resume.phpt  component:S4 (delay; EH_THROW window, see S3.md section 5)
+edge_cases/016-error_handling_window_not_shared.phpt  component:S4 (delay; EH_THROW window, see S3.md section 5; zlib, which the core build lacks until S4.4)
+edge_cases/017-error_handling_window_not_inherited_on_resume.phpt  component:S4 (delay; EH_THROW window, see S3.md section 5; zlib, which the core build lacks until S4.4)
 
 # include
 include/008-file_get_contents_in_coroutine.phpt  component:S6 (file IO in a coroutine)

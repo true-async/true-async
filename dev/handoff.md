@@ -119,6 +119,16 @@ Written 2026-10-05. S3.23 (`call_on_main_stack`) done; every S3 step is closed, 
   (the stub hash is the stub's sha1); local `clang-format-18` (18.1.3) flags lines CI accepts, so
   check only changed lines (`git clang-format-18 --diff HEAD`).
 
+## S4
+
+S4.1 done 2026-10-05: `dev/plans/S4.md` and `tests/lists/S4.txt` (9 tests with `--XFAIL--` naming
+S4.4). Next is S4.2, the wait-record layer of the note's section 2 with no reactor; S5.2 starts once
+it is on `main`, and S5.4 once `delay()` (S4.4) is. S5.md section 6 still says `F_COUNTED` for the
+TIMEOUT: the note's 2.5 answers N7 with the reactor's `waits` list instead, which S5.4 words in. The
+S6 provider's op on `run()`'s frame under a bailout is S6.2's question for Edmond (S4.md 3.2: a
+`zend_try`, or a heap op copied as the TIMER does). Full local runs need `mysql-server-core-8.0`
+(S6.1's fixture).
+
 ## S5
 
 S5.1 done 2026-10-05: `dev/plans/S5.md` and `tests/lists/S5.txt` (135 tests with `--XFAIL--`). Next

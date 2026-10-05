@@ -23,6 +23,8 @@ Where to look in this repository and around it. Pointers only.
 - `dev/plans/S2.md`: S2 notes: build against the core, runner, test lists, layers, CI, Mull.
 - `dev/plans/S3.md`: S3 notes: the scheduler on the scheduler API, structures, wait model,
   cancellation, lifecycle, fibers, test ownership by step; "As built" paragraphs record the code.
+- `dev/plans/S4.md`: S4 notes: the reactor on one `php_io_queue`, the wait-record layer shared
+  with S5 (kinds, the waker's records and blocks), deadlock from the reactor's lists of waits, fork.
 - `dev/plans/S5.md`: S5 notes: Futures and their chains, `await()` with a cancellation, the
   `await_*` family, `timeout()`, the needs N1-N9 from S4's wait-record layer, the S5 test list.
 - `dev/plans/S3.7-spec.md`: the PHP-visible behaviour of S3.7 (`await()`, the GC's wait,

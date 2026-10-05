@@ -79,8 +79,8 @@ While tracks run in parallel:
   them.
 - New sources: their own `true_async_sources="$true_async_sources ..."` line in `config.m4` and
   their own `ADD_SOURCES` line in `config.w32`, so two tracks never edit one line.
-- The wait-record layer has one owner, S4: the record struct, `async_wait_kind_t`, `F_COUNTED` and
-  `F_TYPED`, unlink and abort, the counted accounting, the storage of a wait of several records
+- The wait-record layer has one owner, S4: the record struct, `async_wait_kind_t`, `F_TYPED`,
+  unlink and abort, the reactor's lists of waits that decide a deadlock, the storage of a wait of several records
   and the event header (`dev/plans/S3.md` 3.3-3.7, section 4). S5's design note writes down what
   S5 needs from it; S5 defines its own kinds (FUTURE, AWAIT_ITER, the cancellation record) and
   their functions in its own files, and asks for changes to the layer through the coordinator
@@ -248,12 +248,12 @@ Goal: the scheduler's idle wait and timers on one per-thread `php_io_queue` (the
 with ior, the Poll queue otherwise), coded only against `php_io_queue_ops`; the S6 provider
 submits to the same queue, so completion dispatch is designed here once for both.
 Done when: S3 + S4 lists pass; `delay(1000)` costs under 50 ms of user CPU; a test-only C
-function wakes the loop from another pthread (through the own eventfd/pipe until the core has an
-owned `NotifyHandle`).
+function wakes the loop from another pthread (through the core's `NotifyHandle`, found by class
+name until the core has a C constructor for it).
 Tier: T2. Roles: Critic on S4.1, Critic after S4.2 and after S4.3.
-Active: S4.1
+Active: S4.2
 
-- [ ] S4.1 Design note `dev/plans/S4.md`: completion dispatch for scheduler-owned ops and provider
+- [x] S4.1 Design note `dev/plans/S4.md`: completion dispatch for scheduler-owned ops and provider
       ops; idle wait in `queue->wait()` with its `EDEADLK` and `EINTR` answers; deadlock decided
       from the scheduler's own count of parked user waits (a wakeup op is always pending, review
       M5); `delay`/`timeout` as Timer ops; the wait-record layer for S4 and S5 (Parallel tracks),
@@ -263,21 +263,33 @@ Active: S4.1
       `tests/lists/S4.txt` and core-dependency table. It may re-split S4.3-S4.5.
       done: the note and the list pushed; S5.1's needs answered in it; every Critic finding fixed
         or answered in the note
-- [ ] S4.2 The wait-record layer and the event header as S4.1 designs them, no reactor yet.
+      handoff: done 2026-10-05: `dev/plans/S4.md` (kinds on the record per D28, no event methods;
+        two records inline in the waker and a stage-owned block past two; the reactor's `waits`
+        and `triggers` lists decide a deadlock instead of a counter; heap Timer events; the core's
+        `NotifyHandle` for cross-thread wakeup; the queue rebuilt on `EPERM` after a fork, the
+        parent's waits ending in the child's deadlock report); S5's N1-N9 answered in its 2.5 (N7
+        without `F_COUNTED`); `tests/lists/S4.txt` holds 9 tests with `--XFAIL--` naming S4.4,
+        `edge_cases/016`, `017` stay excluded until zlib in S4.4. On core `9531d5b0b1f` after the
+        rebase on S5.1: `pocs-dbg` 333 PASS, 144 XFAIL; `pocs-asan` 318 PASS, 16 SKIP, 143 XFAIL.
+        The Critic's 2 critical and 6 major findings and the Sage's six rulings are in the note.
+- [ ] S4.2 The wait-record layer and the event header as S4.1 designs them (`dev/plans/S4.md`
+      section 2), no reactor yet.
       done: the S3 list passes unchanged on `pocs-dbg`, `pocs-asan` and `pocs-win`; internal tests
-        link and unlink a wait of several records, and a counted record's count is back to 0
-        after a wake, a cancel and a bailout
+        link and unlink waits of one, two and five records (a test block, records linked into a
+        parked waiter's block by another coroutine) by a wake, a cancel and a bailout out of the
+        tick, with no record left linked and the block released once; B1 measured again
 - [ ] S4.3 The per-thread queue and the idle wait: the scheduler parks in `queue->wait()` when
-      nothing is runnable and counted waits are parked, deadlock from its own count, the queue
-      rebuilt after fork.
+      nothing is runnable and the reactor's lists of waits are not empty, deadlock from those
+      lists, the interrupt coroutine, the queue rebuilt after fork.
       done: the S3 list passes unchanged on the three lanes; a test parks the scheduler in the
         queue and is woken by a pending op
-- [ ] S4.4 Timer ops: `Async\delay()` and the TIMER kind.
-      done: the `component:S4` tests of `S3.excluded` listed in S4.txt and passing on debug and
-        ASAN; `delay(1000)` measured under 50 ms of user CPU and a lane with `--jobs` above the
+- [ ] S4.4 Timer ops: `Async\delay()`, the TIMER kind and the D16 deadline; `--with-zlib` in the
+      core build.
+      done: the `component:S4` tests listed in S4.txt and `edge_cases/016`, `017` passing on debug
+        and ASAN; `delay(1000)` measured under 50 ms of user CPU and a lane with `--jobs` above the
         core count timed, both in `dev/BENCHMARKS.md`
-- [ ] S4.5 Cross-thread wakeup on the own eventfd/pipe; the `NotifyHandle` request filed by
-      `RFC-CHANGES.md`.
+- [ ] S4.5 Cross-thread wakeup on the core's `NotifyHandle`; the request for its C constructor
+      filed by `RFC-CHANGES.md`.
       done: a test-only C function wakes the parked loop from another pthread, on debug and ASAN
 - [ ] S4.6 Stage review: Critic after S4.2-S4.5, coverage of the reactor code, Mull on the stage
       diff, fuzz over 100 seeds.

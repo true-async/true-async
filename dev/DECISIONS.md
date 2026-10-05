@@ -618,3 +618,34 @@ stack options were shown with the code).
 - 2026-10-05 A Future is marked used and its exception caught when `await()` or `await_*` takes it,
   as TrueAsync (`async.c:319-320`); a coroutine keeps S3's mark when its waiter reads the outcome.
   Why: `future/004`, `012`, `035` expect no "Unhandled exception in Future" warning (the Critic).
+- 2026-10-05 D25 is decided as D28 for S4 and S5: per-type behaviour sits on the record's kind
+  (`async_wait_kind_t`, a union with the record's unused `dispose`), events carry no methods
+  (`dev/plans/S4.md` 2.1). Why: D28 (Edmond), and the code that links a wait knows its target's type.
+- 2026-10-05 A wait keeps two records inline in the waker and points at a block its stage owns past
+  two, unlinked through the block's `ops->unlink` and released after the waiter reads it (S4.md 2.2).
+  Why: S5's N3-N5; one allocation per wait where TrueAsync makes one per record past two, and S5's
+  `await_*` context lives in the same block (the Sage).
+- 2026-10-05 Ops are armed after the last record of a wait is linked, and an op completed at submit
+  is completed before the park (S4.md 2.3). Why: a completion inside the first arm would end the wait
+  while later records were not linked (the Sage).
+- 2026-10-05 Deadlock is decided from the reactor's `waits` and `triggers` lists, not from a counter
+  like TrueAsync's `ZEND_ASYNC_ACTIVE_EVENT_COUNT`; `F_COUNTED` stays out (S4.md 3.4). Why: RSHUTDOWN
+  and the fork rebuild need the waits themselves; a link costs what an increment costs and never runs
+  on the notify path (the Sage).
+- 2026-10-05 The reactor's IO events, the `delay()` Timer included, live on the heap, owned by their
+  records, as TrueAsync's timer (S4.md 3.2). Why: a bailout unwinds a frame before U4 or U6 unlinks
+  (the Critic).
+- 2026-10-05 After `fork()` the reactor rebuilds its queue and `NotifyHandle` when the queue answers
+  `EPERM`, and the parent's waits end in the child's deadlock report instead of being resubmitted
+  (S4.md 3.1). Why: the RFC core has no fork hook to refuse the fork as TrueAsync does; a wait must
+  not run twice, and the core's answer for a child is that nothing of the parent completes (the Sage).
+- 2026-10-05 With `EG(vm_interrupt)` set and nothing runnable, the idle wait starts one internal
+  coroutine that runs the VM's interrupt (S4.md 3.3). Why: the queue returns `EINTR` and no opcode
+  would run the interrupt (review M5); a pcntl handler may then wait.
+- 2026-10-05 Cross-thread wakeup uses the core's `Io\Poll\NotifyHandle`, its class found by name,
+  one per thread (S4.md 3.6). Why: the core has no wakeup op; its class entry is static; a C
+  constructor is the RFC request of S4.5 (the Critic).
+- 2026-10-05 `delay()` with a negative value throws `ValueError` (S4.md 1). Why: TrueAsync casts it to
+  an unsigned value, about 49 days; no test relies on it.
+- 2026-10-05 `edge_cases/016` and `017` stay in `S3.excluded` until S4.4 builds the core with zlib.
+  Why: they need zlib, and a listed test may not skip.
