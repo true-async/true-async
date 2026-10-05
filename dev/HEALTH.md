@@ -40,7 +40,6 @@ Known dark places: none beyond the open findings
 - 9 dev/plans/S3.md:318-319, handoff.md:134: say the core's `ZEND_ASYNC_DEACTIVATE` will clear the scheduler-context flag "next core update"; two updates later it still does not, and no step owns it (S3.20)
 - 9 dev/plans/S3.md:621-623, DECISIONS.md:202-203: "the call that comes back is then a plain one"; since `async-core` `c43060ea12d` the shutdown function's catch makes a bailout call (S3.19)
 - 9 dev/PRINCIPLES.md:46, 48: P3.2's gate names the `windows-latest` job; the job is `windows` on `windows-2025-vs2026` (S3.19)
-- 9 dev/DECISIONS.md:201, 229, 239, 271, 293, 318, 322, 326, 352, 359, 385, 495: departures from TrueAsync that name no principle; 11 of the 13 since 2026-10-02 rest on the Critic, the Sage or a test, while P1.4's Flips asks for Edmond's word ("Open questions")
 - 9 tools/check-gates.py:21, 24: the allowlist keeps `zend_async_call_on_main_stack_t` and `zend_async_coroutine_from_object_t`, which S3.18 removed from the core (S3.19)
 - 10 dev/plans/S2.md:187: the scenarios layer (`.feature` ports of fuzzy-tests) has no owning plan step and no DECISIONS entry for its generator
 - fine 6 src/scheduler.c, async_coroutine_new: the registry holds a coroutine from its creation, so one whose enqueue fails or bails out on OOM stays CREATED until RSHUTDOWN releases it; deadlock counting skips it (S3.18; tests scheduler/086, 087)
@@ -86,7 +85,9 @@ Looks bad but is fine:
 - `zend_try` at scheduler.c:869 and 1093 runs once per bailout or request end, not on a hot path.
 - Stubs for later stages: `ASYNC_COROUTINE_F_EXCEPTION_HANDLED` (S5), `scope` NULL (D11), the
   callbacks' unread arguments (TrueAsync's shape, S3.md 3), the core context stores (RFC text).
-Plan: S3.19 (extension) and S3.20 (core) added, waiting for Edmond; P1.4 in "Open questions".
+Plan: S3.19 (extension) and S3.20 (core) added; Edmond approved both the same day. P1.4: Edmond,
+  2026-10-05, "if the code got better and is correct, that is enough"; its Flips field says so and
+  the departures line is closed.
 Next: 6, 10
 
 ### 2026-10-02

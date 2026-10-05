@@ -521,3 +521,6 @@ stack options were shown with the code).
   `PHP_INT_MAX`); it asserted in a debug build and added a second bucket under the same key in a
   release one (`classes/010`). TrueAsync warns with E_CORE_WARNING
   and drops the exception: a departure (P1.4), since the user's call should fail as PHP's own does.
+- 2026-10-05 P1.4 is departed from on a recorded reason that the code gets better and stays correct;
+  Edmond's word is needed only for a `zend_try` or a global counter on a hot path. Why: Edmond: "if the
+  code got better and is correct, that is enough" (health check 2026-10-05, pass 9).

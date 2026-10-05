@@ -24,7 +24,9 @@ below); the table at the end shows where each of them went.
   forbidden with `zend_fiber_switch_block()`, and `zend_fiber_switch_blocked()` is never read: the
   scheduler-context flag does it. No `zend_try` or
   global counter on a hot path without Edmond's word. Why: Edmond, 2026-10-02, after the notify
-  rework (`DECISIONS.md` 2026-10-02). Flips: Edmond's word, recorded in `DECISIONS.md`. Gate:
+  rework (`DECISIONS.md` 2026-10-02). Flips: a recorded reason in `DECISIONS.md` that the departure makes the code better
+  and it is correct (Edmond, 2026-10-05); a `zend_try` or a global counter on a hot path still needs
+  his word. Gate:
   `tools/check-gates.py` forbids `zend_fiber_switch_block()`, `_unblock()` and `_blocked()` in
   `src/`; the rest is held by the Critic, who compares each change with TrueAsync.
 

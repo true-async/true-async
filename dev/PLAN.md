@@ -41,13 +41,7 @@ true-async/
 
 ## Open questions
 
-Waiting for Edmond's call; nothing here is being worked on.
-
-- P1.4 (health check 2026-10-05, pass 9): 13 of the 71 DECISIONS entries since 2026-10-02 depart
-  from TrueAsync, one names P1.4, two carry Edmond's word. The principle's body asks for "a
-  recorded reason", its Flips field for "Edmond's word". Either Flips becomes a recorded reason
-  (a TrueAsync bug, a core contract, an RFC rule) and every departure names its principle, or the
-  11 entries resting on the Critic, the Sage or a test go back to Edmond.
+Waiting for Edmond's call; nothing here is being worked on. None open.
 
 ## S1 — Core branch `async-core-io`  [x] (S1.5 deferred)
 
