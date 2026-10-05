@@ -1236,10 +1236,8 @@ async_coroutine_t *async_coroutine_new(void)
 	return coroutine;
 }
 
-static zend_coroutine_t *scheduler_new_coroutine(size_t extra_size)
+static zend_coroutine_t *scheduler_new_coroutine(void)
 {
-	(void) extra_size;
-
 	return &async_coroutine_new()->coroutine;
 }
 
@@ -1828,6 +1826,12 @@ static zend_array *scheduler_get_awaiting_info(zend_coroutine_t *zend_coroutine)
 	return info;
 }
 
+/* A coroutine leaves the registry when it finishes; the scheduler's own coroutine is never in it. */
+static uint32_t scheduler_get_coroutine_count(void)
+{
+	return zend_hash_num_elements(&ASYNC_G(coroutines));
+}
+
 static zend_class_entry *scheduler_get_class_ce(const zend_async_class type)
 {
 	switch (type) {
@@ -1887,6 +1891,7 @@ static const zend_async_scheduler_api_t scheduler_api = {
 	.add_awaiting_info = scheduler_add_awaiting_info,
 	.remove_awaiting_info = scheduler_remove_awaiting_info,
 	.get_awaiting_info = scheduler_get_awaiting_info,
+	.get_coroutine_count = scheduler_get_coroutine_count,
 };
 
 bool async_scheduler_register(void)

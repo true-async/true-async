@@ -1066,6 +1066,16 @@ static ZEND_FUNCTION(add_clearing_finish_handler)
 			&async_coroutine_from_object(coroutine)->coroutine, test_clearing_finish_handler, NULL, NULL);
 }
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_coroutine_count, 0, 0, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
+static ZEND_FUNCTION(coroutine_count)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	RETURN_LONG(ZEND_ASYNC_GET_COROUTINE_COUNT());
+}
+
 /* Indexed by async_test_fault_site_t. */
 static const char *const fault_site_names[] = { NULL, "enqueue", "reserve", "link" };
 
@@ -1115,6 +1125,7 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\fail_at", ZEND_FN(fail_at), arginfo_fail_at, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_printing_switch_handler", ZEND_FN(add_printing_switch_handler), arginfo_add_printing_switch_handler, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_clearing_finish_handler", ZEND_FN(add_clearing_finish_handler), arginfo_add_clearing_finish_handler, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\coroutine_count", ZEND_FN(coroutine_count), arginfo_coroutine_count, 0, NULL, NULL)
 	ZEND_FE_END
 };
 /* clang-format on */

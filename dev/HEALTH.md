@@ -39,7 +39,7 @@ Known dark places: none beyond the open findings
 - fine 8 src/true_async.c:58: `scheduler_registered` is a process-wide static for a process-wide fact (the core's slots are set once in MINIT)
 - fine 8 php_true_async.h:37: `ASYNC_G(last_handler_id)` is the id source of the agreed design (S3.md 3.6), for finish and switch handlers; the alternative is a counter in every coroutine
 - fine 8 core Zend/zend_gc.c: `GC_G(dtor_pending)` counts more than one outstanding iterator; the reason is at its definition
-- fine 8 core Zend/zend_async_API.h, .c, zend_fibers.h, zend_objects_API.c: API with no caller (the cancel slot's `is_safely`, `gc_new_coroutine`, `call_on_main_stack`, `coroutine_from_object`, the object-less coroutine, the state, class and context aliases, the VM-stack helpers, the objects-store forwarder): the RFC's API is kept for any provider (P1.5; S3.18 and S3.20 removed it, S3.21 restored it)
+- fine 8 core Zend/zend_async_API.h, .c, zend_fibers.h, zend_objects_API.c: API with no caller (the cancel slot's `is_safely`, `gc_new_coroutine`, `call_on_main_stack`, `coroutine_from_object`, the state, class and context aliases, the VM-stack helpers, the objects-store forwarder): the RFC's API is kept for any provider (P1.5; S3.18 and S3.20 removed it, S3.21 restored it; S3.22 removed `extra_size`, `active_coroutine_count` and the object-less coroutine on Edmond's word)
 
 ## Journal
 

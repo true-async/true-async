@@ -553,3 +553,27 @@ stack options were shown with the code).
   from S3.21), not a date. Why: S3.18 and S3.20 shipped different layouts under one date each, and
   the core would read an older provider's slots shifted; PHP and Python keep one number too
   (Edmond's "да делай"). Rejected: major.minor (the `size` check covers appended slots).
+- 2026-10-05 The core's `new_coroutine` slot has no `extra_size` and `ZEND_ASYNC_NEW_COROUTINE_EX`
+  is gone (S3.22, API version 2). Why: the caller asked for bytes it could not find (the API did not
+  say where they live, and a provider places its own structure around the coroutine), no provider
+  honoured the size and no caller passed one; TrueAsync's slot has no such parameter. Edmond's word
+  on these exact names ("тогда удали его и у RFC в том числе"), as P1.5 requires.
+- 2026-10-05 The core launches the scheduler only in a request its provider marked READY
+  (`ZEND_ASYNC_INITIALIZE` in RINIT, or right before a launch at run time); registering no longer
+  sets READY (S3.22). Why: TrueAsync's rule (fork core `zend_fibers.c:1296`); the bridge
+  `ext-scheduler-hook` registers its C slots once per process and its PHP handlers per request, and
+  failed from the second request on. Edmond: the bridge's registration lives for the process,
+  PHP code registers again in every request.
+- 2026-10-05 The cancel slot's `is_safely` is TrueAsync's: a started coroutine becomes a zombie and
+  runs to its end, the error is released; `ZEND_ASYNC_CANCEL_EX` passes it (S3.22). Why: the core's
+  comment called it a deferred delivery, which no scheduler implements (Edmond: "да это неточность").
+- 2026-10-05 The core's `active_coroutine_count` global goes; the appended `get_coroutine_count`
+  slot asks the scheduler instead, 0 when none provides it; ours and test_scheduler count every
+  unfinished coroutine of the request, main included (S3.22). Why: nothing kept the global up to
+  date, so it always read 0; Edmond: "убери, но тогда взамен добавь функцию-слот".
+- 2026-10-05 Every coroutine has a zend_object: the core's object-less branches go and the fiber
+  code takes its reference with `ZEND_COROUTINE_ADD_REF()` (S3.22). Why: Edmond, "корутины без
+  объекта на самом деле быть не должно"; `ADD_REF`, which `new_coroutine` tells callers to take,
+  asserted on such a coroutine.
+- 2026-10-05 `call_on_main_stack` stays in the core, and our scheduler gets TrueAsync's
+  implementation (S3.23). Why: Edmond, it exists for Java and mobile embeddings ("да оно нужно!").

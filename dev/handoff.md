@@ -3,11 +3,11 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-05. S3.21 (the core API back) done: every S3 step is closed.
+Written 2026-10-05. S3.22 (the Critic's six findings on S3.21) done; S3.23 (`call_on_main_stack`) is open.
 
 ## State
 
-- Core pinned: `async-core-io-2026-10-05-3` (`710a79707ce`). CI gates every lane on every list; a
+- Core pinned: `async-core-io-2026-10-05-4` (`9531d5b0b1f`). CI gates every lane on every list; a
   test that cannot pass yet carries `--XFAIL--` naming its step, and the commit that makes it pass
   removes the section. run-tests (`tools/run-tests.patch`) fails a test the timeout killed.
 - S3.3-S3.6a: internal API, classes, the `Coroutine` object, the core's slots, the FIFO run queue,
@@ -127,13 +127,11 @@ Written 2026-10-05. S3.21 (the core API back) done: every S3 step is closed.
   not touched in S3.8.
 - S9's safe cancel (TrueAsync's `is_safely`, from its scopes) reaches our cancel through the core's
   slot; ours ignores it until then.
-- The Critic on S3.21 (not fixed, each needs Edmond's word; all predate S3.18): the bridge works
-  for the first request of a process only (`zend_async_is_enabled()` is process-wide, its hooks
-  are per request); `extra_size` does not say where the bytes live and every provider ignores
-  it; the default `call_on_main_stack` runs `fn` on the caller's stack when a scheduler leaves
-  the slot NULL; `is_safely` is "deferred delivery" in the core and a zombie in TrueAsync, with no
-  `ZEND_ASYNC_CANCEL_EX`; nothing maintains `active_coroutine_count`; `ZEND_COROUTINE_ADD_REF()`
-  asserts on an object-less coroutine the `new_coroutine` text says to keep with it.
+- Left from the Critic on S3.22 (all predate it): the bridge's `getModule()` reads the slots
+  without its lock; `register()` inside a Fiber, during shutdown, and GC in a bridge request are
+  untested; the `zend_fibers.c` line numbers in `core-integration.md` are stale. A provider that
+  calls `ZEND_ASYNC_INITIALIZE` while its scheduler already runs gets a second launch (the bridge
+  checks first; Critic, low).
 - `scheduler_cancel_all` also cancels the core's internal coroutines. A shutdown iterator cancelled
   before it ran reports nothing (only the coroutine that starts a pass is recorded in
   `EG(shutdown_context)`; Critic in S3.10); a destructor that waits for a later destructor and

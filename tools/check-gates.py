@@ -26,7 +26,8 @@ CORE_TYPES = {
     'zend_async_coroutine_remove_finish_handler_t',
     'zend_async_coroutine_remove_switch_handler_t', 'zend_async_defer_t',
     'zend_async_enqueue_coroutine_t', 'zend_async_gc_new_coroutine_t',
-    'zend_async_get_class_ce_t', 'zend_async_globals_t', 'zend_async_intercept_fiber_t',
+    'zend_async_get_class_ce_t', 'zend_async_get_coroutine_count_t', 'zend_async_globals_t',
+    'zend_async_intercept_fiber_t',
     'zend_async_microtask_t', 'zend_async_new_context_t', 'zend_async_new_coroutine_t',
     'zend_async_scheduler_api_t', 'zend_async_scheduler_launch_t', 'zend_async_shutdown_t',
     'zend_async_state_t', 'zend_async_suspend_t'

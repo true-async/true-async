@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-05 · Active: none; every S3 step is closed, the next stage waits for Edmond
+Updated: 2026-10-05 · Active: none; S3.23 is open, the next stage waits for Edmond
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -155,6 +155,24 @@ needed (`dev/plans/S2.md`, section 5), and S3 needs none (scheduler RFC changes 
         `coroutine_from_object` again and ignores `is_safely` until S9. The API version is a counter
         (`ZEND_ASYNC_API_VERSION 1`, Edmond 2026-10-05): two changes on one day had got the same
         date.
+- [x] S3.22 The Critic's six findings on S3.21, one question each to Edmond (2026-10-05): the
+      core launches the scheduler only in a READY request, so the bridge works in every request
+      (it registers its C slots once per process, PHP code calls `register()` per request);
+      `extra_size` and `ZEND_ASYNC_NEW_COROUTINE_EX` go (API version 2); `is_safely` says
+      TrueAsync's zombie and `ZEND_ASYNC_CANCEL_EX` passes it; `active_coroutine_count` becomes
+      the `get_coroutine_count` slot, filled by ours and test_scheduler; every coroutine has an
+      object; `call_on_main_stack` stays (S3.23).
+      done: core tests equal per test on dbg and ASAN; extension lanes green; the bridge passes on
+        both trees, in a second request too; `CORE_REF` and "Pinned core" moved
+      handoff: done 2026-10-05 on core `9531d5b0b1f`: `Zend/tests` and `ext/test_scheduler/tests`
+        equal per test with `710a79707ce` on dbg (5,545 PASS with the new `090`),
+        test_scheduler and `Zend/tests/{fibers,gc,generators}` on ASAN (469 PASS); `pocs-dbg` 329
+        PASS, `pocs-asan` 314 PASS and 15 SKIP; the bridge's 23 tests pass on dbg and ASAN, and
+        `php-cgi -T 3` runs its scheduler in each of three requests (bridge `a0fc2fd`).
+- [ ] S3.23 Our scheduler fills `call_on_main_stack` with TrueAsync's `async_call_on_main_stack`
+      (`php-async/scheduler.c:154`), with a test (Edmond 2026-10-05: the slot exists for Java and
+      mobile embeddings). Today the slot is NULL and the core runs the function on the caller's
+      stack.
 
 ## S4 — Reactor on Poll, Poll additions and Ring  [ ]
 
