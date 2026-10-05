@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-05 · Active: S3.20 (approved by Edmond 2026-10-05)
+Updated: 2026-10-05 · Active: none; every S3 step is closed, the next stage waits for Edmond
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -41,7 +41,12 @@ true-async/
 
 ## Open questions
 
-Waiting for Edmond's call; nothing here is being worked on. None open.
+Waiting for Edmond's call; nothing here is being worked on.
+
+- The core API the bridge `true-async/ext-scheduler-hook` calls (S3.20, asked 2026-10-05):
+  `zend_async_get_scheduler_module()`, `zend_async_scheduler_unregister()`,
+  `ZEND_ASYNC_SCHEDULER_LAUNCH()`, `zend_fiber_vm_stack_start()`/`_free()`. Kept (the default), or
+  removed, and the bridge carries its own copies when it is updated.
 
 ## S1 — Core branch `async-core-io`  [x] (S1.5 deferred)
 
@@ -117,7 +122,7 @@ needed (`dev/plans/S2.md`, section 5), and S3 needs none (scheduler RFC changes 
         counts a wrapped buffer now; `classes/010`: `addException()` asserted when the list's next
         key was taken (the Critic), now throws as `$array[] =`. The gc slot stays NULL (it also survives S3.20 removing it). The main-last
         reason now names `main.c:1937-1945`, the try around the last from_main call.
-- [ ] S3.20 Health fixes, core (`async-core`, one topic per commit, then a core update by
+- [x] S3.20 Health fixes, core (`async-core`, one topic per commit, then a core update by
       `WORKFLOW.md`; Edmond's go, 2026-10-05): `is_safely` and the `gc_new_coroutine` slot removed or
       given RFC text; the object-less coroutine branch and the uncalled surface
       (`zend_async_get_scheduler_module`, `IS_OFF`, `IS_READY`, `CLASS_NO`, the context and
@@ -128,6 +133,15 @@ needed (`dev/plans/S2.md`, section 5), and S3 needs none (scheduler RFC changes 
       reason of their departure from upstream and comments that match.
       done: `ext/test_scheduler/tests` equal per test on dbg and ASAN; `CORE_REF` and "Pinned core"
         moved
+      handoff: done 2026-10-05 on core `8a927bda8f6`: the core's `ext/test_scheduler/tests` and
+        `Zend/tests` equal per test with `a9de8425106` on dbg (5,544 PASS); test_scheduler and
+        `Zend/tests/{fibers,gc,generators}` on ASAN (468 PASS); `pocs-dbg` 328 PASS, `pocs-asan` 313
+        PASS and 15 SKIP, 10 seeds on dbg 0 failed (323 tests, before `287a2c5`); gates, lists, roadmap and format clean. The
+        out-of-tree bridge `ext-scheduler-hook` calls `zend_async_get_scheduler_module`,
+        `zend_async_scheduler_unregister` (its failed launch is the second caller),
+        `SCHEDULER_LAUNCH` and the VM-stack helpers: kept, the health check had counted two
+        providers only. Removing the forwarder departs from TrueAsync (P1.4); the Sage kept the
+        removal.
 
 ## S4 — Reactor on Poll, Poll additions and Ring  [ ]
 

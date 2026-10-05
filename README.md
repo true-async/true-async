@@ -67,7 +67,7 @@ flowchart TB
     end
 
     subgraph core["php-src core with the RFCs"]
-        sapi["Scheduler API<br/>19 slots, #22561"]
+        sapi["Scheduler API<br/>18 slots, #22561"]
         hooks["IO hooks<br/>#23997"]
         queue["php_io_queue<br/>Ring (ior) or Poll"]
     end
@@ -86,13 +86,13 @@ flowchart TB
 ## Roadmap
 
 <!-- roadmap:begin -->
-![Progress 28%](https://img.shields.io/badge/progress-28%25-2ea44f.svg) ![Current stage S3](https://img.shields.io/badge/current%20stage-S3-orange.svg)
+![Progress 28%](https://img.shields.io/badge/progress-28%25-2ea44f.svg)
 
 | Stage | Progress | Done |
 |---|---|---:|
 | S1 · Core branch `async-core-io` | `████████░░` | 80 % |
 | ✓ S2 · Repository and test system | `██████████` | 100 % |
-| ▶ **S3 · Scheduler on the scheduler API** | `██████████` | 95 % |
+| ✓ S3 · Scheduler on the scheduler API | `██████████` | 100 % |
 | S4 · Reactor on Poll, Poll additions and Ring | `░░░░░░░░░░` | 0 % |
 | S5 · Futures, timeouts and combinators | `░░░░░░░░░░` | 0 % |
 | S6 · IO hooks provider | `░░░░░░░░░░` | 0 % |

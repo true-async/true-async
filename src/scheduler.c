@@ -1621,11 +1621,8 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 	return *exception_ptr == NULL;
 }
 
-/* is_safely is a plain cancel until the zombie state (S9). */
-static bool scheduler_cancel(zend_coroutine_t *coroutine, zend_object *error, bool transfer_error, const bool is_safely)
+static bool scheduler_cancel(zend_coroutine_t *coroutine, zend_object *error, bool transfer_error)
 {
-	(void) is_safely;
-
 	return async_coroutine_cancel((async_coroutine_t *) coroutine, error, error != NULL && transfer_error);
 }
 

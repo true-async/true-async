@@ -34,10 +34,10 @@ How work is done in this repository and in the core branch it builds on.
 
 ## Pinned core
 
-| Part | Revision | In `async-core-io-2026-10-05` `a9de8425106` |
+| Part | Revision | In `async-core-io-2026-10-05-2` `8a927bda8f6` |
 |---|---|---|
 | php-src master | `d7f966e073b` | merged |
-| Scheduler PoC (`async-core`, php/php-src#22561) | `ab94befe389` | merged |
+| Scheduler PoC (`async-core`, php/php-src#22561) | `b842a8a9eb8` | merged |
 | IO hooks PoC (php/php-src#23997) | `056d9f803a3` | merged |
 | ior | `2fb12e8ce01` | built per tree, "Building the core" |
 | `ext/async` (reference tests, true-async/php-async) | `1fdacf8575b` | `tests/lists/REFERENCE` |

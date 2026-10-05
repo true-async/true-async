@@ -526,3 +526,15 @@ stack options were shown with the code).
   is better and names the test or review that checked it; Edmond's word is needed only for a
   `zend_try` or a global counter on a hot path. Why: Edmond: "if the code got better and is
   correct, that is enough" (health check 2026-10-05, pass 9).
+- 2026-10-05 The core loses the cancel slot's `is_safely`, the `gc_new_coroutine` slot, the
+  object-less coroutine and the `IS_OFF`, `IS_READY`, `CLASS_NO` and context aliases (S3.20, API
+  20261005). Why: no caller, no scheduler honoured them (HEALTH 2026-10-05, pass 8).
+- 2026-10-05 The core's async objects-store pass is its own iterator entry, as
+  `shutdown_destructors` is; TrueAsync has a forwarder (P1.4: one function less; the Critic, the
+  Sage, both core trees equal per test). S9's scopes pass TrueAsync's `is_safely` to our own cancel.
+- 2026-10-05 `ZEND_ASYNC_DEACTIVATE` clears the scheduler-context flag (S3.20). Why: a bailout left
+  it set for the next request (HEALTH 2026-10-05, pass 9).
+- 2026-10-05 Kept in the core for the bridge `true-async/ext-scheduler-hook`, which calls them:
+  `zend_async_get_scheduler_module()`, `zend_async_scheduler_unregister()`,
+  `ZEND_ASYNC_SCHEDULER_LAUNCH()`, the fiber VM-stack helpers (S3.20). Why: the health check counted
+  two providers only; Edmond's answer is open (PLAN "Open questions").
