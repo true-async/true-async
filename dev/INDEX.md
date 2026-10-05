@@ -59,8 +59,8 @@ Where to look in this repository and around it. Pointers only.
   `php_true_async.h`: the module globals.
 - `.github/workflows/ci.yml`: the CI lanes; `tools/ci/build-core.sh` builds ior and the core
   (`WORKFLOW.md`, "Building the core").
-- `tools/test.py`: builds the extension for a lane and runs the listed tests; `--seeds N` for the
-  fuzz runs. `tools/run-tests.patch` is its patch of php-src's runner.
+- `tools/test.py`: builds the extension for a lane, starts the MySQL fixture when the run needs
+  it (`WORKFLOW.md`, "Test fixtures") and runs the listed tests; `--seeds N` for the fuzz runs. `tools/run-tests.patch` is its patch of php-src's runner.
 - `tools/lists.py`: parses `tests/lists/`; `tools/check-lists.py` checks the lists against the
   tests and the reference; `tests/lists/S3.excluded` gives a reason for every reference test left out.
 - `tools/check-gates.py`: grep gates over `src/` (fork constructs, banned calls, build flags).

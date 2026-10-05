@@ -110,6 +110,21 @@ without ior (`dev/PLAN.md`, S3.2); Edmond accepted it on 2026-10-02.
 - `dev/DECISIONS.md`: as short as possible, a line for the decision and a line for the reason.
   Held by discipline, no gate.
 
+## Test fixtures
+
+- MySQL: the tests of the groups `mysqli` and `pdo_mysql` reach the server named by
+  `MYSQL_TEST_HOST`, `MYSQL_TEST_PORT`, `MYSQL_TEST_USER`, `MYSQL_TEST_PASSWD` and `MYSQL_TEST_DB`,
+  TrueAsync's names. The CI lanes run TrueAsync's `mysql:8.3` service and set them. Locally, with
+  `MYSQL_TEST_HOST` unset, `tools/test.py` starts a private `mysqld` of the installed MySQL 8
+  (`apt-get install mysql-server-core-8.0`) on a free port of 127.0.0.1 with CI's user, password
+  and database (root, root, `test`), and removes it with its data after the run; a run without
+  those groups starts none.
+- HTTP: a test starts its own `php -S` through TrueAsync's `tests/common/http_server.php` (or
+  php-src's `php_cli_server.inc`). `tools/test.py` gives every test `PHP_CLI_SERVER_WORKERS=4`, so
+  four forked workers accept beside the server's own process and concurrent requests are served
+  concurrently. Windows has no fork: the Windows
+  lane skips the worker test, and the MySQL test, having no server.
+
 ## Building the core
 
 `tools/ci/build-core.sh <dbg|asan> <core sha> <ior sha>` builds ior and the core for one tree and

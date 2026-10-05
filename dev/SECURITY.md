@@ -56,6 +56,10 @@ finding left open gets an owner step in `PLAN.md`.
   default build.
 - 2026-10-01 `true_async.enable` is `PHP_INI_SYSTEM`. Why: user code must not switch the
   process-wide scheduler on or off at run time.
+- 2026-10-05 The runner passes the MySQL fixture's `MYSQL_TEST_*` variables, the password
+  included, to the tests (S6.1). Why: the tests connect with them; the password is the throwaway
+  `root` of a server that lives for one run: CI's service, or the local private mysqld, which
+  listens on 127.0.0.1 only and is removed with its data after the run.
 
 - 2026-10-03 Security pass of stage S3 (S3.14) over `128c48a..8d792fa`, by checklist item.
   Lifetimes: two use-after-free fixed with tests, `$this` of a class-string callable given to

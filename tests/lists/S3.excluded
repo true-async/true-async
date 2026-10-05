@@ -156,9 +156,7 @@ common/cpu_snapshot_basic.phpt  component:S9 (TrueAsync API outside S3.md sectio
 common/cpu_snapshot_invariants.phpt  component:S9 (TrueAsync API outside S3.md section 1; no stage in PLAN.md names it)
 common/cpu_usage_basic.phpt  component:S9 (TrueAsync API outside S3.md section 1; no stage in PLAN.md names it)
 common/current_context_at_root.phpt  component:S9 (Context)
-common/http_server.php  component:S6 (helper of the curl and cleanup tests)
 common/runtime_stats.phpt  component:S9 (TrueAsync API outside S3.md section 1; no stage in PLAN.md names it)
-common/test_router.php  component:S6 (helper of the curl and cleanup tests)
 common/timeout_class_methods.phpt  component:S5 (timeout(), Timeout)
 common/timeout_value_error.phpt  component:S5 (timeout(), Timeout)
 

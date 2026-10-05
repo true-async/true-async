@@ -186,3 +186,18 @@ Written 2026-10-05. S3.23 (`call_on_main_stack`) done; every S3 step is closed, 
    and then deleted passes (S2.md section 3 says the same; Critic and Sage in S3.19): for the next
    health check. Next health check: passes 6 and 10; its S3.19 and S3.20 lines in "Open findings"
    are resolved there.
+
+## S6
+
+Written 2026-10-05. S6.1 (fixtures) done; S6.2 waits for S4's design note on `main`.
+
+- MySQL: `tools/test.py` starts a private `mysqld` for a run with `mysqli` or `pdo_mysql` tests
+  when `MYSQL_TEST_HOST` is unset; a container needs `apt-get install mysql-server-core-8.0`
+  (WORKFLOW "Test fixtures"). CI sets `MYSQL_TEST_*` to its `mysql:8.3` service in the jobs that run
+  the whole list (linux, seeds, mutants-coverage).
+- HTTP: tests start TrueAsync's `common/http_server.php`; every test gets
+  `PHP_CLI_SERVER_WORKERS=4`. The seven reference tests that include php-src's
+  `sapi/cli/tests/php_cli_server.inc` by a relative path still need the core-tree path variable of
+  `dev/plans/S2.md` section 1 when S6 ports them.
+- `tests/lists/S6.txt` holds the two helpers and the three smoke tests; S6.2 adds the frozen rest
+  and `S6.excluded`.

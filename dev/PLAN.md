@@ -324,12 +324,18 @@ Done when: S3–S6 lists (from `sleep`, `io`, `stream`, `socket_ext`, `dns`, `cu
 over 100 seeds; tests that fail because of the hooks design are listed against the review item;
 `dns` counted only on the Ring configuration (the Poll queue answers Unsupported for lookups).
 Tier: T2. Roles: Critic on S6.2, Critic after S6.4.
-Active: S6.1
+Active: S6.2 (once S4's design note is on `main`)
 
-- [ ] S6.1 Fixtures: MySQL with two connections and an HTTP server with
+- [x] S6.1 Fixtures: MySQL with two connections and an HTTP server with
       `PHP_CLI_SERVER_WORKERS`, started by `tools/test.py` locally and by the CI lanes.
       done: a smoke test per fixture, listed in `tests/lists/S6.txt` (two MySQL connections; a request to the server) passes on
         `pocs-dbg` and `pocs-asan` in a fresh container and in CI, with no async code involved
+      handoff: done 2026-10-05 on core `9531d5b0b1f` (unchanged), in a fresh container: `pocs-dbg`
+        333 PASS, `pocs-asan` 318 PASS and 15 SKIP; CI not watched. MySQL: TrueAsync's `mysql:8.3`
+        service in CI, a private `mysqld` started by `tools/test.py` locally (`mysqli/011`). HTTP:
+        TrueAsync's per-test server (`common/http_server.php`), every test's server with four
+        workers (`common/http_server_fixture`, `common/http_server_workers`; the latter answers
+        "timeout" without workers); WORKFLOW "Test fixtures".
 - [ ] S6.2 Design note: install point per request and thread, readiness ops, deadlines, the
       suspend predicate, `zend_try` around the suspend (M12), Unsupported when async is off (M13),
       DNS and files on the Ring, SigWait on `SignalHandle` and WaitPid on `ProcessHandle` with

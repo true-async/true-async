@@ -1,0 +1,8 @@
+# S6: the IO hooks provider (dev/PLAN.md, S6). Reference: true-async/php-async at tests/lists/REFERENCE.
+# S6.1: the fixtures and their smoke tests, frozen with this list; S6.2 adds the rest of the stage.
+common/http_server.php  ref:4041d62a62c095c78b7d8c608e10eaa51c73639cfc8da5e31bd982408c21ca72
+common/test_router.php  ref:f085c793508ba56b95dd2669a39546c850f802f402ab99aeb4f00690311fc3bd
+common/barrier_router.php  own:de2079a6a2c3b118d2e292c2c027b84254000a541533172779581797d7e477db
+common/http_server_fixture.phpt  own:1b02929f4c6e59473558a55464612a5a23d85ad9cd2d53847c881a16b255d8ee
+common/http_server_workers.phpt  own:d195628c1077e3c197801a282cc3686ede1986691cf4dd5ac915a2d5791d0ed0  skip-on:*-win(no-fork)
+mysqli/011-fixture_two_connections.phpt  own:579fa3882a345a42062c675c38a1a7d2ebd8c47779850ee1e567e15282c58cfd  skip-on:*-win(no-MySQL-server)

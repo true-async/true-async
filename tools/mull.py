@@ -148,7 +148,10 @@ def diff(ref, stage):
     # The planted functions belong to --known-answer and would survive every stage's lists.
     lane = lane_for([f"^{re.escape(str(ROOT / 'src'))}/"], [f'^{re.escape(str(KNOWN_ANSWER_SOURCE))}$'])
     entries, _ = test.compose(lane, stage, [])
-    output, seconds = run_mull(lane, ['-r', test.write_list(lane, entries)])
+
+    with test.mysql_server(lane, entries):
+        output, seconds = run_mull(lane, ['-r', test.write_list(lane, entries)])
+
     changed = changed_lines(ref)
     found = MUTANT.findall(output)
     in_diff = [m for m in found if int(m[1]) in changed.get(m[0], ())]

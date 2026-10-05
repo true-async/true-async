@@ -593,3 +593,11 @@ stack options were shown with the code).
 - 2026-10-05 S4 owns the whole wait-record layer, the storage of a wait of several records included
   (moved from S5, entry of 2026-10-02); S5 states its needs and writes its own kinds. Why: D25
   (events) is S4's, and two owners of one struct merge without a conflict into a missed count.
+- 2026-10-05 The HTTP fixture is TrueAsync's per-test server (`tests/common/http_server.php`), with
+  `PHP_CLI_SERVER_WORKERS=4` that `tools/test.py` gives every test, not one server per run (S6.1).
+  Why: the curl, cleanup and stream tests S6 ports start their own server through that helper or
+  php-src's `php_cli_server.inc`; a server per run would serve the smoke test alone.
+- 2026-10-05 MySQL in CI is TrueAsync's `mysql:8.3` service; locally `tools/test.py` starts a private
+  `mysqld`, only for a run with `mysqli` or `pdo_mysql` tests and no `MYSQL_TEST_HOST` (S6.1). Why: a
+  local run has no service, and a run of other groups should neither need MySQL installed nor wait
+  for it.

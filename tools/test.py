@@ -21,11 +21,13 @@ passes, since a random order changes what order-dependent tests print. A diagnos
 a warning, a notice) the expected output lacks is listed for reading.
 """
 import argparse
+import contextlib
 import hashlib
 import os
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -74,13 +76,27 @@ TEST_ENV_NAMES = {
     'IOR_BACKEND', 'TRUE_ASYNC_SCHED',
 }
 
-# run-tests' own switches: TEST_PHP_ARGS, TEST_PHP_JUNIT, ..., SKIP_SLOW_TESTS, ...
-TEST_ENV_PREFIXES = ('TEST_PHP', 'SKIP_')
+# run-tests' own switches: TEST_PHP_ARGS, TEST_PHP_JUNIT, ..., SKIP_SLOW_TESTS, ...; the MySQL
+# fixture's address, user and password, as TrueAsync names them (tests/mysqli/inc/config.inc). The
+# password is the throwaway one of a server that lives for one run.
+TEST_ENV_PREFIXES = ('TEST_PHP', 'SKIP_', 'MYSQL_TEST_')
 
 ASAN_ENV = {
     'ASAN_OPTIONS': 'abort_on_error=1',
     'UBSAN_OPTIONS': 'halt_on_error=1:print_stacktrace=1',
 }
+
+# Every HTTP server a test starts (`php -S` of tests/common/http_server.php or of php-src's
+# php_cli_server.inc) forks this many workers, which accept beside the server's own process, so
+# concurrent requests of coroutines are served concurrently rather than one after another. Not on
+# Windows, which has no fork.
+CLI_SERVER_WORKERS = '4'
+
+# Test groups that talk to the MySQL fixture; a run without them starts no server.
+MYSQL_GROUPS = ('mysqli', 'pdo_mysql')
+
+# Seconds a private mysqld may take to say it is ready for connections, or to stop.
+MYSQL_START_TIMEOUT = 60
 
 
 class Lane:
@@ -269,9 +285,92 @@ def patched_runner(lane):
 
 
 def test_env():
-    """The environment for run-tests: the variables of TEST_ENV_NAMES and TEST_ENV_PREFIXES."""
-    return {name: value for name, value in os.environ.items()
-            if name.upper() in TEST_ENV_NAMES or name.upper().startswith(TEST_ENV_PREFIXES)}
+    """The environment for run-tests: the variables of TEST_ENV_NAMES and TEST_ENV_PREFIXES, and the
+    workers of the HTTP servers the tests start."""
+    env = {name: value for name, value in os.environ.items()
+           if name.upper() in TEST_ENV_NAMES or name.upper().startswith(TEST_ENV_PREFIXES)}
+
+    if os.name != 'nt':
+        env['PHP_CLI_SERVER_WORKERS'] = CLI_SERVER_WORKERS
+
+    return env
+
+
+@contextlib.contextmanager
+def mysql_server(lane, entries):
+    """The MySQL server of the entries' tests for the duration of the block, named to them by the
+    MYSQL_TEST_* variables; none when no entry is in MYSQL_GROUPS.
+
+    A server that $MYSQL_TEST_HOST already names is used as it is: the CI lanes' service. Otherwise
+    a private mysqld of the installed MySQL 8 starts on a free port of 127.0.0.1 with the CI service's
+    user, password and database (root, root, `test`), and is removed with its data at the end. The Windows
+    lane has no server; its MySQL tests skip. Exits when mysqld is missing or does not start.
+    """
+    needed = any(entry.path.split('/')[0] in MYSQL_GROUPS for entry in entries)
+
+    if not needed or os.environ.get('MYSQL_TEST_HOST') or lane.tree == 'win':
+        yield
+        return
+
+    mysqld = shutil.which('mysqld', path=f'{os.environ.get("PATH", "")}:/usr/sbin')
+
+    if mysqld is None:
+        sys.exit('the MySQL fixture needs mysqld (apt-get install mysql-server-core-8.0) or $MYSQL_TEST_HOST '
+                 'naming a server (dev/WORKFLOW.md, "Test fixtures")')
+
+    # In /tmp, not $TMPDIR: mysqld refuses a socket path longer than 107 bytes.
+    data_dir = Path(tempfile.mkdtemp(prefix='true-async-mysql-', dir='/tmp'))
+    log = data_dir / 'error.log'
+    # mysqld runs as root only when told to; any other user it runs as itself.
+    user = ['--user=root'] if os.geteuid() == 0 else []
+    # With a password, mysqlnd authenticates over TCP as against the CI service, not by the empty
+    # password's shortcut.
+    (data_dir / 'init.sql').write_text("CREATE DATABASE test;\nALTER USER 'root'@'localhost' IDENTIFIED BY 'root';\n")
+    server_process = None
+
+    try:
+        run([mysqld, '--no-defaults', '--initialize-insecure', f'--datadir={data_dir / "data"}', *user], data_dir)
+        port = free_port()
+        server_process = subprocess.Popen(
+            [mysqld, '--no-defaults', f'--datadir={data_dir / "data"}', *user, '--bind-address=127.0.0.1',
+             f'--port={port}', f'--socket={data_dir / "mysqld.sock"}', '--mysqlx=OFF',
+             f'--secure-file-priv={data_dir}', f'--pid-file={data_dir / "mysqld.pid"}', f'--log-error={log}',
+             f'--init-file={data_dir / "init.sql"}'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        wait_mysql_ready(server_process, log)
+        os.environ.update({'MYSQL_TEST_HOST': '127.0.0.1', 'MYSQL_TEST_PORT': str(port),
+                           'MYSQL_TEST_USER': 'root', 'MYSQL_TEST_PASSWD': 'root', 'MYSQL_TEST_DB': 'test'})
+        yield
+    finally:
+        if server_process is not None:
+            server_process.terminate()
+
+            try:
+                server_process.wait(timeout=MYSQL_START_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                server_process.kill()
+                server_process.wait()
+
+        shutil.rmtree(data_dir, ignore_errors=True)
+
+
+def free_port():
+    with socket.socket() as probe:
+        probe.bind(('127.0.0.1', 0))
+
+        return probe.getsockname()[1]
+
+
+def wait_mysql_ready(server_process, log):
+    """Wait for the private mysqld's "ready for connections", printed after its init file ran."""
+    deadline = time.monotonic() + MYSQL_START_TIMEOUT
+
+    while 'ready for connections' not in (log.read_text(errors='replace') if log.is_file() else ''):
+        if server_process.poll() is not None or time.monotonic() > deadline:
+            text = log.read_text(errors='replace') if log.is_file() else ''
+            sys.exit(f'the private mysqld did not start; {log}:\n{text[-3000:]}')
+
+        time.sleep(0.1)
 
 
 def run_tests(lane, entries, jobs, sched=None):
@@ -478,6 +577,8 @@ def main():
     parser.add_argument('--seeds', type=int, help='run the tests once per seed 1..N with the fuzz hook')
     parser.add_argument('tests', nargs='*')
     args = parser.parse_args()
+    # A run stopped by SIGTERM (a timeout) unwinds, so the MySQL fixture stops its mysqld.
+    signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(128 + signum))
 
     lane = Lane(args.lane)
 
@@ -493,7 +594,8 @@ def main():
         lane.with_fuzz()
         build(lane)
 
-        return 1 if run_seeds(lane, entries, args.jobs, args.seeds) else 0
+        with mysql_server(lane, entries):
+            return 1 if run_seeds(lane, entries, args.jobs, args.seeds) else 0
 
     if lane.tree != 'win':
         build(lane)
@@ -501,7 +603,9 @@ def main():
     if lane.variant == 'cov':
         run(['lcov', '--quiet', '--zerocounters', '--directory', lane.build], ROOT)
 
-    output = run_tests(lane, entries, args.jobs)
+    with mysql_server(lane, entries):
+        output = run_tests(lane, entries, args.jobs)
+
     wrong = verdict(lane, entries, left_out, output)
     junit_add_files()
 
