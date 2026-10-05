@@ -67,7 +67,7 @@ flowchart TB
     end
 
     subgraph core["php-src core with the RFCs"]
-        sapi["Scheduler API<br/>18 slots, #22561"]
+        sapi["Scheduler API<br/>21 slots, #22561"]
         hooks["IO hooks<br/>#23997"]
         queue["php_io_queue<br/>Ring (ior) or Poll"]
     end

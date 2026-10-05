@@ -29,6 +29,13 @@ below); the table at the end shows where each of them went.
   (a test, a review); a `zend_try` or a global counter on a hot path still needs his word. Gate:
   `tools/check-gates.py` forbids `zend_fiber_switch_block()`, `_unblock()` and `_blocked()` in
   `src/`; the rest is held by the Critic, who compares each change with TrueAsync.
+- **P1.5 The core API stays over a smaller core.** A slot, function, macro, flag or field of the
+  scheduler API is not removed because nothing calls it: the RFC is written for many providers and
+  extensions, and any of them may use it. Why: Edmond, 2026-10-05, after S3.18 and S3.20 removed
+  uncalled API and broke the bridge `ext-scheduler-hook` ("RFC создаётся для многих API, функции в
+  нём потенциально могут быть кем-то использованы"; S3.21 restored it). Flips: the API is wrong
+  (a defect, a contradiction with the RFC), and Edmond agrees. Gate: held by the Critic, who
+  rejects a removal argued only by "no caller"; the health check reports such API as fine.
 
 ## P2. Compatibility
 

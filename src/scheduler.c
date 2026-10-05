@@ -1236,8 +1236,10 @@ async_coroutine_t *async_coroutine_new(void)
 	return coroutine;
 }
 
-static zend_coroutine_t *scheduler_new_coroutine(void)
+static zend_coroutine_t *scheduler_new_coroutine(size_t extra_size)
 {
+	(void) extra_size;
+
 	return &async_coroutine_new()->coroutine;
 }
 
@@ -1621,8 +1623,11 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 	return *exception_ptr == NULL;
 }
 
-static bool scheduler_cancel(zend_coroutine_t *coroutine, zend_object *error, bool transfer_error)
+/* is_safely is a plain cancel until the zombie state (S9). */
+static bool scheduler_cancel(zend_coroutine_t *coroutine, zend_object *error, bool transfer_error, const bool is_safely)
 {
+	(void) is_safely;
+
 	return async_coroutine_cancel((async_coroutine_t *) coroutine, error, error != NULL && transfer_error);
 }
 
@@ -1837,6 +1842,15 @@ static zend_class_entry *scheduler_get_class_ce(const zend_async_class type)
 	}
 }
 
+static zend_coroutine_t *scheduler_coroutine_from_object(zend_object *object)
+{
+	if (UNEXPECTED(object->ce != async_ce_coroutine)) {
+		return NULL;
+	}
+
+	return &async_coroutine_from_object(object)->coroutine;
+}
+
 /* The frame of a parked coroutine: started, not running, not finished (a yield is QUEUED). */
 static zend_execute_data *scheduler_coroutine_execute_data(zend_coroutine_t *zend_coroutine)
 {
@@ -1862,6 +1876,7 @@ static const zend_async_scheduler_api_t scheduler_api = {
 	.shutdown = scheduler_shutdown,
 	.get_class_ce = scheduler_get_class_ce,
 	.defer = scheduler_defer,
+	.coroutine_from_object = scheduler_coroutine_from_object,
 	.intercept_fiber = scheduler_intercept_fiber,
 	.coroutine_execute_data = scheduler_coroutine_execute_data,
 	.add_switch_handler = async_switch_handler_add,

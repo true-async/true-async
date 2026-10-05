@@ -538,3 +538,18 @@ stack options were shown with the code).
   `zend_async_get_scheduler_module()`, `zend_async_scheduler_unregister()`,
   `ZEND_ASYNC_SCHEDULER_LAUNCH()`, the fiber VM-stack helpers (S3.20). Why: the health check counted
   two providers only; Edmond's answer is open (PLAN "Open questions").
+- 2026-10-05 The core API removed in S3.18 and S3.20 for having no caller comes back (S3.21): one
+  revert per removing commit on `async-core`; the fixes those steps carried stay (the NULL check of
+  `ZEND_ASYNC_NEW_COROUTINE()`, the comment naming the bridge as a caller of
+  `zend_async_scheduler_unregister()`). Why: Edmond, "RFC создаётся для многих API, функции в нём
+  потенциально могут быть кем-то использованы" (P1.5). This supersedes the removals of the
+  2026-10-03 (S3.18) and 2026-10-05 (S3.20) entries above.
+- 2026-10-05 The core API the bridge `ext-scheduler-hook` calls stays (`zend_async_get_scheduler_module()`,
+  `zend_async_scheduler_unregister()`, `ZEND_ASYNC_SCHEDULER_LAUNCH()`, the fiber VM-stack
+  helpers). Why: Edmond's question was withdrawn: the core keeps them (P1.5).
+- 2026-10-05 The bridge fills the API `version` field. Why: the core refuses a provider whose
+  version differs, and the bridge left it 0.
+- 2026-10-05 `ZEND_ASYNC_API_VERSION` is a counter raised by one at every incompatible change (1
+  from S3.21), not a date. Why: S3.18 and S3.20 shipped different layouts under one date each, and
+  the core would read an older provider's slots shifted; PHP and Python keep one number too
+  (Edmond's "да делай"). Rejected: major.minor (the `size` check covers appended slots).

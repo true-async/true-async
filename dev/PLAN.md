@@ -43,10 +43,6 @@ true-async/
 
 Waiting for Edmond's call; nothing here is being worked on.
 
-- The core API the bridge `true-async/ext-scheduler-hook` calls (S3.20, asked 2026-10-05):
-  `zend_async_get_scheduler_module()`, `zend_async_scheduler_unregister()`,
-  `ZEND_ASYNC_SCHEDULER_LAUNCH()`, `zend_fiber_vm_stack_start()`/`_free()`. Kept (the default), or
-  removed, and the bridge carries its own copies when it is updated.
 
 ## S1 — Core branch `async-core-io`  [x] (S1.5 deferred)
 
@@ -141,7 +137,24 @@ needed (`dev/plans/S2.md`, section 5), and S3 needs none (scheduler RFC changes 
         `zend_async_scheduler_unregister` (its failed launch is the second caller),
         `SCHEDULER_LAUNCH` and the VM-stack helpers: kept, the health check had counted two
         providers only. Removing the forwarder departs from TrueAsync (P1.4); the Sage kept the
-        removal.
+        removal. Every API removal of S3.18 and S3.20 is undone in S3.21.
+- [x] S3.21 Core API back (`async-core`, one revert per removing commit, then a core update;
+      Edmond, 2026-10-05: "RFC создаётся для многих API, функции в нём потенциально могут быть
+      кем-то использованы"): what S3.18 and S3.20 removed for having no caller comes back
+      (`active_coroutine_count`, `call_on_main_stack`, `coroutine_from_object`, `F_OBJ_REF`,
+      `GET_EXCEPTION_CE`, `zend_async_is_enabled()`, `extra_size`, `is_safely`, `gc_new_coroutine`,
+      the object-less coroutine, the state, class and context aliases, the objects-store pass taking
+      the store); the fixes those steps carried stay. The bridge `ext-scheduler-hook` builds again.
+      done: core tests equal per test on dbg and ASAN; extension lanes green; the bridge's tests
+        pass on both trees; `CORE_REF` and "Pinned core" moved
+      handoff: done 2026-10-05 on core `710a79707ce`: `Zend/tests` and `ext/test_scheduler/tests` equal
+        per test with `8a927bda8f6` on dbg (5,544 PASS), test_scheduler and
+        `Zend/tests/{fibers,gc,generators}` on ASAN (468 PASS); `pocs-dbg` 328 PASS, `pocs-asan` 313
+        PASS and 15 SKIP; the bridge builds with no warning and passes its 22 tests on dbg and ASAN
+        after it fills the API `version` field (bridge `92e14e7`). Our scheduler fills
+        `coroutine_from_object` again and ignores `is_safely` until S9. The API version is a counter
+        (`ZEND_ASYNC_API_VERSION 1`, Edmond 2026-10-05): two changes on one day had got the same
+        date.
 
 ## S4 — Reactor on Poll, Poll additions and Ring  [ ]
 

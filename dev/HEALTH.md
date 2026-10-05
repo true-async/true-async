@@ -31,21 +31,15 @@ Known dark places: none beyond the open findings
 - 8 src/true_async_API.h:132-136: `async_callbacks_add()` is called only by test_hooks.c (S3.19)
 - 8 src/internal/circular_buffer.h:26, .c:58-97: `item_size` is generic while every buffer holds pointers; the `capacity == 0` branch of `count` serves only a test hook (S3.19)
 - 8 src/scheduler.c:1196-1200: `scheduler_gc_new_coroutine` is a copy of `scheduler_new_coroutine`; the core falls back to new_coroutine when the slot is NULL (S3.19)
-- 8 core Zend/zend_async_API.h:285-288: the cancel slot's `is_safely` is never set (`ZEND_ASYNC_CANCEL` passes false) and no scheduler honours it (S3.20)
-- 8 core Zend/zend_async_API.h:262-268: the `gc_new_coroutine` slot; both providers fill it with a copy of new_coroutine (S3.20)
-- 8 core Zend/zend_async_API.h:113-117, 175-180, zend_fibers.c:820, 1072, 1294: support for a coroutine without a PHP object (`object_offset == 0`); every provider sets it and the RFC says a coroutine is an object (S3.20)
-- 8 core Zend/zend_async_API.h, .c: API surface with no caller: `zend_async_get_scheduler_module`, `ZEND_ASYNC_IS_OFF`, `ZEND_ASYNC_IS_READY`, `ZEND_ASYNC_CLASS_NO`, the `ZEND_ASYNC_CONTEXT_*`, `ZEND_ASYNC_INTERNAL_CONTEXT_*` and `ZEND_ASYNC_NEW_COROUTINE` aliases (h:551-569), `ZEND_ASYNC_SCHEDULER_LAUNCH`; `zend_async_scheduler_unregister` is exported for one caller in its own file and its comment names a second that does not exist (S3.20)
-- 8 core Zend/zend_fibers.h:166-172: two `ZEND_API` VM-stack functions with one caller each inside zend_fibers.c; neither provider calls them (S3.20)
-- 8 core Zend/zend_objects_API.c:69-72: `zend_objects_store_call_destructors_async_iterator_entry` only forwards (S3.20)
 - 9 dev/plans/S3.md:318-319, handoff.md:134: say the core's `ZEND_ASYNC_DEACTIVATE` will clear the scheduler-context flag "next core update"; two updates later it still does not, and no step owns it (S3.20)
 - 9 dev/plans/S3.md:621-623, DECISIONS.md:202-203: "the call that comes back is then a plain one"; since `async-core` `c43060ea12d` the shutdown function's catch makes a bailout call (S3.19)
 - 9 dev/PRINCIPLES.md:46, 48: P3.2's gate names the `windows-latest` job; the job is `windows` on `windows-2025-vs2026` (S3.19)
-- 9 tools/check-gates.py:21, 24: the allowlist keeps `zend_async_call_on_main_stack_t` and `zend_async_coroutine_from_object_t`, which S3.18 removed from the core (S3.19)
 - 10 dev/plans/S2.md:187: the scenarios layer (`.feature` ports of fuzzy-tests) has no owning plan step and no DECISIONS entry for its generator
 - fine 6 src/scheduler.c, async_coroutine_new: the registry holds a coroutine from its creation, so one whose enqueue fails or bails out on OOM stays CREATED until RSHUTDOWN releases it; deadlock counting skips it (S3.18; tests scheduler/086, 087)
 - fine 8 src/true_async.c:58: `scheduler_registered` is a process-wide static for a process-wide fact (the core's slots are set once in MINIT)
 - fine 8 php_true_async.h:37: `ASYNC_G(last_handler_id)` is the id source of the agreed design (S3.md 3.6), for finish and switch handlers; the alternative is a counter in every coroutine
 - fine 8 core Zend/zend_gc.c: `GC_G(dtor_pending)` counts more than one outstanding iterator; the reason is at its definition
+- fine 8 core Zend/zend_async_API.h, .c, zend_fibers.h, zend_objects_API.c: API with no caller (the cancel slot's `is_safely`, `gc_new_coroutine`, `call_on_main_stack`, `coroutine_from_object`, the object-less coroutine, the state, class and context aliases, the VM-stack helpers, the objects-store forwarder): the RFC's API is kept for any provider (P1.5; S3.18 and S3.20 removed it, S3.21 restored it)
 
 ## Journal
 

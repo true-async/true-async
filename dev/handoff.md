@@ -3,11 +3,11 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-05. S3.20 (core health fixes) done: every S3 step is closed.
+Written 2026-10-05. S3.21 (the core API back) done: every S3 step is closed.
 
 ## State
 
-- Core pinned: `async-core-io-2026-10-05-2` (`8a927bda8f6`). CI gates every lane on every list; a
+- Core pinned: `async-core-io-2026-10-05-3` (`710a79707ce`). CI gates every lane on every list; a
   test that cannot pass yet carries `--XFAIL--` naming its step, and the commit that makes it pass
   removes the section. run-tests (`tools/run-tests.patch`) fails a test the timeout killed.
 - S3.3-S3.6a: internal API, classes, the `Coroutine` object, the core's slots, the FIFO run queue,
@@ -83,9 +83,7 @@ Written 2026-10-05. S3.20 (core health fixes) done: every S3 step is closed.
   frozen list keeps the name). A later port of channels brings back what it needs from the
   reference. Not touched: `count`/`is_empty`/`is_full` stay out of line (efficiency report of
   2026-10-03, waits for Edmond).
-- S3.18: the core's API lost what nothing called (`active_coroutine_count`, `call_on_main_stack`,
-  `coroutine_from_object`, `F_OBJ_REF`, `GET_EXCEPTION_CE`, `zend_async_is_enabled`,
-  `new_coroutine`'s `extra_size`); a finish handler fires at most once and a throwing one may end
+- S3.18: a finish handler fires at most once and a throwing one may end
   the notify. test_scheduler has a fault seam (`test_scheduler.fail_new_coroutine`,
   `test_scheduler.fail_enqueue`, tests `079`-`085`); a refused shutdown or GC iterator leaves no
   exception. Ours: the registry holds a coroutine from its creation, so a core coroutine whose
@@ -95,18 +93,13 @@ Written 2026-10-05. S3.20 (core health fixes) done: every S3 step is closed.
   `CompositeException`'s add and class entry static; `async_callbacks_add()` is
   `test_callbacks_add()` in `test_hooks.c`; `addException()` throws as `$array[] =` when the list's
   next key is taken (`classes/010`).
-- S3.20 (core, API version 20261005, 18 slots): the cancel slot lost `is_safely`, the
-  `gc_new_coroutine` slot is gone (the core's own coroutines come from `new_coroutine` through
-  `ZEND_ASYNC_NEW_COROUTINE()`), a coroutine is always an object (`object_offset` never 0), the
-  state, class and context aliases nothing called are gone, the async objects-store pass is its own
-  iterator entry, `ZEND_ASYNC_DEACTIVATE` clears the scheduler-context flag; test_scheduler tests
-  027, 037, 038, 040-045 say why they depart from upstream. Kept for the out-of-tree bridge
-  `true-async/ext-scheduler-hook`: `zend_async_get_scheduler_module()`,
-  `zend_async_scheduler_unregister()`, `ZEND_ASYNC_SCHEDULER_LAUNCH()`, the fiber VM-stack helpers
-  (the default; Edmond's answer is open, PLAN "Open questions"). The bridge does not build against
-  `async-core`: it calls `coroutine_from_object`, `ZEND_COROUTINE_F_OBJ_REF`,
-  `zend_async_is_enabled()` (gone in S3.18) and the cancel slot with `is_safely` (gone in S3.20),
-  so the kept names serve no bridge that builds today.
+- S3.20 (core): `ZEND_ASYNC_DEACTIVATE` clears the scheduler-context flag; test_scheduler tests
+  027, 037, 038, 040-045 say why they depart from upstream. Its API removals are undone by S3.21.
+- S3.21 (core, API version 1, 21 slots): every API S3.18 and S3.20 removed for having no caller is
+  back, one revert per removing commit (P1.5, Edmond 2026-10-05); the API version is a counter.
+  The bridge `true-async/ext-scheduler-hook` builds again and passes its 22 tests on dbg and ASAN
+  (`92e14e7`, it fills `version`). Our scheduler fills `coroutine_from_object` and ignores
+  `is_safely` until S9; `gc_new_coroutine` stays NULL.
 - Reviews: after the code, Critic and the Sage (`general-purpose`, model `fable`) compare it with
   TrueAsync (`/root/php-async` in the container) and hunt inventions; one plan step is one commit.
 - Container notes: the ASAN lane needs `TRUE_ASYNC_CORE_SRC=/root/core-asan`; `gen_stub.php`
@@ -132,8 +125,15 @@ Written 2026-10-05. S3.20 (core health fixes) done: every S3 step is closed.
 - An exception pending when `async_await_coroutine` is entered makes the GC report 0 and defer
   after a completed wait (inherited from test_scheduler.c's `ts_await`; Critic in S3.7, minor);
   not touched in S3.8.
-- S9's safe cancel (TrueAsync's `is_safely`, from its scopes) goes to our own cancel; the core's
-  slot has none since S3.20.
+- S9's safe cancel (TrueAsync's `is_safely`, from its scopes) reaches our cancel through the core's
+  slot; ours ignores it until then.
+- The Critic on S3.21 (not fixed, each needs Edmond's word; all predate S3.18): the bridge works
+  for the first request of a process only (`zend_async_is_enabled()` is process-wide, its hooks
+  are per request); `extra_size` does not say where the bytes live and every provider ignores
+  it; the default `call_on_main_stack` runs `fn` on the caller's stack when a scheduler leaves
+  the slot NULL; `is_safely` is "deferred delivery" in the core and a zombie in TrueAsync, with no
+  `ZEND_ASYNC_CANCEL_EX`; nothing maintains `active_coroutine_count`; `ZEND_COROUTINE_ADD_REF()`
+  asserts on an object-less coroutine the `new_coroutine` text says to keep with it.
 - `scheduler_cancel_all` also cancels the core's internal coroutines. A shutdown iterator cancelled
   before it ran reports nothing (only the coroutine that starts a pass is recorded in
   `EG(shutdown_context)`; Critic in S3.10); a destructor that waits for a later destructor and
