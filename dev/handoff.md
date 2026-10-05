@@ -100,6 +100,11 @@ Written 2026-10-05. S3.22 (the Critic's six findings on S3.21) done; S3.23 (`cal
   The bridge `true-async/ext-scheduler-hook` builds again and passes its 22 tests on dbg and ASAN
   (`92e14e7`, it fills `version`). Our scheduler fills `coroutine_from_object` and ignores
   `is_safely` until S9; `gc_new_coroutine` stays NULL.
+- S3.22 (core, API version 2, 22 slots): the core launches only in a READY request; the bridge
+  registers its C slots once per process and PHP calls `register()` in every request (bridge
+  `a0fc2fd`, 23 tests); `extra_size`, `ZEND_ASYNC_NEW_COROUTINE_EX`, `active_coroutine_count` and
+  the object-less coroutine are gone on Edmond's word; the `get_coroutine_count` slot is filled by
+  ours (`scheduler_get_coroutine_count`) and test_scheduler, test `internal/050`.
 - Reviews: after the code, Critic and the Sage (`general-purpose`, model `fable`) compare it with
   TrueAsync (`/root/php-async` in the container) and hunt inventions; one plan step is one commit.
 - Container notes: the ASAN lane needs `TRUE_ASYNC_CORE_SRC=/root/core-asan`; `gen_stub.php`
@@ -166,9 +171,10 @@ Written 2026-10-05. S3.22 (the Critic's six findings on S3.21) done; S3.23 (`cal
 
 ## Next
 
-1. Every S3 step is closed; ask Edmond what comes next (S4 is planned, not started on its own).
+1. S3.23: fill `call_on_main_stack` with TrueAsync's `async_call_on_main_stack`
+   (`/root/php-async/scheduler.c:154`) and a test; then ask Edmond what comes next (S4 is planned,
+   not started on its own).
 2. `tools/check-lists.py` compares a frozen list only with its first commit, so a line added later
    and then deleted passes (S2.md section 3 says the same; Critic and Sage in S3.19): for the next
    health check. Next health check: passes 6 and 10; its S3.19 and S3.20 lines in "Open findings"
    are resolved there.
-3. The bridge `true-async/ext-scheduler-hook` needs an update to build against the pinned core.
