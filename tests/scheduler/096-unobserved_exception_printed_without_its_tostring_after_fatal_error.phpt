@@ -1,5 +1,5 @@
 --TEST--
-After a fatal error an exception nobody observed is not printed: its __toString() would run after the fatal error
+After a fatal error an exception nobody observed is printed by the built-in __toString(): its class's own does not run
 --FILE--
 <?php
 class Loud extends Exception {
@@ -21,3 +21,9 @@ eval('function redeclared() {}');
 main
 
 Fatal error: Cannot redeclare function redeclared() (previously declared in %s : eval()'d code:1) in %s : eval()'d code on line 1
+
+Fatal error: Uncaught Loud: lost in %s:%d
+Stack trace:
+#0 [internal function]: {closure:%s}()
+#1 {main}
+  thrown in %s on line %d

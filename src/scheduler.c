@@ -1029,9 +1029,44 @@ static void scheduler_exit_exception_printed(zend_object *exception)
 	zend_hash_index_update(&ASYNC_G(unobserved_exceptions), exception->handle, &value);
 }
 
-/* After the request's last drain. A finished coroutine still alive (in an array, a static property, a
- * cycle) whose exception nobody observed adds it to the table; the plain globals added theirs in
- * coroutine_object_destroy. Each is printed as uncaught. */
+/* By the built-in Exception::__toString() or Error::__toString(): the class's override is not called. */
+static void scheduler_print_exception_built_in(zend_object *exception)
+{
+	/* zend_exception_error() prints these without __toString(). */
+	if (exception->ce == zend_ce_parse_error || exception->ce == zend_ce_compile_error) {
+		GC_ADDREF(exception);
+		zend_exception_error(exception, E_ERROR);
+		return;
+	}
+
+	zend_class_entry *base_ce = zend_get_exception_base(exception);
+	zval string, file_rv, line_rv;
+
+	zend_call_known_instance_method_with_0_params(base_ce->__tostring, exception, &string);
+	ZEND_ASSERT(Z_TYPE(string) == IS_STRING);
+
+	const zval *file = zend_read_property_ex(base_ce, exception, ZSTR_KNOWN(ZEND_STR_FILE), true, &file_rv);
+	const zval *line = zend_read_property_ex(base_ce, exception, ZSTR_KNOWN(ZEND_STR_LINE), true, &line_rv);
+
+	zend_string *message = zend_strpprintf(0, "Uncaught %S\n  thrown", Z_STR(string));
+	zend_string *file_name = Z_TYPE_P(file) == IS_STRING && Z_STRLEN_P(file) > 0 ? Z_STR_P(file) : NULL;
+	const uint32_t line_number = Z_TYPE_P(line) == IS_LONG ? (uint32_t) Z_LVAL_P(line) : 0;
+
+	/* A backtrace the fatal error left would be appended to this message, and zend_error() would fetch
+	 * one of this call: zend_error_cb() is called directly, the stale one cleared, as
+	 * zend_exception_error() does. */
+	zval_ptr_dtor(&EG(last_fatal_error_backtrace));
+	ZVAL_UNDEF(&EG(last_fatal_error_backtrace));
+	zend_observer_error_notify(E_ERROR | E_DONT_BAIL, file_name, line_number, message);
+	zend_error_cb(E_ERROR | E_DONT_BAIL, file_name, line_number, message);
+	zend_string_release(message);
+	zval_ptr_dtor(&string);
+}
+
+/* After the request's last drain, or at RSHUTDOWN after a bailout in the shutdown phase. A finished
+ * coroutine still alive (in an array, a static property, a cycle) whose exception nobody observed adds
+ * it to the table; the plain globals added theirs in coroutine_object_destroy. Each is printed as
+ * uncaught. */
 static void scheduler_print_unobserved_exceptions(void)
 {
 	const zend_objects_store *objects = &EG(objects_store);
@@ -1084,6 +1119,19 @@ static void scheduler_print_unobserved_exceptions(void)
 
 		if (exception == NULL) {
 			break;
+		}
+
+		/* After any bailout of the request, a fatal error's above all, the class's __toString() is not
+		 * called: it would run unbounded after a timeout and may exhaust the memory limit again. Read per
+		 * print: a print may bail out. CG(unclean_shutdown) cannot be cleared from PHP code, as
+		 * error_clear_last() clears error_get_last(). */
+		if (UNEXPECTED(CG(unclean_shutdown))) {
+			zend_try
+			{
+				scheduler_print_exception_built_in(exception);
+			}
+			zend_end_try();
+			continue;
 		}
 
 		/* The entry keeps its reference; zend_exception_error() releases this one. With no frame, a
@@ -1166,13 +1214,9 @@ static bool scheduler_main_suspend(bool is_bailout)
 		}
 	}
 
-	/* Only the last call runs in the shutdown, after the destructors. A bailout's call never gets here, a
-	 * shutdown function's included (it re-raises above). After a fatal error nothing is printed: a
-	 * print runs the exception's __toString(), unbounded after a timeout, and it may exhaust the memory
-	 * limit again. The test is the request's last recorded error, as error_get_last() reads it: an
-	 * exit() in a shutdown function bails out without one and still prints. */
-	if (UNEXPECTED(EG(flags) & EG_FLAGS_IN_SHUTDOWN) &&
-		EXPECTED(!CG(unclean_shutdown) || PG(last_error_message) == NULL || !(PG(last_error_type) & E_FATAL_ERRORS))) {
+	/* Only the last call reaches this line in the shutdown, after the destructors. A bailout's call never
+	 * gets here, a shutdown function's included (it re-raises above). */
+	if (UNEXPECTED(EG(flags) & EG_FLAGS_IN_SHUTDOWN)) {
 		scheduler_print_unobserved_exceptions();
 	}
 
@@ -1871,6 +1915,12 @@ void async_scheduler_request_startup(void)
  * (CG(unclean_shutdown)). Each coroutine finishes without handlers. */
 void async_scheduler_request_shutdown(void)
 {
+	/* A bailout in a shutdown destructor leaves no later from_main call to print in. What the last call
+	 * printed is skipped. */
+	if (UNEXPECTED(CG(unclean_shutdown))) {
+		scheduler_print_unobserved_exceptions();
+	}
+
 	async_coroutine_t *coroutine = NULL;
 
 	ZEND_HASH_FOREACH_PTR(&ASYNC_G(coroutines), coroutine)

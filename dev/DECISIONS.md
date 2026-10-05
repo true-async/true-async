@@ -494,13 +494,14 @@ stack options were shown with the code).
   an OOM repeats); a cancellation rethrown at every later suspend (Edmond: "очень очень плохая
   идея"). TrueAsync runs the queue on in the shutdown phase: a departure from P1.4.
 - 2026-10-05 An exception nobody observed, of a coroutine alive at the request's end, is printed as
-  uncaught (Edmond: "да печатать", over TrueAsync's silence), once per object, even after an
-  `exit()` in a shutdown function; not after a fatal error (a bailout whose `error_get_last()` is
-  fatal, an uncaught exception in a shutdown function too; Edmond: "делай как лучше"), where
-  `__toString()` would run unbounded after a timeout (`scheduler/096`, `097`). Released without a
-  frame, it goes into `ASYNC_G(unobserved_exceptions)` (by handle); the last from_main call adds the
-  rest by a walk of the object store and prints each in `zend_try`, with `set_exception_handler()`'s
-  handler set aside, as for the exit exception, which stays in the table as printed. Nothing is
+  uncaught (Edmond: "да печатать", over TrueAsync's silence), once per object. After any bailout of
+  the request (`CG(unclean_shutdown)`: a fatal error, an `exit()` in the shutdown phase) it is printed
+  by the built-in `Exception::__toString()`: the class's own would run unbounded after a timeout
+  (Edmond: "печатал хотя бы то, что они были но __string не вызывал"; `scheduler/096`-`102`;
+  `error_get_last()` was rejected as the test, PHP code overwrites and clears it). Released without a
+  frame, it goes into `ASYNC_G(unobserved_exceptions)` (by handle); the last from_main call, or
+  RSHUTDOWN after a bailout in the shutdown phase, adds the rest by a walk of the object store and
+  prints each in `zend_try`, `set_exception_handler()`'s handler set aside. Nothing is
   cancelled; exit status 255; `getException()` observes. Why: the error vanished with exit status 0
   (`scheduler/088`-`092`). Rejected: chaining into the exit exception (`zend_exception_set_previous`
   drops one already in the chain; waiters share one object); a table of the coroutines.
