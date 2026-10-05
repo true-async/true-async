@@ -482,3 +482,7 @@ stack options were shown with the code).
   `test_scheduler.fail_enqueue` (n-th call from now fails) (S3.18). Why: the core's paths for a
   coroutine it cannot create or queue had no test (HEALTH finding 6); the seam found a crash
   (`ts_suspend` with no loop started), fixed in test_scheduler.c.
+- 2026-10-05 After a fatal error in a shutdown destructor, the coroutines already queued still run;
+  not changed. Why: Edmond, "это устройство тру асинка": code in other coroutines runs on after a
+  fatal error, as in TrueAsync. Whether shutdown functions (stopped by S3.14, `c43060ea12d`) follow
+  it is asked in `dev/PLAN.md`, "Open questions".

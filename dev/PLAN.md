@@ -43,16 +43,11 @@ true-async/
 
 Waiting for Edmond's call; nothing here is being worked on.
 
-- A fatal error in a shutdown destructor: the coroutines queued before it still run after it.
-  `shutdown_destructors()` catches the bailout in its own `zend_try`, and `main/main.c`
-  then calls `ZEND_ASYNC_RUN_SCHEDULER_AFTER_MAIN(false)` (the Critic of S3.18). Reproduced on the
-  core of S3.18: a destructor that spawns a coroutine and then calls an undefined function prints
-  the fatal error, then the coroutine's output. The fix would be in the core, as for shutdown
-  functions. Not fixed; waiting for Edmond.
-- Closed: the same case for a shutdown function (Edmond, 2026-10-03: recorded as an open question;
-  handoff of S3.10, 89e4fe7). The S3.14 thread fixed it on Edmond's word: `async-core`
-  `c43060ea12d` ends the scheduler as a bailout; the coroutine no longer runs (checked on the core
-  of S3.18).
+- After a fatal error, shutdown functions and destructors differ: after one in a shutdown
+  function the queued coroutines no longer run (`async-core` `c43060ea12d`, S3.14; it also stops
+  the destructors from running with a finished coroutine as the current one); after one in a
+  shutdown destructor they still run. Edmond, 2026-10-05: coroutines running on after a fatal
+  error is TrueAsync's design, not a bug. Asked whether shutdown functions go back to it.
 
 ## S1 — Core branch `async-core-io`  [x] (S1.5 deferred)
 

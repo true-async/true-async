@@ -121,8 +121,8 @@ open until the S3.14 thread's open items close ("Next").
   before it ran reports nothing (only the coroutine that starts a pass is recorded in
   `EG(shutdown_context)`; Critic in S3.10); a destructor that waits for a later destructor and
   catches a graceful shutdown's cancellation, then waits again, spins (user-dependent).
-- A fatal error in a shutdown destructor still runs the coroutines queued before it (open question
-  in `dev/PLAN.md`; the shutdown-function case was fixed by S3.14, `c43060ea12d`).
+- After a fatal error, coroutines in the queue run on: TrueAsync's design (Edmond, 2026-10-05).
+  Shutdown functions differ since S3.14 (`c43060ea12d`); open question in `dev/PLAN.md`.
 - Two coroutines that catch the deadlock's cancellation and await each other again loop, each
   round adding a `DeadlockError`; TrueAsync does the same (Critic, minor).
 - D16's 5 s deadline after `exit()` needs a clock and a reactor timeout (S4).
