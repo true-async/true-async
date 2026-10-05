@@ -216,6 +216,7 @@ internal/047-second_wake_of_current_in_its_own_tick_accepted.phpt  own:25af3eaee
 internal/048-main_parked_by_bailout_in_shutdown_function.phpt  own:a3d65ce486280191d161f3449ba28de63b39be84c4f520a93d3fa9048aeea385
 internal/049-main_adopt_clears_scheduler_context.phpt  own:b001bd9f91400f8bf70b4916e5a6fe84c95795ad378f2dfbd3eb464e2dbb4f5e
 internal/050-coroutine_count.phpt  own:8c18f30ad37464d0876265b9952fbc84506d9fdc9426d112da419aaf0ead616c
+internal/051-call_on_main_stack.phpt  own:d73dba2e90bfd2d59d03ad3f698448448d8e27329b1543c113acabceedb3a7d2
 
 # classes: own tests of the S3.4 classes (Awaitable refuses foreign classes: section 13, bug 10)
 classes/001-awaitable_user_class.phpt  own:6c394d09952d247b4567fb247ff84de4c38ac1702b94fba3c3a5945660fa20e2

@@ -3,7 +3,7 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-05. S3.22 (the Critic's six findings on S3.21) done; S3.23 (`call_on_main_stack`) is open.
+Written 2026-10-05. S3.23 (`call_on_main_stack`) done; every S3 step is closed, the next stage waits for Edmond.
 
 ## State
 
@@ -105,6 +105,13 @@ Written 2026-10-05. S3.22 (the Critic's six findings on S3.21) done; S3.23 (`cal
   `a0fc2fd`, 23 tests); `extra_size`, `ZEND_ASYNC_NEW_COROUTINE_EX`, `active_coroutine_count` and
   the object-less coroutine are gone on Edmond's word; the `get_coroutine_count` slot is filled by
   ours (`scheduler_get_coroutine_count`) and test_scheduler, test `internal/050`.
+- S3.23: `call_on_main_stack` is TrueAsync's `async_call_on_main_stack` with its naked asm (x86-64
+  SysV and AArch64, where the compiler has `naked`; elsewhere fn runs on the caller's stack). It
+  moves only the stack pointer below the OS stack's suspension point: main's context copy, or the
+  engine's context while the queue drains after main. No current coroutine or main: a direct call,
+  as TrueAsync; the running context decides around the drain. Test hook
+  `TrueAsync\Test\call_on_main_stack()` returns the stack bases of caller and callback, test
+  `internal/051` (Linux only: the core finds a stack by position there).
 - Reviews: after the code, Critic and the Sage (`general-purpose`, model `fable`) compare it with
   TrueAsync (`/root/php-async` in the container) and hunt inventions; one plan step is one commit.
 - Container notes: the ASAN lane needs `TRUE_ASYNC_CORE_SRC=/root/core-asan`; `gen_stub.php`
@@ -137,6 +144,8 @@ Written 2026-10-05. S3.22 (the Critic's six findings on S3.21) done; S3.23 (`cal
   untested; the `zend_fibers.c` line numbers in `core-integration.md` are stale. A provider that
   calls `ZEND_ASYNC_INITIALIZE` while its scheduler already runs gets a second launch (the bridge
   checks first; Critic, low).
+- Left from the Critic on S3.23: a GCC-built AArch64 PHP gets no stack switch (GCC 13 has no
+  `naked` there); a file-scope asm would cover it.
 - `scheduler_cancel_all` also cancels the core's internal coroutines. A shutdown iterator cancelled
   before it ran reports nothing (only the coroutine that starts a pass is recorded in
   `EG(shutdown_context)`; Critic in S3.10); a destructor that waits for a later destructor and
@@ -171,9 +180,8 @@ Written 2026-10-05. S3.22 (the Critic's six findings on S3.21) done; S3.23 (`cal
 
 ## Next
 
-1. S3.23: fill `call_on_main_stack` with TrueAsync's `async_call_on_main_stack`
-   (`/root/php-async/scheduler.c:154`) and a test; then ask Edmond what comes next (S4 is planned,
-   not started on its own).
+1. Ask Edmond what comes next (S4 is planned, not started on its own); PLAN "Open questions" holds
+   the callbacks into PHP from `call_on_main_stack`.
 2. `tools/check-lists.py` compares a frozen list only with its first commit, so a line added later
    and then deleted passes (S2.md section 3 says the same; Critic and Sage in S3.19): for the next
    health check. Next health check: passes 6 and 10; its S3.19 and S3.20 lines in "Open findings"

@@ -1869,6 +1869,76 @@ static zend_execute_data *scheduler_coroutine_execute_data(zend_coroutine_t *zen
 	return coroutine->fiber_context->execute_data;
 }
 
+/* TrueAsync's async_asm_stack_call (scheduler.c:106-152): only the stack pointer moves to `newsp`,
+ * and fn(arg) runs there as an ordinary C call, so the ABI keeps the callee-saved registers; not a
+ * context switch (Go's asmcgocall). The guards: GCC 13 ignores `naked` on AArch64 and emits a
+ * prologue the asm does not undo; the SysV variant is not the Windows x64 ABI; a ucontext core keeps
+ * no stack pointer in the context's handle. */
+#if defined(__aarch64__) && __has_attribute(naked) && !defined(ZEND_FIBER_UCONTEXT)
+#define ASYNC_HAVE_STACK_SWITCH 1
+
+__attribute__((naked)) static void async_asm_stack_call(void *newsp, void (*fn)(void *), void *arg)
+{
+	__asm__ volatile("mov  x9, sp\n\t"
+					 "bic  x0, x0, #15\n\t"
+					 "mov  sp, x0\n\t"
+					 "stp  x30, x9, [sp, #-16]!\n\t"
+					 "mov  x9, x1\n\t"
+					 "mov  x0, x2\n\t"
+					 "blr  x9\n\t"
+					 "ldp  x30, x9, [sp], #16\n\t"
+					 "mov  sp, x9\n\t"
+					 "ret\n\t");
+}
+#elif defined(__x86_64__) && !defined(_WIN32) && __has_attribute(naked) && !defined(ZEND_FIBER_UCONTEXT)
+#define ASYNC_HAVE_STACK_SWITCH 1
+
+__attribute__((naked)) static void async_asm_stack_call(void *newsp, void (*fn)(void *), void *arg)
+{
+	/* The return address stays on the caller's stack; the second push keeps rsp 16-byte aligned at
+	 * the call. */
+	__asm__ volatile("movq %rsp, %rax\n\t"
+					 "andq $-16, %rdi\n\t"
+					 "movq %rdi, %rsp\n\t"
+					 "pushq %rax\n\t"
+					 "pushq %rax\n\t"
+					 "movq %rsi, %r10\n\t"
+					 "movq %rdx, %rdi\n\t"
+					 "call *%r10\n\t"
+					 "movq 8(%rsp), %rsp\n\t"
+					 "ret\n\t");
+}
+#endif
+
+/* TrueAsync's async_call_on_main_stack (scheduler.c:154-178): a foreign call (JNI, FFI) from a
+ * coroutine runs on the OS thread stack, which runtimes such as ART check the stack pointer against.
+ * With no current coroutine (before the launch, after the core turned async off) or in main, this is
+ * the OS stack already, as in TrueAsync. Main finishes before the scheduler drains the queue, and the
+ * OS stack then waits in the engine's context. Around that drain a coroutine other than main is
+ * current while the OS stack still runs (the switch into the scheduler), so the running context
+ * decides. The suspended OS stack is free below its handle (boost's saved registers), with a 256-byte
+ * margin as in TrueAsync. fn must not re-enter PHP: PHP code there would run under the fiber's stack
+ * limit and bailout, and a nested call would reuse the same spot. */
+static void scheduler_call_on_main_stack(void (*fn)(void *), void *arg)
+{
+#ifdef ASYNC_HAVE_STACK_SWITCH
+	const zend_coroutine_t *current_coroutine = ZEND_ASYNC_CURRENT_COROUTINE;
+
+	if (current_coroutine != NULL && !ZEND_COROUTINE_IS_MAIN(current_coroutine)) {
+		const async_coroutine_t *main_coroutine = (async_coroutine_t *) ZEND_ASYNC_MAIN_COROUTINE;
+		const zend_fiber_context *os_stack_context =
+				main_coroutine != NULL ? &main_coroutine->fiber_context->context : EG(main_fiber_context);
+
+		if (EXPECTED(EG(current_fiber_context) != os_stack_context)) {
+			async_asm_stack_call((char *) os_stack_context->handle - 256, fn, arg);
+			return;
+		}
+	}
+#endif
+
+	fn(arg);
+}
+
 static const zend_async_scheduler_api_t scheduler_api = {
 	.size = sizeof(zend_async_scheduler_api_t),
 	.version = ZEND_ASYNC_API_VERSION,
@@ -1879,6 +1949,7 @@ static const zend_async_scheduler_api_t scheduler_api = {
 	.launch = scheduler_launch,
 	.shutdown = scheduler_shutdown,
 	.get_class_ce = scheduler_get_class_ce,
+	.call_on_main_stack = scheduler_call_on_main_stack,
 	.defer = scheduler_defer,
 	.coroutine_from_object = scheduler_coroutine_from_object,
 	.intercept_fiber = scheduler_intercept_fiber,
@@ -1949,6 +2020,7 @@ void async_scheduler_request_shutdown(void)
 		 * bailout came out of main's own finish. */
 		if (ZEND_COROUTINE_IS_MAIN(&coroutine->coroutine)) {
 			if (EXPECTED(fiber_context != NULL)) {
+				EG(current_fiber_context) = EG(main_fiber_context);
 				efree(fiber_context);
 			}
 		} else if (UNEXPECTED(fiber_context != NULL)) {

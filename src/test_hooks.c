@@ -22,7 +22,8 @@
  * TrueAsync\Test\fail_at(string $site): void arms a fault site of the scheduler. The rest reach the
  * core API a PHP script has no path to: defer() queues a microtask; add_throwing_finish_handler(),
  * add_clearing_finish_handler() and add_printing_switch_handler() add handlers to a coroutine;
- * enqueue_with_error() wakes one with an error. Each says more above its definition. */
+ * enqueue_with_error() wakes one with an error; call_on_main_stack() runs a probe through the
+ * call_on_main_stack slot. Each says more above its definition. */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -31,6 +32,7 @@
 #include "php.h"
 #include "zend_exceptions.h"
 #include "zend_smart_str.h"
+#include "zend_call_stack.h"
 #include "php_true_async.h"
 #include "test_hooks.h"
 #include "coroutine.h"
@@ -1076,6 +1078,45 @@ static ZEND_FUNCTION(coroutine_count)
 	RETURN_LONG(ZEND_ASYNC_GET_COROUTINE_COUNT());
 }
 
+#ifdef ZEND_CHECK_STACK_LIMIT
+/* The base of the stack the caller runs on, which the core finds from the stack position on Linux's
+ * main thread (/proc/self/maps); 0 when it cannot. */
+static zend_long test_stack_base(void)
+{
+	zend_call_stack stack;
+
+	if (UNEXPECTED(!zend_call_stack_get(&stack))) {
+		return 0;
+	}
+
+	return (zend_long) (uintptr_t) stack.base;
+}
+
+static void test_main_stack_callback(void *arg)
+{
+	*(zend_long *) arg = test_stack_base();
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_call_on_main_stack, 0, 0, IS_ARRAY, 0)
+ZEND_END_ARG_INFO()
+
+/* Calls ZEND_ASYNC_CALL_ON_MAIN_STACK with a probe; returns ['caller' => int, 'callback' => int], the
+ * bases of the stacks the hook and the probe ran on. In main both are the OS thread stack's. Built only
+ * where the core finds stack bounds (ZEND_CHECK_STACK_LIMIT). */
+static ZEND_FUNCTION(call_on_main_stack)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	zend_long callback_stack_base = 0;
+
+	ZEND_ASYNC_CALL_ON_MAIN_STACK(test_main_stack_callback, &callback_stack_base);
+
+	array_init(return_value);
+	add_assoc_long(return_value, "caller", test_stack_base());
+	add_assoc_long(return_value, "callback", callback_stack_base);
+}
+#endif
+
 /* Indexed by async_test_fault_site_t. */
 static const char *const fault_site_names[] = { NULL, "enqueue", "reserve", "link" };
 
@@ -1126,6 +1167,9 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_printing_switch_handler", ZEND_FN(add_printing_switch_handler), arginfo_add_printing_switch_handler, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_clearing_finish_handler", ZEND_FN(add_clearing_finish_handler), arginfo_add_clearing_finish_handler, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\coroutine_count", ZEND_FN(coroutine_count), arginfo_coroutine_count, 0, NULL, NULL)
+#ifdef ZEND_CHECK_STACK_LIMIT
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\call_on_main_stack", ZEND_FN(call_on_main_stack), arginfo_call_on_main_stack, 0, NULL, NULL)
+#endif
 	ZEND_FE_END
 };
 /* clang-format on */

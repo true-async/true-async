@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-05 · Active: none; S3.23 is open, the next stage waits for Edmond
+Updated: 2026-10-05 · Active: none; every S3 step is closed, the next stage waits for Edmond
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -42,6 +42,12 @@ true-async/
 ## Open questions
 
 Waiting for Edmond's call; nothing here is being worked on.
+
+- `call_on_main_stack` and callbacks into PHP (S3.23, Critic and Sage): the slot moves only the
+  stack pointer, as TrueAsync, so fn must not re-enter PHP. A JNI call whose Java code calls back
+  into PHP would run PHP on the OS stack with the coroutine still current: a suspend there, a
+  nested slot call, the fiber's stack limit or a bailout breaks one of the stacks. If Java
+  embeddings need such callbacks, the slot's contract in the core changes; Edmond's call.
 
 
 ## S1 — Core branch `async-core-io`  [x] (S1.5 deferred)
@@ -169,10 +175,18 @@ needed (`dev/plans/S2.md`, section 5), and S3 needs none (scheduler RFC changes 
         test_scheduler and `Zend/tests/{fibers,gc,generators}` on ASAN (469 PASS); `pocs-dbg` 329
         PASS, `pocs-asan` 314 PASS and 15 SKIP; the bridge's 23 tests pass on dbg and ASAN, and
         `php-cgi -T 3` runs its scheduler in each of three requests (bridge `a0fc2fd`).
-- [ ] S3.23 Our scheduler fills `call_on_main_stack` with TrueAsync's `async_call_on_main_stack`
+- [x] S3.23 Our scheduler fills `call_on_main_stack` with TrueAsync's `async_call_on_main_stack`
       (`php-async/scheduler.c:154`), with a test (Edmond 2026-10-05: the slot exists for Java and
-      mobile embeddings). Today the slot is NULL and the core runs the function on the caller's
-      stack.
+      mobile embeddings).
+      done: `scheduler_call_on_main_stack` and `async_asm_stack_call` in `src/scheduler.c`; test
+        `internal/051` through the test hook `call_on_main_stack()`; extension lanes green
+      handoff: done 2026-10-05 on core `9531d5b0b1f` (unchanged): `pocs-dbg` 330 PASS, `pocs-asan`
+        315 PASS and 15 SKIP. `internal/051` fails on all six off-main lines with the slot left
+        unfilled. The x86-64 path runs here; the AArch64 asm only assembles (clang), not run. The
+        Critic found a crash after the core turned async off (fixed: TrueAsync's early-out on no
+        current coroutine; RSHUTDOWN no longer leaves `EG(current_fiber_context)` at the freed copy
+        of main's context) and GCC 13 ignoring `naked` on AArch64 (guarded by
+        `__has_attribute(naked)`); callbacks into PHP are an open question.
 
 ## S4 — Reactor on Poll, Poll additions and Ring  [ ]
 

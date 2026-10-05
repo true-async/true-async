@@ -577,3 +577,13 @@ stack options were shown with the code).
   asserted on such a coroutine.
 - 2026-10-05 `call_on_main_stack` stays in the core, and our scheduler gets TrueAsync's
   implementation (S3.23). Why: Edmond, it exists for Java and mobile embeddings ("да оно нужно!").
+- 2026-10-05 Our `call_on_main_stack` takes TrueAsync's early-out (no current coroutine, or main)
+  and then compares the running fiber context with the OS stack's: main's context copy, or the
+  engine's context after main finished (S3.23). Why: our main finishes before the queue drains and
+  the scheduler coroutine is current while the switch into it still runs on the OS stack, where
+  TrueAsync's test would hop onto a stale handle; after the core turns async off the context still
+  names main's copy, so the early-out stays (Critic found the crash, Sage kept both).
+- 2026-10-05 The stack switch is built only where the compiler has `naked` and the ABI is SysV
+  x86-64 or AArch64, and not on a ucontext core (S3.23). Why: GCC 13 ignores `naked` on AArch64 and
+  the asm returns with its prologue's stack; clang-built Android keeps the switch; a ucontext
+  handle is no stack pointer.
