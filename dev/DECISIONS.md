@@ -785,3 +785,8 @@ stack options were shown with the code).
   `skip-on:pocs-win` naming the step that loads curl (S6.6), sockets or openssl (S6.4) there, and
   `dns/013` is Unix-only. Why: a lane red for a known reason hides the next regression; read from
   the CI artifact of `d2ff382`, not run here; the Critic's seven findings fixed.
+- 2026-10-06 A bug in bukka's code is told to Edmond first, then goes to bukka as a pull request,
+  and meanwhile our core carries the fix from the branch `io-hooks-fixes`, merged into
+  `async-core-io` (Edmond: «если мы находим баг в коде от Буки, тогда мы 1. говорим мне об этом и
+  рассказываем проблему 2. делаем PR в его код 3. у нас должна быть своя ветка свободная от бага»).
+  Why: our tests cannot wait for bukka's merge; `dev/WORKFLOW.md`, "Ownership".

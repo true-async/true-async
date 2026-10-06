@@ -19,10 +19,16 @@ How work is done in this repository and in the core branch it builds on.
   `async-core-io`. bukka's projects (the IO hooks PoC php/php-src#23997, ior) are fixed through
   pull requests to his repositories from our clones, when a fix is needed. Held by discipline,
   no gate.
-- Core contents: `async-core-io` holds merges only: `async-core`, php-src master and bukka's PR
-  head. A commit of ours never lands there: scheduler changes go to `async-core`, fixes to
-  bukka's code go to him as PRs. Gate: `git log --no-merges async-core-io ^origin/async-core
-  ^upstream/master ^<hooks head>` is empty.
+- A bug found in bukka's code (Edmond, 2026-10-06), in this order: (1) Edmond hears of it first,
+  with the problem explained (the code, what breaks, for whom); (2) a pull request to bukka's
+  code; (3) our core stays free of the bug meanwhile: the fix is one commit on `io-hooks-fixes` in
+  true-async/php-src, a branch from the PoC head, merged into the current `async-core-io-<date>`
+  until bukka's head carries it. Held by discipline, no gate.
+- Core contents: `async-core-io` holds merges only: `async-core`, php-src master, bukka's PR
+  head and `io-hooks-fixes`. A commit of ours never lands there directly: scheduler changes go to
+  `async-core`, fixes to bukka's code to `io-hooks-fixes` and to him as PRs. Gate: `git log
+  --no-merges async-core-io ^origin/async-core ^upstream/master ^<hooks head>
+  ^origin/io-hooks-fixes` is empty.
 - Core update (a new head of either PoC, or master): a new branch `async-core-io-<date>` from
   the current core branch (a dash: git refuses `async-core-io/<date>` beside the branch
   `async-core-io`), the new heads merged in, master first when `async-core` carries a newer master
