@@ -24,11 +24,21 @@ How work is done in this repository and in the core branch it builds on.
   code; (3) our core stays free of the bug meanwhile: the fix is one commit on `io-hooks-fixes` in
   true-async/php-src, a branch from the PoC head, merged into the current `async-core-io-<date>`
   until bukka's head carries it. Held by discipline, no gate.
-- Core contents: `async-core-io` holds merges only: `async-core`, php-src master, bukka's PR
-  head and `io-hooks-fixes`. A commit of ours never lands there directly: scheduler changes go to
-  `async-core`, fixes to bukka's code to `io-hooks-fixes` and to him as PRs. Gate: `git log
-  --no-merges async-core-io ^origin/async-core ^upstream/master ^<hooks head>
-  ^origin/io-hooks-fixes` is empty.
+- A bug in php-src itself, outside both RFCs (Edmond, 2026-10-06): the fix is one commit with
+  its test on `php-src-fixes` in true-async/php-src, never on an RFC branch. The branch starts
+  from the merge base of php/php-src `PHP-8.4` (the oldest branch taking bug fixes) and the
+  pinned master, so merging it into the core brings only the fixes; the commit leaves `NEWS`
+  alone (its 8.4 section would conflict in every core merge), and the PR text suggests the
+  line. Each fix also gets a branch of its own at that commit, and Edmond opens the pull request
+  to php/php-src from it: a PR opened from `php-src-fixes` would take every later fix pushed
+  there. A core update merges `php-src-fixes` into `async-core-io-<date>` until php-src master
+  carries the fix. Held by discipline, no gate.
+- Core contents: `async-core-io-<date>` holds merges only: `async-core`, php-src master, bukka's PR
+  head, `io-hooks-fixes` and `php-src-fixes`. A commit of ours never lands there directly:
+  scheduler changes go to `async-core`, fixes to bukka's code to `io-hooks-fixes` and to him as
+  PRs, fixes to php-src itself to `php-src-fixes`. Gate: `git log --no-merges
+  async-core-io-<date> ^origin/async-core ^upstream/master ^<hooks head> ^origin/io-hooks-fixes
+  ^origin/php-src-fixes` is empty.
 - Core update (a new head of either PoC, or master): a new branch `async-core-io-<date>` from
   the current core branch (a dash: git refuses `async-core-io/<date>` beside the branch
   `async-core-io`), the new heads merged in, master first when `async-core` carries a newer master
@@ -39,6 +49,22 @@ How work is done in this repository and in the core branch it builds on.
 - Requests to bukka's RFCs (IO hooks, Poll additions, Ring) are listed in `dev/RFC-CHANGES.md`
   with the PR link and its state, one topic per PR; the file starts with the first request. The
   scheduler RFC is ours and changes on `async-core` directly.
+
+### Branches of true-async/php-src used by this project
+
+| Branch | Based on | What it is for |
+|---|---|---|
+| `master` | php/php-src master | a mirror, synced from php/php-src (pre-approved) |
+| `async-core` | php/php-src master | the scheduler RFC PoC, head of php/php-src#22561; our scheduler changes |
+| `io-hooks-fixes` | bukka's `io_hooks_poc` head | our fixes to bukka's IO hooks PoC, sent to him as PRs |
+| `php-src-fixes` | `PHP-8.4` and master's merge base | our fixes to php-src bugs outside both RFCs, merged into the core |
+| `stream-chunk-size-read-filter` | `php-src-fixes` | one fix from `php-src-fixes`, the branch of its PR to php/php-src |
+| `async-core-io-<date>` | the previous one | the core this repository builds on: merges of the four above and bukka's head; the pinned one is in "Pinned core" |
+| `async-core-io` | php/php-src master | the first core branch, kept as it was |
+| `fiber-callable-object-8.4`, `fiber-callable-object` | `PHP-8.4`, master | the Fiber `$this` use-after-free fix, php/php-src#24134 |
+| `true-async` | php/php-src | the TrueAsync fork's core, a reference for porting |
+
+The other branches there belong to the TrueAsync fork's earlier work and are not used here.
 
 ## Pinned core
 
