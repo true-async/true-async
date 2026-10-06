@@ -44,14 +44,16 @@ Where to look in this repository and around it. Pointers only.
 - `src/scheduler.c`, `.h`: the scheduler behind the core's slots: fiber contexts and their pool,
   the run queue and switches, the scheduler coroutine, main's coroutine, cancellation, deadlock
   resolution, the request lifecycle.
+- `src/reactor.c`, `.h`: the reactor: the thread's `php_io_queue`, IO events and their waits list,
+  dispatch, the idle wait, the rebuild after `fork()` (`dev/plans/S4.md` section 3).
 - `src/coroutine.c`, `.h`: the `Async\Coroutine` object, its body's run and its finalize.
 - `src/true_async_API.c`, `.h`: the internal API: the callbacks vector and its notify, finish and
   switch handlers, the wait record.
 - `src/exceptions.c`, `.h`: the exception classes and `CompositeException`.
 - `src/internal/`: the circular buffer and the fuzz hook (`fuzz.c`, built with
   `--enable-true-async-fuzz`).
-- `src/test_hooks.c`, `.h`: `TrueAsync\Test\` functions for `tests/internal/`, built with
-  `--enable-true-async-test-hooks`.
+- `src/test_hooks.c`, `.h`: `TrueAsync\Test\` functions for `tests/internal/` and
+  `tests/reactor/`, built with `--enable-true-async-test-hooks`.
 - `src/known_answer.c`, `.h`: the planted functions of Mull's known-answer check, built with
   `--enable-true-async-known-answer`.
 - `src/*.stub.php`: stubs; `*_arginfo.h` is generated from them by the core's `gen_stub.php`.

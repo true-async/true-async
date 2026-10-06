@@ -48,6 +48,14 @@ Waiting for Edmond's call; nothing here is being worked on.
   into PHP would run PHP on the OS stack with the coroutine still current: a suspend there, a
   nested slot call, the fiber's stack limit or a bailout breaks one of the stacks. If Java
   embeddings need such callbacks, the slot's contract in the core changes; Edmond's call.
+- A pcntl handler that waits (S4.3, Critic and Sage): `pcntl_signal_dispatch()` blocks every signal
+  of the thread and holds the core's fiber-switch block while its handlers run
+  (`ext/pcntl/pcntl.c:1424-1435`), so a handler that suspends lets other coroutines run with
+  signals blocked and `Fiber::resume()` refused until it resumes, on the busy path and in the idle
+  interrupt coroutine alike. Refusing that suspend needs `zend_fiber_switch_blocked()` in the
+  scheduler's suspend, which the extension does not call by Edmond's rule (`tools/check-gates.py`
+  refuses it); the second option is leaving it to the script, the third a core change (pcntl lifts
+  its block and mask around a coroutine's suspend), an S8 change-request candidate. Edmond's call.
 
 ## Parallel tracks
 
@@ -251,7 +259,7 @@ Done when: S3 + S4 lists pass; `delay(1000)` costs under 50 ms of user CPU; a te
 function wakes the loop from another pthread (through the core's `NotifyHandle`, found by class
 name until the core has a C constructor for it).
 Tier: T2. Roles: Critic on S4.1, Critic after S4.2 and after S4.3.
-Active: S4.3
+Active: S4.4
 
 - [x] S4.1 Design note `dev/plans/S4.md`: completion dispatch for scheduler-owned ops and provider
       ops; idle wait in `queue->wait()` with its `EDEADLK` and `EINTR` answers; deadlock decided
@@ -285,11 +293,19 @@ Active: S4.3
         allocation more (`dev/BENCHMARKS.md`). The Critic's 8 findings fixed (the waiter takes its
         block as `suspend()` returns, the finish aborts a wait still linked, a teardown unlinks by the
         kind), each fix caught by a test when reverted.
-- [ ] S4.3 The per-thread queue and the idle wait: the scheduler parks in `queue->wait()` when
+- [x] S4.3 The per-thread queue and the idle wait: the scheduler parks in `queue->wait()` when
       nothing is runnable and the reactor's lists of waits are not empty, deadlock from those
       lists, the interrupt coroutine, the queue rebuilt after fork.
       done: the S3 list passes unchanged on the three lanes; a test parks the scheduler in the
         queue and is woken by a pending op
+      handoff: done 2026-10-06: `src/reactor.c`/`.h` (as built: `dev/plans/S4.md` 3.7), the tick's
+        throttled poll and the idle wait in `src/scheduler.c`, the interrupt coroutine, the fork
+        rebuild (pid at submit, `EPERM` at the wait); tests `reactor/001`-`012` through
+        `TrueAsync\Test\reactor_wait()`. `pocs-dbg` 355 PASS, 144 XFAIL; `pocs-asan` 340 PASS,
+        16 SKIP, 143 XFAIL; `pocs-win` left to CI. B1 8.1 instructions more per spawn
+        (`dev/BENCHMARKS.md`). The Critic's and the Sage's rounds on the interrupt and the fork
+        design kept the coroutine, added the pid check and the open question of a handler that
+        waits; the Critic's code findings fixed, each caught by a test when reverted.
 - [ ] S4.4 Timer ops: `Async\delay()`, the TIMER kind and the D16 deadline; `--with-zlib` in the
       core build.
       done: the `component:S4` tests listed in S4.txt and `edge_cases/016`, `017` passing on debug

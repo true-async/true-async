@@ -23,6 +23,7 @@ extern zend_module_entry true_async_module_entry;
 
 #include "src/true_async_API.h"
 #include "src/internal/circular_buffer.h"
+#include "src/reactor.h"
 #ifdef TRUE_ASYNC_FUZZ
 #include "src/internal/fuzz.h"
 #endif
@@ -34,6 +35,8 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	HashTable coroutines;                   /* enqueued, unfinished coroutines by object handle; borrowed */
 	HashTable unobserved_exceptions;        /* by object handle, printed at the request's end; one reference each */
 	async_coroutine_t *scheduler_coroutine; /* runs the loop on its own fiber; NULL until work needs it */
+	async_reactor_t reactor;                /* the thread's IO queue and the waits on it */
+	async_coroutine_t *interrupt_coroutine; /* runs the VM interrupt for an idle scheduler; NULL when none is alive */
 	uint32_t last_handler_id;               /* the id of the newest finish or switch handler; 0 is never handed out */
 	bool graceful_shutdown;                 /* the graceful shutdown started: once per request */
 	bool debug_deadlock;                    /* true_async.debug_deadlock: the deadlock report lists every coroutine */

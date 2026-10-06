@@ -660,3 +660,16 @@ stack options were shown with the code).
   Why: a typed kind's unlink is where a TIMEOUT disarms (the Critic).
 - 2026-10-05 The layer is tested through `TrueAsync\Test\Event`, a one-shot event behind a reference
   prefix, in the test hooks (S4.2). Why: no event type of the extension exists before S4.4 and S5.2.
+- 2026-10-05 The reactor keeps the pid that created its queue and rebuilds at the first submit in
+  another process, besides the rebuild when the wait answers `EPERM` (S4.3). Why: the Poll queue
+  takes a Timer op in a child without a complaint and answers `EPERM` only at the wait, whose
+  rebuild would drop the child's own wait with the parent's; one `getpid()` per submit is what the
+  core's own queue checks per call (`main/io/php_io_hooks.c:724-747`) and the Ring per submit and
+  wait (the Critic, the Sage).
+- 2026-10-05 The interrupt stays in a coroutine, not in the scheduler's loop (S4.3). Why: a handler
+  run in scheduler context could neither `spawn()` nor start the graceful shutdown, so a SIGTERM
+  handler would work while a coroutine runs and fail while all wait (the Sage); the masked-signal
+  wait inside a handler is the same on both paths and goes to Edmond as an open question.
+- 2026-10-05 An exception a pcntl handler throws while every coroutine waits ends the request as an
+  unobserved coroutine outcome (S4.3, departure). Why: no frame of the script is running to take it;
+  handing it to main's wait (the Critic's proposal) would pick one waiter by convention.

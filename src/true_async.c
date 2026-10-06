@@ -131,6 +131,7 @@ static PHP_RINIT_FUNCTION(true_async)
 
 	if (scheduler_registered) {
 		async_scheduler_request_startup();
+		async_reactor_request_startup();
 	}
 
 #ifdef TRUE_ASYNC_TEST_HOOKS
@@ -148,6 +149,7 @@ static PHP_RSHUTDOWN_FUNCTION(true_async)
 {
 	if (scheduler_registered) {
 		async_scheduler_request_shutdown();
+		async_reactor_request_shutdown();
 	}
 
 	return SUCCESS;

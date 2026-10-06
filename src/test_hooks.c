@@ -25,7 +25,8 @@
  * enqueue_with_error() wakes one with an error; call_on_main_stack() runs a probe through the
  * call_on_main_stack slot. The class TrueAsync\Test\Event, await_records(), link_into_wait(),
  * subscriber_count() and wait_counters() drive the wait-record layer (dev/plans/S4.md section 2) before any event type
- * of the extension exists. Each says more above its definition. */
+ * of the extension exists; reactor_wait(), reactor_state() and reactor_use_poll_queue() drive the reactor
+ * (section 3) before delay(). Each says more above its definition. */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -39,7 +40,10 @@
 #include "test_hooks.h"
 #include "coroutine.h"
 #include "scheduler.h"
+#include "exceptions.h"
 #include "src/internal/circular_buffer.h"
+
+#include <signal.h>
 
 /* A stand-in awaitable: the flags word and a vector, as the event header will have. */
 typedef struct
@@ -1167,7 +1171,7 @@ static ZEND_FUNCTION(fail_at)
  * one reference, a fire() in progress another. */
 typedef struct
 {
-	async_event_t event;
+	async_event_t base;
 	uint32_t handle; /* its first object's, for the awaiting info */
 } test_event_t;
 
@@ -1183,11 +1187,11 @@ static zend_object_handlers test_event_handlers;
 /* Frees the event with its last reference: a record still linked is woken by the teardown. */
 static void test_event_release(test_event_t *event)
 {
-	if (--event->event.ref_count > 0) {
+	if (--event->base.ref_count > 0) {
 		return;
 	}
 
-	async_callbacks_free((async_awaitable_t *) event, &event->event.callbacks);
+	async_callbacks_free((async_awaitable_t *) event, &event->base.callbacks);
 	efree(event);
 }
 
@@ -1196,9 +1200,9 @@ static zend_object *test_event_create(zend_class_entry *class_entry)
 	test_event_object_t *object = zend_object_alloc(sizeof(test_event_object_t), class_entry);
 	test_event_t *event = emalloc(sizeof(test_event_t));
 
-	async_event_init(&event->event, 0);
+	async_event_init(&event->base, 0);
 	object->ref.flags = ASYNC_EVENT_REFERENCE_PREFIX;
-	object->ref.event = &event->event;
+	object->ref.event = &event->base;
 
 	zend_object_std_init(&object->std, class_entry);
 	object->std.handlers = &test_event_handlers;
@@ -1224,14 +1228,14 @@ static ZEND_METHOD(TrueAsync_Test_Event, fire)
 
 	test_event_t *event = (test_event_t *) async_awaitable_from_object(Z_OBJ_P(ZEND_THIS));
 
-	if (UNEXPECTED(event->event.flags & ASYNC_EVENT_F_CLOSED)) {
+	if (UNEXPECTED(event->base.flags & ASYNC_EVENT_F_CLOSED)) {
 		zend_throw_error(NULL, "The event has fired already");
 		RETURN_THROWS();
 	}
 
-	event->event.flags |= ASYNC_EVENT_F_CLOSED;
-	event->event.ref_count++;
-	async_callbacks_notify((async_awaitable_t *) event, &event->event.callbacks, NULL, NULL);
+	event->base.flags |= ASYNC_EVENT_F_CLOSED;
+	event->base.ref_count++;
+	async_callbacks_notify((async_awaitable_t *) event, &event->base.callbacks, NULL, NULL);
 	test_event_release(event);
 }
 
@@ -1553,6 +1557,145 @@ static ZEND_FUNCTION(wait_counters)
 	add_assoc_long(return_value, "aborts", ASYNC_G(test_aborts));
 }
 
+///////////////////////////////////////////////////////////////////
+/// The reactor
+///////////////////////////////////////////////////////////////////
+
+static zend_string *test_io_record_info(const async_coroutine_event_callback_t *record)
+{
+	(void) record;
+
+	return zend_string_init("reactor wait: timer", sizeof("reactor wait: timer") - 1, false);
+}
+
+/* An op that did not end as a Timer does (the Ring refuses one that never fires) wakes its waiter
+ * with an Error: the record owns the only reference, so the waiter cannot read the event later. */
+static void
+test_io_record_wake(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
+{
+	(void) target;
+	(void) exception;
+
+	const php_io_op_result *op_result = result;
+	zend_object *error = NULL;
+
+	if (UNEXPECTED(op_result->status != PHP_IO_DONE || op_result->error != 0)) {
+		error = async_new_exception(zend_ce_error,
+									"The timer ended with status %d: %s",
+									(int) op_result->status,
+									strerror(op_result->error));
+	}
+
+	async_scheduler_enqueue(&((async_coroutine_event_callback_t *) callback)->coroutine->coroutine, error, true);
+}
+
+static const async_wait_kind_t test_kind_io = {
+	.info = test_io_record_info,
+	.unlink = async_io_record_unlink,
+};
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_reactor_wait, 0, 1, IS_VOID, 0)
+	ZEND_ARG_TYPE_INFO(0, ms, IS_LONG, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, signal, IS_LONG, 0, "0")
+ZEND_END_ARG_INFO()
+
+/* Parks the current coroutine on a Timer op of the reactor's queue for `ms` milliseconds, as delay()
+ * will (dev/plans/S4.md 3.5), or on one that never fires for a negative `ms`. A `signal` other than
+ * 0 is raised in this thread once the record is linked, before the park. */
+static ZEND_FUNCTION(reactor_wait)
+{
+	zend_long ms;
+	zend_long signal = 0;
+
+	ZEND_PARSE_PARAMETERS_START(1, 2)
+		Z_PARAM_LONG(ms)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_LONG(signal)
+	ZEND_PARSE_PARAMETERS_END();
+
+	async_coroutine_t *waiter = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
+
+	if (UNEXPECTED(waiter == NULL || ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) {
+		zend_throw_error(NULL, "reactor_wait() requires a running coroutine");
+		RETURN_THROWS();
+	}
+
+	async_wait_end(waiter);
+
+	async_io_event_t *event = async_io_event_new();
+	php_io_op_timer(&event->op, ms < 0 ? php_io_deadline_infinite() : php_io_deadline_from_ms(ms));
+	async_callbacks_reserve(&event->base.callbacks, 1);
+
+	if (UNEXPECTED(async_io_event_submit(event) == FAILURE)) {
+		async_io_event_release(event);
+		RETURN_THROWS();
+	}
+
+	/* An op the queue completed at submit. */
+	if (UNEXPECTED(event->base.flags & ASYNC_EVENT_F_CLOSED)) {
+		const php_io_op_result result = event->result;
+		async_io_event_release(event);
+
+		if (UNEXPECTED(result.status != PHP_IO_DONE || result.error != 0)) {
+			zend_throw_error(NULL, "The timer ended with status %d: %s", (int) result.status, strerror(result.error));
+		}
+
+		return;
+	}
+
+	/* The record takes the caller's reference. */
+	async_wait_link(&waiter->waker.records[0], waiter, (async_awaitable_t *) event, &test_kind_io, test_io_record_wake);
+
+	if (signal != 0) {
+		raise((int) signal);
+	}
+
+	if (UNEXPECTED(!ZEND_ASYNC_SUSPEND())) {
+		RETURN_THROWS();
+	}
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_reactor_state, 0, 0, IS_ARRAY, 0)
+ZEND_END_ARG_INFO()
+
+/* Whether the reactor has a queue, the length of its waits list, and the ops its queue still counts
+ * (count_pending(): a withdrawn op is not among them). */
+static ZEND_FUNCTION(reactor_state)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	const async_reactor_t *reactor = &ASYNC_G(reactor);
+	zend_long waits = 0;
+
+	for (const async_reactor_link_t *link = reactor->waits.next; link != &reactor->waits; link = link->next) {
+		waits++;
+	}
+
+	array_init(return_value);
+	add_assoc_bool(return_value, "queue", reactor->queue != NULL);
+	add_assoc_long(return_value, "waits", waits);
+	add_assoc_long(return_value,
+				   "pending",
+				   reactor->queue != NULL ? (zend_long) reactor->queue->ops->count_pending(reactor->queue) : 0);
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_reactor_use_poll_queue, 0, 0, IS_VOID, 0)
+ZEND_END_ARG_INFO()
+
+/* The request's queue will be the Poll queue where the core has the Ring too: the Poll queue's
+ * answers (EDEADLK) are tested on every lane. Before the queue exists only. */
+static ZEND_FUNCTION(reactor_use_poll_queue)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	if (UNEXPECTED(ASYNC_G(reactor).queue != NULL)) {
+		zend_throw_error(NULL, "The reactor's queue exists already");
+		RETURN_THROWS();
+	}
+
+	ASYNC_G(reactor).test_poll_queue = true;
+}
+
 /* clang-format off */
 const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\callbacks_scenario", ZEND_FN(callbacks_scenario), arginfo_callbacks_scenario, 0, NULL, NULL)
@@ -1568,6 +1711,9 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\link_into_wait", ZEND_FN(link_into_wait), arginfo_link_into_wait, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\wait_counters", ZEND_FN(wait_counters), arginfo_wait_counters, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\subscriber_count", ZEND_FN(subscriber_count), arginfo_subscriber_count, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\reactor_wait", ZEND_FN(reactor_wait), arginfo_reactor_wait, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\reactor_state", ZEND_FN(reactor_state), arginfo_reactor_state, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\reactor_use_poll_queue", ZEND_FN(reactor_use_poll_queue), arginfo_reactor_use_poll_queue, 0, NULL, NULL)
 #ifdef ZEND_CHECK_STACK_LIMIT
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\call_on_main_stack", ZEND_FN(call_on_main_stack), arginfo_call_on_main_stack, 0, NULL, NULL)
 #endif

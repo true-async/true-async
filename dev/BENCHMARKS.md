@@ -3,6 +3,23 @@
 The results journal: every measurement with its date, builds and outcome. The method and the
 benchmarks are `dev/plans/S3.md`, section 12; the scripts are `bench/`, the runner `tools/bench.py`.
 
+## 2026-10-06, S4.3: B1 with the reactor's check in the tick
+
+**Builds.** As in the S4.2 entry: release, ZTS, `-O2`, gcc 13.3, the pinned core `9531d5b0b1f`, our
+extension as a `phpize` module, the test hooks off; `before` at `81dfeeb` (S4.2) and `after` with
+S4.3's change. One count per side.
+
+| Bench | N | before | after | after / before |
+|---|---|---|---|---|
+| B1 | 100 000 | 2,624.7 / 1.020 / 0 / 0 | 2,632.8 / 1.020 / 0 / 0 | 1.003 |
+
+Per operation: instructions / allocations / page faults / system calls. B1 creates no queue, so what
+it pays is the tick's test that no queue exists. The first version counted 2,662.0 (1.014): reading
+`ASYNC_G(reactor)` after the microtasks' loop costs a shared module under ZTS a `__tls_get_addr()`
+call, and the inlined coarse clock put a stack canary into the tick. The pointer is now read with
+the microtasks' at the tick's start and the throttle lives out of line in `reactor.c`
+(`async_reactor_poll_due()`): 8.1 instructions per spawn remain.
+
 ## 2026-10-05, S4.2: B1 with the waker of two records and a block
 
 **Builds.** Release, ZTS, `-O2`, gcc 13.3, the pinned core `async-core-io-2026-10-05-4` `9531d5b0b1f`

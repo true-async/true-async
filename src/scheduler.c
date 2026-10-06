@@ -339,13 +339,17 @@ static uint8_t switch_to(zend_fiber_context *context, const uint8_t flags)
 	return transfer.flags;
 }
 
-/* The scheduler's tick (section 4.2, step 3): the microtasks queued so far, in scheduler context, as
- * TrueAsync runs them on every pass of its loop. The first one that throws stops the tick, as in
- * TrueAsync, and its exception ends the request (section 6); the rest wait for the next tick. The
+/* The scheduler's tick (section 4.2, step 3): the microtasks queued so far, then the reactor's
+ * completions, in scheduler context, as TrueAsync runs both on every pass of its loop. The first
+ * microtask that throws stops the microtasks, as in TrueAsync, and its exception ends the request
+ * (section 6); the rest wait for the next tick. So does an exception a completion's notify left. The
  * flag is restored, not cleared: the scheduler coroutine ticks with it set and keeps it. */
-static void scheduler_tick(void)
+static void scheduler_tick(const uint64_t poll_interval)
 {
 	circular_buffer_t *microtasks = &ASYNC_G(microtasks);
+	/* Read with the microtasks: a shared module's ZTS global costs a __tls_get_addr() call after
+	 * each microtask's. */
+	async_reactor_t *reactor = &ASYNC_G(reactor);
 	zend_async_microtask_t *microtask = NULL;
 	zend_object **exception_ptr = &EG(exception);
 	const bool was_in_scheduler_context = ZEND_ASYNC_IN_SCHEDULER_CONTEXT;
@@ -374,6 +378,15 @@ static void scheduler_tick(void)
 		}
 	}
 
+	/* A request with no queue never reads the clock. */
+	if (UNEXPECTED(reactor->queue != NULL)) {
+		async_reactor_poll_due(reactor, poll_interval);
+
+		if (UNEXPECTED(*exception_ptr != NULL)) {
+			exception_to_exit_exception();
+		}
+	}
+
 	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = was_in_scheduler_context;
 }
 
@@ -397,7 +410,7 @@ static zend_fiber_context *run_coroutines(async_fiber_context_t *fiber_context)
 		 * test_scheduler.c. With none, a collection there would not defer (zend_gc.c:2245 compares the
 		 * current coroutine with the GC's, both NULL) and its destructors would suspend nobody. */
 		make_scheduler_current();
-		scheduler_tick();
+		scheduler_tick(0);
 
 		async_coroutine_t *next_coroutine = run_queue_pop();
 
@@ -778,6 +791,53 @@ static void scheduler_resolve_deadlock(const uint32_t waiting)
 	zend_hash_iterator_del(iterator);
 }
 
+/* The body of the interrupt coroutine: the VM's interrupt helper (zend_vm_def.h,
+ * zend_interrupt_helper), which zend_call_function also runs outside an opcode
+ * (zend_execute_API.c:1196-1204). */
+static void interrupt_coroutine_entry(void)
+{
+	atomic_store(&EG(vm_interrupt), false);
+
+	if (atomic_load(&EG(timed_out))) {
+		zend_timeout();
+	} else if (zend_interrupt_function) {
+		zend_interrupt_function(EG(current_execute_data));
+	}
+}
+
+static bool
+interrupt_coroutine_finished(zend_coroutine_t *coroutine, zend_coroutine_t *waiter, void *data, const bool is_bailout)
+{
+	(void) coroutine;
+	(void) waiter;
+	(void) data;
+	(void) is_bailout;
+
+	ASYNC_G(interrupt_coroutine) = NULL;
+
+	return false;
+}
+
+/* A signal or a timeout that came while every coroutine waits: no opcode runs to take it, so a
+ * coroutine runs the interrupt (dev/plans/S4.md 3.3), where a pcntl handler may spawn or start the
+ * graceful shutdown as it does inside any coroutine. One at a time: a signal during its handler sets
+ * the flag again, and the next idle pass starts the next. False when one is alive already. */
+static bool scheduler_interrupt_start(void)
+{
+	if (ASYNC_G(interrupt_coroutine) != NULL) {
+		return false;
+	}
+
+	async_coroutine_t *coroutine = async_coroutine_new();
+
+	coroutine->coroutine.internal_entry = interrupt_coroutine_entry;
+	async_finish_handler_add(&coroutine->coroutine, interrupt_coroutine_finished, NULL, NULL);
+	ASYNC_G(interrupt_coroutine) = coroutine;
+	async_scheduler_enqueue(&coroutine->coroutine, NULL, false);
+
+	return true;
+}
+
 /* The scheduler coroutine's loop (TrueAsync's fiber_entry with is_scheduler): the tick, then a switch
  * into the next queued coroutine, until the queue and the microtasks are empty. A coroutine never
  * runs on the scheduler's own stack: one without a context gets one first. Returns true when a
@@ -785,13 +845,21 @@ static void scheduler_resolve_deadlock(const uint32_t waiting)
 static bool scheduler_loop(void)
 {
 	for (;;) {
-		scheduler_tick();
+		scheduler_tick(0);
 
 		async_coroutine_t *next_coroutine = run_queue_pop();
 
 		if (next_coroutine == NULL) {
 			/* The tick stopped at a microtask that threw; the rest run on the next pass. */
 			if (UNEXPECTED(circular_buffer_is_not_empty(&ASYNC_G(microtasks)))) {
+				continue;
+			}
+
+			if (UNEXPECTED(atomic_load(&EG(vm_interrupt))) && scheduler_interrupt_start()) {
+				continue;
+			}
+
+			if (async_reactor_has_waits(&ASYNC_G(reactor)) && async_reactor_wait_idle()) {
 				continue;
 			}
 
@@ -1541,7 +1609,7 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 		ZEND_ASSERT(EG(exception) == NULL && "a switch handler throws nothing (TrueAsync's scheduler.c:1710)");
 	}
 
-	scheduler_tick();
+	scheduler_tick(ASYNC_REACTOR_CHECK_INTERVAL);
 
 	/* Whoever switches back here has made this coroutine current and RUNNING. */
 	while (!ZEND_COROUTINE_IS_RUNNING(zend_coroutine)) {
@@ -1989,6 +2057,7 @@ void async_scheduler_request_startup(void)
 	circular_buffer_ctor(&ASYNC_G(microtasks));
 	zend_hash_init(&ASYNC_G(coroutines), 8, NULL, NULL, false);
 	ASYNC_G(scheduler_coroutine) = NULL;
+	ASYNC_G(interrupt_coroutine) = NULL;
 	ASYNC_G(graceful_shutdown) = false;
 	zend_hash_init(&ASYNC_G(unobserved_exceptions), 0, NULL, unobserved_exception_dtor, false);
 
