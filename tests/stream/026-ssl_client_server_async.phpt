@@ -1,7 +1,5 @@
 --TEST--
 SSL Stream: full SSL client-server async communication
---XFAIL--
-Not implemented yet: S6.4 of dev/PLAN.md
 --SKIPIF--
 <?php if (!extension_loaded('openssl')) die('skip openssl extension not available'); ?>
 --FILE--

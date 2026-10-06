@@ -1,7 +1,5 @@
 --TEST--
 DNS gethostbynamel() basic functionality in async context
---XFAIL--
-Not implemented yet: S6.4 of dev/PLAN.md
 --FILE--
 <?php
 

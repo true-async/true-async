@@ -36,6 +36,7 @@ if test "$PHP_TRUE_ASYNC" != "no"; then
   CPPFLAGS=$old_CPPFLAGS
 
   true_async_sources="src/true_async.c src/true_async_API.c src/coroutine.c src/exceptions.c src/scheduler.c src/reactor.c src/future.c src/await.c src/internal/circular_buffer.c"
+  true_async_sources="$true_async_sources src/io_provider.c"
 
   if test "$PHP_TRUE_ASYNC_KNOWN_ANSWER" != "no"; then
     AC_DEFINE([TRUE_ASYNC_KNOWN_ANSWER], [1], [Define to 1 to plant the known-answer functions.])

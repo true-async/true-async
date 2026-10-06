@@ -1,7 +1,5 @@
 --TEST--
 stream_select with async coroutine switching
---XFAIL--
-Not implemented yet: S6.4 of dev/PLAN.md
 --FILE--
 <?php
 

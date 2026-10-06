@@ -1,7 +1,5 @@
 --TEST--
 curl_multi_select: AsyncCancellation must not leave stale waker subscription (#145)
---XFAIL--
-Not implemented yet: S6.6 of dev/PLAN.md
 --DESCRIPTION--
 When a coroutine parked in curl_multi_select() is cancelled, the SUSPEND-
 failure path used to `return CURLM_INTERNAL_ERROR` directly, skipping the

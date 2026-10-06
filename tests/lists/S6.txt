@@ -77,7 +77,7 @@ io/040-pipe_read_timeout_then_success.phpt  ref:e7b005d28a0860483af63fb0d9fb368a
 io/041-pipe_read_no_timeout.phpt  ref:43ba20ae270c5db89b36391f2b05ae9cbe9718f03f03b36934f34e85c2851347
 io/042-pipe_timeout_concurrent_coroutines.phpt  ref:3d9ffd763be928d7508e709b422f2aa296029b829052ecf39d43938e4cb16515
 io/043-pipe_fread_timeout.phpt  ref:cff039c14f81f60c9fe02988f15a5409d85404b24d81ebd62b329b0e8798ab72
-io/044-nonblocking_pipe_read_no_data.phpt  ref:391189767291b70227f34b6546eab00d1217e2d5fcc3cf918659da8081692350  xfail-on:pocs-win(S6.3)
+io/044-nonblocking_pipe_read_no_data.phpt  ref:391189767291b70227f34b6546eab00d1217e2d5fcc3cf918659da8081692350  xfail-on:pocs-win(S6.5)
 io/045-nonblocking_pipe_write_broken.phpt  ref:0b3b491caacb634896ae3cd89fb8124c4de502176a0886c6c9e986351aa2f71f
 io/046-nonblocking_pipe_read_with_data.phpt  ref:66218c85a2c301613fde47e38d3b214c2bd9bb20fb47342819dde1c71a4eadd9
 io/047-nonblocking_pipe_write_success.phpt  ref:7318de4d2fba4a36b7cd16a24938e72ed3f1e0c8349108294a0dbc8de6e37e63
@@ -137,14 +137,14 @@ io/100-cancel_keeps_the_position.phpt  ref:c372483b9fba1128cbe3d6a4c635746a18e70
 stream/001-fread_fwrite_simple.phpt  ref:3cc27ef4a2bf3c6067cb8f4b3457637683dc94271330c311eaa63b602a246334  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)
 stream/002-fwrite_simple.phpt  ref:ed66435cd6881b144e96d68e92bdc7089c514a1c92fff25a64e8a55907c38bc3  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)
 stream/004-stream_socket_client_server.phpt  ref:10a56fab1627558fb1f20bd07aab40a4c5db6857530ba6d34c5c839cc4658dea
-stream/005-stream_select_async.phpt  ref:d3411550b4a3004413efd80e41588a7d2e51c5baf83827b4e8a15b1a528ba740
+stream/005-stream_select_async.phpt  ref:d3411550b4a3004413efd80e41588a7d2e51c5baf83827b4e8a15b1a528ba740  xfail-on:pocs-win(S6.4)
 stream/006-multiple_socket_operations.phpt  ref:62f0f6a9eaa1598f6baad3e72bae8885721186d99ca87dd5df2c417fce4e1efa
 stream/007-tcp_client_server_full.phpt  ref:340f5be820f67517db4b34d5a679c6068ff1e438ab0c3e158da2b5e670015f7f
 stream/008-socket_stream_basic.phpt  ref:afacf4d898bafec600fd944fa6094e21e074357849c414bd872fddbf4c8c5468
 stream/009-multiple_coroutines_sockets.phpt  ref:889be49fc010da544243c900a241e114668c0e881fd6c3a42f87f5520045fa51
 stream/010-stream_select_async.phpt  ref:c56a1cc660b260456803b9f9f9dba7274ff715d709f8baf6476554f9d77996d7
 stream/011-socket_polling_timeout.phpt  ref:af4224d133a557e28063425903667f5760bce79143e70d259840ac260618d711
-stream/012-concurrent_socket_operations.phpt  ref:37129e14d7f034eb6ed00286a25e72e60240acf3b059e4da06b16af555129ef7
+stream/012-concurrent_socket_operations.phpt  ref:37129e14d7f034eb6ed00286a25e72e60240acf3b059e4da06b16af555129ef7  xfail-on:pocs-win(S6.4)
 stream/013-error_handling_async.phpt  ref:61e001fc7ea04e612683f1d36051c9cc2d5811833aa7f640cba9eb81bcf42c5b
 stream/014-nested_coroutines_polling.phpt  ref:79176015f8de1ecff84e3093f4a2d02d477859e50a949e6c65b8ccc801076450
 stream/015-operations_from_the_main_coroutine.phpt  ref:5b237b44581712a6b5ca28a78a3b524d653948d23a7a843f5b8797763cf6d897
@@ -161,10 +161,10 @@ stream/025-ssl_stream_socket_accept_timeout.phpt  ref:fbd3c0a4e0a2a04ac55f188e61
 stream/026-ssl_client_server_async.phpt  ref:aaa66f60ff173dd534989f7070e21f5632a83c94ca31975fe20469d856f63624  skip-on:pocs-win(openssl-not-loaded-until-S6.4)
 stream/027-ssl_concurrent_accept.phpt  ref:53aa43227e480d15d4874361606a75dfb7eabc65234c4e711130a30a9c9ae912  skip-on:pocs-win(openssl-not-loaded-until-S6.4)
 stream/028-udp_basic_operations.phpt  ref:5c98951aee1fc30e902988d06db4fc65e6a55a1af789af62b69df7919ead0474
-stream/029-udp_concurrent_operations.phpt  ref:df8e9f606b4a0162b51128efa467caa98c187259ea54a4b9b328d3990a1432dc
+stream/029-udp_concurrent_operations.phpt  ref:df8e9f606b4a0162b51128efa467caa98c187259ea54a4b9b328d3990a1432dc  xfail-on:pocs-win(S6.4)
 stream/030-udp_timeout_operations.phpt  ref:794776850a7230f0952fdefebcd17a9cca9d4d7d9de2eac33432c3c471830133
-stream/031-tcp_timeout_operations.phpt  ref:b1aaca79435b0a7240786d7e564ed5188296f6428a199e3c176607412027e5b5
-stream/032-stream_select_null_timeout.phpt  ref:1ada2a5b2b95be2d8cb5d99fa72403dc4dd791d9bba84fc68968e71d3ba60a3b
+stream/031-tcp_timeout_operations.phpt  ref:b1aaca79435b0a7240786d7e564ed5188296f6428a199e3c176607412027e5b5  xfail-on:pocs-win(S6.4)
+stream/032-stream_select_null_timeout.phpt  ref:1ada2a5b2b95be2d8cb5d99fa72403dc4dd791d9bba84fc68968e71d3ba60a3b  xfail-on:pocs-win(S6.4)
 stream/033-stream_select_pipe_basic.phpt  ref:7427888912331a4783887790b56db1a2c2253169be41890a04d727291b2697f3
 stream/034-stream_select_pipe_timeout.phpt  ref:1d01cc45808bb50b8006442261f9784d3436b9411324c70681dcfd79bf27e349
 stream/035-stream_select_pipe_multiple.phpt  ref:1d8e0b559a04813cf8027718970c5116888741404a7a099fcccf5df58bae7b5e
@@ -337,3 +337,16 @@ signal/011-signal_pcntl_still_works.phpt  ref:9d93dbc98bac69ade20e1cf8870ac4a70e
 signal/013-signal_pcntl_registered_after.phpt  ref:b1ad8e26703e69091badaf2165e091a745e2c5806d42ffdde7faf5d16a78dbf8  skip-on:*-win(Unix-only)
 signal/014-signal_pcntl_registered_before.phpt  ref:a3bea558299ef41684615436e86707fe6bfa5b6dd6a150ec58068f8ffa08b4a9  skip-on:*-win(Unix-only)
 signal/015-signal_pcntl_only_under_reactor.phpt  ref:27ceaa7e0eb97844ee096c2aada60149383718c90d5d5d940c8698b8bca9a0fd  skip-on:*-win(Unix-only)
+
+# S6.3: the provider's own tests (dev/plans/S6.md, section 12).
+io_provider/001-reads_park_the_coroutine.phpt  own:0e125a51fa076d68b3c8e0b9093a14901ec071f75628efbfcb31e9926d36f068  skip-on:*-win(Unix-only)
+io_provider/002-sleep_parks_the_coroutine.phpt  own:1bbd866600049b96b4671a6752c712125544186c3512a94b43026039180bf3f2
+io_provider/003-installed_by_spawn.phpt  own:f8611b28f2c63a5a3dd19d1dac073ba97ffa389bd86e519cafb7684b08071e06
+io_provider/004-installed_by_delay_in_main.phpt  own:c137260a20fd7a5d2ff6140345fc58e9c5bf2ae0a121a542f551171d425eecfc
+io_provider/005-cancel_parked_pipe_read.phpt  own:6a357c10f12fa438a873ae9781808049e85b059397135fe2b43564d04f2576be  skip-on:*-win(Unix-only)
+io_provider/006-output_handler_after_deactivation.phpt  own:101461bb26092c9df9632b4e4ec890ce9986db8826c27f80026561c723391d42
+io_provider/007-fatal_error_with_parked_read.phpt  own:2e0dff32b2fead0726252064416deb91329bbab169c8337e1ccfb15cf0fd9ba8  skip-on:*-win(Unix-only)
+io_provider/008-refused_install_keeps_userland_provider.phpt  own:4cb80756e0fff65927a2a6ef0e1bb326c246e8f3696066a975befa054d2e90fd
+io_provider/009-cancel_after_completion.phpt  own:7c7fa89d5721374431f090c777731848832a4da7d5268e58bc780ed7949455ee  skip-on:*-win(Unix-only)
+io_provider/010-cancelled_pipe_read_reads_again.phpt  own:293421b6b2f09026d17c72b39a3e6358fb11cb51192c33b9e7fec1eb81ddfd94  skip-on:*-win(Unix-only)
+io_provider/011-io_after_bailout_in_shutdown_function.phpt  own:31f01d304c7da9462d9829243291e40297072cdd8b5bb796564b58f4ae251471  skip-on:*-win(Unix-only)

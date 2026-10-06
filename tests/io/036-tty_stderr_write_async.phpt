@@ -1,7 +1,7 @@
 --TEST--
 Writing to STDERR in async context does not produce IO error
 --XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
+Not implemented yet: S6.7 of dev/PLAN.md (the child runs php -r, where the core launches no scheduler)
 --SKIPIF--
 <?php
 if (!function_exists("proc_open")) echo "skip proc_open() is not available";

@@ -1302,6 +1302,8 @@ async_coroutine_t *async_coroutine_new(void)
 
 static zend_coroutine_t *scheduler_new_coroutine(void)
 {
+	ASYNC_IO_PROVIDER_INSTALL_ONCE();
+
 	return &async_coroutine_new()->coroutine;
 }
 
@@ -1853,6 +1855,8 @@ static zend_coroutine_t *scheduler_intercept_fiber(zend_fiber *fiber)
 		zend_throw_error(fiber_error, "Cannot switch fibers in current execution context");
 		return NULL;
 	}
+
+	ASYNC_IO_PROVIDER_INSTALL_ONCE();
 
 	return &async_coroutine_new()->coroutine;
 }

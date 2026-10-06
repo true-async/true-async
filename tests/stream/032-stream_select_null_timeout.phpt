@@ -1,7 +1,5 @@
 --TEST--
 stream_select with null timeout (infinite wait with coroutine yield)
---XFAIL--
-Not implemented yet: S6.4 of dev/PLAN.md
 --FILE--
 <?php
 

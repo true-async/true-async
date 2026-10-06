@@ -1,7 +1,7 @@
 --TEST--
 Reading and writing one FIFO from two coroutines at the same time
 --XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
+Not implemented yet: S6.7 of dev/PLAN.md (a second user of a stream with a parked read: review item B1)
 --SKIPIF--
 <?php
 if (PHP_OS_FAMILY === 'Windows') die('skip POSIX only');

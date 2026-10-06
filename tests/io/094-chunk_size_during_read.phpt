@@ -1,7 +1,7 @@
 --TEST--
 Changing the chunk size while another coroutine is inside a filtered read
 --XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
+Needs a core fix: S6.7 of dev/PLAN.md (stream_set_chunk_size() while a read is suspended in a filter corrupts the heap, plain Fibers too; dev/plans/S6.md section 14)
 --FILE--
 <?php
 

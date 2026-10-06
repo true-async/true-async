@@ -1,7 +1,5 @@
 --TEST--
 passthru() async basic functionality
---XFAIL--
-Not implemented yet: S6.5 of dev/PLAN.md
 --SKIPIF--
 <?php
 if (!function_exists("passthru")) echo "skip passthru() is not available";

@@ -824,3 +824,39 @@ stack options were shown with the code).
   either core (5,604 PASS before, 5,613 after: the new hooks tests); the bridge passes its 23 tests on
   dbg and ASAN. Why: a fix of ours must sit on bukka's current head (`dev/WORKFLOW.md`,
   "Ownership"), and his head fixes a crash we met.
+- 2026-10-06 `reactor/021-exit_deadline_in_forked_child.phpt` (S4.txt, `changed:2026-10-06`) no longer prints the parent's line after
+  `pcntl_waitpid()`. Why: with the IO provider (S6.3) the wait parks the parent's coroutine, and the
+  script's `exit(0)` cancels it at the exit deadline before the child exits; the child's line is
+  what the test is about. Agreed with the S4 thread.
+- 2026-10-06 The IO provider's `run()` parks on a heap copy of the core's op and keeps its own
+  reference to that event across the park, reading the result after the suspend; the event holds
+  no pointer into the caller's frame (dev/plans/S6.md 3.2-3.3). Why: TrueAsync's process wait reads
+  its event after the suspend the same way (F `ext/standard/proc_open.c:1643-1646`); frame pointers
+  written by the wake and the unlink let a stale wait write into a frame that was gone (Critic);
+  the Sage's ruling.
+- 2026-10-06 A read cancelled after it completed keeps its bytes in the stream (`io_provider/009`),
+  where TrueAsync drops them with the cancelled call. Why: the pinned core does so (`d620a523`):
+  with an exception pending it runs nothing more for the op and a finished read leaves its bytes to
+  the stream.
+- 2026-10-06 `pcntl_fork()` is refused while an op is parked in the IO provider ("Cannot fork while
+  IO operations are in flight"). Why: the core's own guard (`FG(io_ops_in_flight)`); narrower than
+  TrueAsync, which refuses a fork while any coroutine but main exists; a child cannot complete the
+  parent's parked ops (the Sage).
+- 2026-10-06 `io/039`, `040`, `042`, `043` (`stream_set_timeout()` on a pipe) and `io/100` (a
+  cancelled file read keeps the position) carry `--XFAIL--` naming S8; `io/094`, `095` (a stream
+  changed while a read is suspended in a user filter) name S6.7; `io/035`-`037` (Async in a
+  `php -r` child) name S6.7. Why: the pipe timeout is a feature vanilla PHP lacks (`dev/RFC-CHANGES.md`
+  3); files run on the thread until `F_FILES`; `io/094` corrupts the heap with plain Fibers on the
+  pinned core, a php-src streams bug TrueAsync fixed in its core (F `bf6048d03c6`), whose branch is
+  Edmond's call; the core launches no scheduler under `php -r`.
+- 2026-10-06 S6.3 removes the `--XFAIL--` of `stream/005`, `012`, `026`, `029`, `031`, `032`, `046`,
+  `socket_ext/001`-`005` (named S6.4) and `curl/069` (named S6.6): with the provider and S5.3's
+  `await_*` they pass on `pocs-dbg` and `pocs-asan`. `stream/005`, `012`, `029`, `031`, `032` carry
+  `xfail-on:pocs-win(S6.4)`, as `stream/001`, `002` do, and `io/044`'s Windows tag names S6.5 (the
+  Windows pipe commit). Why: a test that passes loses its section in the push that makes it pass;
+  the Windows lane was not run here.
+- 2026-10-06 The Windows `proc_open()` pipe core commit moves from S6.3 to S6.5, on `io-hooks-fixes`
+  (S6.md 9), replacing the step the 2026-10-06 entry on overlapped pipes names. Why: it serves the
+  children S6.5 brings, and a change to bukka's code goes through `io-hooks-fixes` and a pull
+  request (`dev/WORKFLOW.md`, "Ownership").
+

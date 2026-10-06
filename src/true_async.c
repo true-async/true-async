@@ -142,6 +142,7 @@ static PHP_RINIT_FUNCTION(true_async)
 	if (scheduler_registered) {
 		async_scheduler_request_startup();
 		async_reactor_request_startup();
+		async_io_provider_request_startup();
 	}
 
 #ifdef TRUE_ASYNC_TEST_HOOKS
@@ -165,6 +166,7 @@ static PHP_RSHUTDOWN_FUNCTION(true_async)
 #ifdef TRUE_ASYNC_TEST_HOOKS
 		async_test_hooks_request_shutdown();
 #endif
+		async_io_provider_request_shutdown();
 		async_reactor_request_shutdown();
 	}
 
@@ -206,6 +208,8 @@ ZEND_FUNCTION(Async_spawn)
 		Z_PARAM_FUNC_NO_TRAMPOLINE_FREE(fci, fcc)
 		Z_PARAM_VARIADIC_WITH_NAMED(args, args_count, named_args)
 	ZEND_PARSE_PARAMETERS_END();
+
+	ASYNC_IO_PROVIDER_INSTALL_ONCE();
 
 	async_coroutine_t *coroutine = async_coroutine_new();
 

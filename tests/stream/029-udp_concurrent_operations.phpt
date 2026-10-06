@@ -1,7 +1,5 @@
 --TEST--
 Concurrent UDP operations with multiple servers and clients in async context
---XFAIL--
-Not implemented yet: S6.4 of dev/PLAN.md
 --FILE--
 <?php
 

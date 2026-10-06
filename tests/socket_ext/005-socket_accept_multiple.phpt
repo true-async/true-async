@@ -1,7 +1,5 @@
 --TEST--
 socket_accept() with multiple concurrent connections
---XFAIL--
-Not implemented yet: S6.4 of dev/PLAN.md
 --SKIPIF--
 <?php
 if (!extension_loaded('sockets')) {

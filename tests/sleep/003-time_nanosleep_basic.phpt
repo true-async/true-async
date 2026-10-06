@@ -1,7 +1,5 @@
 --TEST--
 time_nanosleep() async basic functionality
---XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
 --SKIPIF--
 <?php
 if (!function_exists("time_nanosleep")) echo "skip time_nanosleep() is not available";

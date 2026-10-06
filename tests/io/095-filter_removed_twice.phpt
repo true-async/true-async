@@ -1,7 +1,7 @@
 --TEST--
 Two coroutines removing the same filter from one handle
 --XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
+Needs a core fix: S6.7 of dev/PLAN.md (stream_filter_remove() twice across a suspend; dev/plans/S6.md section 14)
 --FILE--
 <?php
 

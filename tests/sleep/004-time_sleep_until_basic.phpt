@@ -1,7 +1,5 @@
 --TEST--
 time_sleep_until() async basic functionality
---XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
 --SKIPIF--
 <?php
 if (!function_exists("time_sleep_until")) echo "skip time_sleep_until() is not available";

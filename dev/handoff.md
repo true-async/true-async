@@ -243,24 +243,21 @@ The TrueAsync reference clone is needed for `check-lists.py --reference` (`/root
 
 ## S6
 
-Written 2026-10-06. S6.2 (design note `dev/plans/S6.md`, the frozen list) done; S6.3 next: its code
-starts on S4.3's reactor (`src/reactor.c`), its commit waits for `delay()` (S4.4) and `await_*`
-(S5.3) on `main`.
+Written 2026-10-06. S6.3 (the IO provider, `src/io_provider.c`) done; S6.4 (sockets, DNS) next.
 
-- S6.3 adds to S4's reactor what the note's section 13 lists: a submit returning `errno`, the
-  provider's install and `hooks.flags` in `reactor_queue()`, an IO event with room for ANY, the
-  signal handles. Tell the S4 thread (through the coordinator) before touching `src/reactor.c`.
-- The provider install has two triggers (note section 2): `async_coroutine_new()` for a coroutine
-  other than main, and the queue's creation. Not at `scheduler_launch()`: the core launches before
-  every script.
-- `run()` copies the op to the heap (M12 without `zend_try`), copies `result` and `in_flight` back
-  after every completion; a Done op under a late cancellation returns SUCCESS with the exception
-  pending; an exception pending on entry answers FAILURE (note 3.1, 3.3).
-- `F_FILES` stays off; Windows `proc_open()` pipes need the core commit of note section 9, which
-  must also serve the path without a provider.
-- `io/035`-`037` start a child PHP from `TEST_PHP_EXECUTABLE` without the extension: S6.3 fixes the
-  runner. The seven core-tree tests (`S6.excluded`) wait for S6.7.
-- MySQL: `tools/test.py` starts a private `mysqld` for a run with `mysqli` or `pdo_mysql` tests
-  when `MYSQL_TEST_HOST` is unset; a container needs `apt-get install mysql-server-core-8.0`
-  (WORKFLOW "Test fixtures"). HTTP: tests start TrueAsync's `common/http_server.php` with
-  `PHP_CLI_SERVER_WORKERS=4`.
+- `run()` parks on a heap copy of the op and keeps its own reference to the event; the result and
+  `in_flight` are read after the suspend (note 3.2-3.3, the Sage's ruling). A non-running coroutine
+  (a main a caught bailout left, a switch handler inside a suspend) is answered Unsupported; a wake
+  that is neither the completion nor a cancellation answers Interrupted.
+- The core is `async-core-io-2026-10-06`: bukka's head refuses `run()` under a pending exception
+  and keeps a cancelled read's bytes; our `io-hooks-fixes` keeps `ECANCELED` under an exception
+  from setting eof. A new bug in bukka's code goes by `dev/WORKFLOW.md` "Ownership".
+- S4.6 is moving Timer events to a reactor heap; `run()` uses `async_io_event_try_submit()`, which
+  S4 agreed to route through the heap too, and saturates an infinite Timer itself.
+- Open for Edmond: where a php-src streams fix goes (`io/094`, `095`, TrueAsync F `bf6048d03c6`);
+  asked on a card in the S6 thread 2026-10-06.
+- Next steps keep the order of `dev/PLAN.md`: S6.4 sockets (several `stream/` and `socket_ext/`
+  tests already pass), S6.5 children, signals and the Windows pipe commit, S6.6 curl and MySQL.
+- `F_FILES` stays off; the pipe timeout (`io/039`, `040`, `042`, `043`) is `RFC-CHANGES.md` 3.
+- MySQL: `tools/test.py` starts a private `mysqld` when `MYSQL_TEST_HOST` is unset; a container
+  needs `apt-get install mysql-server-core-8.0` (WORKFLOW "Test fixtures").

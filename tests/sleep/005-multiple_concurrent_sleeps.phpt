@@ -1,7 +1,5 @@
 --TEST--
 Multiple concurrent async sleep operations
---XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
 --SKIPIF--
 <?php
 if (!function_exists("sleep") || !function_exists("usleep")) {

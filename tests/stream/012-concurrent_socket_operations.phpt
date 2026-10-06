@@ -1,7 +1,5 @@
 --TEST--
 Poll2 async: Concurrent socket operations
---XFAIL--
-Not implemented yet: S6.4 of dev/PLAN.md
 --FILE--
 <?php
 

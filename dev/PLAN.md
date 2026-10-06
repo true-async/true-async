@@ -419,7 +419,7 @@ Done when: S3–S6 lists (from `sleep`, `io`, `stream`, `socket_ext`, `dns`, `cu
 over 100 seeds; tests that fail because of the hooks design are listed against the review item;
 `dns` counted only on the Ring configuration (the Poll queue answers Unsupported for lookups).
 Tier: T2. Roles: Critic on S6.2, Critic after S6.7 (S6.8).
-Active: S6.3 (code now; the commit once `delay()` and `await_*` are on `main`)
+Active: S6.4
 
 - [x] S6.1 Fixtures: MySQL with two connections and an HTTP server with
       `PHP_CLI_SERVER_WORKERS`, started by `tools/test.py` locally and by the CI lanes.
@@ -449,18 +449,29 @@ Active: S6.3 (code now; the commit once `delay()` and `await_*` are on `main`)
         On core `9531d5b0b1f` after the rebase on S4.3: `pocs-dbg` 529 PASS, 8 SKIP, 256 XFAIL;
         `pocs-asan` 514 PASS, 25 SKIP, 254 XFAIL. The Critic's 1 critical and 7 major findings, the Sage's nine rulings and
         two Critic re-checks against S4.3's reactor are in the note; nothing went to Edmond.
-- [ ] S6.3 The provider for every op type (`dev/plans/S6.md` sections 2, 3, 5, 13), pipes and
-      timers; the Windows pipe core commit; `io/035`-`037` get the extension in the child.
-      done: `sleep` and `io` without `--XFAIL--` except the by-design ones; every test that passed
-        before still passes on `pocs-dbg` and `pocs-asan`; the note's S6.3 own tests pass
+- [x] S6.3 The provider for every op type (`dev/plans/S6.md` sections 2, 3, 5, 13), pipes and
+      timers.
+      done: `sleep` and `io` without `--XFAIL--` except the by-design ones and those naming a core
+        change; every test that passed before still passes on `pocs-dbg` and `pocs-asan`; the
+        note's S6.3 own tests pass
+      handoff: done 2026-10-06 on core `1ee473ff67b`: `pocs-dbg` 809 PASS, 8 SKIP, 47 XFAIL;
+        `pocs-asan` 793 PASS, 25 SKIP, 46 XFAIL; nothing unexpected. `src/io_provider.c`: `run()`
+        parks on a heap copy of the op and keeps its own reference (the Sage, after the Critic found
+        stale writes through frame pointers). Also passing now, sections removed: 12 `stream/` and
+        `socket_ext/` tests of S6.4 and `curl/069`. Moved: the Windows pipe commit to S6.5,
+        `io/035`-`037`, `094`, `095` and two bailout tests to S6.7; the pipe timeout and `io/100`
+        name S8 (`RFC-CHANGES.md` 3). Bugs found in bukka's code went to him (`io-hooks-fixes`);
+        `io/094` is a php-src streams bug, its branch asked of Edmond.
 - [ ] S6.4 Sockets (Recv, Send, Accept, Connect, Poll, Any, registrations) and DNS on the Ring.
       done: `stream`, `socket_ext`, `dns` without `--XFAIL--` except the by-design ones
 - [ ] S6.5 Children and signals: WaitPid, SigWait, `Async\signal()` (once S5.2's Future is on
-      `main`).
+      `main`); the Windows `proc_open()` pipe core commit (`dev/plans/S6.md` section 9).
       done: `exec`, `signal` without `--XFAIL--` except the by-design ones
 - [ ] S6.6 curl, mysqli, pdo_mysql without the pool.
       done: `curl`, `mysqli`, `pdo_mysql` without `--XFAIL--` except the by-design ones
-- [ ] S6.7 IO shutdown windows (the `ts_suspend` NULL case), the seven core-tree tests, every list
+- [ ] S6.7 IO shutdown windows (the `ts_suspend` NULL case), the seven core-tree tests,
+      `io/035`-`037` (Async in a `php -r` child), `io/094`, `095` (streams fixes), the `run()`
+      bailout tests S6.3 moved here (`dev/plans/S6.md` section 12), every list
       run, the by-design failures tagged `core:` against their review items, the RFC requests of
       the note's section 14 in `RFC-CHANGES.md`.
       done: Done when of S6 holds except the review

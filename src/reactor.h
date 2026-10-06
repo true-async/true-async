@@ -96,8 +96,14 @@ void async_reactor_request_startup(void);
  * wait. */
 void async_reactor_request_shutdown(void);
 
-/* A new IO event with one reference, the caller's, and an op to build. */
-async_io_event_t *async_io_event_new(void);
+/* A new IO event of `size` >= sizeof(async_io_event_t) bytes, with one reference, the caller's, and
+ * an op to build; the bytes past the event are uninitialised. */
+async_io_event_t *async_io_event_new_ex(size_t size);
+
+static zend_always_inline async_io_event_t *async_io_event_new(void)
+{
+	return async_io_event_new_ex(sizeof(async_io_event_t));
+}
 
 void async_io_event_release(async_io_event_t *event);
 
@@ -109,6 +115,10 @@ zend_result async_io_event_submit(async_io_event_t *event);
 /* Submits one of the reactor's own ops, on the `own` list instead (S4.md 3.5): its owner holds the
  * event and withdraws it before the release. FAILURE with an Error. */
 zend_result async_reactor_submit_own(async_io_event_t *event);
+
+/* async_io_event_submit() for a caller that reports the error itself: 0, the submit's errno, ENOSYS
+ * when no queue can be created, or -1 with the Error of a fork rebuild. */
+int async_io_event_try_submit(async_io_event_t *event);
 
 /* Withdraws a submitted op that has not completed: no completion comes for it. */
 void async_io_event_orphan(async_io_event_t *event);
@@ -139,6 +149,10 @@ void async_trigger_stop(async_trigger_t *trigger);
 /* Links `record` of the running `waiter` into the trigger: the TRIGGER kind. The caller reserved
  * room in the trigger's vector and suspends next. False with an Error, as the start. */
 bool async_trigger_link(async_coroutine_event_callback_t *record, async_coroutine_t *waiter, async_trigger_t *trigger);
+
+/* The thread's queue when this process created it; NULL when there is none, or in a forked child
+ * before its rebuild, where the parent's queue must not be touched. Creates and rebuilds nothing. */
+php_io_queue *async_reactor_live_queue(void);
 
 /* Parks `waiter`, the running coroutine, on a Timer op for `ms` > 0 milliseconds: delay() (S4.md
  * 3.5). False with the exception that ended the wait (a cancellation). */

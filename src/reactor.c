@@ -19,6 +19,7 @@
 #include "reactor.h"
 #include "scheduler.h"
 #include "exceptions.h"
+#include "io_provider.h"
 
 #ifdef HAVE_IOR
 #include "main/php_io_ring.h"
@@ -217,7 +218,7 @@ static void wake_pair_drain(const async_wake_pair_t *pair)
 
 /* The thread's queue, created on first use as TrueAsync starts libuv lazily
  * (libuv_reactor.c:343-349): the Ring where the core has ior, the Poll queue otherwise or when the
- * Ring cannot be created. NULL with an Error. */
+ * Ring cannot be created. NULL when neither can be created. */
 static php_io_queue *reactor_queue(async_reactor_t *reactor)
 {
 	if (EXPECTED(reactor->queue != NULL)) {
@@ -240,7 +241,6 @@ static php_io_queue *reactor_queue(async_reactor_t *reactor)
 	}
 
 	if (UNEXPECTED(queue == NULL)) {
-		zend_throw_error(NULL, "Cannot create the IO queue");
 		return NULL;
 	}
 
@@ -248,6 +248,10 @@ static php_io_queue *reactor_queue(async_reactor_t *reactor)
 #ifndef PHP_WIN32
 	reactor->queue_pid = getpid();
 #endif
+
+	/* The second install trigger of the IO provider (dev/plans/S6.md section 2), and the point
+	 * where its flags follow a new queue, a forked child's included. */
+	async_io_provider_queue_created(queue);
 
 	return queue;
 }
@@ -369,6 +373,7 @@ static void reactor_rebuild(async_reactor_t *reactor)
 
 	reactor->queue->ops->destroy(reactor->queue);
 	reactor->queue = NULL;
+	async_io_provider_queue_destroyed();
 
 	triggers_end_parent_waits(reactor);
 
@@ -457,9 +462,11 @@ void async_reactor_request_shutdown(void)
 /// IO events
 ///////////////////////////////////////////////////////////////////
 
-async_io_event_t *async_io_event_new(void)
+async_io_event_t *async_io_event_new_ex(size_t size)
 {
-	async_io_event_t *event = emalloc(sizeof(async_io_event_t));
+	ZEND_ASSERT(size >= sizeof(async_io_event_t));
+
+	async_io_event_t *event = emalloc(size);
 
 	async_event_init(&event->base, 0);
 	memset(&event->op, 0, sizeof(event->op));
@@ -551,7 +558,12 @@ static zend_result reactor_submit(async_reactor_t *reactor, async_io_event_t *ev
 
 	php_io_queue *queue = reactor_queue(reactor);
 
-	if (UNEXPECTED(queue == NULL || queue_submit(queue, event, list, &completion, &completed) == FAILURE)) {
+	if (UNEXPECTED(queue == NULL)) {
+		zend_throw_error(NULL, "Cannot create the IO queue");
+		return FAILURE;
+	}
+
+	if (UNEXPECTED(queue_submit(queue, event, list, &completion, &completed) == FAILURE)) {
 		return FAILURE;
 	}
 
@@ -560,6 +572,35 @@ static zend_result reactor_submit(async_reactor_t *reactor, async_io_event_t *ev
 	}
 
 	return SUCCESS;
+}
+
+/* The body of async_io_event_try_submit(). */
+static int reactor_try_submit(async_reactor_t *reactor, async_io_event_t *event, async_reactor_link_t *list)
+{
+	php_io_queue_completion completion;
+
+	if (UNEXPECTED(!reactor_check_fork(reactor))) {
+		return -1;
+	}
+
+	php_io_queue *queue = reactor_queue(reactor);
+
+	if (UNEXPECTED(queue == NULL)) {
+		return ENOSYS;
+	}
+
+	if (UNEXPECTED(queue->ops->submit(queue, &event->op, event) == FAILURE)) {
+		ZEND_ASSERT(errno != 0 && "a queue's failed submit sets errno");
+		return errno;
+	}
+
+	list_add(list, &event->reactor_link);
+
+	if (UNEXPECTED(queue->ops->take_inline(queue, &event->op, &completion))) {
+		reactor_dispatch(&completion);
+	}
+
+	return 0;
 }
 
 zend_result async_io_event_submit(async_io_event_t *event)
@@ -574,6 +615,26 @@ zend_result async_reactor_submit_own(async_io_event_t *event)
 	async_reactor_t *reactor = &ASYNC_G(reactor);
 
 	return reactor_submit(reactor, event, &reactor->own);
+}
+
+php_io_queue *async_reactor_live_queue(void)
+{
+	const async_reactor_t *reactor = &ASYNC_G(reactor);
+
+#ifndef PHP_WIN32
+	if (UNEXPECTED(reactor->queue != NULL && reactor->queue_pid != getpid())) {
+		return NULL;
+	}
+#endif
+
+	return reactor->queue;
+}
+
+int async_io_event_try_submit(async_io_event_t *event)
+{
+	async_reactor_t *reactor = &ASYNC_G(reactor);
+
+	return reactor_try_submit(reactor, event, &reactor->waits);
 }
 
 void async_io_event_orphan(async_io_event_t *event)

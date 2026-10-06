@@ -1,7 +1,5 @@
 --TEST--
 socket_sendto() and socket_recvfrom() async operations with UDP
---XFAIL--
-Not implemented yet: S6.4 of dev/PLAN.md
 --SKIPIF--
 <?php
 if (!extension_loaded('sockets')) {

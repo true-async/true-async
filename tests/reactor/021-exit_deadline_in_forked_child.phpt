@@ -28,7 +28,6 @@ spawn(function () {
         }
 
         pcntl_waitpid($pid, $status);
-        echo "parent: child exited\n";
     }
 });
 
@@ -37,4 +36,3 @@ exit(0);
 ?>
 --EXPECT--
 child: unwound at the deadline
-parent: child exited

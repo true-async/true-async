@@ -1,7 +1,5 @@
 --TEST--
 shell_exec() async basic functionality  
---XFAIL--
-Not implemented yet: S6.5 of dev/PLAN.md
 --SKIPIF--
 <?php
 if (!function_exists("shell_exec")) echo "skip shell_exec() is not available";

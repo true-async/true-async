@@ -1,7 +1,5 @@
 --TEST--
 A coroutine blocked in fwrite() wakes when the peer resets the connection
---XFAIL--
-Not implemented yet: S6.4 of dev/PLAN.md
 --DESCRIPTION--
 Regression test. A writer suspended on a full send buffer (ASYNC_WRITABLE)
 must be released when the peer abruptly closes the connection. libuv reports

@@ -39,3 +39,19 @@ and the TLS wrapper already do; `ECANCELED` without an exception stays an error.
 `ext/standard/tests/streams/hooks/`.
 
 Waits for it: nothing; the pinned core carries the branch (`async-core-io-2026-10-06`).
+
+## 3. IO hooks: stream_set_timeout() on a pipe
+
+State: drafted 2026-10-06 (S6.3), not sent. PR: none.
+
+Need: TrueAsync honours `stream_set_timeout()` on a `proc_open()` pipe for a read in a coroutine
+(`io/039`, `040`, `042`, `043`). The plain wrapper has no `PHP_STREAM_OPTION_READ_TIMEOUT` case, so the call
+returns false, as in vanilla PHP; a provider sees only the op's deadline, which the wrapper builds
+without a timeout.
+
+Request: a read timeout on a pipe stream that holds with and without a provider: store it in the
+plain wrapper and, when set, wait with `php_io_poll(stream, fd, PHP_POLL_READ, &deadline)` before the
+read, so the core's synchronous queue honours it too; `timed_out` in the metadata. A feature, not a
+fix: vanilla PHP has no such option.
+
+Waits for it: `io/039`, `040`, `042`, `043` (`--XFAIL--` naming S8).
