@@ -1,7 +1,5 @@
 --TEST--
 Async\signal(): registering multiple Futures for different signals and awaiting one doesn't leak handles
---XFAIL--
-Not implemented yet: S6.5 of dev/PLAN.md
 --SKIPIF--
 <?php
 if (PHP_OS_FAMILY === 'Windows') echo "skip Unix-only test";

@@ -1,7 +1,5 @@
 --TEST--
 Async\signal(): Future that is created but never awaited or referenced does not keep the reactor alive
---XFAIL--
-Not implemented yet: S6.5 of dev/PLAN.md
 --SKIPIF--
 <?php
 if (PHP_OS_FAMILY === 'Windows') echo "skip Unix-only test";

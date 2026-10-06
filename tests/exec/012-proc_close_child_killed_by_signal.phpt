@@ -1,7 +1,7 @@
 --TEST--
 proc_close() after child process killed by signal (SIGSEGV)
 --XFAIL--
-Not implemented yet: S6.5 of dev/PLAN.md
+By design: proc_close() returns the wait status PHP gives a child a signal killed (the signal number), as php/php-src does, where TrueAsync's fork returns the negated number of its process event (libuv_reactor.c:2186-2189)
 --EXTENSIONS--
 pcntl
 --SKIPIF--

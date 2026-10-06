@@ -249,7 +249,8 @@ candidate. The TrueAsync reference clone is needed for `check-lists.py --referen
 
 ## S6
 
-Written 2026-10-06. S6.4 (sockets, DNS) done; S6.5 (children, signals, the Windows lane) next.
+Written 2026-10-06. S6.5 (children, signals) done; S6.6 (curl, mysqli, pdo_mysql) next; the Windows
+part is S6.10, waiting for a Windows agent (S1.5).
 
 - `run()` parks on a heap copy of the op and keeps its own reference to the event; the result and
   `in_flight` are read after the suspend (note 3.2-3.3). A non-running coroutine is answered
@@ -260,9 +261,19 @@ Written 2026-10-06. S6.4 (sockets, DNS) done; S6.5 (children, signals, the Windo
   prepared in the S6.4 thread, `dev/WORKFLOW.md` "Ownership").
 - The core is `async-core-io-2026-10-06`. Edmond's branch for php-src bugs outside the RFCs is
   `php-src-fixes` (`dev/WORKFLOW.md`); its `io/094` fix is not in the pinned core yet.
-- S6.5 takes the Windows lane's socket expectations from S6.4: load `sockets` and `openssl` in
-  `pocs-win`, then settle the `xfail-on:pocs-win(S6.5)` tags and `stream/001`, `002`, `046-…_win`.
-  The `skip-on:pocs-win(...-until-S6.4)` tags are frozen text; they still mean S6.5.
+- S6.10 takes the Windows lane's socket expectations: load `sockets` and `openssl` in `pocs-win`,
+  then settle the `xfail-on:pocs-win(S6.10)` tags and `stream/001`, `002`, `046-…_win`, `exec/001`,
+  `003`. The `skip-on:pocs-win(...-until-S6.4)` and `(...-until-S6.5)` tags are frozen text; they
+  mean S6.10.
+- `Async\signal()` is `src/os_signal.c` (note section 8): a watch per number with a SignalHandle in a
+  Context the thread keeps while any number is watched, one SIGWAIT op on `waits`; a child renews
+  handles and sources in `async_signal_rebuild()` and leaves no exception (S4.6's rule). The
+  collector (S7.3) still has to treat a pending `signal()` Future as completable from outside:
+  `ASYNC_G(signals)->watches[n]` holds its waits (`signal_wait_t`) with their Futures.
+- `dns/003` fails about 4 in 60 runs under load: the Ring completes the lookup during the submit's
+  flush, so the provider returns without suspending and the other coroutine prints second
+  (`io_wait_submit()`, `src/io_provider.c`). TrueAsync always yields for DNS. Not fixed; S6.7's
+  "every list run" decides (yield after an inline DNS completion, or a by-design tag).
 - `curl/006` (CI) and `pdo_mysql/029` (local ASAN) passed once while XFAIL for S6.6: timing, S6.6's.
 - `stream/030` (UDP receive timeout) is `RFC-CHANGES.md` 4; the pipe timeout is 3; `F_FILES` off.
 - MySQL: `tools/test.py` starts a private `mysqld` when `MYSQL_TEST_HOST` is unset; a container

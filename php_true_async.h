@@ -25,6 +25,7 @@ extern zend_module_entry true_async_module_entry;
 #include "src/internal/circular_buffer.h"
 #include "src/reactor.h"
 #include "src/io_provider.h"
+#include "src/os_signal.h"
 #ifdef TRUE_ASYNC_FUZZ
 #include "src/internal/fuzz.h"
 #endif
@@ -39,6 +40,7 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	async_reactor_t reactor;                /* the thread's IO queue and the waits on it */
 	async_wake_pair_t wake_pair;            /* the reactor's wake descriptors: the thread's, not a request's */
 	async_io_provider_t io_provider;        /* registered from the first trigger to RSHUTDOWN */
+	async_signal_registry_t *signals;       /* Async\signal()'s watches; NULL while there is none */
 	async_coroutine_t *interrupt_coroutine; /* runs the VM interrupt for an idle scheduler; NULL when none is alive */
 	async_io_event_t *exit_deadline;        /* D16's Timer while armed, once per drain; the scheduler's reference */
 	uint32_t last_handler_id;               /* the id of the newest finish or switch handler; 0 is never handed out */

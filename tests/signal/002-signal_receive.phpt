@@ -1,7 +1,5 @@
 --TEST--
 Async\signal() - receive signal from another coroutine
---XFAIL--
-Not implemented yet: S6.5 of dev/PLAN.md
 --EXTENSIONS--
 pcntl
 --SKIPIF--

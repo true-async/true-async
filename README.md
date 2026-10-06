@@ -95,7 +95,7 @@ flowchart TB
 | ✓ S3 · Scheduler on the scheduler API | `██████████` | 100 % |
 | ▶ **S4 · Reactor on Poll, Poll additions and Ring** | `███████░░░` | 71 % |
 | ▶ **S5 · Futures, timeouts and combinators** | `███████░░░` | 67 % |
-| ▶ **S6 · IO hooks provider** | `████░░░░░░` | 44 % |
+| ▶ **S6 · IO hooks provider** | `█████░░░░░` | 50 % |
 | ▶ **S7 · Async object collector** | `███░░░░░░░` | 33 % |
 | S8 · Review checks and RFC change list | `░░░░░░░░░░` | 0 % |
 | S9 · Higher layers, one at a time | `░░░░░░░░░░` | 0 % |

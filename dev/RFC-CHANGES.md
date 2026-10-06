@@ -73,3 +73,25 @@ Request: `sock_xport_deadline()` builds the deadline from `sock->timeout`, as `p
 ignores the timeout there.
 
 Waits for it: `stream/030` (`--XFAIL--` naming S8).
+
+## 5. Poll API additions: zend_sigaction() leaves a SignalHandle's signals blocked
+
+State: drafted 2026-10-06 (S6.5), not sent. PR: none.
+
+Need: `Async\signal()` takes a signal through a SIGWAIT op on a number an `Io\Poll\SignalHandle`
+blocks while a `Context` watches it (`dev/plans/S6.md` section 8). `zend_sigaction()` unblocks the
+number it installs a handler for (`Zend/zend_signal.c:258-263`), so a `pcntl_signal()` after
+`Async\signal()` lets the next delivery go to the handler alone, and the handle's record of blocked
+numbers (`php_io_poll_signals_blocked_by_handles`, `ext/standard/io_poll.c:997-998`) no longer
+matches the mask. pcntl's request shutdown and `pcntl_sigprocmask()` do the same. The extension
+blocks the watched numbers again before every poll of its queue.
+
+Request: `zend_sigaction()` (and pcntl's mask restore) leaves alone a number that a live
+`SignalHandle` blocked, for example through a hook `ext/standard` sets, or a `PHPAPI` query
+`php_io_poll_signal_blocked_by_handle(int signo)` that `zend_sigaction()` consults. Second, smaller:
+a `PHPAPI` to block and unblock a handle's set without an `Io\Poll\Context`
+(`php_io_poll_signal_handle_watch()` and `_unwatch()`, the `added`/`removed` ops of the handle), so a
+provider needs no Context it never waits on.
+
+Waits for it: `async_signal_reblock()` in `src/os_signal.c` and its call in `reactor_poll()`
+(`src/reactor.c`); the Context of `async_signal_registry_t`.

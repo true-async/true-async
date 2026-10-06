@@ -1,7 +1,5 @@
 --TEST--
 Async\signal() - timeout cancellation when no signal arrives
---XFAIL--
-Not implemented yet: S6.5 of dev/PLAN.md
 --FILE--
 <?php
 

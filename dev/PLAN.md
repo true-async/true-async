@@ -428,7 +428,7 @@ Done when: S3–S6 lists (from `sleep`, `io`, `stream`, `socket_ext`, `dns`, `cu
 over 100 seeds; tests that fail because of the hooks design are listed against the review item;
 `dns` counted only on the Ring configuration (the Poll queue answers Unsupported for lookups).
 Tier: T2. Roles: Critic on S6.2, Critic after S6.7 (S6.8).
-Active: S6.5
+Active: S6.6
 
 - [x] S6.1 Fixtures: MySQL with two connections and an HTTP server with
       `PHP_CLI_SERVER_WORKERS`, started by `tools/test.py` locally and by the CI lanes.
@@ -482,11 +482,18 @@ Active: S6.5
         by design (PHP's `stream_select()` errors); `stream/030` names S8 (`RFC-CHANGES.md` 4);
         `dns/006` waits for S5.4's `timeout()`; `io/096` names S6.7 (B1). Own tests
         `io_provider/012`-`015`. The Windows lane's socket expectations moved to S6.5.
-- [ ] S6.5 Children and signals: WaitPid, SigWait, `Async\signal()` (once S5.2's Future is on
-      `main`); the Windows `proc_open()` pipe core commit (`dev/plans/S6.md` section 9); the
-      Windows lane's socket expectations from S6.4 (`sockets` and `openssl` loaded in `pocs-win`).
-      done: `exec`, `signal` without `--XFAIL--` except the by-design ones; `sockets` and `openssl`
-        load in `pocs-win`; no `xfail-on:pocs-win` tag and no `--XFAIL--` names S6.5 in `stream`, `dns`
+- [x] S6.5 Children and signals: WaitPid, SigWait, `Async\signal()` (once S5.2's Future is on
+      `main`).
+      done: `exec`, `signal` without `--XFAIL--` except the by-design ones and those naming S6.10
+      handoff: done 2026-10-06 on core `1ee473ff67b`: `pocs-dbg` 880 PASS, 8 SKIP, 25 XFAIL;
+        `pocs-asan` 864 PASS, 25 SKIP, 24 XFAIL;
+        nothing unexpected. `src/os_signal.c`: one watch per signal number while a Future waits
+        for it, a `SignalHandle` in a thread context that blocks the number and one SIGWAIT op on
+        the reactor; a delivery completes every waiting Future and goes on to a pcntl handler; a
+        signal still pending at the last Future is raised again; a fork rebuilds the watches. Own
+        tests `signal/016`-`023`. `exec/012`, `025` XFAIL by design. `SIGBREAK` and `SIGABRT2`
+        throw (TrueAsync maps them to other numbers); `Async\signal()` throws on Windows. Moved:
+        the Windows parts to S6.10 (Edmond deferred S1.5). Core requests in `RFC-CHANGES.md` 5.
 - [ ] S6.6 curl, mysqli, pdo_mysql without the pool.
       done: `curl`, `mysqli`, `pdo_mysql` without `--XFAIL--` except the by-design ones
 - [ ] S6.7 IO shutdown windows (the `ts_suspend` NULL case), the seven core-tree tests,
@@ -499,6 +506,10 @@ Active: S6.5
       done: findings fixed or answered; chaos clean over 100 seeds
 - [ ] S6.9 Security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item; findings fixed with a test or recorded
+- [ ] S6.10 Windows (once S1.5 gives a Windows agent): the `proc_open()` pipe core commit
+      (`dev/plans/S6.md` section 9), the Windows lane's socket expectations from S6.4.
+      done: `sockets` and `openssl` load in `pocs-win`; no `xfail-on` tag or `--XFAIL--` names
+        S6.10; the frozen `skip-on:pocs-win(...-until-S6.4)` and `(...-until-S6.5)` tags skip nothing
 
 ## S7 — Async object collector  [ ]
 

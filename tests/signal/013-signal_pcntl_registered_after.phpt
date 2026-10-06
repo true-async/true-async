@@ -1,7 +1,5 @@
 --TEST--
 Async\signal() keeps receiving after pcntl_signal() re-registers the same signal
---XFAIL--
-Not implemented yet: S6.5 of dev/PLAN.md
 --EXTENSIONS--
 pcntl
 posix

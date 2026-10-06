@@ -1,7 +1,5 @@
 --TEST--
 Async\signal(): unused signal Future disposes its underlying signal_event so the reactor can exit
---XFAIL--
-Not implemented yet: S6.5 of dev/PLAN.md
 --SKIPIF--
 <?php
 if (PHP_OS_FAMILY === 'Windows') echo "skip Unix-only test";

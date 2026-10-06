@@ -938,3 +938,29 @@ stack options were shown with the code).
   bailout in a reservation left an armed timer nothing unsubscribed (`await/127`), and a child whose
   first wait came before any submit kept the parent's dropped op and never timed out (`await/124`;
   the Critic on S5.4).
+- 2026-10-06 `Async\signal()` watches a number through an `Io\Poll\SignalHandle` added to an
+  `Io\Poll\Context` the thread keeps while any number is watched and never waits on, and one SIGWAIT
+  op per number on the reactor; a delivery completes every Future waiting for that number and goes to
+  the Zend handler too (`dev/plans/S6.md` section 8). Why: the handle is how the core blocks a signal
+  and keeps it unblocked in `proc_open()` and `exec()` children; TrueAsync's libuv handle and
+  forward do the same jobs.
+- 2026-10-06 What a handle recorded between the last delivery and the removal of its number is
+  raised again with `raise()`, so the process's own action applies (a pcntl handler, the default,
+  or none). Why: nothing waited for it; S6.md first said to forward it or raise it by hand per
+  action, which is what `raise()` does through `zend_signal_handler_defer()`.
+- 2026-10-06 `Signal::SIGBREAK` and `Signal::SIGABRT2` throw a ValueError outside Windows, and the
+  enum's Linux numbers map to the platform's constants. Why: TrueAsync passes 21 and 22 through, so
+  on Linux it watches `SIGTTIN` and `SIGTTOU` (`async.c:1203-1217`).
+- 2026-10-06 `Async\signal()` throws on Windows, after the check of a completed token, and
+  `signal/001` skips on `*-win`. Why: the core has no signal source there (S6.md section 9);
+  `signal/003` and `004` pass on Windows through the token check.
+- 2026-10-06 `exec/012` and `exec/025` keep `--XFAIL--` by design: `proc_close()` returns PHP's wait
+  status for a child a signal killed (the signal number) where the fork returns its negation, and a
+  pipe closed under a parked reader gives it `''` where the fork gives `false` (B1; S6.7 tags it
+  `core:`).
+- 2026-10-06 The Windows part of S6.5 moves to S6.10: the `proc_open()` pipe core commit and the
+  Windows lane's socket expectations; the `xfail-on:pocs-win(S6.5)` tags and the Windows-only
+  `--XFAIL--` sections name S6.10, and the frozen `skip-on:pocs-win(...-until-S6.4)` and
+  `(...-until-S6.5)` texts mean S6.10. Why: a core commit for Windows needs a build and runs on
+  Windows, and S1.5 (a Windows agent) is deferred by Edmond; S6's done line asks for debug and ASAN
+  only.

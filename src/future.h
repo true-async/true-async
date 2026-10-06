@@ -62,6 +62,13 @@ void async_future_event_release(async_future_event_t *future);
 /* The event of a Future object; NULL for one never constructed (unserialize()). */
 async_future_event_t *async_future_event_from_object(zend_object *object);
 
+/* A Future object over a new pending event, which it holds; `event` is borrowed. */
+zend_object *async_future_new_pending(async_future_event_t **event);
+
+/* Completes a pending `future` with `result` or `exception` (borrowed): its waiters wake and its
+ * children go to a drain coroutine. Once only: the caller checks CLOSED. */
+void async_future_event_resolve(async_future_event_t *future, zval *result, zend_object *exception);
+
 /* Parks the current coroutine until `future` completes and puts its outcome in `return_value`, or
  * throws it. Marks nothing observed: the caller marks the event first. False with an exception
  * when there is no coroutine to park, the wait is aborted (a cancellation of the waiter), or

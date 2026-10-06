@@ -30,6 +30,12 @@ async_awaitable_t *async_await_awaitable_of(zend_object *object);
 void async_awaitable_addref(async_awaitable_t *awaitable);
 void async_awaitable_release(async_awaitable_t *awaitable);
 
+/* Whether `token` has completed, a Timeout whose deadline passed firing first; then `exception` is
+ * the token's error with a reference for the caller, a Timeout's from async_timeout_exception(), NULL
+ * when it completed without one. A Future token is marked observed, and a completed coroutine's
+ * exception caught. */
+bool async_await_token_completed(async_awaitable_t *token, zend_object **exception);
+
 /* Step 4 of S5.md section 4, before every link: a Future token is marked observed, and a token
  * that has completed throws OperationCanceledException. */
 bool async_await_token_check(async_awaitable_t *token);

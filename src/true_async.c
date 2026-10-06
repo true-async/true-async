@@ -140,6 +140,7 @@ static PHP_MINIT_FUNCTION(true_async)
 	async_register_coroutine_ce(async_ce_completable);
 	async_register_future_ce(async_ce_completable);
 	async_register_timeout_ce(async_ce_completable);
+	async_ce_signal = register_class_Async_Signal();
 
 	scheduler_registered = async_scheduler_register();
 
@@ -176,6 +177,7 @@ static PHP_RINIT_FUNCTION(true_async)
 		async_scheduler_request_startup();
 		async_reactor_request_startup();
 		async_io_provider_request_startup();
+		ASYNC_G(signals) = NULL;
 		async_collector_request_startup();
 	}
 
@@ -201,6 +203,9 @@ static PHP_RSHUTDOWN_FUNCTION(true_async)
 		async_test_hooks_request_shutdown();
 #endif
 		async_io_provider_request_shutdown();
+#ifndef PHP_WIN32
+		async_signal_request_shutdown();
+#endif
 		async_reactor_request_shutdown();
 	}
 

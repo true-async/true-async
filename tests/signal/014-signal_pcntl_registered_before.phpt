@@ -1,7 +1,5 @@
 --TEST--
 Async\signal() forwards a valid siginfo to a pre-registered pcntl handler (no SEGV)
---XFAIL--
-Not implemented yet: S6.5 of dev/PLAN.md
 --EXTENSIONS--
 pcntl
 posix

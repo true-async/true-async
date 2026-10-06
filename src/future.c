@@ -849,6 +849,22 @@ static HashTable *future_object_gc(zend_object *object, zval **table, int *count
 	return NULL;
 }
 
+zend_object *async_future_new_pending(async_future_event_t **event)
+{
+	async_future_event_t *future = future_event_new();
+
+	*event = future;
+
+	return &future_new(future)->std;
+}
+
+void async_future_event_resolve(async_future_event_t *future, zval *result, zend_object *exception)
+{
+	future->base.ref_count++;
+	future_event_complete(future, result, exception, NULL);
+	async_future_event_release(future);
+}
+
 async_future_event_t *async_future_event_from_object(zend_object *object)
 {
 	ZEND_ASSERT(object->ce == async_ce_future);

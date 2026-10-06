@@ -50,6 +50,34 @@ function await_any_of(int $count, iterable $triggers, ?Awaitable $cancellation =
  */
 function timeout(int $ms): Awaitable {}
 
+/**
+ * OS signals by their Linux numbers; Async\signal() maps each to the platform's own. SIGBREAK and
+ * SIGABRT2 exist only on Windows.
+ */
+enum Signal: int
+{
+    case SIGHUP = 1;
+    case SIGINT = 2;
+    case SIGQUIT = 3;
+    case SIGILL = 4;
+    case SIGABRT = 6;
+    case SIGFPE = 8;
+    case SIGKILL = 9;
+    case SIGUSR1 = 10;
+    case SIGSEGV = 11;
+    case SIGUSR2 = 12;
+    case SIGTERM = 15;
+    case SIGBREAK = 21;
+    case SIGABRT2 = 22;
+    case SIGWINCH = 28;
+}
+
+/**
+ * A Future that completes with `$signal` when the process receives it, or fails with the error of
+ * `$cancellation` (AsyncCancellation when it has none) once that completes first. Not on Windows.
+ */
+function signal(Signal $signal, ?Completable $cancellation = null): Future {}
+
 /** Gives up the CPU: the current coroutine goes to the back of the run queue and runs again in its turn. */
 function suspend(): void {}
 

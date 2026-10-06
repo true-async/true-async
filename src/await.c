@@ -139,29 +139,59 @@ static zend_object *await_token_cancelled_error(const async_awaitable_t *token, 
 	return error;
 }
 
-bool async_await_token_check(async_awaitable_t *token)
+bool async_await_token_completed(async_awaitable_t *token, zend_object **exception)
 {
 	const bool is_coroutine = ASYNC_AWAITABLE_IS_COROUTINE(token);
 
 	if (ASYNC_AWAITABLE_IS_TIMEOUT(token)) {
-		async_timeout_fire_if_due((async_timeout_event_t *) token);
-	} else if (!is_coroutine) {
+		async_timeout_event_t *timeout = (async_timeout_event_t *) token;
+
+		if (EXPECTED(!async_timeout_fire_if_due(timeout))) {
+			return false;
+		}
+
+		*exception = async_timeout_exception(timeout);
+
+		return true;
+	}
+
+	if (!is_coroutine) {
 		((async_event_t *) token)->flags |= ASYNC_EVENT_F_RESULT_USED | ASYNC_EVENT_F_EXC_CAUGHT;
 	}
 
 	zval *result;
+	zend_object *own_exception;
+
+	if (EXPECTED(!await_outcome(token, &result, &own_exception))) {
+		return false;
+	}
+
+	if (own_exception != NULL) {
+		if (is_coroutine) {
+			((async_coroutine_t *) token)->coroutine.flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
+		}
+
+		GC_ADDREF(own_exception);
+	}
+
+	*exception = own_exception;
+
+	return true;
+}
+
+bool async_await_token_check(async_awaitable_t *token)
+{
 	zend_object *exception;
 
-	if (EXPECTED(!await_outcome(token, &result, &exception))) {
+	if (EXPECTED(!async_await_token_completed(token, &exception))) {
 		return true;
 	}
 
-	/* The exception goes to the waiter as the previous: the token's outcome is observed. */
-	if (exception != NULL && is_coroutine) {
-		((async_coroutine_t *) token)->coroutine.flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
-	}
+	zend_throw_exception_internal(await_cancelled_error(exception));
 
-	zend_throw_exception_internal(await_token_cancelled_error(token, exception));
+	if (exception != NULL) {
+		OBJ_RELEASE(exception);
+	}
 
 	return false;
 }

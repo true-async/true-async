@@ -1,7 +1,5 @@
 --TEST--
 Async\signal() - already completed cancellation returns rejected Future
---XFAIL--
-Not implemented yet: S6.5 of dev/PLAN.md
 --FILE--
 <?php
 

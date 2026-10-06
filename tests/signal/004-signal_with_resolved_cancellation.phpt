@@ -1,7 +1,5 @@
 --TEST--
 Async\signal(): an already-resolved cancellation argument returns an immediately-rejected Future
---XFAIL--
-Not implemented yet: S6.5 of dev/PLAN.md
 --FILE--
 <?php
 

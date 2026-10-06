@@ -406,6 +406,12 @@ static void reactor_rebuild(async_reactor_t *reactor)
 		async_io_event_release(reactor->wakeup);
 		reactor->wakeup = NULL;
 	}
+
+#ifndef PHP_WIN32
+	if (ASYNC_G(signals) != NULL) {
+		async_signal_rebuild();
+	}
+#endif
 }
 
 void async_reactor_request_startup(void)
@@ -986,6 +992,12 @@ bool async_trigger_link(async_coroutine_event_callback_t *record, async_coroutin
 static bool reactor_poll(async_reactor_t *reactor, php_deadline deadline)
 {
 	php_io_queue_completion completion;
+
+#ifndef PHP_WIN32
+	if (UNEXPECTED(ASYNC_G(signals) != NULL)) {
+		async_signal_reblock();
+	}
+#endif
 
 	for (;;) {
 		php_io_queue *queue = reactor->queue;

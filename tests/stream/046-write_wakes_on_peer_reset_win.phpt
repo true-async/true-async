@@ -23,7 +23,7 @@ if (PHP_OS_FAMILY !== 'Windows') {
 }
 ?>
 --XFAIL--
-Not implemented yet: S6.5 of dev/PLAN.md (the Windows lane's socket expectations)
+Not implemented yet: S6.10 of dev/PLAN.md (the Windows lane's socket expectations)
 --FILE--
 <?php
 
