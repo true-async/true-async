@@ -162,14 +162,6 @@ static void fiber_pool_teardown(void)
 /// The run queue and switches
 ///////////////////////////////////////////////////////////////////
 
-/* An exit or the graceful exit that closes a dropped Fiber (zend_fibers.c, zend_fiber_release_coroutine):
- * an order to stop, not a Throwable, so it can neither take a previous nor become one
- * (zend_exception_set_previous would add a dynamic property to it, or drop it). */
-static zend_always_inline bool is_exit_object(const zend_object *error)
-{
-	return zend_is_graceful_exit(error) || zend_is_unwind_exit(error);
-}
-
 /* The waker keeps one error until the switch-in, by TrueAsync's rules (the fork's
  * zend_async_waker_apply_error, zend_async_API.c:1334-1373, and async_coroutine_resume,
  * coroutine.c:807-829): a new error goes on top, with the pending one as its previous, except that a
@@ -185,12 +177,12 @@ static void waker_apply_error(async_coroutine_t *coroutine, zend_object *error, 
 		return;
 	}
 
-	if (UNEXPECTED(is_exit_object(pending_error))) {
+	if (UNEXPECTED(async_is_exit_object(pending_error))) {
 		OBJ_RELEASE(error);
 		return;
 	}
 
-	if (UNEXPECTED(is_exit_object(error))) {
+	if (UNEXPECTED(async_is_exit_object(error))) {
 		coroutine->waker.error = error;
 		OBJ_RELEASE(pending_error);
 		return;

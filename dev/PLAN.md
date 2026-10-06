@@ -326,7 +326,7 @@ Goal: the API the ported tests use everywhere.
 Done when: S3–S5 lists pass, including the `await` group's combinator tests.
 Tier: T2. Roles: Critic on S5.1, Critic after S5.2.
 Notes: dev/plans/S5.md
-Active: S5.2 (waits for the wait-record layer on `main`)
+Active: S5.3
 
 - [x] S5.1 Design note `dev/plans/S5.md`: `Future` and `FutureState` as TrueAsync has them within one
       thread (the remote and cross-thread futures wait for S10's thread pool), `map`/`catch`/
@@ -344,9 +344,16 @@ Active: S5.2 (waits for the wait-record layer on `main`)
         note; the Sage ruled on three: mappers run in one drain coroutine with TrueAsync's helper
         microtask, a mapper's error goes only into its child, the shared event is reported to the
         GC only by its sole holder. `iterate()` moves to S9.
-- [ ] S5.2 `Future` and `FutureState` with their chains; `await()` and `Future::await()` on a Future
+- [x] S5.2 `Future` and `FutureState` with their chains; `await()` and `Future::await()` on a Future
       (once the wait-record layer is on `main`).
       done: S5.txt's `future/` tests pass on debug and ASAN; the S3 list unchanged
+      handoff: done 2026-10-06: `src/future.c`; the 38 `future/` tests pass with their `--XFAIL--`
+        removed, and 14 own tests `future/100`-`113` join S5.txt (GC cycles, the drain's order and
+        helpers, `exit()` in a mapper, a 200000-deep chain). On core `9531d5b0b1f` after S4.3 and S6.2
+        `pocs-dbg` 581 PASS, 8 SKIP and 218 XFAIL, `pocs-asan` 566 PASS, 25 SKIP and 216 XFAIL, 0
+        unexpected. The Critic's
+        three high findings and the re-check's medium one are fixed (S5.md section 3, "As built in S5.2"). `Future::await()` takes
+        no `$cancellation` until S5.3.
 - [ ] S5.3 `$cancellation` on `await()` and the `await_*` family.
       done: every S5.txt test that needs no timer passes on debug and ASAN
 - [ ] S5.4 `timeout()` and `TimeoutException` on Timer ops (once `delay()` is on `main`).

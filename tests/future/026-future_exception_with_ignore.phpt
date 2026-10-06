@@ -1,7 +1,5 @@
 --TEST--
 Future: no warning when exception is ignored
---XFAIL--
-Not implemented yet: S5.2 of dev/PLAN.md
 --FILE--
 <?php
 

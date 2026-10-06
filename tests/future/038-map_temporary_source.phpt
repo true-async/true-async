@@ -1,7 +1,5 @@
 --TEST--
 Future: map()/catch()/finally() on a temporary source resolve the derived Future (issue #193)
---XFAIL--
-Not implemented yet: S5.2 of dev/PLAN.md
 --FILE--
 <?php
 

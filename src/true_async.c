@@ -21,6 +21,7 @@
 #include "php_true_async.h"
 #include "coroutine.h"
 #include "exceptions.h"
+#include "future.h"
 #include "scheduler.h"
 #include "true_async_arginfo.h"
 
@@ -97,6 +98,7 @@ static PHP_MINIT_FUNCTION(true_async)
 	async_ce_completable = register_class_Async_Completable(async_ce_awaitable);
 	async_register_exceptions_ce();
 	async_register_coroutine_ce(async_ce_completable);
+	async_register_future_ce(async_ce_completable);
 
 	scheduler_registered = async_scheduler_register();
 
@@ -176,30 +178,6 @@ static PHP_MINFO_FUNCTION(true_async)
 /// Functions
 ///////////////////////////////////////////////////////////////////
 
-/* Refuses while no scheduler runs (php -r launches none; after the request's last drain the core
- * turns async off), as TrueAsync. */
-#define THROW_IF_ASYNC_OFF() \
-	do { \
-		if (UNEXPECTED(!ZEND_ASYNC_IS_ACTIVE)) { \
-			zend_throw_error(NULL, "The operation cannot be executed while async is off"); \
-			RETURN_THROWS(); \
-		} \
-	} while (0)
-
-#define THROW_IF_SCHEDULER_CONTEXT() \
-	do { \
-		if (UNEXPECTED(ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) { \
-			zend_throw_error(NULL, "The operation cannot be executed in the scheduler context"); \
-			RETURN_THROWS(); \
-		} \
-	} while (0)
-
-#define THROW_IF_UNAVAILABLE() \
-	do { \
-		THROW_IF_ASYNC_OFF(); \
-		THROW_IF_SCHEDULER_CONTEXT(); \
-	} while (0)
-
 ZEND_FUNCTION(Async_spawn)
 {
 	zend_fcall_info fci;
@@ -260,8 +238,9 @@ ZEND_FUNCTION(Async_spawn)
 	RETURN_OBJ_COPY(&coroutine->std);
 }
 
-/* Waits for a coroutine (S3.md 4.1 and 4.8): the result and the exception are read from the finished
- * coroutine in place, as TrueAsync replays a finished coroutine (coroutine.c:1040-1068). */
+/* Waits for a coroutine (S3.md 4.1 and 4.8) or a Future (S5.md section 4): the result and the
+ * exception are read from the finished target in place, as TrueAsync replays a finished coroutine
+ * (coroutine.c:1040-1068). */
 ZEND_FUNCTION(Async_await)
 {
 	zend_object *awaitable = NULL;
@@ -272,7 +251,20 @@ ZEND_FUNCTION(Async_await)
 		Z_PARAM_OBJ_OF_CLASS(awaitable, async_ce_completable)
 	ZEND_PARSE_PARAMETERS_END();
 
-	/* Coroutine is the only Completable until events come (S4). */
+	/* A Future is marked observed on entry, as in TrueAsync (async.c:318-320; dev/plans/S5.md, section 4). */
+	if (awaitable->ce == async_ce_future) {
+		async_future_event_t *future = async_future_event_from_object(awaitable);
+
+		if (UNEXPECTED(future == NULL)) {
+			zend_throw_exception(async_ce_async_exception, "Future has no state", 0);
+			RETURN_THROWS();
+		}
+
+		future->base.flags |= ASYNC_EVENT_F_RESULT_USED | ASYNC_EVENT_F_EXC_CAUGHT;
+		async_future_await(future, return_value);
+		return;
+	}
+
 	ZEND_ASSERT(awaitable->ce == async_ce_coroutine);
 	async_coroutine_t *target = async_coroutine_from_object(awaitable);
 

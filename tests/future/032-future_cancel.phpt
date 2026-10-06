@@ -1,7 +1,5 @@
 --TEST--
 Future: cancel() rejects pending future; idempotent on already-completed; custom cancellation
---XFAIL--
-Not implemented yet: S5.2 of dev/PLAN.md
 --FILE--
 <?php
 

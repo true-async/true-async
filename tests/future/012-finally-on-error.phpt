@@ -1,7 +1,5 @@
 --TEST--
 Future::finally() - executes on error
---XFAIL--
-Not implemented yet: S5.2 of dev/PLAN.md
 --FILE--
 <?php
 

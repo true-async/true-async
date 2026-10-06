@@ -703,3 +703,13 @@ stack options were shown with the code).
 - 2026-10-06 `tools/test.py` runs the tests with `-d opcache.jit=off` (S6.2). Why: nine reference
   `exec/` tests skip unless the setting reads `0` or `off`, and the core's default `disable` is the
   same setting.
+- 2026-10-06 The chain drain arms its helper microtask before each mapper call that leaves items
+  behind it, instead of once per coroutine entry as TrueAsync's iterator (S5.md section 3). Why: a
+  resumed mapper's completion queues items after the tick found the FIFO empty, and a mapper that
+  then awaits a sibling behind it deadlocked (the Critic, `future/111`).
+- 2026-10-06 An `exit()` in a mapper stops the drain: no further mapper runs and the child stays
+  pending (S5.md section 3). Why: TrueAsync rejects the child with the exit object, and the
+  scheduler's exit cancellation did not reach a helper spawned after it (the Critic, `future/107`).
+- 2026-10-06 `Future` and `FutureState` refuse `clone`; a second `Future::__construct()` releases
+  what the first gave (S5.md section 8, item 8). Why: TrueAsync's clone gives a `Future` with no
+  event, and its second `__construct()` leaks a reference.

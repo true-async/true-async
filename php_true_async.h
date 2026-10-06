@@ -54,6 +54,30 @@ ZEND_END_MODULE_GLOBALS(true_async)
 ZEND_EXTERN_MODULE_GLOBALS(true_async)
 #define ASYNC_G(v) ZEND_MODULE_GLOBALS_ACCESSOR(true_async, v)
 
+/* Refuses while no scheduler runs (php -r launches none; after the request's last drain the core
+ * turns async off), as TrueAsync. */
+#define THROW_IF_ASYNC_OFF() \
+	do { \
+		if (UNEXPECTED(!ZEND_ASYNC_IS_ACTIVE)) { \
+			zend_throw_error(NULL, "The operation cannot be executed while async is off"); \
+			RETURN_THROWS(); \
+		} \
+	} while (0)
+
+#define THROW_IF_SCHEDULER_CONTEXT() \
+	do { \
+		if (UNEXPECTED(ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) { \
+			zend_throw_error(NULL, "The operation cannot be executed in the scheduler context"); \
+			RETURN_THROWS(); \
+		} \
+	} while (0)
+
+#define THROW_IF_UNAVAILABLE() \
+	do { \
+		THROW_IF_ASYNC_OFF(); \
+		THROW_IF_SCHEDULER_CONTEXT(); \
+	} while (0)
+
 #if defined(ZTS) && defined(COMPILE_DL_TRUE_ASYNC)
 ZEND_TSRMLS_CACHE_EXTERN()
 #endif

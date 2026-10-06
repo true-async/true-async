@@ -1,7 +1,5 @@
 --TEST--
 Future - full transformation chain with map, catch, finally
---XFAIL--
-Not implemented yet: S5.2 of dev/PLAN.md
 --FILE--
 <?php
 

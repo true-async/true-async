@@ -1,7 +1,5 @@
 --TEST--
 Future::map() - chaining multiple transformations
---XFAIL--
-Not implemented yet: S5.2 of dev/PLAN.md
 --FILE--
 <?php
 

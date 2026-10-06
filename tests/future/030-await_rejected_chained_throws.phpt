@@ -1,7 +1,5 @@
 --TEST--
 Future::await() on rejected future via chained call throws exception without warning
---XFAIL--
-Not implemented yet: S5.2 of dev/PLAN.md
 --FILE--
 <?php
 

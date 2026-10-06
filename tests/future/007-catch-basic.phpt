@@ -1,7 +1,5 @@
 --TEST--
 Future::catch() - basic error recovery
---XFAIL--
-Not implemented yet: S5.2 of dev/PLAN.md
 --FILE--
 <?php
 

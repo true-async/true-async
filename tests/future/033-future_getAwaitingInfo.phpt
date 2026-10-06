@@ -1,7 +1,5 @@
 --TEST--
 Future: getAwaitingInfo() returns single-element array with FutureState info string
---XFAIL--
-Not implemented yet: S5.2 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -1,7 +1,5 @@
 --TEST--
 Future::finally() - registering on an already-completed/rejected future spawns mapper immediately
---XFAIL--
-Not implemented yet: S5.2 of dev/PLAN.md
 --FILE--
 <?php
 

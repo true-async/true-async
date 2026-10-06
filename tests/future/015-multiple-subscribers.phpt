@@ -1,7 +1,5 @@
 --TEST--
 Future - multiple map subscribers on same future
---XFAIL--
-Not implemented yet: S5.2 of dev/PLAN.md
 --FILE--
 <?php
 

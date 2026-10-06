@@ -1,7 +1,5 @@
 --TEST--
 Future: isCompleted()/isCancelled() across pending, completed, rejected and cancelled states
---XFAIL--
-Not implemented yet: S5.2 of dev/PLAN.md
 --FILE--
 <?php
 

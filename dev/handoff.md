@@ -135,13 +135,18 @@ release core (`dev/BENCHMARKS.md`, S4.2 entry) and `bench/alloc_count.so`.
 
 ## S5
 
-S5.1 done 2026-10-05: `dev/plans/S5.md` and `tests/lists/S5.txt` (135 tests with `--XFAIL--`). Next
-is S5.2, which waits for S4's wait-record layer on `main` (needs N1, N2, N9 of the note's section
-7); `timeout()` (S5.4) waits for `delay()`. S4.1 answers N1-N9 in its note; a change S5 needs in the
-layer goes through the coordinator. In a fresh container: build both cores with
+S5.2 done 2026-10-06: `Future` and `FutureState` in `src/future.c`, `await()` and `Future::await()`
+on a Future, own tests `future/100`-`113`. Next is S5.3: `$cancellation` on `await()` and
+`Future::await()`, the `await_*` family, `OperationCanceledException`; the block of N records is
+S4.2's `waker.block` (S5.md section 7, N4-N5 "As built"). `timeout()` (S5.4) waits for `delay()`.
+Known, not fixed: a bailout while a coroutine is parked in `async_future_await()` leaks the wait's
+reference to the event, as `scheduler_await` leaks its target's (the Critic, low). A change S5
+needs in the layer goes through the coordinator. In a fresh container: build both cores with
 `tools/ci/build-core.sh` (`RUNNER_TEMP=/root` for ASAN, then `TRUE_ASYNC_CORE_SRC=/root/core-asan/php-src`),
 `git fetch --unshallow` before `check-lists.py` (a shallow clone takes its oldest commit as a list's
-freeze), the reference clone at `REFERENCE` for `--reference`.
+freeze), the reference clone at `REFERENCE` for `--reference`. `gen_stub.php` cannot download
+PHP-Parser through the proxy: `git clone --depth 1 --branch v5.6.1 https://github.com/nikic/PHP-Parser
+build/PHP-Parser-5.6.1` in the core checkout first.
 
 ## Later steps
 

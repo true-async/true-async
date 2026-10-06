@@ -26,6 +26,14 @@ struct _async_fiber_context_s
 	zend_execute_data *execute_data; /* the parked frame, stored by suspend(); stale while it runs */
 };
 
+/* An exit or the graceful exit that closes a dropped Fiber (zend_fibers.c, zend_fiber_release_coroutine):
+ * an order to stop, not a Throwable, so it can neither take a previous nor become one
+ * (zend_exception_set_previous would add a dynamic property to it, or drop it). */
+static zend_always_inline bool async_is_exit_object(const zend_object *error)
+{
+	return zend_is_graceful_exit(error) || zend_is_unwind_exit(error);
+}
+
 /* Registers the scheduler slots with the core; MINIT, once the extension is enabled. False when the
  * core refused (it warned why): the extension stays loaded and inert. */
 bool async_scheduler_register(void);
