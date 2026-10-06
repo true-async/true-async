@@ -272,10 +272,10 @@ Goal: the scheduler's idle wait and timers on one per-thread `php_io_queue` (the
 with ior, the Poll queue otherwise), coded only against `php_io_queue_ops`; the S6 provider
 submits to the same queue, so completion dispatch is designed here once for both.
 Done when: S3 + S4 lists pass; `delay(1000)` costs under 50 ms of user CPU; a test-only C
-function wakes the loop from another pthread (through the core's `NotifyHandle`, found by class
-name until the core has a C constructor for it).
+function wakes the loop from another pthread (through wake descriptors of the reactor's own until
+the core exports the pair behind `NotifyHandle`, `RFC-CHANGES.md` 1).
 Tier: T2. Roles: Critic on S4.1, Critic after S4.2 and after S4.3.
-Active: S4.5
+Active: S4.6
 
 - [x] S4.1 Design note `dev/plans/S4.md`: completion dispatch for scheduler-owned ops and provider
       ops; idle wait in `queue->wait()` with its `EDEADLK` and `EINTR` answers; deadlock decided
@@ -339,9 +339,18 @@ Active: S4.5
         4 minor findings fixed or ruled on by the Sage (refire every 100 ms, arm only with a started
         coroutine, withdrawn when the drain ends, two limits documented), each fix caught by a test
         when reverted.
-- [ ] S4.5 Cross-thread wakeup on the core's `NotifyHandle`; the request for its C constructor
+- [x] S4.5 Cross-thread wakeup on the core's `NotifyHandle`; the request for its C constructor
       filed by `RFC-CHANGES.md`.
       done: a test-only C function wakes the parked loop from another pthread, on debug and ASAN
+      handoff: done 2026-10-06: triggers in `src/reactor.c` (`async_trigger_*`, the TRIGGER kind, the
+        wakeup POLL with the event's new `complete`), as built in `dev/plans/S4.md` 3.6. No
+        `NotifyHandle`: the handle dies with the request while a thread may hold a trigger, so the
+        reactor keeps an eventfd, pipe or socket pair per thread (the Sage); `RFC-CHANGES.md` 1 asks
+        the core to export it. Test hooks `TrueAsync\Test\trigger_*()`, tests `reactor/026`-`036`.
+        The Critic's design round (1 critical, 5 major) and code round (3 major, 7 minor) fixed or
+        ruled on; each tested behaviour caught by a test when reverted. All 837 listed tests:
+        `pocs-dbg` 620 PASS, 8 SKIP, 209 XFAIL; `pocs-asan` 605 PASS, 25 SKIP, 207 XFAIL;
+        `pocs-win` left to CI.
 - [ ] S4.6 Stage review: Critic after S4.2-S4.5, coverage of the reactor code, Mull on the stage
       diff, fuzz over 100 seeds; the Ring's lateness with many Timer ops (`dev/BENCHMARKS.md`,
       S4.4: a timer heap of the reactor's own, as libuv's, or a core change to the Ring's backlog).

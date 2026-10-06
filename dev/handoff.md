@@ -128,18 +128,19 @@ Written 2026-10-06. S3 closed: S3.24 re-ran its Done when on the final core; S4,
 
 ## S4
 
-S4.4 done 2026-10-06: `delay()` (`async_reactor_delay()` in `src/reactor.c`, the TIMER kind) and
-D16 (`exit_deadline_*` in `src/scheduler.c`, its Timer on the reactor's `own` list, refired every
-100 ms while coroutines remain, withdrawn when the drain ends); as built in `dev/plans/S4.md` 3.7.
-The cores now carry `--with-zlib` (`tools/ci/build-core.sh`); a container whose prefixes predate it
-skips `edge_cases/016`, `017`. `gc/020`, `023` stay XFAIL for the core's awaited collection (S8).
-Next is S4.5: cross-thread wakeup on the core's `NotifyHandle` (S4.md 3.6), with the event's
-`complete` pointer for the wakeup POLL op. The S6 thread edits `src/reactor.c` for S6.3 (S6.md section
-13): it rebases onto S4.4; the queue-creation `Error` moves into `reactor_submit()`. Open for Edmond: a
-pcntl handler that waits (`PLAN.md` "Open questions"). For S4.6: the Ring's lateness with many Timer
-ops (`dev/BENCHMARKS.md`, S4.4). A test that needs spawned coroutines parked before main goes on
-yields with `suspend()`: a short `delay()` may wake in main's own tick (U2) and run on first. Full
-local runs need `mysql-server-core-8.0`; the B1 count needs a release core and `bench/alloc_count.so`.
+S4.5 done 2026-10-06: triggers another thread fires (`async_trigger_*` in `src/reactor.c`, the
+TRIGGER kind, test hooks `TrueAsync\Test\trigger_*()`), woken by a POLL op on wake descriptors the
+reactor keeps per thread in the module globals (no `NotifyHandle`; `dev/plans/S4.md` 3.6 "As built
+(S4.5)", `RFC-CHANGES.md` 1). The deadlock counts a trigger between its start and stop; a fork
+rebuild cancels the parent's trigger waiters and makes the child's descriptors. S4.4 before it:
+`delay()` and D16 (S4.md 3.7). Next is S4.6, the stage review: Critic over S4.2-S4.5, coverage,
+Mull, fuzz over 100 seeds, and the Ring's lateness with many Timer ops (`dev/BENCHMARKS.md`, S4.4).
+The S6 thread edits `src/reactor.c` for S6.3 (S6.md section 13) and changes `reactor/021`'s parent
+line (its waitpid now parks). Open for Edmond: a pcntl handler that waits (`PLAN.md` "Open
+questions"). `gc/020`, `023` stay XFAIL for the core's awaited collection (S8). A test that needs
+spawned coroutines parked before main goes on yields with `suspend()`: a short `delay()` may wake in
+main's own tick (U2). Full local runs need `mysql-server-core-8.0`; the B1 count needs a release core
+and `bench/alloc_count.so`.
 
 ## S5
 

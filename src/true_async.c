@@ -82,6 +82,13 @@ static PHP_GINIT_FUNCTION(true_async)
 	ZEND_TSRMLS_CACHE_UPDATE();
 #endif
 	memset(true_async_globals, 0, sizeof(*true_async_globals));
+	true_async_globals->wake_pair.read_fd = SOCK_ERR;
+	true_async_globals->wake_pair.write_fd = SOCK_ERR;
+}
+
+static PHP_GSHUTDOWN_FUNCTION(true_async)
+{
+	async_wake_pair_close(&true_async_globals->wake_pair);
 }
 
 static PHP_MINIT_FUNCTION(true_async)
@@ -143,6 +150,8 @@ static PHP_RINIT_FUNCTION(true_async)
 	ASYNC_G(test_typed_unlinks) = 0;
 	ASYNC_G(test_aborts) = 0;
 	ASYNC_G(test_exit_deadline_ms) = 0;
+	ASYNC_G(test_trigger) = NULL;
+	ASYNC_G(test_firer) = NULL;
 #endif
 
 	return SUCCESS;
@@ -152,6 +161,9 @@ static PHP_RSHUTDOWN_FUNCTION(true_async)
 {
 	if (scheduler_registered) {
 		async_scheduler_request_shutdown();
+#ifdef TRUE_ASYNC_TEST_HOOKS
+		async_test_hooks_request_shutdown();
+#endif
 		async_reactor_request_shutdown();
 	}
 
@@ -474,7 +486,7 @@ zend_module_entry true_async_module_entry = {
 	PHP_TRUE_ASYNC_VERSION,
 	PHP_MODULE_GLOBALS(true_async),
 	PHP_GINIT(true_async),
-	NULL,
+	PHP_GSHUTDOWN(true_async),
 	NULL,
 	STANDARD_MODULE_PROPERTIES_EX
 };

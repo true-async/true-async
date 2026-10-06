@@ -8,6 +8,7 @@ Where to look in this repository and around it. Pointers only.
 - `dev/handoff.md`: where the last session stopped and the open questions; the plan outranks it.
 - `dev/PRINCIPLES.md`: trade-offs settled in advance; read when a plan fork or a decision needs one.
 - `dev/DECISIONS.md`: what was decided and why, including the rejected options.
+- `dev/RFC-CHANGES.md`: the change requests to bukka's RFCs, each with its need and state.
 - `CHANGELOG.md`: user-visible changes, Keep a Changelog format.
 - `dev/SECURITY.md`: threat model, the security pass of every T2 stage, the journal of security
   decisions, open findings.
@@ -49,8 +50,8 @@ Where to look in this repository and around it. Pointers only.
   the run queue and switches, the scheduler coroutine, main's coroutine, cancellation, deadlock
   resolution, the request lifecycle.
 - `src/reactor.c`, `.h`: the reactor: the thread's `php_io_queue`, IO events on its waits and own
-  lists, dispatch, the idle wait, the rebuild after `fork()`, `delay()`'s Timer wait
-  (`dev/plans/S4.md` section 3).
+  lists, dispatch, the idle wait, the rebuild after `fork()`, `delay()`'s Timer wait, triggers
+  another thread fires through the thread's wake descriptors (`dev/plans/S4.md` section 3).
 - `src/coroutine.c`, `.h`: the `Async\Coroutine` object, its body's run and its finalize.
 - `src/true_async_API.c`, `.h`: the internal API: the callbacks vector and its notify, finish and
   switch handlers, the wait record.
@@ -88,6 +89,3 @@ Where to look in this repository and around it. Pointers only.
   (https://claude.ai/artifact/9oHVzBL9FtYrsACfRJnMpF); it lags behind `PLAN.md`, the progress page
   above does not.
 
-## Not yet present
-
-`RFC-CHANGES.md`: starts with the first change request to an RFC.

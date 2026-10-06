@@ -45,6 +45,9 @@ if test "$PHP_TRUE_ASYNC" != "no"; then
   if test "$PHP_TRUE_ASYNC_TEST_HOOKS" != "no"; then
     AC_DEFINE([TRUE_ASYNC_TEST_HOOKS], [1], [Define to 1 to build the test hooks.])
     true_async_sources="$true_async_sources src/test_hooks.c"
+    dnl trigger_fire() starts a thread; glibc before 2.34 keeps pthread_create in libpthread.
+    PHP_ADD_LIBRARY([pthread],, [TRUE_ASYNC_SHARED_LIBADD])
+    PHP_SUBST([TRUE_ASYNC_SHARED_LIBADD])
   fi
 
   if test "$PHP_TRUE_ASYNC_FUZZ" != "no"; then

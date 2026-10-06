@@ -47,6 +47,13 @@
 
 #include <signal.h>
 
+#ifdef PHP_WIN32
+#include <process.h>
+#else
+#include <pthread.h>
+#include <time.h>
+#endif
+
 /* A stand-in awaitable: the flags word and a vector, as the event header will have. */
 typedef struct
 {
@@ -1682,8 +1689,8 @@ static ZEND_FUNCTION(reactor_wait)
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_reactor_state, 0, 0, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
 
-/* Whether the reactor has a queue, the lengths of its waits and own lists, and the ops its queue still counts
- * (count_pending(): a withdrawn op is not among them). */
+/* Whether the reactor has a queue, the lengths of its waits, own and triggers lists, the triggers
+ * started, and the ops its queue still counts (count_pending(): a withdrawn op is not among them). */
 static ZEND_FUNCTION(reactor_state)
 {
 	ZEND_PARSE_PARAMETERS_NONE();
@@ -1701,10 +1708,18 @@ static ZEND_FUNCTION(reactor_state)
 		own++;
 	}
 
+	zend_long triggers = 0;
+
+	for (const async_reactor_link_t *link = reactor->triggers.next; link != &reactor->triggers; link = link->next) {
+		triggers++;
+	}
+
 	array_init(return_value);
 	add_assoc_bool(return_value, "queue", reactor->queue != NULL);
 	add_assoc_long(return_value, "waits", waits);
 	add_assoc_long(return_value, "own", own);
+	add_assoc_long(return_value, "triggers", triggers);
+	add_assoc_long(return_value, "started", (zend_long) reactor->started_triggers);
 	add_assoc_long(return_value,
 				   "pending",
 				   reactor->queue != NULL ? (zend_long) reactor->queue->ops->count_pending(reactor->queue) : 0);
@@ -1748,6 +1763,296 @@ static ZEND_FUNCTION(set_exit_deadline)
 	ASYNC_G(test_exit_deadline_ms) = ms;
 }
 
+///////////////////////////////////////////////////////////////////
+/// Triggers (dev/plans/S4.md 3.6, point 6)
+///////////////////////////////////////////////////////////////////
+
+/* A thread that fires the test trigger after a delay; no PHP code runs in it. */
+typedef struct
+{
+	async_trigger_t *trigger;
+	zend_long delay_ms;
+#ifdef PHP_WIN32
+	HANDLE thread;
+#else
+	pthread_t thread;
+	pid_t pid; /* a forked child has no copy of the thread to join */
+#endif
+} test_firer_t;
+
+#ifdef PHP_WIN32
+static unsigned __stdcall test_firer_run(void *arg)
+#else
+static void *test_firer_run(void *arg)
+#endif
+{
+	const test_firer_t *firer = arg;
+
+#ifdef PHP_WIN32
+	Sleep((DWORD) firer->delay_ms);
+#else
+	struct timespec delay = {
+		.tv_sec = (time_t) (firer->delay_ms / 1000),
+		.tv_nsec = (long) (firer->delay_ms % 1000) * 1000000,
+	};
+
+	while (nanosleep(&delay, &delay) != 0 && errno == EINTR) {
+	}
+#endif
+
+	async_trigger_fire(firer->trigger);
+
+#ifdef PHP_WIN32
+	return 0;
+#else
+	return NULL;
+#endif
+}
+
+static void test_firer_join(void)
+{
+	test_firer_t *firer = ASYNC_G(test_firer);
+
+	if (firer == NULL) {
+		return;
+	}
+
+#ifdef PHP_WIN32
+	WaitForSingleObject(firer->thread, INFINITE);
+	CloseHandle(firer->thread);
+#else
+	if (EXPECTED(firer->pid == getpid())) {
+		pthread_join(firer->thread, NULL);
+	}
+#endif
+	efree(firer);
+	ASYNC_G(test_firer) = NULL;
+}
+
+static void test_trigger_free(void)
+{
+	test_firer_join();
+
+	if (ASYNC_G(test_trigger) != NULL) {
+		async_trigger_release(ASYNC_G(test_trigger));
+		ASYNC_G(test_trigger) = NULL;
+	}
+}
+
+void async_test_hooks_request_shutdown(void)
+{
+	test_trigger_free();
+}
+
+static async_trigger_t *test_trigger_get(void)
+{
+	async_trigger_t *trigger = ASYNC_G(test_trigger);
+
+	if (UNEXPECTED(trigger == NULL)) {
+		zend_throw_error(NULL, "No test trigger: call TrueAsync\\Test\\trigger_new() first");
+	}
+
+	return trigger;
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_trigger_none, 0, 0, IS_VOID, 0)
+ZEND_END_ARG_INFO()
+
+/* The request's test trigger, replacing the one there was. */
+static ZEND_FUNCTION(trigger_new)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	test_trigger_free();
+	ASYNC_G(test_trigger) = async_trigger_new();
+
+	if (UNEXPECTED(ASYNC_G(test_trigger) == NULL)) {
+		RETURN_THROWS();
+	}
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_trigger_fire, 0, 0, IS_VOID, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, delay_ms, IS_LONG, 0, "-1")
+ZEND_END_ARG_INFO()
+
+/* Fires the test trigger on this thread for a negative `delay_ms`, otherwise from a new thread
+ * after `delay_ms` milliseconds. The thread is joined by the next trigger_fire(), trigger_free(),
+ * trigger_new() or the request's end. */
+static ZEND_FUNCTION(trigger_fire)
+{
+	zend_long delay_ms = -1;
+
+	ZEND_PARSE_PARAMETERS_START(0, 1)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_LONG(delay_ms)
+	ZEND_PARSE_PARAMETERS_END();
+
+	async_trigger_t *trigger = test_trigger_get();
+
+	if (UNEXPECTED(trigger == NULL)) {
+		RETURN_THROWS();
+	}
+
+	test_firer_join();
+
+	if (delay_ms < 0) {
+		async_trigger_fire(trigger);
+		return;
+	}
+
+	test_firer_t *firer = emalloc(sizeof(test_firer_t));
+	firer->trigger = trigger;
+	firer->delay_ms = delay_ms;
+#ifndef PHP_WIN32
+	firer->pid = getpid();
+#endif
+
+#ifdef PHP_WIN32
+	firer->thread = (HANDLE) _beginthreadex(NULL, 0, test_firer_run, firer, 0, NULL);
+	const bool started = firer->thread != 0;
+#else
+	const bool started = pthread_create(&firer->thread, NULL, test_firer_run, firer) == 0;
+#endif
+
+	if (UNEXPECTED(!started)) {
+		efree(firer);
+		zend_throw_error(NULL, "Cannot start the firing thread");
+		RETURN_THROWS();
+	}
+
+	ASYNC_G(test_firer) = firer;
+}
+
+/* Parks the current coroutine on the test trigger (the TRIGGER kind) until a fire wakes it. */
+static ZEND_FUNCTION(trigger_wait)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	async_coroutine_t *waiter = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
+
+	if (UNEXPECTED(waiter == NULL || ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) {
+		zend_throw_error(NULL, "trigger_wait() requires a running coroutine");
+		RETURN_THROWS();
+	}
+
+	async_trigger_t *trigger = test_trigger_get();
+
+	if (UNEXPECTED(trigger == NULL)) {
+		RETURN_THROWS();
+	}
+
+	async_wait_end(waiter);
+	async_callbacks_reserve(&trigger->base.callbacks, 1);
+
+	if (UNEXPECTED(!async_trigger_link(&waiter->waker.records[0], waiter, trigger))) {
+		RETURN_THROWS();
+	}
+
+	if (UNEXPECTED(!ZEND_ASYNC_SUSPEND())) {
+		RETURN_THROWS();
+	}
+}
+
+/* Counts the test trigger for the deadlock, as a holder with a callback of its own does. */
+static ZEND_FUNCTION(trigger_start)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	async_trigger_t *trigger = test_trigger_get();
+
+	if (UNEXPECTED(trigger == NULL || !async_trigger_start(trigger))) {
+		RETURN_THROWS();
+	}
+}
+
+static ZEND_FUNCTION(trigger_stop)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	async_trigger_t *trigger = test_trigger_get();
+
+	if (UNEXPECTED(trigger == NULL)) {
+		RETURN_THROWS();
+	}
+
+	async_trigger_stop(trigger);
+}
+
+static ZEND_FUNCTION(trigger_free)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	test_trigger_free();
+}
+
+/* A holder that waits with a callback of its own, as S5's remote Future (S4.md 3.6, point 2). */
+typedef struct
+{
+	async_event_callback_t callback;
+	test_event_t *event;
+} test_relay_t;
+
+static void test_relay_dispose(async_event_callback_t *callback, async_awaitable_t *target)
+{
+	test_relay_t *relay = (test_relay_t *) callback;
+
+	async_trigger_stop((async_trigger_t *) target);
+	test_event_release(relay->event);
+	efree(relay);
+}
+
+static void
+test_relay_run(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
+{
+	(void) result;
+	(void) exception;
+
+	async_trigger_t *trigger = (async_trigger_t *) target;
+	test_event_t *event = ((test_relay_t *) callback)->event;
+
+	async_callbacks_remove(&trigger->base.callbacks, callback);
+
+	if (EXPECTED(!(event->base.flags & ASYNC_EVENT_F_CLOSED))) {
+		event->base.flags |= ASYNC_EVENT_F_CLOSED;
+		event->base.ref_count++;
+		async_callbacks_notify((async_awaitable_t *) event, &event->base.callbacks, NULL, NULL);
+		test_event_release(event);
+	}
+
+	test_relay_dispose(callback, target);
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_trigger_relay, 0, 1, IS_VOID, 0)
+	ZEND_ARG_OBJ_INFO(0, event, TrueAsync\\Test\\Event, 0)
+ZEND_END_ARG_INFO()
+
+/* Starts the test trigger for a callback that fires `event` at the trigger's next wake, then stops it
+ * and leaves: a holder with no coroutine on the trigger. */
+static ZEND_FUNCTION(trigger_relay)
+{
+	zend_object *event_object;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_OBJ_OF_CLASS(event_object, test_event_ce)
+	ZEND_PARSE_PARAMETERS_END();
+
+	async_trigger_t *trigger = test_trigger_get();
+
+	if (UNEXPECTED(trigger == NULL || !async_trigger_start(trigger))) {
+		RETURN_THROWS();
+	}
+
+	test_relay_t *relay = emalloc(sizeof(test_relay_t));
+	relay->callback.flags = 0;
+	relay->callback.callback = test_relay_run;
+	relay->callback.dispose = test_relay_dispose;
+	relay->event = (test_event_t *) async_awaitable_from_object(event_object);
+	relay->event->base.ref_count++;
+
+	async_callbacks_reserve(&trigger->base.callbacks, 1);
+	async_callbacks_push_reserved(&trigger->base.callbacks, &relay->callback);
+}
+
 /* clang-format off */
 const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\callbacks_scenario", ZEND_FN(callbacks_scenario), arginfo_callbacks_scenario, 0, NULL, NULL)
@@ -1768,6 +2073,13 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\set_exit_deadline", ZEND_FN(set_exit_deadline), arginfo_set_exit_deadline, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\reactor_state", ZEND_FN(reactor_state), arginfo_reactor_state, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\reactor_use_poll_queue", ZEND_FN(reactor_use_poll_queue), arginfo_reactor_use_poll_queue, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\trigger_new", ZEND_FN(trigger_new), arginfo_trigger_none, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\trigger_fire", ZEND_FN(trigger_fire), arginfo_trigger_fire, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\trigger_wait", ZEND_FN(trigger_wait), arginfo_trigger_none, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\trigger_start", ZEND_FN(trigger_start), arginfo_trigger_none, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\trigger_stop", ZEND_FN(trigger_stop), arginfo_trigger_none, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\trigger_free", ZEND_FN(trigger_free), arginfo_trigger_none, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\trigger_relay", ZEND_FN(trigger_relay), arginfo_trigger_relay, 0, NULL, NULL)
 #ifdef ZEND_CHECK_STACK_LIMIT
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\call_on_main_stack", ZEND_FN(call_on_main_stack), arginfo_call_on_main_stack, 0, NULL, NULL)
 #endif

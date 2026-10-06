@@ -32,13 +32,41 @@ struct _async_reactor_link_s
 /* One op the reactor submits and the waiters of its completion (S4.md 3.2). On the heap: a record
  * waiting for it owns a reference, so the op the queue points to outlives a frame a bailout
  * unwinds, until the record's unlink withdraws it. */
+typedef struct _async_io_event_s async_io_event_t;
+
+struct _async_io_event_s
+{
+	async_event_t base;      /* ref_count: the records and the event's other holders */
+	php_io_op op;            /* built by the submitter; the queue owns it while it is submitted */
+	php_io_op_result result; /* the completion's, written before the notify */
+	/* Runs instead of the default completion (CLOSED, off the list, notify) with `result` written;
+	 * NULL for the default. */
+	void (*complete)(async_io_event_t *event);
+	async_reactor_link_t reactor_link; /* on one of the reactor's lists while the op is submitted */
+};
+
+/* The thread's wake descriptors (S4.md 3.6): an eventfd, a pipe, or a loopback socket pair on
+ * Windows. In the module globals, made at the thread's first trigger and closed at its GSHUTDOWN, so
+ * a thread that still holds a trigger never writes a descriptor a request closed. */
 typedef struct
 {
-	async_event_t base;                /* ref_count: the records and the event's other holders */
-	php_io_op op;                      /* built by the submitter; the queue owns it while it is submitted */
-	php_io_op_result result;           /* the completion's, written before the notify */
-	async_reactor_link_t reactor_link; /* on one of the reactor's lists while the op is submitted */
-} async_io_event_t;
+	php_socket_t read_fd;  /* SOCK_ERR until made */
+	php_socket_t write_fd; /* read_fd for an eventfd */
+#ifndef PHP_WIN32
+	pid_t pid; /* the process that made them: a forked child makes its own */
+#endif
+} async_wake_pair_t;
+
+/* An event another thread fires (S4.md 3.6), TrueAsync's trigger event (libuv_reactor.c:4466-4584).
+ * Owned by its thread; its holders keep it alive while other threads may fire it. */
+typedef struct
+{
+	async_event_t base;                /* ref_count: its holders; never CLOSED */
+	const async_wake_pair_t *pair;     /* the owner thread's, written by a fire on any thread */
+	atomic_bool fired;                 /* set by a fire, cleared by the wakeup's walk before the notify */
+	uint32_t start_count;              /* the TRIGGER records and the holders that started it */
+	async_reactor_link_t reactor_link; /* on the reactor's `triggers` from its creation to its free */
+} async_trigger_t;
 
 /* The thread's reactor, in ASYNC_G(reactor). */
 typedef struct
@@ -51,9 +79,12 @@ typedef struct
 	/* The IO events whose op is submitted: nothing in the run queue ends their waits, so while the
 	 * list has one, an idle scheduler waits instead of resolving a deadlock (S4.md 3.4). */
 	async_reactor_link_t waits;
-	/* The reactor's own ops (the D16 deadline): no coroutine waits for them, so they keep none from a
-	 * deadlock; a fork rebuild submits them again on the child's queue. */
+	/* The reactor's own ops (the wakeup, the D16 deadline): no coroutine waits for them, so they keep
+	 * none from a deadlock; a fork rebuild submits them again on the child's queue. */
 	async_reactor_link_t own;
+	async_reactor_link_t triggers; /* every live trigger of the request, walked by the wakeup */
+	uint32_t started_triggers;     /* the triggers started: each may wake a coroutine (S4.md 3.4) */
+	async_io_event_t *wakeup;      /* the POLL op on the wake pair, armed from the first trigger on */
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	bool test_poll_queue; /* TrueAsync\Test\reactor_use_poll_queue(): the Poll queue where the Ring exists */
 #endif
@@ -86,14 +117,37 @@ void async_io_event_orphan(async_io_event_t *event);
  * waiter to leave an event that has not fired withdraws its op. */
 void async_io_record_unlink(async_coroutine_event_callback_t *record);
 
+/* Closes the wake pair at the thread's end. */
+void async_wake_pair_close(async_wake_pair_t *pair);
+
+/* A trigger with one reference, the caller's, on the thread's wakeup; NULL with an Error. */
+async_trigger_t *async_trigger_new(void);
+
+void async_trigger_release(async_trigger_t *trigger);
+
+/* Wakes the trigger's waiters at the owner thread's next poll; any thread, async-signal-safe.
+ * Edge-triggered: fires before the next poll make one wake, and one that finds nobody waiting is
+ * dropped, as TrueAsync's. */
+void async_trigger_fire(async_trigger_t *trigger);
+
+/* A holder that waits with a callback of its own counts the trigger for the deadlock between these
+ * two, as TrueAsync's start() and stop(); a TRIGGER record does it itself. A stop of a trigger that
+ * is not started does nothing. The start is false with an Error from a fork rebuild. */
+bool async_trigger_start(async_trigger_t *trigger);
+void async_trigger_stop(async_trigger_t *trigger);
+
+/* Links `record` of the running `waiter` into the trigger: the TRIGGER kind. The caller reserved
+ * room in the trigger's vector and suspends next. False with an Error, as the start. */
+bool async_trigger_link(async_coroutine_event_callback_t *record, async_coroutine_t *waiter, async_trigger_t *trigger);
+
 /* Parks `waiter`, the running coroutine, on a Timer op for `ms` > 0 milliseconds: delay() (S4.md
  * 3.5). False with the exception that ended the wait (a cancellation). */
 bool async_reactor_delay(async_coroutine_t *waiter, zend_long ms);
 
-/* Whether a submitted op may still wake a coroutine (S4.md 3.4). */
+/* Whether a submitted op or another thread may still wake a coroutine (S4.md 3.4). */
 static zend_always_inline bool async_reactor_has_waits(const async_reactor_t *reactor)
 {
-	return reactor->waits.next != &reactor->waits;
+	return reactor->waits.next != &reactor->waits || reactor->started_triggers != 0;
 }
 
 /* The idle wait (S4.md 3.3), for a reactor that has waits: blocks until the queue completes

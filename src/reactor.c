@@ -28,6 +28,16 @@
 #include <time.h>
 #endif
 
+#ifdef PHP_WIN32
+#include "win32/sockets.h"
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#ifdef __linux__
+#include <sys/eventfd.h>
+#endif
+#endif
+
 ///////////////////////////////////////////////////////////////////
 /// The lists
 ///////////////////////////////////////////////////////////////////
@@ -63,9 +73,142 @@ static zend_always_inline void list_init(async_reactor_link_t *head)
 	head->next = head;
 }
 
+static zend_always_inline void list_add_tail(async_reactor_link_t *head, async_reactor_link_t *link)
+{
+	list_add(head->prev, link);
+}
+
 static zend_always_inline async_io_event_t *io_event_from_link(async_reactor_link_t *link)
 {
 	return (async_io_event_t *) ((char *) link - offsetof(async_io_event_t, reactor_link));
+}
+
+static zend_always_inline async_trigger_t *trigger_from_link(async_reactor_link_t *link)
+{
+	return (async_trigger_t *) ((char *) link - offsetof(async_trigger_t, reactor_link));
+}
+
+///////////////////////////////////////////////////////////////////
+/// The wake pair
+///////////////////////////////////////////////////////////////////
+
+/* The descriptors Io\Poll\NotifyHandle is built on (Ip:693-725), until the core exports them
+ * (RFC-CHANGES.md 1). */
+
+#ifdef PHP_WIN32
+#define WAKE_PAIR_CLOSE(fd) closesocket(fd)
+#else
+#define WAKE_PAIR_CLOSE(fd) close(fd)
+#endif
+
+void async_wake_pair_close(async_wake_pair_t *pair)
+{
+	if (pair->read_fd == SOCK_ERR) {
+		return;
+	}
+
+	if (pair->write_fd != pair->read_fd) {
+		WAKE_PAIR_CLOSE(pair->write_fd);
+	}
+
+	WAKE_PAIR_CLOSE(pair->read_fd);
+	pair->read_fd = SOCK_ERR;
+	pair->write_fd = SOCK_ERR;
+}
+
+/* Makes the pair, closing the one there was (a forked child's copy of its parent's). FAILURE with
+ * errno. */
+static zend_result wake_pair_open(async_wake_pair_t *pair)
+{
+	async_wake_pair_close(pair);
+
+#ifdef __linux__
+	const int fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+
+	if (UNEXPECTED(fd < 0)) {
+		return FAILURE;
+	}
+
+	pair->read_fd = fd;
+	pair->write_fd = fd;
+#elif defined(PHP_WIN32)
+	SOCKET sockets[2];
+
+	if (UNEXPECTED(socketpair(AF_INET, SOCK_STREAM, 0, sockets) != 0)) {
+		return FAILURE;
+	}
+
+	u_long nonblocking = 1;
+	ioctlsocket(sockets[0], FIONBIO, &nonblocking);
+	ioctlsocket(sockets[1], FIONBIO, &nonblocking);
+	pair->read_fd = sockets[0];
+	pair->write_fd = sockets[1];
+#else
+	int fds[2];
+
+	if (UNEXPECTED(pipe(fds) != 0)) {
+		return FAILURE;
+	}
+
+	for (int i = 0; i < 2; i++) {
+		fcntl(fds[i], F_SETFL, fcntl(fds[i], F_GETFL) | O_NONBLOCK);
+		fcntl(fds[i], F_SETFD, FD_CLOEXEC);
+	}
+
+	pair->read_fd = fds[0];
+	pair->write_fd = fds[1];
+#endif
+
+#ifndef PHP_WIN32
+	pair->pid = getpid();
+#endif
+
+	return SUCCESS;
+}
+
+static zend_always_inline bool wake_pair_is_ours(const async_wake_pair_t *pair)
+{
+#ifndef PHP_WIN32
+	return pair->read_fd != SOCK_ERR && pair->pid == getpid();
+#else
+	return pair->read_fd != SOCK_ERR;
+#endif
+}
+
+/* Any thread, async-signal-safe. */
+static void wake_pair_raise(const async_wake_pair_t *pair)
+{
+#ifdef __linux__
+	const uint64_t one = 1;
+	const ssize_t written = write(pair->write_fd, &one, sizeof(one));
+#elif defined(PHP_WIN32)
+	const char one = 1;
+	const int written = send(pair->write_fd, &one, sizeof(one), 0);
+#else
+	const char one = 1;
+	const ssize_t written = write(pair->write_fd, &one, sizeof(one));
+#endif
+	/* A full counter or pipe is readable already: nothing is lost. */
+	(void) written;
+}
+
+static void wake_pair_drain(const async_wake_pair_t *pair)
+{
+#ifdef __linux__
+	uint64_t count;
+	const ssize_t got = read(pair->read_fd, &count, sizeof(count));
+	(void) got;
+#elif defined(PHP_WIN32)
+	char buffer[64];
+
+	while (recv(pair->read_fd, buffer, sizeof(buffer), 0) > 0) {
+	}
+#else
+	char buffer[64];
+
+	while (read(pair->read_fd, buffer, sizeof(buffer)) > 0) {
+	}
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -111,12 +254,111 @@ static php_io_queue *reactor_queue(async_reactor_t *reactor)
 
 static zend_result reactor_submit(async_reactor_t *reactor, async_io_event_t *event, async_reactor_link_t *list);
 
+static zend_string *trigger_record_info(const async_coroutine_event_callback_t *record)
+{
+	(void) record;
+
+	return zend_string_init("await: trigger", sizeof("await: trigger") - 1, false);
+}
+
+static void trigger_record_unlink(async_coroutine_event_callback_t *record)
+{
+	async_trigger_t *trigger = (async_trigger_t *) record->event;
+
+	async_wait_record_remove(record);
+	async_trigger_stop(trigger);
+	async_trigger_release(trigger);
+}
+
+static void
+trigger_record_wake(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
+{
+	(void) target;
+	(void) result;
+	(void) exception;
+
+	async_coroutine_t *waiter = ((async_coroutine_event_callback_t *) callback)->coroutine;
+	async_scheduler_enqueue(&waiter->coroutine, NULL, false);
+}
+
+/* TRIGGER (S4.md 3.6): the record starts the trigger and owns a reference to it. */
+static const async_wait_kind_t trigger_kind = {
+	.info = trigger_record_info,
+	.unlink = trigger_record_unlink,
+};
+
+/* Every coroutine still linked to a trigger at a fork rebuild is the parent's: a child's waiter
+ * starts its trigger, which rebuilds first. Each is cancelled at once, so a fire from a thread the
+ * child starts does not resume a wait the parent started (the Sage). */
+static void triggers_end_parent_waits(async_reactor_t *reactor)
+{
+	reactor->started_triggers = 0;
+
+	for (async_reactor_link_t *link = reactor->triggers.next; link != &reactor->triggers;) {
+		async_trigger_t *trigger = trigger_from_link(link);
+		async_callbacks_vector_t *vector = &trigger->base.callbacks;
+		uint32_t i = 0;
+
+		trigger->start_count = 0;
+		trigger->base.ref_count++;
+
+		/* The cancel's enqueue unlinks the wait, and a removal moves the last element into its slot. */
+		while (i < vector->length) {
+			async_event_callback_t *callback = async_callbacks_slots(vector)[i];
+
+			if (!(callback->flags & ASYNC_CALLBACK_F_RECORD) || callback->kind != &trigger_kind) {
+				i++;
+				continue;
+			}
+
+			async_coroutine_event_callback_t *record = (async_coroutine_event_callback_t *) callback;
+			async_coroutine_t *waiter = record->coroutine;
+
+			waiter->coroutine.flags &= ~ASYNC_COROUTINE_F_PROTECTED;
+			async_coroutine_cancel(
+					waiter,
+					async_new_exception(async_ce_cancellation,
+										"The wait was started before fork() and cannot end in the child"),
+					true);
+
+			if (UNEXPECTED(record->event != NULL)) {
+				i++;
+			}
+		}
+
+		link = link->next;
+		async_trigger_release(trigger);
+	}
+}
+
+/* The child's wake pair, before its own ops are resubmitted: the wakeup polls it, and one write walks
+ * a fire made before the rebuild. Without a pair the wakeup goes and the next trigger creation
+ * throws. */
+static void wakeup_rebuild(async_reactor_t *reactor)
+{
+	async_io_event_t *wakeup = reactor->wakeup;
+	async_wake_pair_t *pair = &ASYNC_G(wake_pair);
+
+	list_remove(&wakeup->reactor_link);
+
+	if (UNEXPECTED(wake_pair_open(pair) == FAILURE)) {
+		reactor->wakeup = NULL;
+		async_io_event_release(wakeup);
+		return;
+	}
+
+	php_io_op_poll(&wakeup->op, NULL, pair->read_fd, PHP_POLL_READ, php_io_deadline_infinite());
+	list_add(&reactor->own, &wakeup->reactor_link);
+	wake_pair_raise(pair);
+}
+
 /* In a forked child (S4.md 3.1): the parent's queue goes, and its waits with it, unrun; their
- * coroutines end in the child's deadlock resolution. The destroy detaches every op still on the
- * queue. The reactor's own ops go to a new queue at once, oldest first (with none, the next submit
- * creates it). An Error when one cannot: it and the ones after it stay on the list unsubmitted for
- * the rest of the request, and D16 is unbounded in that child (the Sage: a retry would cost every
- * submit a branch for a fork during the shutdown and a queue the child cannot create). */
+ * coroutines end in the child's deadlock resolution, and those waiting for a trigger at once. The
+ * destroy detaches every op still on the queue. The reactor's own ops go to a new queue at once,
+ * oldest first (with none, the next submit creates it). An Error when one cannot: it and the ones
+ * after it stay on the list unsubmitted for the rest of the request, and D16 is unbounded in that
+ * child (the Sage: a retry would cost every submit a branch for a fork during the shutdown and a
+ * queue the child cannot create). */
 static void reactor_rebuild(async_reactor_t *reactor)
 {
 	async_reactor_link_t *head = &reactor->waits;
@@ -127,6 +369,12 @@ static void reactor_rebuild(async_reactor_t *reactor)
 
 	reactor->queue->ops->destroy(reactor->queue);
 	reactor->queue = NULL;
+
+	triggers_end_parent_waits(reactor);
+
+	if (reactor->wakeup != NULL) {
+		wakeup_rebuild(reactor);
+	}
 
 	uint32_t own_count = 0;
 
@@ -142,8 +390,16 @@ static void reactor_rebuild(async_reactor_t *reactor)
 
 		if (UNEXPECTED(reactor_submit(reactor, event, &reactor->own) == FAILURE)) {
 			list_add(&reactor->own, &event->reactor_link);
-			return;
+			break;
 		}
+	}
+
+	/* An unsubmitted wakeup would let every trigger count with nothing to wake its waiters: it goes,
+	 * and the next trigger creation or start makes it again or throws. */
+	if (UNEXPECTED(reactor->wakeup != NULL && reactor->wakeup->op.queue == NULL)) {
+		list_remove(&reactor->wakeup->reactor_link);
+		async_io_event_release(reactor->wakeup);
+		reactor->wakeup = NULL;
 	}
 }
 
@@ -155,6 +411,9 @@ void async_reactor_request_startup(void)
 	reactor->last_poll = 0;
 	list_init(&reactor->waits);
 	list_init(&reactor->own);
+	list_init(&reactor->triggers);
+	reactor->started_triggers = 0;
+	reactor->wakeup = NULL;
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	reactor->test_poll_queue = false;
 #endif
@@ -167,6 +426,23 @@ void async_reactor_request_shutdown(void)
 
 	while (!list_is_empty(head)) {
 		async_io_event_orphan(io_event_from_link(head->next));
+	}
+
+	/* A trigger may outlive the request (an object freed later in php_request_shutdown): it leaves the
+	 * list, which the next request starts again, and its stop does nothing. */
+	head = &reactor->triggers;
+
+	while (!list_is_empty(head)) {
+		trigger_from_link(head->next)->start_count = 0;
+		list_remove(head->next);
+	}
+
+	reactor->started_triggers = 0;
+
+	if (reactor->wakeup != NULL) {
+		async_io_event_orphan(reactor->wakeup);
+		async_io_event_release(reactor->wakeup);
+		reactor->wakeup = NULL;
 	}
 
 	ZEND_ASSERT(list_is_empty(&reactor->own) && "the owners withdrew their ops");
@@ -188,6 +464,7 @@ async_io_event_t *async_io_event_new(void)
 	async_event_init(&event->base, 0);
 	memset(&event->op, 0, sizeof(event->op));
 	memset(&event->result, 0, sizeof(event->result));
+	event->complete = NULL;
 	event->reactor_link.prev = NULL;
 	event->reactor_link.next = NULL;
 
@@ -213,6 +490,12 @@ static void reactor_dispatch(const php_io_queue_completion *completion)
 	async_io_event_t *event = completion->data;
 
 	event->result = completion->result;
+
+	if (event->complete != NULL) {
+		event->complete(event);
+		return;
+	}
+
 	event->base.flags |= ASYNC_EVENT_F_CLOSED;
 	list_remove(&event->reactor_link);
 
@@ -221,34 +504,58 @@ static void reactor_dispatch(const php_io_queue_completion *completion)
 	async_io_event_release(event);
 }
 
-static zend_result reactor_submit(async_reactor_t *reactor, async_io_event_t *event, async_reactor_link_t *list)
+/* At every entry that may create or count something in the reactor: a forked child rebuilds first
+ * (S4.md 3.1). False with an Error the rebuild left. */
+static zend_always_inline bool reactor_check_fork(async_reactor_t *reactor)
 {
 #ifndef PHP_WIN32
 	if (UNEXPECTED(reactor->queue != NULL && reactor->queue_pid != getpid())) {
 		reactor_rebuild(reactor);
 
 		if (UNEXPECTED(EG(exception) != NULL)) {
-			return FAILURE;
+			return false;
 		}
 	}
 #endif
 
-	php_io_queue *queue = reactor_queue(reactor);
+	return true;
+}
 
-	if (UNEXPECTED(queue == NULL)) {
-		return FAILURE;
-	}
-
+/* The submit to an existing queue, without the dispatch of an inline completion, which it returns in
+ * `completion` (`completed`). FAILURE with an Error. */
+static zend_result queue_submit(php_io_queue *queue,
+								async_io_event_t *event,
+								async_reactor_link_t *list,
+								php_io_queue_completion *completion,
+								bool *completed)
+{
 	if (UNEXPECTED(queue->ops->submit(queue, &event->op, event) == FAILURE)) {
 		zend_throw_error(NULL, "Cannot submit an IO operation: %s", strerror(errno));
 		return FAILURE;
 	}
 
 	list_add(list, &event->reactor_link);
+	*completed = queue->ops->take_inline(queue, &event->op, completion);
 
+	return SUCCESS;
+}
+
+static zend_result reactor_submit(async_reactor_t *reactor, async_io_event_t *event, async_reactor_link_t *list)
+{
 	php_io_queue_completion completion;
+	bool completed;
 
-	if (UNEXPECTED(queue->ops->take_inline(queue, &event->op, &completion))) {
+	if (UNEXPECTED(!reactor_check_fork(reactor))) {
+		return FAILURE;
+	}
+
+	php_io_queue *queue = reactor_queue(reactor);
+
+	if (UNEXPECTED(queue == NULL || queue_submit(queue, event, list, &completion, &completed) == FAILURE)) {
+		return FAILURE;
+	}
+
+	if (UNEXPECTED(completed)) {
 		reactor_dispatch(&completion);
 	}
 
@@ -380,6 +687,229 @@ bool async_reactor_delay(async_coroutine_t *waiter, const zend_long ms)
 }
 
 ///////////////////////////////////////////////////////////////////
+/// Triggers
+///////////////////////////////////////////////////////////////////
+
+/* Notifies each trigger fired since the last walk (S4.md 3.6, point 5). The list moves to a local
+ * head and each trigger goes back before its notify, as libuv's uv__async_io: a notify may free a
+ * trigger or make one. An exception from a notify puts the rest back and writes the pair, so they
+ * are walked at the next poll. */
+static void triggers_walk(async_reactor_t *reactor, const async_wake_pair_t *pair)
+{
+	if (list_is_empty(&reactor->triggers)) {
+		return;
+	}
+
+	const zend_object *exception_at_entry = EG(exception);
+	async_reactor_link_t pending;
+
+	pending.next = reactor->triggers.next;
+	pending.prev = reactor->triggers.prev;
+	pending.next->prev = &pending;
+	pending.prev->next = &pending;
+	list_init(&reactor->triggers);
+
+	while (!list_is_empty(&pending)) {
+		async_trigger_t *trigger = trigger_from_link(pending.next);
+
+		list_remove(&trigger->reactor_link);
+		list_add_tail(&reactor->triggers, &trigger->reactor_link);
+
+		if (EXPECTED(!atomic_exchange(&trigger->fired, false))) {
+			continue;
+		}
+
+		trigger->base.ref_count++;
+		async_callbacks_notify((async_awaitable_t *) trigger, &trigger->base.callbacks, NULL, NULL);
+		async_trigger_release(trigger);
+
+		if (UNEXPECTED(EG(exception) != exception_at_entry)) {
+			while (!list_is_empty(&pending)) {
+				async_reactor_link_t *link = pending.next;
+
+				list_remove(link);
+				list_add_tail(&reactor->triggers, link);
+			}
+
+			wake_pair_raise(pair);
+			return;
+		}
+	}
+}
+
+static bool wakeup_result_is_ready(const php_io_op_result *result)
+{
+	return result->status == PHP_IO_DONE && result->error == 0 && result->res > 0;
+}
+
+/* The wakeup's completion: drains the pair and polls it again before the walk, so a fire during the
+ * walk raises a POLL that is armed. An inline completion (the pair raised again, or an arm that
+ * failed) is taken here, not by a recursive dispatch. A POLL that ended without readiness or cannot
+ * be submitted again ends the request, as a failed wait does: no trigger could wake anything. The
+ * queue is the one that completed it, so no fork check runs here. */
+static void wakeup_complete(async_io_event_t *event)
+{
+	async_reactor_t *reactor = &ASYNC_G(reactor);
+	const async_wake_pair_t *pair = &ASYNC_G(wake_pair);
+	php_io_queue_completion completion;
+	bool completed;
+
+	list_remove(&event->reactor_link);
+
+	do {
+		if (UNEXPECTED(!wakeup_result_is_ready(&event->result))) {
+			const php_io_op_result result = event->result;
+
+			reactor->wakeup = NULL;
+			async_io_event_release(event);
+			async_scheduler_exit_with(async_new_exception(zend_ce_error,
+														  "The wakeup's poll ended with status %d: %s",
+														  (int) result.status,
+														  strerror(result.error)));
+			return;
+		}
+
+		wake_pair_drain(pair);
+
+		if (UNEXPECTED(queue_submit(reactor->queue, event, &reactor->own, &completion, &completed) == FAILURE)) {
+			reactor->wakeup = NULL;
+			async_io_event_release(event);
+			return;
+		}
+
+		if (UNEXPECTED(completed)) {
+			event->result = completion.result;
+			list_remove(&event->reactor_link);
+		}
+	} while (UNEXPECTED(completed));
+
+	triggers_walk(reactor, pair);
+}
+
+/* The wakeup POLL, armed by the request's first trigger and kept to RSHUTDOWN (M5). False with an
+ * Error. */
+static bool wakeup_arm(async_reactor_t *reactor)
+{
+	if (EXPECTED(reactor->wakeup != NULL)) {
+		return true;
+	}
+
+	async_wake_pair_t *pair = &ASYNC_G(wake_pair);
+
+	if (UNEXPECTED(!wake_pair_is_ours(pair) && wake_pair_open(pair) == FAILURE)) {
+		char *reason = php_socket_strerror(php_socket_errno(), NULL, 0);
+		zend_throw_error(NULL, "Cannot create the wake descriptors: %s", reason);
+		efree(reason);
+		return false;
+	}
+
+	async_io_event_t *event = async_io_event_new();
+
+	event->complete = wakeup_complete;
+	php_io_op_poll(&event->op, NULL, pair->read_fd, PHP_POLL_READ, php_io_deadline_infinite());
+	reactor->wakeup = event;
+
+	if (UNEXPECTED(reactor_submit(reactor, event, &reactor->own) == FAILURE)) {
+		reactor->wakeup = NULL;
+		async_io_event_release(event);
+		return false;
+	}
+
+	if (UNEXPECTED(reactor->wakeup == NULL)) {
+		if (EG(exception) == NULL) {
+			zend_throw_error(NULL, "Cannot poll the wake descriptors");
+		}
+
+		return false;
+	}
+
+	return true;
+}
+
+async_trigger_t *async_trigger_new(void)
+{
+	async_reactor_t *reactor = &ASYNC_G(reactor);
+
+	if (UNEXPECTED(!reactor_check_fork(reactor) || !wakeup_arm(reactor))) {
+		return NULL;
+	}
+
+	async_trigger_t *trigger = emalloc(sizeof(async_trigger_t));
+
+	async_event_init(&trigger->base, 0);
+	trigger->pair = &ASYNC_G(wake_pair);
+	atomic_init(&trigger->fired, false);
+	trigger->start_count = 0;
+	list_add_tail(&reactor->triggers, &trigger->reactor_link);
+
+	return trigger;
+}
+
+void async_trigger_release(async_trigger_t *trigger)
+{
+	if (--trigger->base.ref_count > 0) {
+		return;
+	}
+
+	/* A holder's dispose may stop it first. */
+	async_callbacks_free((async_awaitable_t *) trigger, &trigger->base.callbacks);
+
+	if (UNEXPECTED(trigger->start_count > 0)) {
+		ASYNC_G(reactor).started_triggers--;
+	}
+
+	list_remove(&trigger->reactor_link);
+	efree(trigger);
+}
+
+void async_trigger_fire(async_trigger_t *trigger)
+{
+	bool unfired = false;
+
+	if (EXPECTED(atomic_compare_exchange_strong(&trigger->fired, &unfired, true))) {
+		wake_pair_raise(trigger->pair);
+	}
+}
+
+bool async_trigger_start(async_trigger_t *trigger)
+{
+	async_reactor_t *reactor = &ASYNC_G(reactor);
+
+	if (UNEXPECTED(!reactor_check_fork(reactor) || !wakeup_arm(reactor))) {
+		return false;
+	}
+
+	if (trigger->start_count++ == 0) {
+		reactor->started_triggers++;
+	}
+
+	return true;
+}
+
+void async_trigger_stop(async_trigger_t *trigger)
+{
+	if (UNEXPECTED(trigger->start_count == 0)) {
+		return;
+	}
+
+	if (--trigger->start_count == 0) {
+		ASYNC_G(reactor).started_triggers--;
+	}
+}
+
+bool async_trigger_link(async_coroutine_event_callback_t *record, async_coroutine_t *waiter, async_trigger_t *trigger)
+{
+	if (UNEXPECTED(!async_trigger_start(trigger))) {
+		return false;
+	}
+
+	trigger->base.ref_count++;
+	async_wait_link(record, waiter, (async_awaitable_t *) trigger, &trigger_kind, trigger_record_wake);
+
+	return true;
+}
+
+///////////////////////////////////////////////////////////////////
 /// Polling
 ///////////////////////////////////////////////////////////////////
 
@@ -474,6 +1004,11 @@ bool async_reactor_wait_idle(void)
 	async_reactor_t *reactor = &ASYNC_G(reactor);
 
 	ZEND_ASSERT(async_reactor_has_waits(reactor));
+
+	/* Started triggers in a child whose rebuild could not make a queue: nothing can wake them. */
+	if (UNEXPECTED(reactor->queue == NULL)) {
+		return false;
+	}
 
 	php_deadline deadline;
 	php_deadline_init_infinite(&deadline);

@@ -760,3 +760,20 @@ stack options were shown with the code).
   (`ext/zlib/config.w32:3`) and a snapshot build keeps an in-tree extension's default static
   (`win32/build/confutils.js:471-497`, every in-tree module is in `core_module_list`); not run here,
   the CI `windows` job shows it.
+- 2026-10-06 The cross-thread wakeup polls a descriptor pair of the reactor's own (an eventfd, a pipe,
+  a loopback socket pair on Windows), kept in the module globals for the thread's life and polled by
+  a POLL op with no handle; no `Io\Poll\NotifyHandle` (S4.5, departure from S4.md 3.6). Why: the
+  handle dies with the request while another thread may still hold a trigger, and a lock-free
+  `trigger()` needs a descriptor that outlives it, as libuv's loop outlives its async handles (the
+  Sage, over the Critic's mutex). `RFC-CHANGES.md` 1 asks the core to export the pair.
+- 2026-10-06 Every live trigger is on the reactor's `triggers` list and the wakeup walks all of it;
+  the deadlock counts a trigger between its start and stop, which a waiting record or a holder with
+  a callback calls (S4.5). Why: TrueAsync's remote Future and thread-pool cancel trigger wait with a
+  callback and no coroutine (the Critic). Checked by `reactor/026`, `029`-`031`.
+- 2026-10-06 A fire that finds nobody waiting is dropped, as TrueAsync's (S4.5). Why: every holder
+  checks its condition under its own lock before it links (`thread_channel.c:148-156`); keeping the
+  fire would add a second contract (the Sage). Checked by `reactor/028`.
+- 2026-10-06 A fork rebuild cancels every coroutine still waiting for a trigger (S4.5). Why: they are
+  the parent's, and a thread the child starts could resume them in the child (the Sage). The child
+  makes wake descriptors of its own and raises them once, for a fire made before the fork. Checked by
+  `reactor/033`, `035`, `036`.

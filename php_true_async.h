@@ -36,6 +36,7 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	HashTable unobserved_exceptions;        /* by object handle, printed at the request's end; one reference each */
 	async_coroutine_t *scheduler_coroutine; /* runs the loop on its own fiber; NULL until work needs it */
 	async_reactor_t reactor;                /* the thread's IO queue and the waits on it */
+	async_wake_pair_t wake_pair;            /* the reactor's wake descriptors: the thread's, not a request's */
 	async_coroutine_t *interrupt_coroutine; /* runs the VM interrupt for an idle scheduler; NULL when none is alive */
 	async_io_event_t *exit_deadline;        /* D16's Timer while armed, once per drain; the scheduler's reference */
 	uint32_t last_handler_id;               /* the id of the newest finish or switch handler; 0 is never handed out */
@@ -47,6 +48,8 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	uint32_t test_typed_unlinks;     /* records unlinked through a test kind's unlink in this request */
 	uint32_t test_aborts;            /* test kind aborts in this request */
 	zend_long test_exit_deadline_ms; /* D16's deadline in this request; 0 for ASYNC_EXIT_DEADLINE_MS */
+	async_trigger_t *test_trigger;   /* TrueAsync\Test\trigger_new()'s; NULL without */
+	void *test_firer;                /* the thread trigger_fire() started; NULL when joined */
 #endif
 #ifdef TRUE_ASYNC_FUZZ
 	async_fuzz_state_t fuzz; /* TRUE_ASYNC_SCHED of this request */
