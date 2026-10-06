@@ -42,12 +42,13 @@ How work is done in this repository and in the core branch it builds on.
 
 ## Pinned core
 
-| Part | Revision | In `async-core-io-2026-10-05-4` `9531d5b0b1f` |
+| Part | Revision | In `async-core-io-2026-10-06` `1ee473ff67b` |
 |---|---|---|
 | php-src master | `d7f966e073b` | merged |
 | Scheduler PoC (`async-core`, php/php-src#22561) | `63d4869bff4` | merged |
-| IO hooks PoC (php/php-src#23997) | `056d9f803a3` | merged |
-| ior | `2fb12e8ce01` | built per tree, "Building the core" |
+| IO hooks PoC (php/php-src#23997) | `608927ebe09` | merged |
+| Our fixes to the IO hooks PoC (`io-hooks-fixes`) | `189b408d583` | merged; `dev/RFC-CHANGES.md` 2 |
+| ior | `2bfd2319896` | built per tree, "Building the core" |
 | `ext/async` (reference tests, true-async/php-async) | `1fdacf8575b` | `tests/lists/REFERENCE` |
 
 CI pins the same core and ior in `.github/workflows/ci.yml` (`CORE_REF`, `IOR_REF`): a core update
@@ -57,8 +58,6 @@ A listed test that cannot pass yet carries run-tests' `--XFAIL--` section naming
 makes it pass; the runner expects XFAIL for it, and a pass (run-tests' WARN) fails the lane until
 the section is removed in that step's commit. `check-lists.py` hashes a test without the section.
 
-Newer heads not yet taken: IO hooks `608927ebe09` (2026-10-02). The pinned branch was compared
-without ior (`dev/PLAN.md`, S3.2); Edmond accepted it on 2026-10-02.
 
 ## Security
 

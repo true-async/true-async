@@ -7,7 +7,7 @@ Written 2026-10-06. S3 closed: S3.24 re-ran its Done when on the final core; S4,
 
 ## State
 
-- Core pinned: `async-core-io-2026-10-05-4` (`9531d5b0b1f`). CI gates every lane on every list; a
+- Core pinned: `async-core-io-2026-10-06` (`1ee473ff67b`), ior `2bfd2319896`. CI gates every lane on every list; a
   test that cannot pass yet carries `--XFAIL--` naming its step, and the commit that makes it pass
   removes the section. run-tests (`tools/run-tests.patch`) fails a test the timeout killed.
 - S3.3-S3.6a: internal API, classes, the `Coroutine` object, the core's slots, the FIFO run queue,

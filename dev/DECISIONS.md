@@ -813,3 +813,14 @@ stack options were shown with the code).
   the waiter before the iteration ends (S5.md section 8, item 10). Why: the array path does the
   same; TrueAsync's skip of a trigger already in the waker and its wake only at the iterator's end
   need state S5 does not keep, and no test observes the difference.
+- 2026-10-06 Core `async-core-io-2026-10-06` (`1ee473ff67b`): bukka's IO hooks head `608927ebe09`
+  and our `io-hooks-fixes` (`189b408d583`, `dev/RFC-CHANGES.md` 2) merged into
+  `async-core-io-2026-10-05-4`; ior `2bfd2319896`, the one bukka's head builds with. The head
+  already fixes the mysqlnd orphan crash S6.3 met (`0ee980f0`) and refuses closing a MySQL
+  connection a fiber is parked in (`b05a2fd6`); a finished read cancelled before its waiter resumed
+  keeps its bytes in the stream (`d620a523`). Compared on 2026-10-06: `main` (`f313e28`) gives
+  `pocs-dbg` 620 PASS, 8 SKIP, 209 XFAIL and `pocs-asan` 605 PASS, 25 SKIP, 207 XFAIL, nothing unexpected;
+  `Zend/tests`, `ext/test_scheduler/tests` and the core's `streams/hooks` tests fail nothing on
+  either core (5,604 PASS before, 5,613 after: the new hooks tests); the bridge passes its 23 tests on
+  dbg and ASAN. Why: a fix of ours must sit on bukka's current head (`dev/WORKFLOW.md`,
+  "Ownership"), and his head fixes a crash we met.
