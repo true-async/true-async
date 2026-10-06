@@ -777,3 +777,11 @@ stack options were shown with the code).
   the parent's, and a thread the child starts could resume them in the child (the Sage). The child
   makes wake descriptors of its own and raises them once, for a fire made before the fork. Checked by
   `reactor/033`, `035`, `036`.
+- 2026-10-06 The Windows lane gets its S6 expectations, which S6.2 took from the Linux lanes only
+  (pocs-win red since `bfcb26f`: 7 FAIL, 76 unexpected SKIP). The Windows-only `stream/001`, `002`,
+  `046-…_win` (S6.4) and `exec/001`, `003` (S6.5, `proc_close()` waits for the child) carry
+  `--XFAIL--`; `io/044` (S6.3) and `dns/005` (S6.4) fail there only and take the new list tag
+  `xfail-on:<lane>(<step>)`, the one tag a frozen line may lose; 76 tests the lane skips take
+  `skip-on:pocs-win` naming the step that loads curl (S6.6), sockets or openssl (S6.4) there, and
+  `dns/013` is Unix-only. Why: a lane red for a known reason hides the next regression; read from
+  the CI artifact of `d2ff382`, not run here; the Critic's seven findings fixed.

@@ -153,7 +153,8 @@ def parse_plan(plan):
 
 
 def owed_tests(stage_number):
-    """(tests listed for the stage, {step: tests whose --XFAIL-- names it}) from tests/lists/."""
+    """(tests listed for the stage, {step: tests whose --XFAIL-- or xfail-on tag names it}) from
+    tests/lists/."""
     list_file = lists.LISTS / f'{stage_number}.txt'
 
     if not list_file.exists():
@@ -169,9 +170,10 @@ def owed_tests(stage_number):
             continue
 
         match = XFAIL_STEP.search(path.read_bytes())
+        steps = {match.group(1).decode()} if match else set()
+        steps |= {step for _, step in entry.xfail_on}
 
-        if match:
-            step = match.group(1).decode()
+        for step in steps:
             owed[step] = owed.get(step, 0) + 1
 
     return len(entries), owed

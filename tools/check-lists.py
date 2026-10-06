@@ -19,6 +19,7 @@ import lists
 ROOT = lists.ROOT
 TESTS = ROOT / 'tests'
 DECISIONS = ROOT / 'dev' / 'DECISIONS.md'
+PLAN = ROOT / 'dev' / 'PLAN.md'
 REFERENCE_PIN = lists.LISTS / 'REFERENCE'
 
 errors = []
@@ -62,6 +63,13 @@ def check_entry(entry, reference_tests, decisions):
 
     if entry.expected_sha256() not in (sha256(local), listed_sha256(local)):
         error(f'{entry.path}: content differs from the hash in {entry.list_file.name}')
+
+    if entry.xfail_on and lists.has_xfail(local):
+        error(f'{entry.path}: --XFAIL-- and an xfail-on tag; run-tests reports XFAIL where the tag expects FAIL')
+
+    for _, step in entry.xfail_on:
+        if re.search(rf'^- \[x\] {re.escape(step)} ', PLAN.read_text(), re.M):
+            error(f'{entry.path}: xfail-on names {step}, which dev/PLAN.md marks done')
 
     if entry.changed and not decided(decisions, entry.changed[0], entry.path):
         error(f'{entry.path}: changed:{entry.changed[0]} has no DECISIONS.md entry of that date naming it')
@@ -148,6 +156,9 @@ def check_frozen(list_file):
     for old in (line.split() for line in frozen.splitlines()):
         if not old or old[0].startswith('#'):
             continue
+
+        # An xfail-on tag is the one a frozen line loses, once its step makes the test pass there.
+        old = [word for word in old if not word.startswith('xfail-on:')]
 
         if not any(new[:2] == old[:2] and set(old) <= set(new) for new in current):
             error(f'{list_file.name}: frozen line changed or removed: {" ".join(old)}')

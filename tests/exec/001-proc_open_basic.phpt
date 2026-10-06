@@ -5,6 +5,8 @@ proc_open() async basic functionality
 if (!function_exists("proc_open")) echo "skip proc_open() is not available";
 if (DIRECTORY_SEPARATOR !== '\\') { die('skip Windows-only test'); }
 ?>
+--XFAIL--
+Not implemented yet: S6.5 of dev/PLAN.md
 --FILE--
 <?php
 

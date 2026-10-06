@@ -8,6 +8,8 @@ if (PHP_OS_FAMILY !== 'Windows') {
     die("skip Windows-only test\n");
 }
 ?>
+--XFAIL--
+Not implemented yet: S6.4 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -11,11 +11,12 @@ ROOT = Path(__file__).resolve().parent.parent
 LISTS = ROOT / 'tests' / 'lists'
 
 FORMS = ('ref', 'own')
-TAGS = ('changed', 'core', 'skip-on')
+TAGS = ('changed', 'core', 'skip-on', 'xfail-on')
 EXCLUDE_REASONS = ('component', 'needs-core', 'fixture', 'platform', 'rfc-rule')
 
 STAGE_FILE = re.compile(r'^S(\d+)\.txt$')
 SKIP_ON = re.compile(r'^skip-on:([^()]+)\((.+)\)$')
+XFAIL_ON = re.compile(r'^xfail-on:([^()]+)\((S\d+\.\d+)\)$')
 SHA256 = re.compile(r'^[0-9a-f]{64}$')
 CHANGED = re.compile(r'^changed:(\d{4}-\d{2}-\d{2}):([0-9a-f]{64})$')
 # A test of the active stage that cannot pass yet carries run-tests' own --XFAIL-- section; it is
@@ -28,7 +29,8 @@ class Entry:
     """One list line.
 
     `sha256` is the listed hash (the reference file's for ref:), `changed` is (date, new hash) or
-    None, `core` the RFC-CHANGES entry the test needs or None, `skip_on` (lane pattern, reason) pairs.
+    None, `core` the RFC-CHANGES entry the test needs or None, `skip_on` (lane pattern, reason) pairs,
+    `xfail_on` (lane pattern, plan step) pairs.
     """
 
     path: str
@@ -39,6 +41,7 @@ class Entry:
     changed: tuple = None
     core: str = None
     skip_on: list = field(default_factory=list)
+    xfail_on: list = field(default_factory=list)
 
     def expected_sha256(self):
         """Hash the file must have: the changed one when the test was changed on purpose."""
@@ -118,6 +121,13 @@ def parse_tag(entry, tag):
             raise ListError(f'{where}: expected "skip-on:<lane pattern>(<reason>)"')
 
         entry.skip_on.append((match.group(1), match.group(2)))
+    elif tag.startswith('xfail-on:'):
+        match = XFAIL_ON.match(tag)
+
+        if not match:
+            raise ListError(f'{where}: expected "xfail-on:<lane pattern>(<plan step>)"')
+
+        entry.xfail_on.append((match.group(1), match.group(2)))
     else:
         raise ListError(f'{where}: unknown tag "{tag}"')
 

@@ -482,11 +482,26 @@ def verdict(lane, entries, left_out, output):
         # An unfinished test expects XFAIL; once it passes run-tests reports WARN, and its
         # --XFAIL-- section goes in the commit that makes it pass.
         xfail = lists.has_xfail(TESTS / entry.path)
-        allowed = {'XFAIL' if xfail else 'PASS'} | ({'SKIP'} if skip_allowed(lane, entry) else set())
+        xfail_step = xfail_on(lane, entry)
+
+        if xfail_step:
+            # A test that cannot pass on this lane alone gives FAIL there, without --XFAIL--.
+            expected = 'FAIL'
+        else:
+            expected = 'XFAIL' if xfail else 'PASS'
+
+        allowed = {expected} | ({'SKIP'} if skip_allowed(lane, entry) else set())
 
         if status not in allowed:
             wrong += 1
-            hint = ' (passes: remove its --XFAIL-- section)' if status == 'WARN' and xfail else ''
+
+            if status == 'WARN' and xfail:
+                hint = ' (passes: remove its --XFAIL-- section)'
+            elif status == 'PASS' and xfail_step:
+                hint = f' (passes: remove its xfail-on tag for {xfail_step})'
+            else:
+                hint = ''
+
             print(f'{status:7} {name}{hint}')
         elif name in retried and status == 'PASS':
             # An unfinished test that failed both attempts is XFAIL as expected, not a retry pass.
@@ -594,6 +609,11 @@ def run_seeds(lane, entries, jobs, seeds):
 
 def skip_allowed(lane, entry):
     return any(fnmatchcase(lane.name, pattern) for pattern, _ in entry.skip_on)
+
+
+def xfail_on(lane, entry):
+    """The plan step of an xfail-on tag matching the lane, or None."""
+    return next((step for pattern, step in entry.xfail_on if fnmatchcase(lane.name, pattern)), None)
 
 
 def main():
