@@ -428,20 +428,46 @@ Active: S6.3 (code now; the commit once `delay()` and `await_*` are on `main`)
 
 Goal: find coroutines that can never wake and the async objects only they keep alive: partial
 deadlocks (a cycle of waits while other coroutines run), a Future nobody can complete, a channel
-with no senders left; report them and resolve them by policy (DeadlockError into the waiters,
-or a report only).
+with no senders left; report them and resolve them by policy (a cancellation into the waiters, as
+the global deadlock's, or a report only; `dev/plans/S7.md` section 6).
 Done when: tests for each case pass on debug and ASAN; waits on IO, timers, signals and
 cross-thread wakeups are never reported; a run over 10 000 parked coroutines costs a measured
 time, recorded; scheduler fuzz over 100 seeds reports no false positives.
-Tier: T2. Roles: Critic on S7.1, Critic after S7.2.
+Tier: T2. Roles: Critic on S7.1, Critic after S7.4 (S7.5).
+Notes: dev/plans/S7.md
+Active: S7.2
 
-- [ ] S7.1 Design note: roots (runnable coroutines, pending external sources: provider ops,
+- [x] S7.1 Design note: roots (runnable coroutines, pending external sources: provider ops,
       timers, signals, wakeups, main), edges (waiter → awaitable → completers), when it runs (on
       idle, on PHP GC, on demand), the policy per finding, interaction with PHP's own GC
       (suspended coroutines are GC roots through their stacks), the PHP API (report, setting).
-- [ ] S7.2 Implementation and tests: mutual await, cycle of three, partial deadlock with
-      other coroutines running, unreachable Future, channel without senders (after channels
-      exist), IO and timer waiters not reported.
+      done: the note and the list pushed; every Critic finding fixed or answered in the note
+      handoff: done 2026-10-06: `dev/plans/S7.md`. Completers cannot be enumerated, so the walk
+        is PHP's trial deletion without the freeing over what parked coroutines reach, with Go's
+        rule that a parked stack counts once a target is live; outside sources come from the
+        reactor's lists that decide the global deadlock, and unknown holders hide findings, never
+        invent one. Runs at the idle point with an interval and a back-off, and on demand
+        (`get_deadlocked_coroutines()`); policy `report` by default, `cancel` (TrueAsync's
+        per-waiter cancellation) by setting. `tests/lists/S7.txt` frozen with no test (the
+        reference has none). The Critic's 2 critical and 5 major findings, and 2 high ones of its
+        re-check, changed sections 3-6 and 10-12; nothing went to Edmond. Lanes not run: the step
+        adds no code and no listed test.
+- [ ] S7.2 The walk, `collector_target` for COROUTINE, `get_deadlocked_coroutines()`, coroutine
+      waits, the automatic run with `report` and its back-off, the fuzz oracle (S7.md 3-5, 11).
+      done: S7.txt's S7.2 tests pass on `pocs-dbg` and `pocs-asan`; every list unchanged; the
+        lists over 10 seeds with the oracle, `report` and the interval at 0 report no false finding
+- [ ] S7.3 Futures, tokens, Timeouts and `await_*` blocks; the holders' table of S7.md 10 (once
+      S5.3 is on `main`).
+      done: S7.txt's S7.3 tests pass on debug and ASAN, those waiting for S4.5 and S6.5 with
+        `--XFAIL--` naming them
+- [ ] S7.4 The `cancel` policy; B6 (S7.md 11).
+      done: S7.txt's S7.4 tests pass on debug and ASAN; B6 in `dev/BENCHMARKS.md`
+- [ ] S7.5 Stage review: Critic after S7.2-S7.4, coverage of the collector, Mull on the stage
+      diff, the fuzz oracle over 100 seeds.
+      done: Done when of S7 holds on the day, the channel case aside (S9); survivors killed or
+        explained
+- [ ] S7.6 Security pass by `dev/SECURITY.md`.
+      done: a journal entry per checklist item; findings fixed with a test or recorded
 
 ## S8 — Review checks and RFC change list  [ ]
 

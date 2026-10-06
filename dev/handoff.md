@@ -216,6 +216,17 @@ build/PHP-Parser-5.6.1` in the core checkout first.
    health check. Next health check: passes 6 and 10; its S3.19 and S3.20 lines in "Open findings"
    are resolved there.
 
+## S7
+
+S7.1 done 2026-10-06: `dev/plans/S7.md`, `tests/lists/S7.txt` with no test. Next is S7.2 (the walk,
+`get_deadlocked_coroutines()`, the automatic run with `report`, the fuzz oracle), which needs the
+`collector_target` slot in S4's kind table and one call in `scheduler_loop`'s idle branch: both asked
+of S4 through the coordinator. S7.3 starts once S5.3 is on `main` and first writes the holders' table
+of S7.md 10 from S5's code (S5.2 settles FUTURE: the wait owns a reference, `src/future.c:703`). S6.5's
+`SignalHandle` must report the `signal()` Futures it will complete to the collector (S7.md 3.4).
+The TrueAsync reference clone is needed for `check-lists.py --reference` (`/root/php-async` at
+`REFERENCE` in this container).
+
 ## S6
 
 Written 2026-10-06. S6.2 (design note `dev/plans/S6.md`, the frozen list) done; S6.3 next: its code

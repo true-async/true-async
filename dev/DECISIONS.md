@@ -713,3 +713,22 @@ stack options were shown with the code).
 - 2026-10-06 `Future` and `FutureState` refuse `clone`; a second `Future::__construct()` releases
   what the first gave (S5.md section 8, item 8). Why: TrueAsync's clone gives a `Future` with no
   event, and its second `__construct()` leaks a reference.
+- 2026-10-06 The collector of S7 finds stuck coroutines by reachability, PHP's trial deletion without
+  the freeing plus Go's rule that a parked stack counts once a wait target is live (S7.md 2-3). Why:
+  completers cannot be enumerated (a `FutureState` does not know its holders), and PHP has no list of
+  roots; an unknown holder then hides a finding and never invents one.
+- 2026-10-06 The collector takes outside sources from the reactor's `waits` and `triggers` lists, which
+  decide the global deadlock; a source completing another awaitable (`signal()`'s handle) reports
+  it, and a scope holds or reports the coroutines it may cancel; no "completed from outside" flag
+  (S7.md 3.4). Why: a flag kept only for the collector can be forgotten with nothing else failing,
+  while a source missing from those lists already fails the deadlock tests (the Critic).
+- 2026-10-06 A partial deadlock is reported with one warning per coroutine by default; the setting
+  `cancel` cancels the stuck coroutines with `AsyncCancellation("Deadlock detected")`, not the plan's
+  `DeadlockError` (S7.md 6, departure from the plan's goal text). Why: TrueAsync leaves them until the
+  global deadlock and a server keeps serving (P2.2); an uncaught `DeadlockError` in a coroutine nobody
+  holds becomes the exit exception and would stop the server, while the global deadlock already gives
+  each waiter a cancellation (the Critic).
+- 2026-10-06 The collector runs at the idle point every `true_async.partial_deadlock_interval` ms,
+  doubling after empty runs up to 64 times, and on demand; not with PHP's collector, not at a park
+  (S7.md 5). Why: PHP's collector runs on its root buffer's fill, which says nothing about waits; a
+  park is the hot path; the back-off is PHP's own threshold rule.

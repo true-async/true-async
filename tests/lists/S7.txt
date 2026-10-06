@@ -1,0 +1,3 @@
+# S7: the collector of coroutines that can never wake (dev/plans/S7.md, section 11). Reference:
+# true-async/php-async at tests/lists/REFERENCE, which has no partial-deadlock test. Own tests of the
+# group collector/ join this list in the step that writes them (S7.2-S7.4).
