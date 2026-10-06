@@ -22,8 +22,9 @@
  * TrueAsync\Test\fail_at(string $site): void arms a fault site of the scheduler. The rest reach the
  * core API a PHP script has no path to: defer() queues a microtask; add_throwing_finish_handler(),
  * add_clearing_finish_handler() and add_printing_switch_handler() add handlers to a coroutine;
- * enqueue_with_error() wakes one with an error; call_on_main_stack() runs a probe through the
- * call_on_main_stack slot. The class TrueAsync\Test\Event, await_records(), link_into_wait(),
+ * enqueue_with_error() wakes one with an error; coroutine_from_object() asks the
+ * coroutine_from_object slot; call_on_main_stack() runs a probe through the call_on_main_stack
+ * slot. The class TrueAsync\Test\Event, await_records(), link_into_wait(),
  * subscriber_count() and wait_counters() drive the wait-record layer (dev/plans/S4.md section 2) before any event type
  * of the extension exists; reactor_wait(), reactor_state() and reactor_use_poll_queue() drive the reactor
  * (section 3) before delay(), and set_exit_deadline() shortens D16's deadline. Each says more above
@@ -1086,6 +1087,28 @@ static ZEND_FUNCTION(coroutine_count)
 	RETURN_LONG(ZEND_ASYNC_GET_COROUTINE_COUNT());
 }
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_coroutine_from_object, 0, 1, IS_OBJECT, 1)
+	ZEND_ARG_TYPE_INFO(0, object, IS_OBJECT, 0)
+ZEND_END_ARG_INFO()
+
+/* Returns the object of the coroutine the coroutine_from_object slot finds for $object, or null. */
+static ZEND_FUNCTION(coroutine_from_object)
+{
+	zend_object *object;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_OBJ(object)
+	ZEND_PARSE_PARAMETERS_END();
+
+	zend_coroutine_t *coroutine = zend_async_coroutine_from_object(object);
+
+	if (coroutine == NULL) {
+		RETURN_NULL();
+	}
+
+	RETURN_OBJ_COPY(ZEND_COROUTINE_OBJECT(coroutine));
+}
+
 #ifdef ZEND_CHECK_STACK_LIMIT
 /* The base of the stack the caller runs on, which the core finds from the stack position on Linux's
  * main thread (/proc/self/maps); 0 when it cannot. */
@@ -1736,6 +1759,7 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_printing_switch_handler", ZEND_FN(add_printing_switch_handler), arginfo_add_printing_switch_handler, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_clearing_finish_handler", ZEND_FN(add_clearing_finish_handler), arginfo_add_clearing_finish_handler, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\coroutine_count", ZEND_FN(coroutine_count), arginfo_coroutine_count, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\coroutine_from_object", ZEND_FN(coroutine_from_object), arginfo_coroutine_from_object, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\await_records", ZEND_FN(await_records), arginfo_await_records, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\link_into_wait", ZEND_FN(link_into_wait), arginfo_link_into_wait, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\wait_counters", ZEND_FN(wait_counters), arginfo_wait_counters, 0, NULL, NULL)

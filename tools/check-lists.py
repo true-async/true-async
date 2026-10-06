@@ -131,6 +131,12 @@ def check_coverage(entries, excluded, reference_tests):
 def check_frozen(list_file):
     """Since its first commit a list only gains lines and tags; a hash never changes."""
     relative = str(list_file.relative_to(ROOT))
+
+    # A shallow clone's oldest commit adds every file, so a list would look frozen there.
+    if git('rev-parse', '--is-shallow-repository').strip() == 'true':
+        error(f'{list_file.name}: a shallow clone hides the commit that froze the list; git fetch --unshallow')
+        return
+
     commits = git('log', '--format=%H', '--diff-filter=A', '--', relative).split()
 
     if not commits:

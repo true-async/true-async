@@ -509,8 +509,30 @@ SEED_RUN_TIMEOUT = 1800
 SEED_FAILURE = re.compile(r'Termsig=|AddressSanitizer|LeakSanitizer|runtime error:|Assertion `|'
                           r'memory leaks detected|process timed out')
 
-# A diagnostic line of the output: its kind and message, without the location.
-DIAGNOSTIC = re.compile(r'^((?:Fatal error|Warning|Notice|Deprecated): .*?)(?: in \S+(?: on line |:)\d+)?$', re.M)
+# A diagnostic line of the output: its kind and message without the location, and its kind alone.
+DIAGNOSTIC = re.compile(
+    r'^(((?:Fatal error|Parse error|Warning|Notice|Deprecated): ).*?)(?: in \S+(?: on line |:)\d+)?$', re.M)
+
+# run-tests' EXPECTF placeholders (run-tests.php, expectf_to_regex); %r sections are not used here.
+EXPECTF = {'%e': r'[\\/]', '%s': r'[^\r\n]+', '%S': r'[^\r\n]*', '%a': r'.+?', '%A': r'.*?', '%w': r'\s*',
+           '%i': r'[+-]?\d+', '%d': r'\d+', '%x': r'[0-9a-fA-F]+',
+           '%f': r'[+-]?(?:\d+|(?=\.\d))(?:\.\d+)?(?:[Ee][+-]?\d+)?', '%c': r'.'}
+
+
+def expected_diagnostics(expected):
+    """{kind: regexes} of the expected output's lines that start with a diagnostic's kind, their
+    EXPECTF placeholders expanded. A line of placeholders alone (`%A`) expects no diagnostic."""
+    placeholder = re.compile('(' + '|'.join(EXPECTF) + ')')
+    found = {}
+
+    for line in expected.splitlines():
+        kind = DIAGNOSTIC.match(line)
+
+        if kind:
+            regex = ''.join(EXPECTF.get(piece) or re.escape(piece) for piece in placeholder.split(line))
+            found.setdefault(kind.group(2), []).append(re.compile(regex))
+
+    return found
 
 
 def seed_verdict(entries, output, seed, findings):
@@ -536,8 +558,10 @@ def seed_verdict(entries, output, seed, findings):
             print(f'seed {seed}: {status} tests/{entry.path}')
             continue
 
-        expected = exp.read_text(errors='replace')
-        new_diagnostics = [line for line in DIAGNOSTIC.findall(actual) if line not in expected]
+        expected = expected_diagnostics(exp.read_text(errors='replace'))
+        new_diagnostics = [diagnostic.group(1) for diagnostic in DIAGNOSTIC.finditer(actual)
+                           if not any(line.fullmatch(diagnostic.group(0))
+                                      for line in expected.get(diagnostic.group(2), ()))]
 
         if new_diagnostics:
             findings.setdefault(entry.path, (seed, new_diagnostics[0]))

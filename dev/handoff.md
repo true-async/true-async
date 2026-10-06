@@ -3,7 +3,7 @@
 Where the work stopped and what the next session needs. Replaced whole at every stop; the plan
 (`dev/PLAN.md`) outranks this file when they differ.
 
-Written 2026-10-05. S3.23 (`call_on_main_stack`) done; every S3 step is closed, the next stage waits for Edmond.
+Written 2026-10-06. S3 closed: S3.24 re-ran its Done when on the final core; S4, S5 and S6 run as tracks.
 
 ## State
 
@@ -112,6 +112,13 @@ Written 2026-10-05. S3.23 (`call_on_main_stack`) done; every S3 step is closed, 
   as TrueAsync; the running context decides around the drain. Test hook
   `TrueAsync\Test\call_on_main_stack()` returns the stack bases of caller and callback, test
   `internal/051` (Linux only: the core finds a stack by position there).
+- S3.24: the stage's Done when re-run on `9531d5b0b1f` (PLAN S3.24 has the numbers). New test hook
+  `TrueAsync\Test\coroutine_from_object()` (`internal/062`); `scheduler/103`, `104` cover the
+  deadlock report's skip of a refused core coroutine and an unobserved ParseError after a fatal
+  error; `105` pins where such an exception is printed. `tools/mull.py --diff-ref` runs each
+  mutant on its own copy of `tests/` with all CPUs (`--isolated-run`), run-tests `-j1`, and
+  `--build-ref` builds only the mutants changed since a commit; the seed report matches diagnostics
+  through EXPECTF placeholders; `check-lists.py` refuses a shallow clone.
 - Reviews: after the code, Critic and the Sage (`general-purpose`, model `fable`) compare it with
   TrueAsync (`/root/php-async` in the container) and hunt inventions; one plan step is one commit.
 - Container notes: the ASAN lane needs `TRUE_ASYNC_CORE_SRC=/root/core-asan`; `gen_stub.php`
@@ -200,9 +207,10 @@ build/PHP-Parser-5.6.1` in the core checkout first.
 
 - The nightly `seeds` CI job (dbg 100, asan 20 seeds) was added without a run; its first nightly or
   dispatch run is its check.
-- Seeds 1-100 on dbg list 16 tests whose output gains a diagnostic under some order (their
-  expectations assume FIFO); two were read, `scheduler/034` (the lost coroutine, fixed) and
-  `scheduler/037` (an order artifact); the others are not read.
+- Seeds 1-100 on dbg (2026-10-05, 333 tests) list 10 tests whose output gains a diagnostic under
+  some order; each was read and replayed with its seed: order artifacts (expectations assume FIFO;
+  a coroutine cancelled before it ran finishes without its body). `scheduler/034` earlier found a
+  lost coroutine (fixed).
 
 - The upstream report on `Fiber::__construct` keeping its callable's object without a reference
   (fixed on `async-core` by S3.14, `2cb30e538e4`) went upstream as php/php-src#24134 (Edmond,
@@ -210,8 +218,8 @@ build/PHP-Parser-5.6.1` in the core checkout first.
 
 ## Next
 
-1. Ask Edmond what comes next (S4 is planned, not started on its own); PLAN "Open questions" holds
-   the callbacks into PHP from `call_on_main_stack`.
+1. S3 is closed; S4, S5 and S6 run as parallel tracks (PLAN "Parallel tracks", their own sections
+   here). PLAN "Open questions" holds the callbacks into PHP from `call_on_main_stack`.
 2. `tools/check-lists.py` compares a frozen list only with its first commit, so a line added later
    and then deleted passes (S2.md section 3 says the same; Critic and Sage in S3.19): for the next
    health check. Next health check: passes 6 and 10; its S3.19 and S3.20 lines in "Open findings"

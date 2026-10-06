@@ -141,7 +141,7 @@ Notes: dev/plans/S2.md (build, runner, lists, layers, CI, Mull)
 
 Test layers: `dev/plans/S2.md`, section 4.
 
-## S3 — Scheduler on the scheduler API  [ ]
+## S3 — Scheduler on the scheduler API  [x]
 
 Goal: coroutines, the run queue and the request lifecycle, no reactor yet.
 Done when: the S3 list passes on debug and ASAN and on both core trees (tests gated on an RFC
@@ -249,6 +249,22 @@ needed (`dev/plans/S2.md`, section 5), and S3 needs none (scheduler RFC changes 
         current coroutine; RSHUTDOWN no longer leaves `EG(current_fiber_context)` at the freed copy
         of main's context) and GCC 13 ignoring `naked` on AArch64 (guarded by
         `__has_attribute(naked)`); callbacks into PHP are an open question.
+- [x] S3.24 Stage exit: Done when re-run on the final core, the bridge with it.
+      done: every Done when line holds on `9531d5b0b1f`; the bridge passes on dbg and ASAN
+      handoff: done 2026-10-06 on main after S5.2 with this step's four tests: `pocs-dbg` 334 PASS,
+        `pocs-asan` 319 PASS and 15 SKIP (U1-U6 in `internal/027`-`033` among them); 100 seeds on
+        dbg over 333 tests (before `scheduler/105`), 0 failed; the bridge's 23 tests pass on both trees. `pocs-dbg-cov`
+        97.3 % of `src/` (2184 of 2244); before the new tests 97.0 % (2168 of 2236). Mull on the
+        lines changed since S3.13's run (the whole stage diff, about 800 mutants, did not finish in
+        two hours): 36 mutants, 30 killed, 3 more killed by `scheduler/105`, 3 explained. The new
+        uncovered lines and the survivors: S3.md section 9. Tools: `mull.py` could not run a list on
+        the core's run-tests (a worker per CPU unless `-j1`, mull-runner's 3 s timeout); it runs
+        each mutant on its own copy of `tests/` with every CPU and takes `--build-ref`. The seed
+        report compares a diagnostic with the expected lines of its kind, EXPECTF placeholders
+        expanded; the 10 tests it lists were read: order artifacts. `check-lists.py` refuses a
+        shallow clone, where every list looked changed. CI on `main` was red since S3.22: `pocs-win`
+        SKIPs `internal/051` (Linux only) untagged, now tagged; the cancelled ASAN and lists jobs
+        say "The job was not acquired by Runner of type hosted even after multiple attempts".
 
 ## S4 — Reactor on Poll, Poll additions and Ring  [ ]
 
