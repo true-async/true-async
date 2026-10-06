@@ -400,8 +400,9 @@ static zend_fiber_context *run_coroutines(async_fiber_context_t *fiber_context)
 		async_coroutine_execute(coroutine);
 
 		/* The tick and the pop are scheduler work: the scheduler coroutine is current for them, as in
-		 * test_scheduler.c. With none, a collection there would not defer (zend_gc.c:2245 compares the
-		 * current coroutine with the GC's, both NULL) and its destructors would suspend nobody. */
+		 * test_scheduler.c. With none, a collection there would not defer (zend_gc_collect_cycles()
+		 * compares the current coroutine with the GC's, both NULL) and its destructors would suspend
+		 * nobody. */
 		make_scheduler_current();
 		scheduler_tick(0);
 
@@ -1384,7 +1385,6 @@ bool async_scheduler_enqueue(zend_coroutine_t *zend_coroutine, zend_object *erro
 
 	switch (ZEND_COROUTINE_STATUS(zend_coroutine)) {
 		case ZEND_COROUTINE_STATUS_CREATED:
-			/* The scope hook of S9 goes here. */
 			run_queue_push(coroutine);
 			return true;
 		case ZEND_COROUTINE_STATUS_SUSPENDED:
@@ -1798,7 +1798,7 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 	return *exception_ptr == NULL;
 }
 
-/* is_safely is a plain cancel until the zombie state (S9). */
+/* is_safely is ignored: there is no zombie state (S9). */
 static bool scheduler_cancel(zend_coroutine_t *coroutine, zend_object *error, bool transfer_error, const bool is_safely)
 {
 	(void) is_safely;
@@ -1806,10 +1806,10 @@ static bool scheduler_cancel(zend_coroutine_t *coroutine, zend_object *error, bo
 	return async_coroutine_cancel((async_coroutine_t *) coroutine, error, error != NULL && transfer_error);
 }
 
-/* Called by the core when exit() ends a fiber's body (zend_fibers.c:886-898), with the exit still
- * pending: the scheduler takes the exit over, as TrueAsync's start_graceful_shutdown does, and the
- * coroutines are cancelled as for exit() in a coroutine (D16). With the exit cleared the core throws
- * nothing to the fiber's caller and wakes it. */
+/* Called by the core when exit() ends a fiber's body (zend_fiber_coroutine_entry() in
+ * zend_fibers.c), with the exit still pending: the scheduler takes the exit over, as TrueAsync's
+ * start_graceful_shutdown does, and the coroutines are cancelled as for exit() in a coroutine (D16).
+ * With the exit cleared the core throws nothing to the fiber's caller and wakes it. */
 static bool scheduler_shutdown(void)
 {
 	if (EXPECTED(EG(exception) != NULL && zend_is_unwind_exit(EG(exception)))) {

@@ -31,7 +31,7 @@ struct _async_coroutine_s
 	async_fiber_context_t *fiber_context;
 	async_callbacks_vector_t callbacks; /* waiters' records and finish handlers */
 	async_waker_t waker;
-	async_scope_t *scope;                                      /* NULL until S9 */
+	async_scope_t *scope;                                      /* always NULL: no scopes (S9) */
 	zend_object *deferred_cancellation;                        /* the cancel that arrived inside protect() */
 	async_coroutine_switch_handlers_vector_t *switch_handlers; /* lazy */
 	/* The callable and arguments of spawn(), which coroutine.fcall points to: one allocation less per

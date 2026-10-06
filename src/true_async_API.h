@@ -391,7 +391,7 @@ void async_wait_walk(async_coroutine_t *coroutine,
  * from then on; NULL without a block. The waiter calls it as its suspend() returns, so a wait it
  * starts later (a destructor run while it reads the outcome) finds no block to end. Between the
  * wake and this call no PHP code may run in the waiter either: suspend()'s error exit drops
- * `waker.result`, which holds nothing today; whoever sets it first moves that drop past this call. */
+ * `waker.result`, which nothing sets; whoever sets it first moves that drop past this call. */
 async_wait_block_t *async_wait_take_block(async_coroutine_t *coroutine);
 
 /* Ends a wait its frame never ended: the unlink, then the waiter's reference to a block left in the

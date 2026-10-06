@@ -289,7 +289,7 @@ static const async_wait_kind_t trigger_kind = {
 
 /* Every coroutine still linked to a trigger at a fork rebuild is the parent's: a child's waiter
  * starts its trigger, which rebuilds first. Each is cancelled at once, so a fire from a thread the
- * child starts does not resume a wait the parent started (the Sage). */
+ * child starts does not resume a wait the parent started. */
 static void triggers_end_parent_waits(async_reactor_t *reactor)
 {
 	reactor->started_triggers = 0;
@@ -357,7 +357,7 @@ static void wakeup_rebuild(async_reactor_t *reactor)
  * destroy detaches every op still on the queue. The reactor's own ops go to a new queue at once,
  * oldest first (with none, the next submit creates it). An Error when one cannot: it and the ones
  * after it stay on the list unsubmitted for the rest of the request, and D16 is unbounded in that
- * child (the Sage: a retry would cost every submit a branch for a fork during the shutdown and a
+ * child (a retry would cost every submit a branch for a fork during the shutdown and a
  * queue the child cannot create). */
 static void reactor_rebuild(async_reactor_t *reactor)
 {
@@ -947,7 +947,7 @@ static bool reactor_poll(async_reactor_t *reactor, php_deadline deadline)
 #endif
 				default:
 					/* D16's Timer rides this queue and does not fire here: each tick cancels every
-					 * coroutine again instead (the Sage). */
+					 * coroutine again instead. */
 					async_scheduler_exit_with(
 							async_new_exception(zend_ce_error, "The IO queue's wait failed: %s", strerror(errno)));
 					return true;
