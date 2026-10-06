@@ -48,8 +48,9 @@ Where to look in this repository and around it. Pointers only.
 - `src/scheduler.c`, `.h`: the scheduler behind the core's slots: fiber contexts and their pool,
   the run queue and switches, the scheduler coroutine, main's coroutine, cancellation, deadlock
   resolution, the request lifecycle.
-- `src/reactor.c`, `.h`: the reactor: the thread's `php_io_queue`, IO events and their waits list,
-  dispatch, the idle wait, the rebuild after `fork()` (`dev/plans/S4.md` section 3).
+- `src/reactor.c`, `.h`: the reactor: the thread's `php_io_queue`, IO events on its waits and own
+  lists, dispatch, the idle wait, the rebuild after `fork()`, `delay()`'s Timer wait
+  (`dev/plans/S4.md` section 3).
 - `src/coroutine.c`, `.h`: the `Async\Coroutine` object, its body's run and its finalize.
 - `src/true_async_API.c`, `.h`: the internal API: the callbacks vector and its notify, finish and
   switch handlers, the wait record.

@@ -141,7 +141,7 @@ Configure line of every core tree (the ASAN tree adds `--enable-address-sanitize
 
 ```
 ./configure --enable-zts --enable-debug --with-ior=$HOME/ior-<tree> --enable-test-scheduler \
-  --with-curl --with-openssl --enable-sockets --enable-pcntl --with-mysqli --with-pdo-mysql \
+  --with-curl --with-openssl --enable-sockets --enable-pcntl --with-mysqli --with-pdo-mysql --with-zlib \
   --prefix=$HOME/ta-prefix/pocs-<tree>
 ```
 

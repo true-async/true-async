@@ -36,8 +36,6 @@ edge_cases/004-scope_provider_exceptions.phpt  component:S9 (spawn_with, ScopePr
 edge_cases/010-deadlock-after-cancel-with-zombie.phpt  component:S9 (Scope::allowZombies)
 edge_cases/012-awaitCompletion_on_cancelled_scope.phpt  component:S9 (Scope::awaitCompletion; timeout() is S5)
 edge_cases/015-deadlock-caught-still-terminates.phpt  component:S9 (Channel)
-edge_cases/016-error_handling_window_not_shared.phpt  component:S4 (delay; EH_THROW window, see S3.md section 5; zlib, which the core build lacks until S4.4)
-edge_cases/017-error_handling_window_not_inherited_on_resume.phpt  component:S4 (delay; EH_THROW window, see S3.md section 5; zlib, which the core build lacks until S4.4)
 
 # include
 include/008-file_get_contents_in_coroutine.phpt  component:S6 (file IO in a coroutine)

@@ -26,7 +26,8 @@
  * call_on_main_stack slot. The class TrueAsync\Test\Event, await_records(), link_into_wait(),
  * subscriber_count() and wait_counters() drive the wait-record layer (dev/plans/S4.md section 2) before any event type
  * of the extension exists; reactor_wait(), reactor_state() and reactor_use_poll_queue() drive the reactor
- * (section 3) before delay(). Each says more above its definition. */
+ * (section 3) before delay(), and set_exit_deadline() shortens D16's deadline. Each says more above
+ * its definition. */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -1658,7 +1659,7 @@ static ZEND_FUNCTION(reactor_wait)
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_reactor_state, 0, 0, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
 
-/* Whether the reactor has a queue, the length of its waits list, and the ops its queue still counts
+/* Whether the reactor has a queue, the lengths of its waits and own lists, and the ops its queue still counts
  * (count_pending(): a withdrawn op is not among them). */
 static ZEND_FUNCTION(reactor_state)
 {
@@ -1667,13 +1668,20 @@ static ZEND_FUNCTION(reactor_state)
 	const async_reactor_t *reactor = &ASYNC_G(reactor);
 	zend_long waits = 0;
 
+	zend_long own = 0;
+
 	for (const async_reactor_link_t *link = reactor->waits.next; link != &reactor->waits; link = link->next) {
 		waits++;
+	}
+
+	for (const async_reactor_link_t *link = reactor->own.next; link != &reactor->own; link = link->next) {
+		own++;
 	}
 
 	array_init(return_value);
 	add_assoc_bool(return_value, "queue", reactor->queue != NULL);
 	add_assoc_long(return_value, "waits", waits);
+	add_assoc_long(return_value, "own", own);
 	add_assoc_long(return_value,
 				   "pending",
 				   reactor->queue != NULL ? (zend_long) reactor->queue->ops->count_pending(reactor->queue) : 0);
@@ -1696,6 +1704,27 @@ static ZEND_FUNCTION(reactor_use_poll_queue)
 	ASYNC_G(reactor).test_poll_queue = true;
 }
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_set_exit_deadline, 0, 1, IS_VOID, 0)
+	ZEND_ARG_TYPE_INFO(0, ms, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
+/* D16's deadline for the rest of the request, so a test does not wait the 5 s. */
+static ZEND_FUNCTION(set_exit_deadline)
+{
+	zend_long ms;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_LONG(ms)
+	ZEND_PARSE_PARAMETERS_END();
+
+	if (UNEXPECTED(ms <= 0)) {
+		zend_argument_value_error(1, "must be greater than 0");
+		RETURN_THROWS();
+	}
+
+	ASYNC_G(test_exit_deadline_ms) = ms;
+}
+
 /* clang-format off */
 const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\callbacks_scenario", ZEND_FN(callbacks_scenario), arginfo_callbacks_scenario, 0, NULL, NULL)
@@ -1712,6 +1741,7 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\wait_counters", ZEND_FN(wait_counters), arginfo_wait_counters, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\subscriber_count", ZEND_FN(subscriber_count), arginfo_subscriber_count, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\reactor_wait", ZEND_FN(reactor_wait), arginfo_reactor_wait, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\set_exit_deadline", ZEND_FN(set_exit_deadline), arginfo_set_exit_deadline, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\reactor_state", ZEND_FN(reactor_state), arginfo_reactor_state, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\reactor_use_poll_queue", ZEND_FN(reactor_use_poll_queue), arginfo_reactor_use_poll_queue, 0, NULL, NULL)
 #ifdef ZEND_CHECK_STACK_LIMIT

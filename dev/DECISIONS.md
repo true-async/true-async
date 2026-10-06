@@ -732,3 +732,31 @@ stack options were shown with the code).
   doubling after empty runs up to 64 times, and on demand; not with PHP's collector, not at a park
   (S7.md 5). Why: PHP's collector runs on its root buffer's fill, which says nothing about waits; a
   park is the hot path; the back-off is PHP's own threshold rule.
+- 2026-10-06 `delay($ms)` with `$ms < 0` throws `ValueError` (S4.4, departure). Why: TrueAsync casts
+  it to an unsigned value and sleeps about 49 days; no reference test passes a negative value, and a
+  negative sleep is a caller's bug. Checked by `reactor/015`.
+- 2026-10-06 A delay past the clock's range waits on the latest finite deadline (S4.4). Why: the core
+  saturates it to an infinite deadline, which the Ring refuses for a Timer; TrueAsync saturates its
+  libuv timer too. Checked by `reactor/022`.
+- 2026-10-06 `delay()` whose Timer the queue completes at the submit still yields (S4.4). Why:
+  TrueAsync's `delay()` always parks, so the coroutines queued before it run first.
+- 2026-10-06 `delay()` with async off (no current coroutine) returns at once (S4.4), as TrueAsync
+  with no current coroutine. Where TrueAsync would start its scheduler (`php -r`) nothing can start
+  ours. Checked by `reactor/024`.
+- 2026-10-06 D16's Timer sits on the reactor's own list, is armed by every start of an exit's
+  graceful shutdown when a coroutine that ran is left, fires again every 100 ms while coroutines
+  remain, and is withdrawn when the drain ends (S4.4). Why: a Timer on the waits list would keep a
+  deadlock unresolved for 5 s; the refire is TrueAsync's `finally_shutdown` shape and covers a
+  finally that waits or spawns without a check on the suspend or spawn path (the Sage, over the
+  Critic's refusal of the suspend); a shutdown function's wait after the drain is not the drain's.
+  Checked by `reactor/018`-`021`, `025`.
+- 2026-10-06 `protect()` drops a cancellation it deferred when an exit unwinds its closure (S4.4).
+  Why: chained under the cancellation, the exit object is released and a `catch` around `protect()`
+  stops D16's unwind (the Critic). Checked by `reactor/023`.
+- 2026-10-06 `gc/020` and `gc/023` keep `--XFAIL--`, now naming the pinned core's awaited collection
+  instead of `delay()` (S4.4). Why: both assume the fork's deferred collection and its recorded
+  threshold adjustment; with `delay()` they fail on the threshold. An S8 change-request candidate.
+- 2026-10-06 The Windows build needs no `--with-zlib` (S4.4). Why: zlib is enabled by default
+  (`ext/zlib/config.w32:3`) and a snapshot build keeps an in-tree extension's default static
+  (`win32/build/confutils.js:471-497`, every in-tree module is in `core_module_list`); not run here,
+  the CI `windows` job shows it.

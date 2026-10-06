@@ -259,7 +259,7 @@ Done when: S3 + S4 lists pass; `delay(1000)` costs under 50 ms of user CPU; a te
 function wakes the loop from another pthread (through the core's `NotifyHandle`, found by class
 name until the core has a C constructor for it).
 Tier: T2. Roles: Critic on S4.1, Critic after S4.2 and after S4.3.
-Active: S4.4
+Active: S4.5
 
 - [x] S4.1 Design note `dev/plans/S4.md`: completion dispatch for scheduler-owned ops and provider
       ops; idle wait in `queue->wait()` with its `EDEADLK` and `EINTR` answers; deadlock decided
@@ -306,16 +306,29 @@ Active: S4.4
         (`dev/BENCHMARKS.md`). The Critic's and the Sage's rounds on the interrupt and the fork
         design kept the coroutine, added the pid check and the open question of a handler that
         waits; the Critic's code findings fixed, each caught by a test when reverted.
-- [ ] S4.4 Timer ops: `Async\delay()`, the TIMER kind and the D16 deadline; `--with-zlib` in the
+- [x] S4.4 Timer ops: `Async\delay()`, the TIMER kind and the D16 deadline; `--with-zlib` in the
       core build.
       done: the `component:S4` tests listed in S4.txt and `edge_cases/016`, `017` passing on debug
         and ASAN; `delay(1000)` measured under 50 ms of user CPU and a lane with `--jobs` above the
         core count timed, both in `dev/BENCHMARKS.md`
+      handoff: done 2026-10-06: `delay()` in `src/reactor.c` (`async_reactor_delay()`, the TIMER
+        kind), D16 in `src/scheduler.c` on the reactor's new `own` list (as built: `dev/plans/S4.md`
+        3.7 "As built (S4.4)"), `--with-zlib` in `tools/ci/build-core.sh`; tests `reactor/013`-`025`,
+        `edge_cases/016`, `017` ported. Seven of the nine S4 tests lost `--XFAIL--`; `gc/020`, `023`
+        keep it for the core's awaited collection (an S8 candidate). All 822 listed tests on
+        top of S7.1: `pocs-dbg` 605 PASS, 8 SKIP, 209 XFAIL; `pocs-asan` 590 PASS, 25 SKIP, 207
+        XFAIL; `pocs-win` left to CI; `sleep/003` and `signal/015` of S6.txt lost `--XFAIL--` too.
+        `delay(1000)`: no user CPU beyond the process's start; `--jobs 16` 9.6 s against 10.3 s at 4. The Ring wakes 10 000 waiters of one
+        deadline 39-66 ms late (the Poll queue 0.1 ms): S4.6 looks at it. The Critic's 2 major and
+        4 minor findings fixed or ruled on by the Sage (refire every 100 ms, arm only with a started
+        coroutine, withdrawn when the drain ends, two limits documented), each fix caught by a test
+        when reverted.
 - [ ] S4.5 Cross-thread wakeup on the core's `NotifyHandle`; the request for its C constructor
       filed by `RFC-CHANGES.md`.
       done: a test-only C function wakes the parked loop from another pthread, on debug and ASAN
 - [ ] S4.6 Stage review: Critic after S4.2-S4.5, coverage of the reactor code, Mull on the stage
-      diff, fuzz over 100 seeds.
+      diff, fuzz over 100 seeds; the Ring's lateness with many Timer ops (`dev/BENCHMARKS.md`,
+      S4.4: a timer heap of the reactor's own, as libuv's, or a core change to the Ring's backlog).
       done: Done when of S4 holds on the day; survivors killed or explained
 - [ ] S4.7 Security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item; findings fixed with a test or recorded

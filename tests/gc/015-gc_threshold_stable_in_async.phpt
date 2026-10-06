@@ -2,8 +2,6 @@
 GC 015: root buffer threshold stays at the default value in async mode
 --INI--
 zend.enable_gc=1
---XFAIL--
-Async\delay() comes in S4.4
 --FILE--
 <?php
 

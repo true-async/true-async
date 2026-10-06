@@ -121,17 +121,18 @@ Written 2026-10-05. S3.23 (`call_on_main_stack`) done; every S3 step is closed, 
 
 ## S4
 
-S4.3 done 2026-10-05: the reactor in `src/reactor.c`/`.h` (`dev/plans/S4.md` 3.7 "As built"): the
-per-thread queue, heap IO events whose record owns a reference (`async_io_record_unlink()` is the
-unlink for S4.4's TIMER kind), the waits list deciding deadlock, the tick's throttled poll, the idle
-wait in `scheduler_loop`, the interrupt coroutine, the fork rebuild (pid at submit, `EPERM` at the
-wait). Tests `reactor/001`-`012` through `TrueAsync\Test\reactor_wait()`. Next is S4.4: `delay()` on
-`async_io_event_new()` + `php_io_op_timer()` + a TIMER kind with `.unlink = async_io_record_unlink`,
-the D16 Timer (resubmit it in `reactor_rebuild()`), zlib. Open for Edmond: a pcntl handler that waits
-(`PLAN.md` "Open questions"). S5.md section 6 still says `F_COUNTED` for the TIMEOUT: S4.md 2.5
-answers N7 with the `waits` list. The S6 provider's op on `run()`'s frame under a bailout is S6.2's
-question for Edmond (S4.md 3.2). Full local runs need `mysql-server-core-8.0`; the B1 count needs a
-release core (`dev/BENCHMARKS.md`, S4.2 entry) and `bench/alloc_count.so`.
+S4.4 done 2026-10-06: `delay()` (`async_reactor_delay()` in `src/reactor.c`, the TIMER kind) and
+D16 (`exit_deadline_*` in `src/scheduler.c`, its Timer on the reactor's `own` list, refired every
+100 ms while coroutines remain, withdrawn when the drain ends); as built in `dev/plans/S4.md` 3.7.
+The cores now carry `--with-zlib` (`tools/ci/build-core.sh`); a container whose prefixes predate it
+skips `edge_cases/016`, `017`. `gc/020`, `023` stay XFAIL for the core's awaited collection (S8).
+Next is S4.5: cross-thread wakeup on the core's `NotifyHandle` (S4.md 3.6), with the event's
+`complete` pointer for the wakeup POLL op. The S6 thread edits `src/reactor.c` for S6.3 (S6.md section
+13): it rebases onto S4.4; the queue-creation `Error` moves into `reactor_submit()`. Open for Edmond: a
+pcntl handler that waits (`PLAN.md` "Open questions"). For S4.6: the Ring's lateness with many Timer
+ops (`dev/BENCHMARKS.md`, S4.4). A test that needs spawned coroutines parked before main goes on
+yields with `suspend()`: a short `delay()` may wake in main's own tick (U2) and run on first. Full
+local runs need `mysql-server-core-8.0`; the B1 count needs a release core and `bench/alloc_count.so`.
 
 ## S5
 

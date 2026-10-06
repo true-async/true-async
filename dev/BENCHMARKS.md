@@ -3,6 +3,49 @@
 The results journal: every measurement with its date, builds and outcome. The method and the
 benchmarks are `dev/plans/S3.md`, section 12; the scripts are `bench/`, the runner `tools/bench.py`.
 
+## 2026-10-06, S4.4: delay() and the S4 lanes
+
+**Builds.** The debug ZTS core of the lanes (`pocs-dbg`, the pinned core `9531d5b0b1f`, now with
+`--with-zlib`), our extension with the test hooks; 4 CPUs, wall clock and `getrusage()` of the child,
+three runs each unless said. Not a release build: these are bounds, not instruction counts.
+
+**`delay(1000)`** (the stage's Done when: under 50 ms of user CPU). A script of one `delay(1000)`
+against an empty script, both with the extension loaded:
+
+| Script | wall | user CPU | system CPU |
+|---|---|---|---|
+| `delay(1000)`, the Ring | 1.023-1.037 s | 0.0-11.8 ms | 7.8-20.3 ms |
+| `delay(1000)`, the Poll queue | 1.025-1.050 s | 16.0-25.0 ms | 0.0-10.6 ms |
+| empty script | 0.022-0.026 s | 13.0-18.9 ms | 3.7-4.4 ms |
+
+The wait costs no user CPU beyond the process's start: the scheduler blocks in the queue.
+
+**A lane with `--jobs` above the core count** (PLAN, "Timer tests wait on the clock"): `pocs-dbg`,
+511 tests, one run each: `--jobs 4` 10.3 s, `--jobs 8` 9.6 s, `--jobs 16` 9.6 s. More jobs than CPUs
+gain 7 %: the timer tests are a small share of the lane. At `--jobs 8` `reactor/019` failed once and
+passed on the retry: its main coroutine woke from `delay(1)` in its own tick (U2) before the two
+coroutines it had spawned ran, so they were cancelled unrun (4 of 300 runs under 6 busy loops).
+The test now yields with `suspend()` instead; the reactor tests passed 15 times in a row under 4 busy
+loops at `--jobs 16`.
+
+**N waiters of one deadline** (S3.md section 12, D26 row): N coroutines each `delay(200)`, spawned in
+one loop; lateness is the wake time minus the coroutine's own `delay()` call time minus 200 ms, one
+run each, at N = 10 000 four on the Ring and two on the Poll queue (ranges):
+
+| N | the Ring: median / max | the Poll queue: median / max |
+|---|---|---|
+| 250 | 1.7 / 2.5 ms | 0.04 / 0.5 ms |
+| 1 000 | 2.6 / 7.1 ms | 0.06 / 2.5 ms |
+| 3 000 | 19.1 / 26.9 ms | 0.04 / 0.9 ms |
+| 10 000 | 38.7-65.8 / 62.8-90.0 ms | 0.09-0.13 / 2.7-12.3 ms |
+
+The Ring grows faster than N; the Poll queue, with its timer heap, stays flat. Inferred from the code,
+not profiled: Timer ops past the Ring's submission entries wait in its backlog, and every `wait()`
+walks the whole backlog and the waiting list for expired deadlines (`main/io/php_io_ring.c:1811-1843`),
+while the reactor calls `wait()` once per completion (S4.md 3.2). The immediate unlink (D26) has no
+variant to compare. Left for S4.6: a timer heap of the reactor's own with one Timer op for its nearest
+deadline, as libuv keeps (TrueAsync), or a core change to the Ring's backlog.
+
 ## 2026-10-06, S4.3: B1 with the reactor's check in the tick
 
 **Builds.** As in the S4.2 entry: release, ZTS, `-O2`, gcc 13.3, the pinned core `9531d5b0b1f`, our

@@ -27,6 +27,12 @@ function await(Completable $awaitable): mixed {}
 function suspend(): void {}
 
 /**
+ * Parks the current coroutine for `$ms` milliseconds; 0 gives up the CPU as suspend() does. Returns at
+ * once when no coroutine runs (async is off).
+ */
+function delay(int $ms): void {}
+
+/**
  * Calls `$closure` with the current coroutine protected from cancellation: a cancellation requested
  * meanwhile is thrown when the outermost protect() returns. Returns what `$closure` returns.
  */

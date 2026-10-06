@@ -67,6 +67,7 @@ static ZEND_STACK_ALIGNED void scheduler_fiber_entry(zend_fiber_transfer *transf
 static void scheduler_cancel_all(zend_object *cancellation);
 static void context_vm_stack_start(zend_fiber_context *context, zval *vm_stack_memory);
 static void context_vm_stack_free(void);
+static void exit_deadline_withdraw(void);
 
 ///////////////////////////////////////////////////////////////////
 /// Fiber contexts and their pool
@@ -858,6 +859,7 @@ static bool scheduler_loop(void)
 			const uint32_t waiting = registry_waiting_count();
 
 			if (EXPECTED(waiting == 0)) {
+				exit_deadline_withdraw();
 				return false;
 			}
 
@@ -1506,16 +1508,131 @@ void async_scheduler_graceful_shutdown(zend_object *cancellation)
 	scheduler_cancel_all(cancellation);
 }
 
+/* Submits D16's Timer for `ms`. One that cannot be submitted adds its Error to the request's exit
+ * exception, and the shutdown goes on unbounded. A finished coroutine's handlers may have left an
+ * exception, which its finish folds after the arm. */
+static void exit_deadline_submit(async_io_event_t *event, const zend_long ms)
+{
+	php_io_op_timer(&event->op, php_io_deadline_from_ms(ms));
+
+	zend_object *saved_exception = NULL;
+	async_exception_save_fast(&EG(exception), &saved_exception);
+
+	if (UNEXPECTED(async_reactor_submit_own(event) == FAILURE)) {
+		zend_object *error = EG(exception);
+		GC_ADDREF(error);
+		zend_clear_exception();
+		async_exit_exception_add(error);
+	}
+
+	async_exception_restore_fast(&EG(exception), &saved_exception);
+}
+
+/* D16: the coroutines the graceful shutdown left alive are unwound with the engine's graceful exit,
+ * which no catch sees, protection cleared, so a protect() block does not hold the request either;
+ * their finally blocks run. While any is left, the Timer fires again every ASYNC_EXIT_REFIRE_MS: a
+ * finally that waits and a coroutine spawned since are unwound too, as TrueAsync's finally_shutdown
+ * cancels again what was spawned (scheduler.c:1037-1065). In scheduler context: the reactor's
+ * dispatch. */
+static void
+exit_deadline_fire(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
+{
+	(void) callback;
+	(void) result;
+	(void) exception;
+
+	HashTable *coroutines = &ASYNC_G(coroutines);
+	async_coroutine_t *coroutine = NULL;
+	const uint32_t iterator = zend_hash_iterator_add(coroutines, 0);
+	uint32_t remaining = zend_hash_num_elements(coroutines);
+
+	while (remaining-- > 0 && (coroutine = registry_walk_next(iterator)) != NULL) {
+		coroutine->coroutine.flags &= ~ASYNC_COROUTINE_F_PROTECTED;
+		async_coroutine_cancel(coroutine, zend_create_graceful_exit(), true);
+	}
+
+	zend_hash_iterator_del(iterator);
+
+	async_io_event_t *event = (async_io_event_t *) target;
+
+	if (zend_hash_num_elements(coroutines) != 0) {
+		event->base.flags &= ~ASYNC_EVENT_F_CLOSED;
+		exit_deadline_submit(event, ASYNC_EXIT_REFIRE_MS);
+		return;
+	}
+
+	/* Done: a later exit arms afresh. The dispatch's reference frees the event. */
+	ASYNC_G(exit_deadline) = NULL;
+	async_io_event_release(event);
+}
+
+/* D16 bounds the drain it was armed in: a shutdown function's own wait after it is not part of it. */
+static void exit_deadline_withdraw(void)
+{
+	async_io_event_t *event = ASYNC_G(exit_deadline);
+
+	if (UNEXPECTED(event != NULL)) {
+		ASYNC_G(exit_deadline) = NULL;
+		async_io_event_orphan(event);
+		async_io_event_release(event);
+	}
+}
+
+static async_event_callback_t exit_deadline_callback = {
+	.callback = exit_deadline_fire,
+};
+
+/* Whether a coroutine is left that ran: one cancelled before it ran finishes where it is popped and
+ * never waits. */
+static bool registry_has_started(void)
+{
+	const async_coroutine_t *coroutine = NULL;
+
+	ZEND_HASH_FOREACH_PTR(&ASYNC_G(coroutines), coroutine)
+	{
+		if (ZEND_COROUTINE_IS_STARTED(&coroutine->coroutine)) {
+			return true;
+		}
+	}
+	ZEND_HASH_FOREACH_END();
+
+	return false;
+}
+
+/* D16 (S4.md 3.5): once per drain, when a coroutine that ran is left, a Timer on the reactor's own
+ * list, so it keeps no coroutine from a deadlock. */
+static void exit_deadline_arm(void)
+{
+	if (EXPECTED(ASYNC_G(exit_deadline) != NULL || !registry_has_started())) {
+		return;
+	}
+
+	zend_long ms = ASYNC_EXIT_DEADLINE_MS;
+
+#ifdef TRUE_ASYNC_TEST_HOOKS
+	if (ASYNC_G(test_exit_deadline_ms) != 0) {
+		ms = ASYNC_G(test_exit_deadline_ms);
+	}
+#endif
+
+	async_io_event_t *event = async_io_event_new();
+	async_callbacks_reserve(&event->base.callbacks, 1);
+	async_callbacks_push_reserved(&event->base.callbacks, &exit_deadline_callback);
+	ASYNC_G(exit_deadline) = event;
+	exit_deadline_submit(event, ms);
+}
+
 void async_scheduler_cancel_for_exit(void)
 {
 	/* During the shutdown it cancels again what was spawned since (TrueAsync's finally_shutdown,
 	 * scheduler.c:1037-1065). */
 	if (UNEXPECTED(ASYNC_G(graceful_shutdown))) {
 		scheduler_cancel_all(NULL);
-		return;
+	} else {
+		async_scheduler_graceful_shutdown(NULL);
 	}
 
-	async_scheduler_graceful_shutdown(NULL);
+	exit_deadline_arm();
 }
 
 void async_scheduler_exit_with(zend_object *exception)
@@ -2050,6 +2167,7 @@ void async_scheduler_request_startup(void)
 	zend_hash_init(&ASYNC_G(coroutines), 8, NULL, NULL, false);
 	ASYNC_G(scheduler_coroutine) = NULL;
 	ASYNC_G(interrupt_coroutine) = NULL;
+	ASYNC_G(exit_deadline) = NULL;
 	ASYNC_G(graceful_shutdown) = false;
 	zend_hash_init(&ASYNC_G(unobserved_exceptions), 0, NULL, unobserved_exception_dtor, false);
 
@@ -2146,6 +2264,9 @@ void async_scheduler_request_shutdown(void)
 
 	/* The printed exceptions and what a bailout left unprinted. */
 	zend_hash_destroy(&ASYNC_G(unobserved_exceptions));
+
+	/* Before the reactor destroys the queue: a bailout cut the drain short. */
+	exit_deadline_withdraw();
 
 	if (UNEXPECTED(ZEND_ASYNC_EXIT_EXCEPTION != NULL)) {
 		OBJ_RELEASE(ZEND_ASYNC_EXIT_EXCEPTION);

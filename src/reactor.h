@@ -34,10 +34,10 @@ struct _async_reactor_link_s
  * unwinds, until the record's unlink withdraws it. */
 typedef struct
 {
-	async_event_t base;         /* ref_count: the records and the event's other holders */
-	php_io_op op;               /* built by the submitter; the queue owns it while it is submitted */
-	php_io_op_result result;    /* the completion's, written before the notify */
-	async_reactor_link_t waits; /* on the reactor's list while the op is submitted */
+	async_event_t base;                /* ref_count: the records and the event's other holders */
+	php_io_op op;                      /* built by the submitter; the queue owns it while it is submitted */
+	php_io_op_result result;           /* the completion's, written before the notify */
+	async_reactor_link_t reactor_link; /* on one of the reactor's lists while the op is submitted */
 } async_io_event_t;
 
 /* The thread's reactor, in ASYNC_G(reactor). */
@@ -51,6 +51,9 @@ typedef struct
 	/* The IO events whose op is submitted: nothing in the run queue ends their waits, so while the
 	 * list has one, an idle scheduler waits instead of resolving a deadlock (S4.md 3.4). */
 	async_reactor_link_t waits;
+	/* The reactor's own ops (the D16 deadline): no coroutine waits for them, so they keep none from a
+	 * deadlock; a fork rebuild submits them again on the child's queue. */
+	async_reactor_link_t own;
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	bool test_poll_queue; /* TrueAsync\Test\reactor_use_poll_queue(): the Poll queue where the Ring exists */
 #endif
@@ -72,12 +75,20 @@ void async_io_event_release(async_io_event_t *event);
  * CLOSED then). FAILURE with an Error. */
 zend_result async_io_event_submit(async_io_event_t *event);
 
+/* Submits one of the reactor's own ops, on the `own` list instead (S4.md 3.5): its owner holds the
+ * event and withdraws it before the release. FAILURE with an Error. */
+zend_result async_reactor_submit_own(async_io_event_t *event);
+
 /* Withdraws a submitted op that has not completed: no completion comes for it. */
 void async_io_event_orphan(async_io_event_t *event);
 
 /* The unlink of a kind whose record waits for an IO event and owns a reference to it: the last
  * waiter to leave an event that has not fired withdraws its op. */
 void async_io_record_unlink(async_coroutine_event_callback_t *record);
+
+/* Parks `waiter`, the running coroutine, on a Timer op for `ms` > 0 milliseconds: delay() (S4.md
+ * 3.5). False with the exception that ended the wait (a cancellation). */
+bool async_reactor_delay(async_coroutine_t *waiter, zend_long ms);
 
 /* Whether a submitted op may still wake a coroutine (S4.md 3.4). */
 static zend_always_inline bool async_reactor_has_waits(const async_reactor_t *reactor)

@@ -1,7 +1,5 @@
 --TEST--
 pcntl_signal() under a running reactor: delivery flows through the reactor, process still exits
---XFAIL--
-Not implemented yet: S6.5 of dev/PLAN.md
 --EXTENSIONS--
 pcntl
 posix

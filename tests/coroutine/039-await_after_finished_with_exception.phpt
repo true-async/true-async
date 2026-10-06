@@ -1,7 +1,5 @@
 --TEST--
 Coroutine: late await() after coroutine finished with exception delivers it without double-throw (#139)
---XFAIL--
-Async\delay() comes in S4.4
 --FILE--
 <?php
 

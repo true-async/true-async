@@ -1,7 +1,5 @@
 --TEST--
 Async\delay(0): enqueues the current coroutine without a timer
---XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
 --FILE--
 <?php
 

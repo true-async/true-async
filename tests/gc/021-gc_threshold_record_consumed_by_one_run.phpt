@@ -2,8 +2,6 @@
 GC 021: the full-buffer record is consumed by one run and does not leak into later collections
 --INI--
 zend.enable_gc=1
---XFAIL--
-Async\delay() comes in S4.4
 --FILE--
 <?php
 

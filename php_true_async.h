@@ -37,14 +37,16 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	async_coroutine_t *scheduler_coroutine; /* runs the loop on its own fiber; NULL until work needs it */
 	async_reactor_t reactor;                /* the thread's IO queue and the waits on it */
 	async_coroutine_t *interrupt_coroutine; /* runs the VM interrupt for an idle scheduler; NULL when none is alive */
+	async_io_event_t *exit_deadline;        /* D16's Timer while armed, once per drain; the scheduler's reference */
 	uint32_t last_handler_id;               /* the id of the newest finish or switch handler; 0 is never handed out */
 	bool graceful_shutdown;                 /* the graceful shutdown started: once per request */
 	bool debug_deadlock;                    /* true_async.debug_deadlock: the deadlock report lists every coroutine */
 #ifdef TRUE_ASYNC_TEST_HOOKS
-	uint8_t fault_site;           /* the armed async_test_fault_site_t; ASYNC_TEST_FAULT_NONE when unarmed */
-	uint32_t test_block_releases; /* test wait blocks released in this request */
-	uint32_t test_typed_unlinks;  /* records unlinked through a test kind's unlink in this request */
-	uint32_t test_aborts;         /* test kind aborts in this request */
+	uint8_t fault_site;              /* the armed async_test_fault_site_t; ASYNC_TEST_FAULT_NONE when unarmed */
+	uint32_t test_block_releases;    /* test wait blocks released in this request */
+	uint32_t test_typed_unlinks;     /* records unlinked through a test kind's unlink in this request */
+	uint32_t test_aborts;            /* test kind aborts in this request */
+	zend_long test_exit_deadline_ms; /* D16's deadline in this request; 0 for ASYNC_EXIT_DEADLINE_MS */
 #endif
 #ifdef TRUE_ASYNC_FUZZ
 	async_fuzz_state_t fuzz; /* TRUE_ASYNC_SCHED of this request */

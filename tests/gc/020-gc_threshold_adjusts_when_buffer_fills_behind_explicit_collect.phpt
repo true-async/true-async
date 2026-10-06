@@ -1,9 +1,9 @@
 --TEST--
 GC 020: a buffer filling behind an explicitly requested collection still adjusts the threshold
+--XFAIL--
+The pinned core awaits a full root buffer's collection; the threshold record of a deferred one is the fork's (S8 candidate)
 --INI--
 zend.enable_gc=1
---XFAIL--
-Async\delay() comes in S4.4
 --FILE--
 <?php
 

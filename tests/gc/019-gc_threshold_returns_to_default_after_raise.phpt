@@ -2,8 +2,6 @@
 GC 019: a raised threshold comes back down when a run collects again
 --INI--
 zend.enable_gc=1
---XFAIL--
-Async\delay() comes in S4.4
 --FILE--
 <?php
 

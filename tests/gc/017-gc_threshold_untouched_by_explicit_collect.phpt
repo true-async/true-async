@@ -2,8 +2,6 @@
 GC 017: an explicit gc_collect_cycles() in async mode leaves the threshold alone
 --INI--
 zend.enable_gc=1
---XFAIL--
-Async\delay() comes in S4.4
 --FILE--
 <?php
 

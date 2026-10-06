@@ -39,7 +39,7 @@ fetch https://github.com/true-async/php-src.git "$work/php-src" "$core_ref"
 cd "$work/php-src"
 ./buildconf --force
 ./configure --enable-zts --enable-debug --with-ior="$ior_prefix" --enable-test-scheduler \
-    --with-curl --with-openssl --enable-sockets --enable-pcntl --with-mysqli --with-pdo-mysql \
+    --with-curl --with-openssl --enable-sockets --enable-pcntl --with-mysqli --with-pdo-mysql --with-zlib \
     --prefix="$core_prefix" "${core_flags[@]}"
 make -j"$(nproc)" > /dev/null
 make install

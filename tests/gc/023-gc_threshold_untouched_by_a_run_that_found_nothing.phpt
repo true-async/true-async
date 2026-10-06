@@ -1,9 +1,9 @@
 --TEST--
 GC 023: a collection that found the buffer already drained does not adjust the threshold
+--XFAIL--
+The pinned core awaits a full root buffer's collection; the threshold record of a deferred one is the fork's (S8 candidate)
 --INI--
 zend.enable_gc=1
---XFAIL--
-Async\delay() comes in S4.4
 --FILE--
 <?php
 

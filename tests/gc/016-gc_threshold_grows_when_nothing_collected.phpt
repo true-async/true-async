@@ -2,8 +2,6 @@
 GC 016: the threshold still grows in async mode when a collection frees nothing
 --INI--
 zend.enable_gc=1
---XFAIL--
-Async\delay() comes in S4.4
 --FILE--
 <?php
 

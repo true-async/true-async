@@ -1,7 +1,5 @@
 --TEST--
 Spawn 1000 coroutines with delayed return values
---XFAIL--
-Async\delay() comes in S4.4
 --FILE--
 <?php
 

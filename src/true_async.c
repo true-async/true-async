@@ -142,6 +142,7 @@ static PHP_RINIT_FUNCTION(true_async)
 	ASYNC_G(test_block_releases) = 0;
 	ASYNC_G(test_typed_unlinks) = 0;
 	ASYNC_G(test_aborts) = 0;
+	ASYNC_G(test_exit_deadline_ms) = 0;
 #endif
 
 	return SUCCESS;
@@ -315,6 +316,47 @@ ZEND_FUNCTION(Async_suspend)
 	ZEND_ASYNC_SUSPEND();
 }
 
+/* TrueAsync's async.c:672-699 (dev/plans/S4.md section 1): 0 is a yield; a negative `ms` is refused,
+ * where TrueAsync arms a timer of about 49 days. With no current coroutine (async off) it returns at
+ * once. */
+ZEND_FUNCTION(Async_delay)
+{
+	zend_long ms;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_LONG(ms)
+	ZEND_PARSE_PARAMETERS_END();
+
+	if (UNEXPECTED(ms < 0)) {
+		zend_argument_value_error(1, "must be greater than or equal to 0");
+		RETURN_THROWS();
+	}
+
+	async_coroutine_t *coroutine = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
+
+	if (UNEXPECTED(coroutine == NULL)) {
+		return;
+	}
+
+	THROW_IF_SCHEDULER_CONTEXT();
+
+	/* A finished coroutine is still current while finalize releases what it held. */
+	if (UNEXPECTED(ZEND_COROUTINE_IS_FINISHED(&coroutine->coroutine))) {
+		zend_throw_error(NULL, "Cannot switch coroutines in the current execution context");
+		RETURN_THROWS();
+	}
+
+	if (ms == 0) {
+		if (EXPECTED(async_scheduler_enqueue(&coroutine->coroutine, NULL, false))) {
+			ZEND_ASYNC_SUSPEND();
+		}
+
+		return;
+	}
+
+	async_reactor_delay(coroutine, ms);
+}
+
 /* S3.md section 6 and D7: the request that arrives inside waits in deferred_cancellation. Only the
  * outermost protect() ends the protection, so a nested one does not throw in the middle of the outer
  * (section 13, bug 1). Without a current coroutine (async off) the closure is just called. */
@@ -348,6 +390,15 @@ ZEND_FUNCTION(Async_protect)
 	coroutine->coroutine.flags &= ~ASYNC_COROUTINE_F_PROTECTED;
 
 	zend_object *deferred_cancellation = coroutine->deferred_cancellation;
+
+	/* An exit unwinding the closure (D16's, or a dropped Fiber's) stays the exception: chained under a
+	 * cancellation it would be released, and a catch would stop the unwind. */
+	if (UNEXPECTED(deferred_cancellation != NULL && EG(exception) != NULL &&
+				   (zend_is_graceful_exit(EG(exception)) || zend_is_unwind_exit(EG(exception))))) {
+		coroutine->deferred_cancellation = NULL;
+		OBJ_RELEASE(deferred_cancellation);
+		return;
+	}
 
 	if (UNEXPECTED(deferred_cancellation != NULL)) {
 		coroutine->deferred_cancellation = NULL;
