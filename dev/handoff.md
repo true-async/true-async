@@ -213,15 +213,24 @@ freeze), the reference clone at `REFERENCE` for `--reference`.
 
 ## S6
 
-Written 2026-10-05. S6.1 (fixtures) done; S6.2 waits for S4's design note on `main`.
+Written 2026-10-06. S6.2 (design note `dev/plans/S6.md`, the frozen list) done; S6.3 next: its code
+starts on S4.3's reactor (`src/reactor.c`), its commit waits for `delay()` (S4.4) and `await_*`
+(S5.3) on `main`.
 
+- S6.3 adds to S4's reactor what the note's section 13 lists: a submit returning `errno`, the
+  provider's install and `hooks.flags` in `reactor_queue()`, an IO event with room for ANY, the
+  signal handles. Tell the S4 thread (through the coordinator) before touching `src/reactor.c`.
+- The provider install has two triggers (note section 2): `async_coroutine_new()` for a coroutine
+  other than main, and the queue's creation. Not at `scheduler_launch()`: the core launches before
+  every script.
+- `run()` copies the op to the heap (M12 without `zend_try`), copies `result` and `in_flight` back
+  after every completion; a Done op under a late cancellation returns SUCCESS with the exception
+  pending; an exception pending on entry answers FAILURE (note 3.1, 3.3).
+- `F_FILES` stays off; Windows `proc_open()` pipes need the core commit of note section 9, which
+  must also serve the path without a provider.
+- `io/035`-`037` start a child PHP from `TEST_PHP_EXECUTABLE` without the extension: S6.3 fixes the
+  runner. The seven core-tree tests (`S6.excluded`) wait for S6.7.
 - MySQL: `tools/test.py` starts a private `mysqld` for a run with `mysqli` or `pdo_mysql` tests
   when `MYSQL_TEST_HOST` is unset; a container needs `apt-get install mysql-server-core-8.0`
-  (WORKFLOW "Test fixtures"). CI sets `MYSQL_TEST_*` to its `mysql:8.3` service in the jobs that run
-  the whole list (linux, seeds, mutants-coverage).
-- HTTP: tests start TrueAsync's `common/http_server.php`; every test gets
-  `PHP_CLI_SERVER_WORKERS=4`. The seven reference tests that include php-src's
-  `sapi/cli/tests/php_cli_server.inc` by a relative path still need the core-tree path variable of
-  `dev/plans/S2.md` section 1 when S6 ports them.
-- `tests/lists/S6.txt` holds the two helpers and the three smoke tests; S6.2 adds the frozen rest
-  and `S6.excluded`.
+  (WORKFLOW "Test fixtures"). HTTP: tests start TrueAsync's `common/http_server.php` with
+  `PHP_CLI_SERVER_WORKERS=4`.

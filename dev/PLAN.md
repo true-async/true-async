@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-05 · Active: per stage, under its `Tier:` line (Parallel tracks)
+Updated: 2026-10-06 · Active: per stage, under its `Tier:` line (Parallel tracks)
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -68,7 +68,7 @@ track's test runs: each tests against the same pinned core, in its own container
 |---|---|---|
 | S4 | now; its design note closes once S5's note has stated its needs | S4's design note covers the wait-record layer for both (D25, `DECISIONS.md` 2026-10-02: events are S4's) |
 | S5 | S5.1 now; S5.2 once the wait-record layer is on `main`; `timeout()` once `delay()` is; closes after S4 | Futures and `await_*` need no reactor: 87 of the 97 `component:S5` lines of `tests/lists/S3.excluded` call neither `delay()` nor `timeout()` (counted 2026-10-05 in the reference at `REFERENCE`); `await_*` over a Traversable needs typed kinds; Done when includes S4's list |
-| S6 | S6.1 now; S6.2 once S4's design note is pushed; S6.3 once `delay()` and `await_*` are on `main`; closes after S5 | the fixtures need no extension code; S4's note designs completion dispatch for provider ops too; the `io`, `exec`, `socket_ext` tests call `await_all` |
+| S6 | S6.1 now; S6.2 once S4's design note is pushed; S6.3's code once the reactor's queue is on `main`, its commit once `delay()` and `await_*` are; closes after S5 | the fixtures need no extension code; S4's note designs completion dispatch for provider ops too; the `io`, `exec`, `socket_ext` tests call `await_all` |
 | S7 | once the S5 and S6 design notes are pushed | its roots are provider ops, timers, signals and wakeups, its edges Futures and channels |
 | S8 | after S6 | measured on a real provider |
 | S9 | after S5, each layer once Edmond agrees its plan | Scope's `awaitCompletion`, task groups and channels wait on Futures, cancellations and timeouts; Context hangs off Scope |
@@ -366,8 +366,8 @@ Done when: S3–S6 lists (from `sleep`, `io`, `stream`, `socket_ext`, `dns`, `cu
 `mysqli`, `pdo_mysql` without the pool, `signal`) pass on debug and ASAN; IO chaos runs clean
 over 100 seeds; tests that fail because of the hooks design are listed against the review item;
 `dns` counted only on the Ring configuration (the Poll queue answers Unsupported for lookups).
-Tier: T2. Roles: Critic on S6.2, Critic after S6.4.
-Active: S6.2 (once S4's design note is on `main`)
+Tier: T2. Roles: Critic on S6.2, Critic after S6.7 (S6.8).
+Active: S6.3 (code now; the commit once `delay()` and `await_*` are on `main`)
 
 - [x] S6.1 Fixtures: MySQL with two connections and an HTTP server with
       `PHP_CLI_SERVER_WORKERS`, started by `tools/test.py` locally and by the CI lanes.
@@ -379,15 +379,43 @@ Active: S6.2 (once S4's design note is on `main`)
         TrueAsync's per-test server (`common/http_server.php`), every test's server with four
         workers (`common/http_server_fixture`, `common/http_server_workers`; the latter answers
         "timeout" without workers); WORKFLOW "Test fixtures".
-- [ ] S6.2 Design note: install point per request and thread, readiness ops, deadlines, the
-      suspend predicate, `zend_try` around the suspend (M12), Unsupported when async is off (M13),
-      DNS and files on the Ring, SigWait on `SignalHandle` and WaitPid on `ProcessHandle` with
+- [x] S6.2 Design note: install point per request and thread, readiness ops, deadlines, the
+      suspend predicate, M12 (a `zend_try` around the suspend or an op off the frame), Unsupported
+      when async is off (M13), DNS and files, SigWait on `SignalHandle` and WaitPid on `ProcessHandle` with
       the core's reaped-status table; signal ownership with threads decided (a live
       `SignalHandle` blocks the signal in its own thread only; until decided, `signal/*` is
       excluded with that reason); frozen list; core-dependency table.
-- [ ] S6.3 Pipe tests (`io` pipes, `proc_open`, STDIN) on Linux and Windows first, then Timer,
-      Poll, Recv, Send, Accept, Connect, Any, WaitPid, SigWait, GetAddrInfo.
-- [ ] S6.4 IO shutdown windows (the `ts_suspend` NULL case), run everything, record failures.
+      done: the note and the list pushed; every Critic finding fixed or answered in the note
+      handoff: done 2026-10-06: `dev/plans/S6.md`. The provider is installed at the first
+        coroutine other than main or at the reactor queue's creation; `run()` submits a heap copy
+        of the op, so M12 needs no `zend_try` (TrueAsync's heap events); a completed op under a
+        late cancellation returns its result with the exception pending; files stay synchronous
+        until the core's commit-on-settle (B3); signals belong to the one PHP thread of the
+        process (`signal/008`, `009`, `012` excluded for S10); Windows `proc_open()` pipes become
+        overlapped named pipes in a core commit of S6.3. `tests/lists/S6.txt` gains 294 tests
+        and 8 helpers, 38 excluded in `S6.excluded`; `tools/test.py` passes `opcache.jit=off`.
+        On core `9531d5b0b1f` after the rebase on S4.3: `pocs-dbg` 529 PASS, 8 SKIP, 256 XFAIL;
+        `pocs-asan` 514 PASS, 25 SKIP, 254 XFAIL. The Critic's 1 critical and 7 major findings, the Sage's nine rulings and
+        two Critic re-checks against S4.3's reactor are in the note; nothing went to Edmond.
+- [ ] S6.3 The provider for every op type (`dev/plans/S6.md` sections 2, 3, 5, 13), pipes and
+      timers; the Windows pipe core commit; `io/035`-`037` get the extension in the child.
+      done: `sleep` and `io` without `--XFAIL--` except the by-design ones; every test that passed
+        before still passes on `pocs-dbg` and `pocs-asan`; the note's S6.3 own tests pass
+- [ ] S6.4 Sockets (Recv, Send, Accept, Connect, Poll, Any, registrations) and DNS on the Ring.
+      done: `stream`, `socket_ext`, `dns` without `--XFAIL--` except the by-design ones
+- [ ] S6.5 Children and signals: WaitPid, SigWait, `Async\signal()` (once S5.2's Future is on
+      `main`).
+      done: `exec`, `signal` without `--XFAIL--` except the by-design ones
+- [ ] S6.6 curl, mysqli, pdo_mysql without the pool.
+      done: `curl`, `mysqli`, `pdo_mysql` without `--XFAIL--` except the by-design ones
+- [ ] S6.7 IO shutdown windows (the `ts_suspend` NULL case), the seven core-tree tests, every list
+      run, the by-design failures tagged `core:` against their review items, the RFC requests of
+      the note's section 14 in `RFC-CHANGES.md`.
+      done: Done when of S6 holds except the review
+- [ ] S6.8 Stage review: Critic over S6.3-S6.7, coverage, Mull, IO chaos over 100 seeds.
+      done: findings fixed or answered; chaos clean over 100 seeds
+- [ ] S6.9 Security pass by `dev/SECURITY.md`.
+      done: a journal entry per checklist item; findings fixed with a test or recorded
 
 ## S7 — Async object collector  [ ]
 

@@ -673,3 +673,33 @@ stack options were shown with the code).
 - 2026-10-05 An exception a pcntl handler throws while every coroutine waits ends the request as an
   unobserved coroutine outcome (S4.3, departure). Why: no frame of the script is running to take it;
   handing it to main's wait (the Critic's proposal) would pick one waiter by convention.
+- 2026-10-06 The IO provider submits a heap copy of the core's op in an IO event and copies the
+  result and `in_flight` back, instead of M12's `zend_try` around the park (S6.md 3.2). Why: a
+  bailout out of a parked coroutine's tick unwinds `run()`'s frame before the finalize orphans the
+  op; TrueAsync keeps everything its reactor touches in heap events and uses no `zend_try` there,
+  and a hot-path `zend_try` needs Edmond's word.
+- 2026-10-06 The provider is installed at the first coroutine other than main or at the reactor
+  queue's creation, not at the scheduler's launch (S6.md 2). Why: the core launches the scheduler
+  before every script, and TrueAsync turns its IO on lazily with the first spawn, await, delay,
+  timeout or signal; installing at spawn only would leave `Async\signal()` followed by `fgets()` in
+  main blocking (the Critic, the Sage).
+- 2026-10-06 An op that completed before its coroutine was woken with an exception returns SUCCESS
+  with its result and leaves the exception pending (S6.md 3.3, departure). Why: after delivery the
+  result belongs to the provider and the core frees nothing on FAILURE, so a FAILURE would leak an
+  accepted descriptor or an address list; every caller of the wrappers was checked safe with a
+  pending exception. A core request makes `php_io_run_ex()` free it (the Sage).
+- 2026-10-06 `PHP_IO_HOOKS_F_FILES` stays off: regular-file IO runs on the thread (S6.md 6,
+  departure). Why: a cancelled Ring read loses the bytes the backend read until the core's
+  commit-on-settle (review B3), which is worse than a coroutine holding the thread on a disk read (the
+  Sage).
+- 2026-10-06 `Async\signal()` works in the one PHP thread of the process; `signal/008`, `009` and
+  `012` are excluded for S10 (S6.md 8). Why: the core's `SignalHandle` masks the signal per thread
+  and is refused outside the CLI under ZTS; delivery to several PHP threads needs a process-wide
+  owner the core does not have.
+- 2026-10-06 Windows `proc_open()` pipes become overlapped named pipes in a core commit of S6.3,
+  served with and without a provider (S6.md 9). Why: IOCP completes only overlapped handles, and the
+  core's Poll queue cannot poll a Windows pipe, so the no-provider path needs the overlapped read as
+  well (the Sage).
+- 2026-10-06 `tools/test.py` runs the tests with `-d opcache.jit=off` (S6.2). Why: nine reference
+  `exec/` tests skip unless the setting reads `0` or `off`, and the core's default `disable` is the
+  same setting.

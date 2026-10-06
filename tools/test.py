@@ -381,8 +381,11 @@ def run_tests(lane, entries, jobs, sched=None):
     lane.build.mkdir(parents=True, exist_ok=True)
     list_file = write_list(lane, entries)
 
+    # opcache.jit=off: nine reference exec tests skip unless it reads "0" or "off", and the core's
+    # default "disable" is the same setting.
     cmd = [lane.php, runner, '-q', '-p', lane.php, f'-j{jobs}', '--show-diff', '--no-progress',
-           '-d', f'extension={lane.module}', '-d', 'true_async.enable=1', '-r', list_file]
+           '-d', f'extension={lane.module}', '-d', 'true_async.enable=1', '-d', 'opcache.jit=off',
+           '-r', list_file]
     env = test_env()
 
     if sched is not None:

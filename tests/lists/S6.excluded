@@ -1,0 +1,51 @@
+# S6: reference tests of the S6 groups not ported in S6, one reason each (dev/plans/S2.md, section 3).
+
+# sleep
+sleep/007-delay_after_cpu_burn.phpt  component:S9 (Scope)
+
+# io
+io/081-flock_non_blocking_event_loop.phpt  needs-core:review M10 (no Flock op: a contended flock() blocks the thread, dev/reviews/io-hooks-design-review.md)
+io/082-http_negative_timeout_poll_leak.phpt  fixture:core-tree (includes a php-src test helper by a relative path; S6.7 ports it, dev/plans/S2.md section 1)
+io/084-flock_waiters_exceed_threadpool.phpt  needs-core:review M10 (no Flock op: a contended flock() blocks the thread, dev/reviews/io-hooks-design-review.md)
+io/101-phar_entries_decompressed_at_once.phpt  fixture:zlib (the core build gains --with-zlib in S4.4)
+
+# stream
+stream/003-file_get_contents_http.phpt  fixture:core-tree (includes a php-src test helper by a relative path; S6.7 ports it, dev/plans/S2.md section 1)
+stream/038-feof_live_socket.phpt  component:S9 (Channel)
+stream/039-feof_after_connect.phpt  component:S9 (Channel)
+stream/040-feof_after_send.phpt  component:S9 (Channel)
+stream/041-feof_after_recv.phpt  component:S9 (Channel)
+stream/042-feof_after_remote_close.phpt  component:S9 (Channel)
+stream/043-feof_after_send_then_remote_close.phpt  component:S9 (Channel)
+stream/044-feof_with_pending_data.phpt  component:S9 (Channel)
+stream/045-accept_cancel_uaf.phpt  component:S9 (Scope)
+
+# curl
+curl/061-read_callback_socket_source.phpt  fixture:none (its SKIPIF always skips in the reference)
+curl/063-readdata_no_callback.phpt  fixture:core-tree (includes a php-src test helper by a relative path; S6.7 ports it, dev/plans/S2.md section 1)
+curl/064-stderr_file_reuse.phpt  fixture:core-tree (includes a php-src test helper by a relative path; S6.7 ports it, dev/plans/S2.md section 1)
+curl/070-read_takes_only_its_completion.phpt  fixture:core-tree (includes a php-src test helper by a relative path; S6.7 ports it, dev/plans/S2.md section 1)
+curl/071-upload_stream_closed_mid_read.phpt  fixture:core-tree (includes a php-src test helper by a relative path; S6.7 ports it, dev/plans/S2.md section 1)
+curl/072-fnmatch_exception.phpt  fixture:core-tree (includes a php-src test helper by a relative path; S6.7 ports it, dev/plans/S2.md section 1)
+
+# pdo_mysql
+pdo_mysql/014-pdo_pool_error_leak_cross_coroutine.phpt  component:S10 (PDO pool)
+pdo_mysql/015-pdo_pool_cancel_during_query.phpt  component:S10 (PDO pool)
+pdo_mysql/016-pdo_pool_killed_connection.phpt  component:S10 (PDO pool)
+pdo_mysql/017-pdo_pool_killed_during_transaction.phpt  component:S10 (PDO pool)
+pdo_mysql/019-pdo_pool_cancel_during_transaction.phpt  component:S10 (PDO pool)
+pdo_mysql/020-pdo_pool_retry_after_cancel.phpt  component:S10 (PDO pool)
+pdo_mysql/021-pdo_pool_retry_after_kill.phpt  component:S10 (PDO pool)
+pdo_mysql/022-pdo_pool_stmt_on_broken_conn.phpt  component:S10 (PDO pool)
+pdo_mysql/023-pdo_pool_max_size_enforced.phpt  component:S10 (PDO pool)
+pdo_mysql/024-pdo_pool_get_attribute.phpt  component:S10 (PDO pool)
+pdo_mysql/050-pdo_mysql_pool_stmt_cache_hit.phpt  component:S10 (PDO pool)
+pdo_mysql/051-pdo_mysql_pool_stmt_cache_lru.phpt  component:S10 (PDO pool)
+pdo_mysql/052-pdo_mysql_pool_stmt_cache_disabled.phpt  component:S10 (PDO pool)
+pdo_mysql/053-pdo_mysql_pool_stmt_cache_emulate_bypass.phpt  component:S10 (PDO pool)
+pdo_mysql/054-pdo_mysql_pool_stmt_cache_coroutines.phpt  component:S10 (PDO pool)
+
+# signal
+signal/008-signal_thread_pool_multi.phpt  component:S10 (thread pool; signals across threads, dev/plans/S6.md section 8)
+signal/009-signal_spawn_thread_multi.phpt  component:S10 (thread pool; signals across threads, dev/plans/S6.md section 8)
+signal/012-signal_thread_pool_different_signals.phpt  component:S10 (thread pool; signals across threads, dev/plans/S6.md section 8)
