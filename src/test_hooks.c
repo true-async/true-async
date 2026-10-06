@@ -38,6 +38,7 @@
 #include "zend_exceptions.h"
 #include "zend_smart_str.h"
 #include "zend_call_stack.h"
+#include "zend_hrtime.h"
 #include "php_true_async.h"
 #include "test_hooks.h"
 #include "coroutine.h"
@@ -1084,6 +1085,23 @@ static ZEND_FUNCTION(add_clearing_finish_handler)
 			&async_coroutine_from_object(coroutine)->coroutine, test_clearing_finish_handler, NULL, NULL);
 }
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_collector_age, 0, 1, IS_VOID, 0)
+	ZEND_ARG_TYPE_INFO(0, ms, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
+/* Moves the collector's last automatic run `ms` milliseconds into the past, as if that time had
+ * passed: a test of the interval and its back-off then needs no wall-clock margins. */
+static ZEND_FUNCTION(collector_age)
+{
+	zend_long ms;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_LONG(ms)
+	ZEND_PARSE_PARAMETERS_END();
+
+	ASYNC_G(collector_last_run) -= (uint64_t) ms * (ZEND_NANO_IN_SEC / 1000);
+}
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_coroutine_count, 0, 0, IS_LONG, 0)
 ZEND_END_ARG_INFO()
 
@@ -2065,6 +2083,7 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_clearing_finish_handler", ZEND_FN(add_clearing_finish_handler), arginfo_add_clearing_finish_handler, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\coroutine_count", ZEND_FN(coroutine_count), arginfo_coroutine_count, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\coroutine_from_object", ZEND_FN(coroutine_from_object), arginfo_coroutine_from_object, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\collector_age", ZEND_FN(collector_age), arginfo_collector_age, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\await_records", ZEND_FN(await_records), arginfo_await_records, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\link_into_wait", ZEND_FN(link_into_wait), arginfo_link_into_wait, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\wait_counters", ZEND_FN(wait_counters), arginfo_wait_counters, 0, NULL, NULL)

@@ -1,0 +1,2 @@
+<?php
+\Async\await($target);

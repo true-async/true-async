@@ -491,7 +491,7 @@ cross-thread wakeups are never reported; a run over 10 000 parked coroutines cos
 time, recorded; scheduler fuzz over 100 seeds reports no false positives.
 Tier: T2. Roles: Critic on S7.1, Critic after S7.4 (S7.5).
 Notes: dev/plans/S7.md
-Active: S7.2
+Active: S7.3
 
 - [x] S7.1 Design note: roots (runnable coroutines, pending external sources: provider ops,
       timers, signals, wakeups, main), edges (waiter → awaitable → completers), when it runs (on
@@ -508,10 +508,26 @@ Active: S7.2
         reference has none). The Critic's 2 critical and 5 major findings, and 2 high ones of its
         re-check, changed sections 3-6 and 10-12; nothing went to Edmond. Lanes not run: the step
         adds no code and no listed test.
-- [ ] S7.2 The walk, `collector_target` for COROUTINE, `get_deadlocked_coroutines()`, coroutine
+- [x] S7.2 The walk, `collector_target` for COROUTINE, `get_deadlocked_coroutines()`, coroutine
       waits, the automatic run with `report` and its back-off, the fuzz oracle (S7.md 3-5, 11).
       done: S7.txt's S7.2 tests pass on `pocs-dbg` and `pocs-asan`; every list unchanged; the
         lists over 10 seeds with the oracle, `report` and the interval at 0 report no false finding
+      handoff: done 2026-10-06: `src/collector.c` walks the parked coroutines in a side table
+        (wake edges, count, spread) and touches no reference count; COROUTINE is the only kind with
+        `collector_target`, so S7.3 adds the event kinds and the reactor lists' seeding together.
+        `Async\get_deadlocked_coroutines()`, INI `true_async.partial_deadlock` (`report`, `off`;
+        `cancel` refused until S7.4) and `true_async.partial_deadlock_interval`; the run sits in
+        `scheduler_loop`'s idle branch. The oracle aborts a seed on a wake or a cancel of a found
+        coroutine that nothing handed out (`registry_cancel()` in `src/scheduler.c`). 25 own tests
+        in `collector/`; known miss: a coroutine parked inside a generator (`collector/017`).
+        `module/001`, `002` list the new INI (`changed:`, the Critic judged). Critic two rounds,
+        the Sage once; nothing went to Edmond. Lanes on the day: on core `async-core-io-2026-10-06` with S6.3 in,
+        `pocs-dbg` 834 PASS, 8 SKIP, 47 XFAIL, nothing unexpected; on the previous core with S5.3
+        in, `pocs-asan` 778 PASS, 27 SKIP, 73 XFAIL, the only unexpected results `edge_cases/016`,
+        `017` skipping for a core built here without zlib. 10 seeds before
+        S5.3 and 3 after: no crash, assertion, leak or oracle abort, and no partial-deadlock
+        warning outside `collector/`; some seeds see an `--XFAIL--` test pass in a random order
+        (`exec/002`, `dns/003`, `io/094`).
 - [ ] S7.3 Futures, tokens, Timeouts and `await_*` blocks; the holders' table of S7.md 10 (once
       S5.3 is on `main`).
       done: S7.txt's S7.3 tests pass on debug and ASAN, those waiting for S4.5 and S6.5 with

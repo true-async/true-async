@@ -15,10 +15,12 @@ The exit code is the verdict: 0 only when every listed test has its expected sta
 own exit code ignores SKIP and WARN and is not used.
 
 --seeds N builds the module with the fuzz hook (--enable-true-async-fuzz) into _build/<lane>-fuzz
-and runs the tests once per seed 1..N with TRUE_ASYNC_SCHED=random:<seed>. A seed fails a test only
-by a crash, an assertion, a sanitizer report, a leak or a timeout; any other change of the output
-passes, since a random order changes what order-dependent tests print. A diagnostic (a fatal error,
-a warning, a notice) the expected output lacks is listed for reading.
+and runs the tests once per seed 1..N with TRUE_ASYNC_SCHED=random:<seed>, and with the collector of
+coroutines that can never wake running at every idle point, so its oracle checks every finding
+(dev/plans/S7.md, section 11). A seed fails a test only by a crash, an assertion, a sanitizer
+report, a leak or a timeout; any other change of the output passes, since a random order changes
+what order-dependent tests print. A diagnostic (a fatal error, a warning, a notice) the expected
+output lacks is listed for reading.
 """
 import argparse
 import contextlib
@@ -390,6 +392,7 @@ def run_tests(lane, entries, jobs, sched=None):
 
     if sched is not None:
         env['TRUE_ASYNC_SCHED'] = sched
+        cmd += ['-d', 'true_async.partial_deadlock_interval=0']
 
     if lane.tree == 'asan':
         cmd[2:2] = ['--asan', '-x']

@@ -88,4 +88,8 @@ void async_scheduler_exit_with(zend_object *exception);
  * holds for the call, completes first (dev/plans/S5.md, section 4). */
 bool async_await_coroutine(async_coroutine_t *target, async_awaitable_t *token);
 
+/* The INI value of error_reporting, as zend_fiber_vm_stack_start reads it: an empty ini value means
+ * "never configured". The scheduler's stack keeps its own copy in EG(error_reporting). */
+zend_long async_ini_error_reporting(void);
+
 #endif /* TRUE_ASYNC_SCHEDULER_H */

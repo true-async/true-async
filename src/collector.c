@@ -1,0 +1,756 @@
+/*
+   +----------------------------------------------------------------------+
+   | Copyright © TrueAsync contributors.                                  |
+   +----------------------------------------------------------------------+
+   | This source file is subject to the Modified BSD License that is      |
+   | bundled with this package in the file LICENSE.                       |
+   |                                                                      |
+   | SPDX-License-Identifier: BSD-3-Clause                                |
+   +----------------------------------------------------------------------+
+   | Authors: Edmond <edmondifthen@proton.me>                             |
+   +----------------------------------------------------------------------+
+*/
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
+#include "php.h"
+#include "Zend/zend_closures.h"
+#include "Zend/zend_hrtime.h"
+#include "php_true_async.h"
+#include "collector.h"
+#include "scheduler.h"
+
+/* The walk (dev/plans/S7.md, section 3.3) keeps its colours and counts in its own tables, so it never
+ * touches a reference count or the GC_INFO of PHP's collector:
+ *
+ * 1. Candidates: the parked coroutines every record of whose wait names its target (3.1).
+ * 2. Wake edges: each record gives an edge from its target to its waiter. A target that is a running
+ *    coroutine, or one waiting for an outside source, makes its waiters live, and theirs, before
+ *    anything else is walked.
+ * 3. Count: from the candidates left, every node reachable through what the nodes own is counted:
+ *    how many references the walked nodes hold to it, the registry's to each candidate included.
+ * 4. Spread: a node with more references than counted is held from outside and live; what a live
+ *    node owns is live, and a live target makes its waiters live.
+ * 5. The candidates left are the result. */
+
+#define COLLECTOR_NONE UINT32_MAX
+
+/* A candidate coroutine: its references are its object's, its parked stack's and its records'. */
+#define COLLECTOR_NODE_CANDIDATE (1u << 0)
+/* Live before the count: a coroutine that is not a candidate, a weakly referenced object, a candidate
+ * a wake edge made live. Its references are never counted, so whatever it alone holds keeps a
+ * reference from outside the count and is live by it. */
+#define COLLECTOR_NODE_KNOWN_LIVE (1u << 1)
+#define COLLECTOR_NODE_LIVE (1u << 2)
+
+/* An object, an array or a reference the walk met. */
+typedef struct
+{
+	zend_refcounted *ref;
+	uint32_t internal;     /* references the walked nodes hold to it, the registry's to a candidate included */
+	uint32_t first_waiter; /* the first wake edge from it to a candidate waiting for it; COLLECTOR_NONE */
+	uint8_t flags;
+} collector_node_t;
+
+typedef struct
+{
+	uint32_t waiter; /* the node of the candidate the edge's target wakes */
+	uint32_t next;   /* the target's next edge; COLLECTOR_NONE */
+} collector_wake_edge_t;
+
+/* What a reported reference does: the same reporters run in every pass, as PHP's collector walks the
+ * same references to mark and to scan (zend_gc.c, gc_mark_grey and gc_scan_black). */
+typedef enum
+{
+	COLLECTOR_PASS_WAKE_EDGES, /* only collector_target reports, each one an edge */
+	COLLECTOR_PASS_COUNT,      /* a reference counts toward its node */
+	COLLECTOR_PASS_SPREAD,     /* a reference from a live node makes its node live */
+} collector_pass_t;
+
+struct _async_collector_s
+{
+	HashTable index; /* collector_key() of a node's address to its position in `nodes` */
+	collector_node_t *nodes;
+	uint32_t node_count;
+	uint32_t node_capacity;
+	collector_wake_edge_t *edges;
+	uint32_t edge_count;
+	uint32_t edge_capacity;
+	uint32_t *worklist; /* positions of nodes made live and not yet walked */
+	uint32_t worklist_count;
+	uint32_t worklist_capacity;
+	/* The symbol tables reported in this pass: an include or an eval in a function hands the function's
+	 * table to its frame (zend_vm_def.h, ZEND_INCLUDE_OR_EVAL), so two frames return the same one. */
+	HashTable symbol_tables;
+	zend_get_gc_buffer frame_buffer; /* the frames' references; get_gc answers in the engine's own */
+	collector_pass_t pass;
+	uint32_t waiter; /* the candidate whose records report, in the wake-edge pass */
+	bool failed;     /* the passes disagreed: the run finds nothing (collector_spread) */
+};
+
+/* Nodes are allocated with at least 8-byte alignment: the low bits would leave most buckets of the
+ * index empty. */
+static zend_always_inline zend_ulong collector_key(const void *address)
+{
+	return (zend_ulong) ((uintptr_t) address >> 3);
+}
+
+static void collector_grow(void **array, uint32_t *capacity, const size_t element_size)
+{
+	*capacity = *capacity == 0 ? 16 : *capacity * 2;
+	*array = safe_erealloc(*array, *capacity, element_size, 0);
+}
+
+static uint32_t collector_node_add(async_collector_t *collector, zend_refcounted *ref, const uint8_t flags)
+{
+	if (UNEXPECTED(collector->node_count == collector->node_capacity)) {
+		collector_grow((void **) &collector->nodes, &collector->node_capacity, sizeof(collector_node_t));
+	}
+
+	collector_node_t *node = &collector->nodes[collector->node_count];
+	node->ref = ref;
+	node->internal = 0;
+	node->first_waiter = COLLECTOR_NONE;
+	node->flags = flags;
+
+	return collector->node_count++;
+}
+
+/* The node of `ref`, added on first sight. Every candidate is added before anything else, so a
+ * coroutine met here is not one: it runs or waits for an outside source. */
+static uint32_t collector_node_of(async_collector_t *collector, zend_refcounted *ref)
+{
+	zval *position = zend_hash_index_lookup(&collector->index, collector_key(ref));
+
+	if (EXPECTED(Z_TYPE_P(position) == IS_LONG)) {
+		return (uint32_t) Z_LVAL_P(position);
+	}
+
+	uint8_t flags = 0;
+
+	if (UNEXPECTED(GC_TYPE(ref) == IS_OBJECT &&
+				   (((zend_object *) ref)->ce == async_ce_coroutine || (GC_FLAGS(ref) & IS_OBJ_WEAKLY_REFERENCED)))) {
+		flags = COLLECTOR_NODE_KNOWN_LIVE;
+	}
+
+	const uint32_t node = collector_node_add(collector, ref, flags);
+	ZVAL_LONG(position, node);
+
+	return node;
+}
+
+static void collector_worklist_push(async_collector_t *collector, const uint32_t node)
+{
+	if (UNEXPECTED(collector->worklist_count == collector->worklist_capacity)) {
+		collector_grow((void **) &collector->worklist, &collector->worklist_capacity, sizeof(uint32_t));
+	}
+
+	collector->worklist[collector->worklist_count++] = node;
+}
+
+static void collector_mark_live(async_collector_t *collector, const uint32_t node)
+{
+	if (EXPECTED(collector->nodes[node].flags & COLLECTOR_NODE_LIVE)) {
+		return;
+	}
+
+	collector->nodes[node].flags |= COLLECTOR_NODE_LIVE;
+	collector_worklist_push(collector, node);
+}
+
+static void collector_reference_counted(async_collector_t *collector, zend_refcounted *ref)
+{
+	if (UNEXPECTED(GC_FLAGS(ref) & GC_IMMUTABLE)) {
+		return;
+	}
+
+	if (collector->pass == COLLECTOR_PASS_COUNT) {
+		/* Apart: the lookup may move `nodes`. */
+		const uint32_t node = collector_node_of(collector, ref);
+		collector->nodes[node].internal++;
+		return;
+	}
+
+	const zval *position = zend_hash_index_find(&collector->index, collector_key(ref));
+
+	if (UNEXPECTED(position == NULL)) {
+		ZEND_ASSERT(0 && "the spread meets only what the count added");
+		collector->failed = true;
+		return;
+	}
+
+	collector_mark_live(collector, (uint32_t) Z_LVAL_P(position));
+}
+
+static void collector_reference(async_collector_t *collector, zval *value)
+{
+	if (UNEXPECTED(Z_TYPE_P(value) == IS_INDIRECT)) {
+		value = Z_INDIRECT_P(value);
+	}
+
+	if (EXPECTED(Z_COLLECTABLE_P(value))) {
+		collector_reference_counted(collector, Z_COUNTED_P(value));
+	}
+}
+
+static void collector_table_references(async_collector_t *collector, HashTable *table)
+{
+	zval *value;
+
+	ZEND_HASH_FOREACH_VAL(table, value)
+	{
+		collector_reference(collector, value);
+	}
+	ZEND_HASH_FOREACH_END();
+}
+
+void async_collector_report_target(async_collector_t *collector, zend_object *target, const bool owned)
+{
+	if (EXPECTED(collector->pass != COLLECTOR_PASS_WAKE_EDGES)) {
+		if (owned) {
+			collector_reference_counted(collector, (zend_refcounted *) target);
+		}
+
+		return;
+	}
+
+	const uint32_t node = collector_node_of(collector, (zend_refcounted *) target);
+
+	if (UNEXPECTED(collector->edge_count == collector->edge_capacity)) {
+		collector_grow((void **) &collector->edges, &collector->edge_capacity, sizeof(collector_wake_edge_t));
+	}
+
+	collector_wake_edge_t *edge = &collector->edges[collector->edge_count];
+	edge->waiter = collector->waiter;
+	edge->next = collector->nodes[node].first_waiter;
+	collector->nodes[node].first_waiter = collector->edge_count++;
+}
+
+static void collector_record_target(const async_coroutine_event_callback_t *record, void *collector)
+{
+	record->event_callback.kind->collector_target(record, collector);
+}
+
+/* An internal function's frame, read here and not by zend_unfinished_execution_gc_ex, which asserts
+ * that an internal frame has no extra named parameters (zend_execute.c) while a variadic internal
+ * function gets them. The call owns all of it until it returns: await(spawn(...)) holds the
+ * coroutine in its argument. */
+static void collector_internal_frame_references(async_collector_t *collector, zend_execute_data *frame)
+{
+	const uint32_t call_info = ZEND_CALL_INFO(frame);
+
+	if (UNEXPECTED(call_info & ZEND_CALL_RELEASE_THIS)) {
+		collector_reference_counted(collector, (zend_refcounted *) Z_OBJ(frame->This));
+	}
+
+	if (UNEXPECTED(call_info & ZEND_CALL_CLOSURE)) {
+		collector_reference_counted(collector, (zend_refcounted *) ZEND_CLOSURE_OBJECT(frame->func));
+	}
+
+	zval *arguments = ZEND_CALL_ARG(frame, 1);
+	const uint32_t argument_count = ZEND_CALL_NUM_ARGS(frame);
+
+	for (uint32_t i = 0; i < argument_count; i++) {
+		collector_reference(collector, &arguments[i]);
+	}
+
+	if (UNEXPECTED(call_info & ZEND_CALL_HAS_EXTRA_NAMED_PARAMS)) {
+		collector_reference_counted(collector, (zend_refcounted *) frame->extra_named_params);
+	}
+}
+
+/* The parked stack, frame by frame to the coroutine's root frame (S7.md 3.2). A frame left out only
+ * hides a finding: what it holds then counts as held from outside. */
+static void collector_stack_references(async_collector_t *collector, const async_coroutine_t *coroutine)
+{
+	for (zend_execute_data *frame = coroutine->fiber_context->execute_data; frame != NULL;
+		 frame = frame->prev_execute_data) {
+		/* A generator's frame: zend_generator_frame_gc is not exported. One with no function is a
+		 * generator's fake frame. */
+		if (UNEXPECTED(frame->func == NULL || (ZEND_CALL_INFO(frame) & ZEND_CALL_GENERATOR))) {
+			continue;
+		}
+
+		if (UNEXPECTED(!ZEND_USER_CODE(frame->func->type))) {
+			collector_internal_frame_references(collector, frame);
+			continue;
+		}
+
+		/* A frame unwinding an exception finds its position through EG(opline_before_exception),
+		 * which belongs to the running context, not to this parked one. */
+		if (UNEXPECTED(frame->opline->opcode == ZEND_HANDLE_EXCEPTION)) {
+			continue;
+		}
+
+		collector->frame_buffer.cur = collector->frame_buffer.start;
+
+		HashTable *symbol_table = zend_unfinished_execution_gc_ex(frame, frame->call, &collector->frame_buffer, false);
+
+		for (zval *value = collector->frame_buffer.start; value < collector->frame_buffer.cur; value++) {
+			collector_reference(collector, value);
+		}
+
+		/* The global scope is a root: what a global variable holds stays live. */
+		if (UNEXPECTED(symbol_table != NULL && symbol_table != &EG(symbol_table))) {
+			const zend_ulong key = collector_key(symbol_table);
+
+			if (EXPECTED(zend_hash_index_add_empty_element(&collector->symbol_tables, key) != NULL)) {
+				collector_table_references(collector, symbol_table);
+			}
+		}
+	}
+}
+
+/* What PHP's collector reads from an object (gc_mark_grey): the table and the hash get_gc returns. A
+ * candidate adds its stack and the references its records own. */
+static void collector_object_references(async_collector_t *collector, zend_object *object, const bool is_candidate)
+{
+	if (UNEXPECTED(OBJ_FLAGS(object) & IS_OBJ_FREE_CALLED)) {
+		return;
+	}
+
+	zval *table = NULL;
+	int count = 0;
+	HashTable *properties = object->handlers->get_gc(object, &table, &count);
+
+	/* The table lives in the engine's one get_gc buffer: read through before the next get_gc. */
+	for (int i = 0; i < count; i++) {
+		collector_reference(collector, &table[i]);
+	}
+
+	if (EXPECTED(properties != NULL)) {
+		collector_reference_counted(collector, (zend_refcounted *) properties);
+	}
+
+	if (is_candidate) {
+		async_coroutine_t *coroutine = async_coroutine_from_object(object);
+
+		collector_stack_references(collector, coroutine);
+		async_wait_walk(coroutine, collector_record_target, collector);
+	}
+}
+
+static void collector_node_references(async_collector_t *collector, const uint32_t node)
+{
+	zend_refcounted *ref = collector->nodes[node].ref;
+
+	switch (GC_TYPE(ref)) {
+		case IS_OBJECT:
+			collector_object_references(
+					collector, (zend_object *) ref, (collector->nodes[node].flags & COLLECTOR_NODE_CANDIDATE) != 0);
+			break;
+		case IS_ARRAY:
+			collector_table_references(collector, (HashTable *) ref);
+			break;
+		case IS_REFERENCE:
+			collector_reference(collector, &((zend_reference *) ref)->val);
+			break;
+		default:
+			ZEND_UNREACHABLE();
+	}
+}
+
+/* Counts the records of the coroutine's wait and whether each kind names its target. */
+typedef struct
+{
+	uint32_t records;
+	bool all_named;
+} collector_wait_shape_t;
+
+static void collector_wait_shape_add(const async_coroutine_event_callback_t *record, void *arg)
+{
+	collector_wait_shape_t *shape = arg;
+
+	shape->records++;
+
+	if (UNEXPECTED(record->event_callback.kind->collector_target == NULL)) {
+		shape->all_named = false;
+	}
+}
+
+/* S7.md 3.1: parked on a wait of at least one record, all of kinds that name their target. A Fiber's
+ * coroutine is held through a pointer the walk cannot count, and its stack continues into its
+ * caller's. */
+static bool collector_is_candidate(async_coroutine_t *coroutine)
+{
+	const zend_coroutine_t *zend_coroutine = &coroutine->coroutine;
+
+	if (UNEXPECTED(!ZEND_COROUTINE_IS_SUSPENDED(zend_coroutine) || ZEND_COROUTINE_IS_FIBER(zend_coroutine))) {
+		return false;
+	}
+
+	collector_wait_shape_t shape = { .records = 0, .all_named = true };
+	async_wait_walk(coroutine, collector_wait_shape_add, &shape);
+
+	return shape.records != 0 && shape.all_named;
+}
+
+static void collector_init(async_collector_t *collector)
+{
+	memset(collector, 0, sizeof(*collector));
+	zend_hash_init(&collector->index, 16, NULL, NULL, false);
+	zend_hash_init(&collector->symbol_tables, 8, NULL, NULL, false);
+}
+
+static void collector_destroy(async_collector_t *collector)
+{
+	zend_hash_destroy(&collector->index);
+	zend_hash_destroy(&collector->symbol_tables);
+
+	if (collector->nodes != NULL) {
+		efree(collector->nodes);
+	}
+
+	if (collector->edges != NULL) {
+		efree(collector->edges);
+	}
+
+	if (collector->worklist != NULL) {
+		efree(collector->worklist);
+	}
+
+	if (collector->frame_buffer.start != NULL) {
+		efree(collector->frame_buffer.start);
+	}
+}
+
+/* Step 2: the wake edges, and the candidates they make live before the count. */
+static void collector_wake_edges(async_collector_t *collector, const uint32_t candidate_count)
+{
+	collector->pass = COLLECTOR_PASS_WAKE_EDGES;
+
+	for (uint32_t candidate = 0; candidate < candidate_count; candidate++) {
+		collector->waiter = candidate;
+		async_wait_walk(async_coroutine_from_object((zend_object *) collector->nodes[candidate].ref),
+						collector_record_target,
+						collector);
+	}
+
+	for (uint32_t node = 0; node < collector->node_count; node++) {
+		if (UNEXPECTED(collector->nodes[node].flags & COLLECTOR_NODE_KNOWN_LIVE)) {
+			collector_worklist_push(collector, node);
+		}
+	}
+
+	while (collector->worklist_count != 0) {
+		const uint32_t target = collector->worklist[--collector->worklist_count];
+
+		for (uint32_t edge = collector->nodes[target].first_waiter; edge != COLLECTOR_NONE;
+			 edge = collector->edges[edge].next) {
+			collector_node_t *waiter = &collector->nodes[collector->edges[edge].waiter];
+
+			if (EXPECTED(!(waiter->flags & COLLECTOR_NODE_KNOWN_LIVE))) {
+				waiter->flags |= COLLECTOR_NODE_KNOWN_LIVE;
+				collector_worklist_push(collector, collector->edges[edge].waiter);
+			}
+		}
+	}
+}
+
+/* Step 3: the nodes array is the queue, so every node is walked once, the ones it adds included. */
+static void collector_count(async_collector_t *collector)
+{
+	collector->pass = COLLECTOR_PASS_COUNT;
+
+	for (uint32_t node = 0; node < collector->node_count; node++) {
+		if (EXPECTED(!(collector->nodes[node].flags & COLLECTOR_NODE_KNOWN_LIVE))) {
+			collector_node_references(collector, node);
+		}
+	}
+}
+
+/* Step 4, false when the passes disagree: a node has more references counted than it has (a reporter gave one
+ * its holder does not own), or the spread met a node the count did not (a get_gc answered otherwise).
+ * Any finding of the run may then be false. */
+static bool collector_spread(async_collector_t *collector)
+{
+	collector->pass = COLLECTOR_PASS_SPREAD;
+	zend_hash_clean(&collector->symbol_tables);
+
+	for (uint32_t node = 0; node < collector->node_count; node++) {
+		const collector_node_t *entry = &collector->nodes[node];
+
+		if (UNEXPECTED(GC_REFCOUNT(entry->ref) < entry->internal)) {
+			ZEND_ASSERT(0 && "a reporter gave a reference its holder does not own");
+			return false;
+		}
+
+		if (UNEXPECTED((entry->flags & COLLECTOR_NODE_KNOWN_LIVE) || GC_REFCOUNT(entry->ref) > entry->internal)) {
+			collector_mark_live(collector, node);
+		}
+	}
+
+	while (collector->worklist_count != 0) {
+		const uint32_t node = collector->worklist[--collector->worklist_count];
+
+		for (uint32_t edge = collector->nodes[node].first_waiter; edge != COLLECTOR_NONE;
+			 edge = collector->edges[edge].next) {
+			collector_mark_live(collector, collector->edges[edge].waiter);
+		}
+
+		if (EXPECTED(!(collector->nodes[node].flags & COLLECTOR_NODE_KNOWN_LIVE))) {
+			collector_node_references(collector, node);
+		}
+	}
+
+	return !collector->failed;
+}
+
+async_coroutine_t **async_collector_find(uint32_t *count)
+{
+	async_collector_t collector;
+	async_coroutine_t *coroutine = NULL;
+	uint32_t candidate_count = 0;
+
+	*count = 0;
+
+	ZEND_HASH_FOREACH_PTR(&ASYNC_G(coroutines), coroutine)
+	{
+		if (EXPECTED(!collector_is_candidate(coroutine))) {
+			continue;
+		}
+
+		if (UNEXPECTED(candidate_count == 0)) {
+			collector_init(&collector);
+		}
+
+		/* A WeakReference or a WeakMap in running code may still reach it. */
+		const uint8_t flags = COLLECTOR_NODE_CANDIDATE |
+				((GC_FLAGS(&coroutine->std) & IS_OBJ_WEAKLY_REFERENCED) ? COLLECTOR_NODE_KNOWN_LIVE : 0);
+		zval position;
+
+		ZVAL_LONG(&position, collector_node_add(&collector, (zend_refcounted *) &coroutine->std, flags));
+		zend_hash_index_add_new(&collector.index, collector_key((zend_refcounted *) &coroutine->std), &position);
+
+		/* The registry's reference (S7.md section 2). */
+		collector.nodes[Z_LVAL(position)].internal = 1;
+		candidate_count++;
+	}
+	ZEND_HASH_FOREACH_END();
+
+	if (EXPECTED(candidate_count == 0)) {
+		return NULL;
+	}
+
+	collector_wake_edges(&collector, candidate_count);
+	collector_count(&collector);
+
+	if (UNEXPECTED(!collector_spread(&collector))) {
+		collector_destroy(&collector);
+		return NULL;
+	}
+
+	async_coroutine_t **found = safe_emalloc(candidate_count, sizeof(*found), 0);
+
+	for (uint32_t candidate = 0; candidate < candidate_count; candidate++) {
+		if (EXPECTED(collector.nodes[candidate].flags & COLLECTOR_NODE_LIVE)) {
+			continue;
+		}
+
+		coroutine = async_coroutine_from_object((zend_object *) collector.nodes[candidate].ref);
+		found[(*count)++] = coroutine;
+#ifdef TRUE_ASYNC_TEST_HOOKS
+		coroutine->coroutine.flags |= ASYNC_COROUTINE_F_DEADLOCK_FOUND;
+#endif
+	}
+
+	collector_destroy(&collector);
+
+	if (EXPECTED(*count == 0)) {
+		efree(found);
+		return NULL;
+	}
+
+	return found;
+}
+
+///////////////////////////////////////////////////////////////////
+/// The automatic run
+///////////////////////////////////////////////////////////////////
+
+/* The automatic run backs off to 64 times the interval while it finds nothing new. */
+#define COLLECTOR_BACKOFF_MAX 6
+
+static void collector_first_record(const async_coroutine_event_callback_t *record, void *arg)
+{
+	const async_coroutine_event_callback_t **first = arg;
+
+	if (*first == NULL) {
+		*first = record;
+	}
+}
+
+/* S7.md section 6: raised in scheduler context, at the coroutine's suspend location, when the INI
+ * error_reporting has E_WARNING: the scheduler's stack keeps its own copy of the setting. Nothing
+ * called what warns, so an exception an error handler throws is released. True when it warned. */
+static bool collector_warn(async_coroutine_t *coroutine)
+{
+	const zend_long error_reporting = async_ini_error_reporting();
+
+	if (UNEXPECTED(!(error_reporting & E_WARNING))) {
+		return false;
+	}
+
+	const async_coroutine_event_callback_t *first_record = NULL;
+	async_wait_walk(coroutine, collector_first_record, &first_record);
+
+	zend_string *waits_for = first_record->event_callback.kind->info(first_record);
+	const zend_string *spawn_file = coroutine->coroutine.filename;
+	/* No file: main, or a spawn while no PHP code ran. */
+	zend_string *spawned_at = EXPECTED(spawn_file != NULL)
+			? zend_strpprintf(0, " spawned at %s:%" PRIu32, ZSTR_VAL(spawn_file), coroutine->coroutine.lineno)
+			: ZSTR_EMPTY_ALLOC();
+	const zend_execute_data *suspend_frame = async_coroutine_suspend_frame(coroutine);
+	const int saved_error_reporting = EG(error_reporting);
+
+	EG(error_reporting) = (int) error_reporting;
+
+#define COLLECTOR_WARNING "Partial deadlock: coroutine #%u%s can never wake (%s)"
+	if (EXPECTED(suspend_frame != NULL)) {
+		zend_error_at(E_WARNING,
+					  suspend_frame->func->op_array.filename,
+					  suspend_frame->opline->lineno,
+					  COLLECTOR_WARNING,
+					  coroutine->std.handle,
+					  ZSTR_VAL(spawned_at),
+					  ZSTR_VAL(waits_for));
+	} else {
+		zend_error(E_WARNING, COLLECTOR_WARNING, coroutine->std.handle, ZSTR_VAL(spawned_at), ZSTR_VAL(waits_for));
+	}
+#undef COLLECTOR_WARNING
+
+	EG(error_reporting) = saved_error_reporting;
+	zend_string_release(spawned_at);
+	zend_string_release(waits_for);
+
+	/* An exit() in the handler ends the request as in a coroutine (D16). */
+	if (UNEXPECTED(EG(exception) != NULL)) {
+		const bool is_exit = zend_is_unwind_exit(EG(exception));
+
+		zend_clear_exception();
+
+		if (UNEXPECTED(is_exit)) {
+			async_scheduler_cancel_for_exit();
+		}
+	}
+
+	return true;
+}
+
+/* `report`: one warning per coroutine, ever (ASYNC_COROUTINE_F_DEADLOCK_REPORTED). An error handler
+ * runs PHP code between the warnings, so each coroutine is held across them. True when it warned. */
+static bool collector_report(async_coroutine_t **found, const uint32_t count)
+{
+	bool warned = false;
+
+	for (uint32_t i = 0; i < count; i++) {
+		GC_ADDREF(&found[i]->std);
+	}
+
+	for (uint32_t i = 0; i < count; i++) {
+		async_coroutine_t *coroutine = found[i];
+		zend_coroutine_t *zend_coroutine = &coroutine->coroutine;
+
+		/* An earlier warning's handler may have ended its wait. */
+		if (EXPECTED(!(zend_coroutine->flags & ASYNC_COROUTINE_F_DEADLOCK_REPORTED) &&
+					 ZEND_COROUTINE_IS_SUSPENDED(zend_coroutine) && !async_wait_is_empty(coroutine)) &&
+			EXPECTED(collector_warn(coroutine))) {
+			zend_coroutine->flags |= ASYNC_COROUTINE_F_DEADLOCK_REPORTED;
+			warned = true;
+		}
+
+		OBJ_RELEASE(&coroutine->std);
+	}
+
+	return warned;
+}
+
+bool async_collector_idle(void)
+{
+	if (UNEXPECTED(ASYNC_G(partial_deadlock) == ASYNC_PARTIAL_DEADLOCK_OFF)) {
+		return false;
+	}
+
+	const zend_long interval = ASYNC_G(partial_deadlock_interval);
+	const uint64_t now = zend_hrtime();
+
+	if (EXPECTED(interval != 0)) {
+		/* The first idle point starts the clock. */
+		if (UNEXPECTED(ASYNC_G(collector_last_run) == 0)) {
+			ASYNC_G(collector_last_run) = now;
+			return false;
+		}
+
+		const uint64_t due = ((uint64_t) interval * (ZEND_NANO_IN_SEC / 1000)) << ASYNC_G(collector_backoff);
+
+		if (EXPECTED(now - ASYNC_G(collector_last_run) < due)) {
+			return false;
+		}
+	}
+
+	ASYNC_G(collector_last_run) = now;
+
+	uint32_t count = 0;
+	async_coroutine_t **found = async_collector_find(&count);
+	bool warned = false;
+
+	if (UNEXPECTED(found != NULL)) {
+		warned = collector_report(found, count);
+		efree(found);
+	}
+
+	if (UNEXPECTED(warned)) {
+		ASYNC_G(collector_backoff) = 0;
+	} else if (EXPECTED(interval != 0 && ASYNC_G(collector_backoff) < COLLECTOR_BACKOFF_MAX)) {
+		ASYNC_G(collector_backoff)++;
+	}
+
+	return warned;
+}
+
+void async_collector_request_startup(void)
+{
+	ASYNC_G(collector_last_run) = 0;
+	ASYNC_G(collector_backoff) = 0;
+}
+
+#ifdef TRUE_ASYNC_TEST_HOOKS
+void async_collector_check_wake(async_coroutine_t *waiter, const async_coroutine_t *target)
+{
+	/* What woke the target may have come through a coroutine handed out, or through the bailout that
+	 * ends every coroutine; so may whatever the waiter's own waiters see. */
+	if (UNEXPECTED(target->coroutine.flags & (ASYNC_COROUTINE_F_HANDED_OUT | ASYNC_COROUTINE_F_BAILOUT))) {
+		waiter->coroutine.flags |= ASYNC_COROUTINE_F_HANDED_OUT;
+		return;
+	}
+
+	if (EXPECTED((waiter->coroutine.flags & (ASYNC_COROUTINE_F_DEADLOCK_FOUND | ASYNC_COROUTINE_F_HANDED_OUT)) !=
+				 ASYNC_COROUTINE_F_DEADLOCK_FOUND)) {
+		return;
+	}
+
+	fprintf(stderr,
+			"true_async collector: coroutine #%u was found never to wake, and coroutine #%u woke it\n",
+			waiter->std.handle,
+			target->std.handle);
+	fflush(stderr);
+	abort();
+}
+
+void async_collector_check_cancel(async_coroutine_t *coroutine)
+{
+	const uint32_t excused = ASYNC_COROUTINE_F_HANDED_OUT | ASYNC_COROUTINE_F_BAILOUT;
+	const uint32_t flags = coroutine->coroutine.flags & (ASYNC_COROUTINE_F_DEADLOCK_FOUND | excused);
+
+	if (EXPECTED(flags != ASYNC_COROUTINE_F_DEADLOCK_FOUND)) {
+		return;
+	}
+
+	fprintf(stderr,
+			"true_async collector: coroutine #%u was found never to wake, and code that holds it cancelled it\n",
+			coroutine->std.handle);
+	fflush(stderr);
+	abort();
+}
+#endif

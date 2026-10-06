@@ -47,6 +47,7 @@
 #include "scheduler.h"
 #include "await.h"
 #include "coroutine.h"
+#include "collector.h"
 #include "exceptions.h"
 #include "Zend/zend_smart_str.h"
 #include "internal/circular_buffer.h"
@@ -519,9 +520,7 @@ static zend_always_inline bool scheduler_coroutine_ensure(void)
 	return EXPECTED(ASYNC_G(scheduler_coroutine) != NULL) || scheduler_coroutine_create();
 }
 
-/* The INI value of error_reporting, as zend_fiber_vm_stack_start reads it: an empty ini value means
- * "never configured". */
-static zend_long ini_error_reporting(void)
+zend_long async_ini_error_reporting(void)
 {
 	zend_long error_reporting = zend_ini_long_literal("error_reporting");
 
@@ -543,7 +542,7 @@ static zend_long ini_error_reporting(void)
  * the VM adds go with context_vm_stack_free(). */
 static void context_vm_stack_start(zend_fiber_context *context, zval *vm_stack_memory)
 {
-	const zend_long error_reporting = ini_error_reporting();
+	const zend_long error_reporting = async_ini_error_reporting();
 
 	zend_vm_stack stack = (zend_vm_stack) vm_stack_memory;
 	stack->top = ZEND_VM_STACK_ELEMENTS(stack);
@@ -703,6 +702,18 @@ static async_coroutine_t *registry_walk_next(const uint32_t iterator)
 	return coroutine;
 }
 
+/* The cancel of a walk over the registry, protection cleared: whoever walks the registry needs no
+ * reference to the coroutine, so the collector leaves these walks out (dev/plans/S7.md, section 2),
+ * and its oracle excuses what they wake. */
+static void registry_cancel(async_coroutine_t *coroutine, zend_object *error, const bool transfer_error)
+{
+	coroutine->coroutine.flags &= ~ASYNC_COROUTINE_F_PROTECTED;
+#ifdef TRUE_ASYNC_TEST_HOOKS
+	coroutine->coroutine.flags |= ASYNC_COROUTINE_F_HANDED_OUT;
+#endif
+	async_coroutine_cancel(coroutine, error, transfer_error);
+}
+
 /* A fiber parked in Fiber::suspend(): it handed control back to whoever resumed it, and only that
  * code, not an event, can wake it (S3.md section 6, D6; the core sets the status in
  * zend_fiber_coroutine_yield). */
@@ -739,10 +750,9 @@ static void scheduler_resolve_deadlock(const uint32_t waiting)
 		uint32_t remaining = zend_hash_num_elements(&ASYNC_G(coroutines));
 
 		while (remaining-- > 0 && (coroutine = registry_walk_next(iterator)) != NULL) {
-			/* Cleared as for a deadlock: a deferred cancellation would never come, and the loop would
-			 * find the same fibers again. */
-			coroutine->coroutine.flags &= ~ASYNC_COROUTINE_F_PROTECTED;
-			async_coroutine_cancel(coroutine, zend_create_graceful_exit(), true);
+			/* Protection cleared as for a deadlock: a deferred cancellation would never come, and the
+			 * loop would find the same fibers again. */
+			registry_cancel(coroutine, zend_create_graceful_exit(), true);
 		}
 
 		zend_hash_iterator_del(iterator);
@@ -752,7 +762,7 @@ static void scheduler_resolve_deadlock(const uint32_t waiting)
 
 	/* The report names script paths, so it is shown only where the error it explains is. That error
 	 * is raised on main's stack: error_reporting is read from INI, not from this stack's own copy. */
-	if (EXPECTED(ASYNC_G(debug_deadlock) && PG(display_errors) && (ini_error_reporting() & E_ERROR))) {
+	if (EXPECTED(ASYNC_G(debug_deadlock) && PG(display_errors) && (async_ini_error_reporting() & E_ERROR))) {
 		scheduler_deadlock_report(waiting);
 
 		/* An output handler that threw (the report runs in scheduler context, where waits refuse). An
@@ -779,8 +789,7 @@ static void scheduler_resolve_deadlock(const uint32_t waiting)
 	uint32_t remaining = zend_hash_num_elements(&ASYNC_G(coroutines));
 
 	while (remaining-- > 0 && (coroutine = registry_walk_next(iterator)) != NULL) {
-		coroutine->coroutine.flags &= ~ASYNC_COROUTINE_F_PROTECTED;
-		async_coroutine_cancel(coroutine, async_new_exception(async_ce_cancellation, "Deadlock detected"), true);
+		registry_cancel(coroutine, async_new_exception(async_ce_cancellation, "Deadlock detected"), true);
 	}
 
 	zend_hash_iterator_del(iterator);
@@ -854,8 +863,10 @@ static bool scheduler_loop(void)
 				continue;
 			}
 
-			if (async_reactor_has_waits(&ASYNC_G(reactor)) && async_reactor_wait_idle()) {
-				continue;
+			if (async_reactor_has_waits(&ASYNC_G(reactor))) {
+				if (async_collector_idle() || async_reactor_wait_idle()) {
+					continue;
+				}
 			}
 
 			const uint32_t waiting = registry_waiting_count();
@@ -1428,6 +1439,10 @@ bool async_coroutine_cancel(async_coroutine_t *coroutine, zend_object *error, co
 		return true;
 	}
 
+#ifdef TRUE_ASYNC_TEST_HOOKS
+	async_collector_check_cancel(coroutine);
+#endif
+
 	/* From here on the function owns one reference to the error. */
 	if (EXPECTED(error == NULL)) {
 		error = async_new_exception(async_ce_cancellation, "Coroutine cancelled");
@@ -1491,8 +1506,7 @@ static void scheduler_cancel_all(zend_object *cancellation)
 	uint32_t remaining = zend_hash_num_elements(&ASYNC_G(coroutines));
 
 	while (remaining-- > 0 && (coroutine = registry_walk_next(iterator)) != NULL) {
-		coroutine->coroutine.flags &= ~ASYNC_COROUTINE_F_PROTECTED;
-		async_coroutine_cancel(coroutine, cancellation, false);
+		registry_cancel(coroutine, cancellation, false);
 	}
 
 	zend_hash_iterator_del(iterator);
@@ -1550,8 +1564,7 @@ exit_deadline_fire(async_awaitable_t *target, async_event_callback_t *callback, 
 	uint32_t remaining = zend_hash_num_elements(coroutines);
 
 	while (remaining-- > 0 && (coroutine = registry_walk_next(iterator)) != NULL) {
-		coroutine->coroutine.flags &= ~ASYNC_COROUTINE_F_PROTECTED;
-		async_coroutine_cancel(coroutine, zend_create_graceful_exit(), true);
+		registry_cancel(coroutine, zend_create_graceful_exit(), true);
 	}
 
 	zend_hash_iterator_del(iterator);
@@ -1703,7 +1716,7 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 	const int saved_error_reporting = EG(error_reporting);
 
 	if (UNEXPECTED(E_HAS_ONLY_FATAL_ERRORS(saved_error_reporting))) {
-		EG(error_reporting) = (int) ini_error_reporting();
+		EG(error_reporting) = (int) async_ini_error_reporting();
 	}
 
 	/* getTrace(), the suspend location and the GC read the parked frame from here. */
@@ -1875,6 +1888,11 @@ await_record_wake(async_awaitable_t *target, async_event_callback_t *callback, v
 	(void) exception;
 
 	async_coroutine_event_callback_t *record = (async_coroutine_event_callback_t *) callback;
+
+#ifdef TRUE_ASYNC_TEST_HOOKS
+	async_collector_check_wake(record->coroutine, (const async_coroutine_t *) target);
+#endif
+
 	async_scheduler_enqueue(&record->coroutine->coroutine, NULL, false);
 }
 
@@ -1883,9 +1901,16 @@ static zend_string *await_record_info(const async_coroutine_event_callback_t *re
 	return zend_strpprintf(0, "await: coroutine #%u", ((const async_coroutine_t *) record->event)->std.handle);
 }
 
+/* The waiter's frame holds the target: await()'s argument, or scheduler_await's reference. */
+static void await_record_collector_target(const async_coroutine_event_callback_t *record, async_collector_t *collector)
+{
+	async_collector_report_target(collector, &((async_coroutine_t *) record->event)->std, false);
+}
+
 /* A wait for a coroutine: its outcome is in the target, so nothing but the vector to leave. */
 static const async_wait_kind_t async_wait_kind_coroutine = {
 	.info = await_record_info,
+	.collector_target = await_record_collector_target,
 };
 
 bool async_await_coroutine(async_coroutine_t *target, async_awaitable_t *token)

@@ -232,14 +232,19 @@ checkout first. Run `tools/format.sh` before a commit.
 
 ## S7
 
-S7.1 done 2026-10-06: `dev/plans/S7.md`, `tests/lists/S7.txt` with no test. Next is S7.2 (the walk,
-`get_deadlocked_coroutines()`, the automatic run with `report`, the fuzz oracle), which needs the
-`collector_target` slot in S4's kind table and one call in `scheduler_loop`'s idle branch: both asked
-of S4 through the coordinator. S7.3 starts once S5.3 is on `main` and first writes the holders' table
-of S7.md 10 from S5's code (S5.2 settles FUTURE: the wait owns a reference, `src/future.c:703`). S6.5's
-`SignalHandle` must report the `signal()` Futures it will complete to the collector (S7.md 3.4).
-The TrueAsync reference clone is needed for `check-lists.py --reference` (`/root/php-async` at
-`REFERENCE` in this container).
+S7.2 done 2026-10-06: the walk (`src/collector.c`), `Async\get_deadlocked_coroutines()`, the
+automatic run with `report` at the idle point, the fuzz oracle; `collector/001`-`025` in
+`tests/lists/S7.txt`. Next is S7.3, once S5.3 is on `main`:
+- give FUTURE, the token kinds, TIMEOUT and the `await_*` block records their `collector_target`,
+  and in the same step seed the events on the reactor's `waits` list and the triggers on S4.5's
+  `triggers` with `start_count > 0` as live (S7.md 3.4; the list holds unstarted ones too); the D16 exit Timer is on `own` and is not seeded;
+- write the holders' table of S7.md 10 from S5's code first (S5.2: the FUTURE wait owns a
+  reference, `src/future.c:703`); S6.5's `SignalHandle` must report its `signal()` Futures.
+S7.4's `cancel` must cancel through `registry_cancel()` or mark the coroutine handed out, or the
+oracle (`async_collector_check_cancel()`) aborts the seed. Known miss: generator frames are not
+walked (`zend_generator_frame_gc` has no `ZEND_API`, `collector/017`), an S8 change-request
+candidate. The TrueAsync reference clone is needed for `check-lists.py --reference`
+(`/root/php-async` at `REFERENCE` in this container).
 
 ## S6
 

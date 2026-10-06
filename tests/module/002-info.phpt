@@ -13,3 +13,5 @@ Version => %d.%d.%s
 Directive => Local Value => Master Value
 true_async.enable => 1 => 1
 true_async.debug_deadlock => On => On
+true_async.partial_deadlock => report => report
+true_async.partial_deadlock_interval => 1000 => 1000

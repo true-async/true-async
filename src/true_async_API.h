@@ -50,6 +50,15 @@ typedef struct _async_awaitable_s
 #define ASYNC_COROUTINE_F_EXC_CAUGHT (1u << 18)
 #define ASYNC_COROUTINE_F_BAILOUT (1u << 19)
 #define ASYNC_COROUTINE_F_HI_PRIORITY (1u << 21)
+/* The collector warned that the coroutine can never wake (collector.h); never cleared. */
+#define ASYNC_COROUTINE_F_DEADLOCK_REPORTED (1u << 22)
+#ifdef TRUE_ASYNC_TEST_HOOKS
+/* The collector's oracle (collector.h): found by a run and not cancelled since. */
+#define ASYNC_COROUTINE_F_DEADLOCK_FOUND (1u << 23)
+/* The oracle's excuse: handed out by get_coroutines() or get_deadlocked_coroutines(), or woken by a
+ * target that was. */
+#define ASYNC_COROUTINE_F_HANDED_OUT (1u << 24)
+#endif
 
 ///////////////////////////////////////////////////////////////////
 /// Callbacks and wait records
@@ -72,6 +81,7 @@ typedef void (*async_event_callback_dispose_fn)(async_event_callback_t *callback
 #define ASYNC_CALLBACK_F_TYPED (1u << 1)
 
 typedef struct _async_wait_kind_s async_wait_kind_t;
+typedef struct _async_collector_s async_collector_t;
 
 struct _async_event_callback_s
 {
@@ -109,6 +119,10 @@ struct _async_wait_kind_s
 	 * request's end) and removes the typed state that frame would remove after its wake (S9's
 	 * channel queue entry, D29). NULL: nothing. */
 	void (*abort)(async_coroutine_event_callback_t *record);
+	/* Reports the record's target to the collector of coroutines that can never wake (collector.h):
+	 * whoever reaches the target can end the wait. NULL: an outside source may end it, and the waiter
+	 * is never reported. */
+	void (*collector_target)(const async_coroutine_event_callback_t *record, async_collector_t *collector);
 };
 
 ///////////////////////////////////////////////////////////////////

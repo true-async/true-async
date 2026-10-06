@@ -860,3 +860,29 @@ stack options were shown with the code).
   children S6.5 brings, and a change to bukka's code goes through `io-hooks-fixes` and a pull
   request (`dev/WORKFLOW.md`, "Ownership").
 
+- 2026-10-06 The automatic collector runs on `zend_hrtime()`, and the first idle point of a request
+  starts its clock (S7.2, S7.md 5). Why: the idle point precedes a blocking wait, so the precise clock
+  costs nothing there, and the reactor's coarse clock is private to it.
+- 2026-10-06 The interval bounds how often an automatic run happens and schedules none: a loop
+  blocked on one long wait runs the collector at its first idle point after the wait ends (S7.2,
+  S7.md 5; the Critic asked for a wake). Why: a timer of the collector's own would wake an idle
+  server for a run the back-off makes rarer each time, and would sit on the reactor's lists, which
+  the walk reads.
+- 2026-10-06 `ASYNC_COROUTINE_F_DEADLOCK_REPORTED` is set only when the warning was raised, and only
+  a run that warned resets the back-off (S7.2, S7.md 6). Why: with `E_WARNING` out of
+  `error_reporting` a coroutine marked unwarned would never be reported once it is back.
+- 2026-10-06 In the warning's error handler an exception is released, `exit()` ends the request as
+  in a coroutine (D16) and a fatal error ends it by the bailout (S7.2, `collector/024`, `025`). Why:
+  no PHP code called what warned, so nothing could catch the exception; an exit is no exception to
+  report.
+- 2026-10-06 The fuzz oracle excuses what the registry's walks cancel: `registry_cancel()` marks the
+  coroutine as handed out in test builds, and a wake by a handed-out or bailed-out target passes the
+  excuse to its waiter; a cancel of a found coroutine from anywhere else aborts the seed (S7.2,
+  S7.md 11). Why: those walks hold no reference, which the walk leaves out by design (S7.md 2).
+- 2026-10-06 Generator frames are not walked, so a coroutine parked inside a generator is missed when
+  only the generator holds its target (S7.2, `collector/017` expects 0). Why: `zend_generator_frame_gc`
+  has no `ZEND_API`; an S8 change-request candidate. A miss is allowed, a false finding is not.
+- 2026-10-06 Tests changed for S7.2: `module/001-registration.phpt` and `module/002-info.phpt` list
+  the new INI entries `true_async.partial_deadlock` and `true_async.partial_deadlock_interval`
+  (S7.md 6 and its INI table), as they did for `true_async.debug_deadlock` on 2026-10-02. The Critic
+  judged the reason.

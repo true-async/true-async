@@ -20,6 +20,7 @@
 #include "Zend/zend_closures.h"
 #include "php_true_async.h"
 #include "coroutine.h"
+#include "collector.h"
 #include "exceptions.h"
 #include "await.h"
 #include "future.h"
@@ -39,6 +40,34 @@
 
 ZEND_DECLARE_MODULE_GLOBALS(true_async)
 
+static ZEND_INI_MH(OnUpdatePartialDeadlock)
+{
+	if (zend_string_equals_literal_ci(new_value, "report")) {
+		ASYNC_G(partial_deadlock) = ASYNC_PARTIAL_DEADLOCK_REPORT;
+	} else if (ZSTR_LEN(new_value) == 0 || zend_string_equals_literal(new_value, "0") ||
+			   zend_string_equals_literal_ci(new_value, "off")) {
+		/* php.ini and -d read a bare off as a boolean: the empty string. */
+		ASYNC_G(partial_deadlock) = ASYNC_PARTIAL_DEADLOCK_OFF;
+	} else {
+		return FAILURE;
+	}
+
+	return SUCCESS;
+}
+
+static ZEND_INI_MH(OnUpdatePartialDeadlockInterval)
+{
+	const zend_long interval = zend_ini_parse_quantity_warn(new_value, entry->name);
+
+	if (interval < 0 || interval > ASYNC_COLLECTOR_INTERVAL_MAX) {
+		return FAILURE;
+	}
+
+	ASYNC_G(partial_deadlock_interval) = interval;
+
+	return SUCCESS;
+}
+
 /* Off by default, as test_scheduler.enable: the scheduler slots are process-wide, and a binary
  * that loads the extension must still be able to run another provider. */
 PHP_INI_BEGIN()
@@ -50,6 +79,8 @@ PHP_INI_BEGIN()
 						debug_deadlock,
 						zend_true_async_globals,
 						true_async_globals)
+	PHP_INI_ENTRY("true_async.partial_deadlock", "report", PHP_INI_ALL, OnUpdatePartialDeadlock)
+	PHP_INI_ENTRY("true_async.partial_deadlock_interval", "1000", PHP_INI_ALL, OnUpdatePartialDeadlockInterval)
 PHP_INI_END()
 
 zend_class_entry *async_ce_awaitable = NULL;
@@ -143,6 +174,7 @@ static PHP_RINIT_FUNCTION(true_async)
 		async_scheduler_request_startup();
 		async_reactor_request_startup();
 		async_io_provider_request_startup();
+		async_collector_request_startup();
 	}
 
 #ifdef TRUE_ASYNC_TEST_HOOKS
@@ -490,8 +522,37 @@ ZEND_FUNCTION(Async_get_coroutines)
 
 		GC_ADDREF(&coroutine->std);
 		add_next_index_object(return_value, &coroutine->std);
+#ifdef TRUE_ASYNC_TEST_HOOKS
+		coroutine->coroutine.flags |= ASYNC_COROUTINE_F_HANDED_OUT;
+#endif
 	}
 	ZEND_HASH_FOREACH_END();
+}
+
+/* dev/plans/S7.md section 8: the walk runs in the calling coroutine, which runs and so holds whatever
+ * its own stack holds. No policy applies to what it returns. */
+ZEND_FUNCTION(Async_get_deadlocked_coroutines)
+{
+	THROW_IF_UNAVAILABLE();
+
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	uint32_t count = 0;
+	async_coroutine_t **found = async_collector_find(&count);
+
+	array_init_size(return_value, count);
+
+	for (uint32_t i = 0; i < count; i++) {
+		GC_ADDREF(&found[i]->std);
+		add_next_index_object(return_value, &found[i]->std);
+#ifdef TRUE_ASYNC_TEST_HOOKS
+		found[i]->coroutine.flags |= ASYNC_COROUTINE_F_HANDED_OUT;
+#endif
+	}
+
+	if (EXPECTED(found != NULL)) {
+		efree(found);
+	}
 }
 
 /* TrueAsync's async.c:947-960: refused while async is off and in scheduler context. */

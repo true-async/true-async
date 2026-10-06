@@ -44,6 +44,10 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	uint32_t last_handler_id;               /* the id of the newest finish or switch handler; 0 is never handed out */
 	bool graceful_shutdown;                 /* the graceful shutdown started: once per request */
 	bool debug_deadlock;                    /* true_async.debug_deadlock: the deadlock report lists every coroutine */
+	uint8_t partial_deadlock;               /* true_async.partial_deadlock: an async_partial_deadlock_t */
+	uint8_t collector_backoff;              /* the automatic collector waits the interval << this (collector.c) */
+	zend_long partial_deadlock_interval;    /* true_async.partial_deadlock_interval, ms */
+	uint64_t collector_last_run;            /* zend_hrtime() of the last automatic run; 0 before the first idle */
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	uint8_t fault_site;              /* the armed async_test_fault_site_t; ASYNC_TEST_FAULT_NONE when unarmed */
 	uint32_t test_block_releases;    /* test wait blocks released in this request */

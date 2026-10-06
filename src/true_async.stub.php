@@ -70,6 +70,15 @@ function current_coroutine(): Coroutine {}
 function get_coroutines(): array {}
 
 /**
+ * The coroutines nothing can wake any more: each waits only for targets that no code able to run
+ * can complete or cancel, and no such code holds the coroutine itself. The walk runs now; holding the
+ * returned coroutines makes them reachable, and they may be cancelled.
+ *
+ * @return Coroutine[]
+ */
+function get_deadlocked_coroutines(): array {}
+
+/**
  * Starts the graceful shutdown: every coroutine is cancelled with `$cancellationError`, or with
  * AsyncCancellation("Graceful shutdown") when it is null. A shutdown already started keeps its own
  * cancellation and the argument is ignored.
