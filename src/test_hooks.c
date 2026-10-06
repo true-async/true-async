@@ -1743,6 +1743,34 @@ static ZEND_FUNCTION(reactor_state)
 				   reactor->queue != NULL ? (zend_long) reactor->queue->ops->count_pending(reactor->queue) : 0);
 }
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_stream_queue_registrations, 0, 1, IS_LONG, 0)
+	ZEND_ARG_INFO(0, stream)
+ZEND_END_ARG_INFO()
+
+/* The stream's registrations the reactor's queue holds a record for: one the provider's add()
+ * reached the queue with. */
+static ZEND_FUNCTION(stream_queue_registrations)
+{
+	zval *zstream;
+	php_stream *stream;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_RESOURCE(zstream)
+	ZEND_PARSE_PARAMETERS_END();
+
+	php_stream_from_zval(stream, zstream);
+
+	zend_long count = 0;
+
+	for (const php_io_registration *reg = stream->io_registrations; reg != NULL; reg = reg->next) {
+		if (reg->queue_data != NULL) {
+			count++;
+		}
+	}
+
+	RETURN_LONG(count);
+}
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_reactor_use_poll_queue, 0, 0, IS_VOID, 0)
 ZEND_END_ARG_INFO()
 
@@ -2091,6 +2119,7 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\reactor_wait", ZEND_FN(reactor_wait), arginfo_reactor_wait, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\set_exit_deadline", ZEND_FN(set_exit_deadline), arginfo_set_exit_deadline, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\reactor_state", ZEND_FN(reactor_state), arginfo_reactor_state, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\stream_queue_registrations", ZEND_FN(stream_queue_registrations), arginfo_stream_queue_registrations, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\reactor_use_poll_queue", ZEND_FN(reactor_use_poll_queue), arginfo_reactor_use_poll_queue, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\trigger_new", ZEND_FN(trigger_new), arginfo_trigger_none, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\trigger_fire", ZEND_FN(trigger_fire), arginfo_trigger_fire, 0, NULL, NULL)

@@ -73,6 +73,14 @@ static async_io_event_t *io_wait_new(const php_io_op *op)
 
 	event->op = *op;
 
+	/* An Accept waits for the listener to be readable and leaves the connection to the core's
+	 * accept(), as TrueAsync's poll does (S6.md section 4): the Ring's multishot accept would take
+	 * connections stream_select() cannot see, and close the one a cancelled wait leaves. */
+	if (UNEXPECTED(op->type == PHP_IO_OP_ACCEPT)) {
+		event->op.type = PHP_IO_OP_POLL;
+		event->op.u.poll.events = PHP_POLL_READ;
+	}
+
 	/* The Ring refuses an infinite Timer (a sleep() past the clock's range): the latest finite
 	 * deadline instead, as delay() does. */
 	if (UNEXPECTED(op->type == PHP_IO_OP_TIMER && php_deadline_is_infinite(&event->op.deadline))) {
@@ -114,6 +122,12 @@ static void io_wait_deliver(const async_io_event_t *event, php_io_op *op, php_io
 {
 	*result = event->result;
 	io_wait_copy_in_flight(event, op);
+
+	/* The readiness an Accept waited for: the core accepts itself */
+	if (UNEXPECTED(op->type == PHP_IO_OP_ACCEPT && result->status == PHP_IO_DONE && result->error == 0)) {
+		result->status = PHP_IO_READY;
+		result->res = 0;
+	}
 
 	if (UNEXPECTED(op->type == PHP_IO_OP_ANY)) {
 		op->u.any.n_results = event->op.u.any.n_results;
@@ -191,26 +205,11 @@ static bool io_wait_submit(async_io_event_t *event, php_io_op *op, php_io_op_res
 	return false;
 }
 
-/* A non-blocking Accept on a listener whose connections the Ring's multishot accept takes: only the
- * Ring sees them, so it is asked, without a park (S6.md 3.1). */
-static zend_result io_accept_without_wait(php_io_op *op, php_io_op_result *result)
-{
-	async_io_event_t *event = io_wait_new(op);
-
-	if (io_wait_submit(event, op, result)) {
-		return EG(exception) == NULL ? SUCCESS : FAILURE;
-	}
-
-	async_io_event_orphan(event);
-	io_wait_copy_in_flight(event, op);
-	async_io_event_release(event);
-
-	return SUCCESS;
-}
-
 /* SUCCESS with result Unsupported leaves the op to the core's synchronous path. */
 static zend_result io_provider_run(php_io_hooks *hooks, php_io_op *op, php_io_op_result *result)
 {
+	(void) hooks;
+
 	ZEND_ASSERT(EG(exception) == NULL && "php_io_run_ex() answers itself under a pending exception");
 
 	zend_coroutine_t *current = ZEND_ASYNC_CURRENT_COROUTINE;
@@ -221,11 +220,6 @@ static zend_result io_provider_run(php_io_hooks *hooks, php_io_op *op, php_io_op
 	}
 
 	if (UNEXPECTED(op->deadline.hrtime == 0)) {
-		if (UNEXPECTED(op->type == PHP_IO_OP_ACCEPT && op->registration != NULL &&
-					   (hooks->flags & PHP_IO_HOOKS_F_DIRECT_ACCEPT))) {
-			return io_accept_without_wait(op, result);
-		}
-
 		return SUCCESS;
 	}
 
@@ -275,7 +269,7 @@ static zend_result io_provider_run(php_io_hooks *hooks, php_io_op *op, php_io_op
 		return SUCCESS;
 	}
 
-	/* A cancellation after the op was Done: the delivered result (a descriptor, an address list, a
+	/* A cancellation after the op was Done: the delivered result (an address list, a
 	 * reaped status) belongs to the caller now, so it is returned with the exception pending
 	 * (S6.md 3.3, step 5). */
 	if (UNEXPECTED(result->status == PHP_IO_DONE && result->error == 0)) {
@@ -328,6 +322,12 @@ static const php_io_hooks_ops io_provider_ops = {
 /// Install
 ///////////////////////////////////////////////////////////////////
 
+/* Files stay on the thread (S6.md section 6); an Accept waits for readiness (S6.md section 4). */
+static uint32_t io_queue_hook_flags(php_io_queue *queue)
+{
+	return queue->ops->hook_flags(queue) & ~(PHP_IO_HOOKS_F_FILES | PHP_IO_HOOKS_F_DIRECT_ACCEPT);
+}
+
 void async_io_provider_request_startup(void)
 {
 	async_io_provider_t *provider = &ASYNC_G(io_provider);
@@ -357,7 +357,7 @@ void async_io_provider_install(void)
 
 	php_io_queue *queue = ASYNC_G(reactor).queue;
 
-	provider->hooks.flags = queue != NULL ? queue->ops->hook_flags(queue) & ~PHP_IO_HOOKS_F_FILES : 0;
+	provider->hooks.flags = queue != NULL ? io_queue_hook_flags(queue) : 0;
 
 	/* Refused while a provider from Io\Hooks\set_hooks() is registered: installed_once stays false,
 	 * so the first trigger after that provider is removed installs this one. */
@@ -375,7 +375,7 @@ void async_io_provider_queue_created(php_io_queue *queue)
 	async_io_provider_t *provider = &ASYNC_G(io_provider);
 
 	if (EXPECTED(provider->installed)) {
-		provider->hooks.flags = queue->ops->hook_flags(queue) & ~PHP_IO_HOOKS_F_FILES;
+		provider->hooks.flags = io_queue_hook_flags(queue);
 		return;
 	}
 

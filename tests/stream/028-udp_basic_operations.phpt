@@ -1,7 +1,5 @@
 --TEST--
 UDP basic operations with stream_socket_recvfrom/sendto in async context
---XFAIL--
-Not implemented yet: S6.4 of dev/PLAN.md
 --FILE--
 <?php
 
@@ -45,7 +43,6 @@ $server = spawn(function() use(&$address, &$output) {
 // Client coroutine
 $client = spawn(function() use (&$address, &$output) {
     // Wait for server to start with retry logic
-    $address = null;
     for ($attempts = 0; $attempts < 5; $attempts++) {
         delay(10);
         if ($address) {

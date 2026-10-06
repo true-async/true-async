@@ -248,21 +248,21 @@ candidate. The TrueAsync reference clone is needed for `check-lists.py --referen
 
 ## S6
 
-Written 2026-10-06. S6.3 (the IO provider, `src/io_provider.c`) done; S6.4 (sockets, DNS) next.
+Written 2026-10-06. S6.4 (sockets, DNS) done; S6.5 (children, signals, the Windows lane) next.
 
 - `run()` parks on a heap copy of the op and keeps its own reference to the event; the result and
-  `in_flight` are read after the suspend (note 3.2-3.3, the Sage's ruling). A non-running coroutine
-  (a main a caught bailout left, a switch handler inside a suspend) is answered Unsupported; a wake
-  that is neither the completion nor a cancellation answers Interrupted.
-- The core is `async-core-io-2026-10-06`: bukka's head refuses `run()` under a pending exception
-  and keeps a cancelled read's bytes; our `io-hooks-fixes` keeps `ECANCELED` under an exception
-  from setting eof. A new bug in bukka's code goes by `dev/WORKFLOW.md` "Ownership".
-- S4.6 is moving Timer events to a reactor heap; `run()` uses `async_io_event_try_submit()`, which
-  S4 agreed to route through the heap too, and saturates an infinite Timer itself.
-- Open for Edmond: where a php-src streams fix goes (`io/094`, `095`, TrueAsync F `bf6048d03c6`);
-  asked on a card in the S6 thread 2026-10-06.
-- Next steps keep the order of `dev/PLAN.md`: S6.4 sockets (several `stream/` and `socket_ext/`
-  tests already pass), S6.5 children, signals and the Windows pipe commit, S6.6 curl and MySQL.
-- `F_FILES` stays off; the pipe timeout (`io/039`, `040`, `042`, `043`) is `RFC-CHANGES.md` 3.
+  `in_flight` are read after the suspend (note 3.2-3.3). A non-running coroutine is answered
+  Unsupported; a wake that is neither the completion nor a cancellation answers Interrupted.
+- An accept is `accept()` first, then a POLL READ: the provider masks `F_DIRECT_ACCEPT` and turns
+  the copy of an ACCEPT op into a POLL (note section 4). The Ring's multishot accept hid pending
+  connections from `stream_select()`; that Ring bug goes to bukka (a pull request is being
+  prepared in the S6.4 thread, `dev/WORKFLOW.md` "Ownership").
+- The core is `async-core-io-2026-10-06`. Edmond's branch for php-src bugs outside the RFCs is
+  `php-src-fixes` (`dev/WORKFLOW.md`); its `io/094` fix is not in the pinned core yet.
+- S6.5 takes the Windows lane's socket expectations from S6.4: load `sockets` and `openssl` in
+  `pocs-win`, then settle the `xfail-on:pocs-win(S6.5)` tags and `stream/001`, `002`, `046-…_win`.
+  The `skip-on:pocs-win(...-until-S6.4)` tags are frozen text; they still mean S6.5.
+- `curl/006` (CI) and `pdo_mysql/029` (local ASAN) passed once while XFAIL for S6.6: timing, S6.6's.
+- `stream/030` (UDP receive timeout) is `RFC-CHANGES.md` 4; the pipe timeout is 3; `F_FILES` off.
 - MySQL: `tools/test.py` starts a private `mysqld` when `MYSQL_TEST_HOST` is unset; a container
   needs `apt-get install mysql-server-core-8.0` (WORKFLOW "Test fixtures").

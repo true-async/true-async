@@ -1,7 +1,7 @@
 --TEST--
 UDP timeout operations with stream_socket_recvfrom in async context
 --XFAIL--
-Not implemented yet: S6.4 of dev/PLAN.md
+Needs a core change: S8 of dev/PLAN.md (stream_set_timeout() on stream_socket_recvfrom(), dev/RFC-CHANGES.md 4)
 --FILE--
 <?php
 

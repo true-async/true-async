@@ -886,3 +886,36 @@ stack options were shown with the code).
   the new INI entries `true_async.partial_deadlock` and `true_async.partial_deadlock_interval`
   (S7.md 6 and its INI table), as they did for `true_async.debug_deadlock` on 2026-10-02. The Critic
   judged the reason.
+- 2026-10-06 `stream/004-stream_socket_client_server.phpt` and `stream/007-tcp_client_server_full.phpt`
+  expect the worker's line after the server's accept line, and `stream/028-udp_basic_operations.phpt`
+  no longer sets the shared address to null in its client (S6.4). Why: TrueAsync resolves a numeric
+  host in libuv's pool, so `stream_socket_server("tcp://127.0.0.1:0")` parks the server; the core
+  resolves it on the thread (`php_io_host_is_numeric()`). The server then parks first in the accept
+  or the receive, which still shows the worker running while it waits; `028`'s client overwrote the
+  address the server had set and waited for an address that never came. The fork no longer passes
+  `004` and `007`: its worker prints before "Server: listening".
+- 2026-10-06 `stream/017`, `018` stay XFAIL by design: `stream_select()` with non-streams or no
+  streams throws PHP's TypeError per non-stream and then a ValueError, where TrueAsync's fork, in a
+  coroutine, throws no ValueError and returns 0 for no stream at all (S6.md section 11). Why: the core's `stream_select()`
+  is vanilla PHP's, the same with and without a coroutine; the fork answers differently in and out
+  of one.
+- 2026-10-06 `stream/030` (a UDP receive timeout) names S8 and `dev/RFC-CHANGES.md` 4; `io/096` (two
+  coroutines on one socket) names S6.7 with B1, as `io/098` (S6.4). Why: the core's transport calls
+  wait without the stream's timeout, as vanilla PHP's; B1 refuses a second user of a stream with a
+  parked op.
+- 2026-10-06 The Windows lane's S6.4 expectations move to S6.5: `xfail-on:pocs-win(S6.4)` becomes
+  `S6.5` on `stream/005`, `012`, `029`, `031`, `032`, `dns/005`, and the Windows-only `stream/001`,
+  `002`, `046-…_win` name S6.5. Why: loading `sockets` and `openssl` in `pocs-win` and reading its
+  results needs a run of that lane, which S6.5 makes with its Windows pipe commit; S6.4 changed no
+  Windows-only code path. The frozen `skip-on:pocs-win(sockets-not-loaded-until-S6.4)` and
+  `openssl` tags keep their text and mean S6.5; S6.5's done line names the tags it must clear.
+- 2026-10-06 S6.4's done line excepts the tests naming a core change or another track's step, as
+  S6.3's does (`stream/030`: S8; `dns/006`: S5.4). Why: neither is the provider's to make pass.
+- 2026-10-06 An accept under the provider is `accept()` first, then a readiness wait: the provider
+  masks `PHP_IO_HOOKS_F_DIRECT_ACCEPT` and submits the copy of an ACCEPT op as a POLL READ on the
+  listener, whose Done the core gets as Ready (S6.4, S6.md section 4). Why: the Ring's multishot
+  accept took connections into a buffer `stream_select()` and `socket_select()` cannot see, so a
+  select loop waited its whole timeout with a connection pending (the Critic; `io_provider/015`), and
+  it closes a connection handed to a cancelled wait; TrueAsync polls and then accepts. The Ring's
+  behaviour goes to bukka as a bug (`dev/WORKFLOW.md`, "Ownership"); the non-blocking accept that
+  asked the Ring for its buffer (S6.3) is gone with it.

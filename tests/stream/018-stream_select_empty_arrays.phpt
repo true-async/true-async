@@ -1,7 +1,7 @@
 --TEST--
 stream_select with empty arrays
 --XFAIL--
-Not implemented yet: S6.4 of dev/PLAN.md
+By design: the core keeps PHP's argument errors of stream_select() (a TypeError per non-stream, then a ValueError when no stream is left), where TrueAsync's fork, in a coroutine, throws no ValueError and returns 0 for no stream at all (dev/plans/S6.md section 11)
 --FILE--
 <?php
 

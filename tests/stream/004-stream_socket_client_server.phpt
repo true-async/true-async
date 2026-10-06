@@ -1,7 +1,5 @@
 --TEST--
 stream_socket_client and stream_socket_server with coroutine switching
---XFAIL--
-Not implemented yet: S6.4 of dev/PLAN.md
 --FILE--
 <?php
 
@@ -85,9 +83,9 @@ echo "End\n";
 --EXPECTF--
 Start
 Server: creating socket
-Worker: doing work while server waits
 Server: listening
 Server: waiting for connection
+Worker: doing work while server waits
 Client: connecting
 Client: received 'Hello from server'
 Client: sent request

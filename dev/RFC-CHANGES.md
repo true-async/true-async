@@ -55,3 +55,21 @@ read, so the core's synchronous queue honours it too; `timed_out` in the metadat
 fix: vanilla PHP has no such option.
 
 Waits for it: `io/039`, `040`, `042`, `043` (`--XFAIL--` naming S8).
+
+## 4. IO hooks: stream_set_timeout() on stream_socket_recvfrom() and stream_socket_sendto()
+
+State: drafted 2026-10-06 (S6.4), not sent. PR: none.
+
+Need: TrueAsync honours a socket stream's timeout in `stream_socket_recvfrom()` and
+`stream_socket_sendto()` and sets `timed_out` in the metadata (F `main/streams/xp_socket.c:368-392`,
+called before `recvfrom()` and `sendto()`). The pinned core gives these transport calls an infinite
+deadline on a blocking stream (`sock_xport_deadline()`, `main/streams/xp_socket.c:252-261`), as
+vanilla PHP's blocking `recvfrom()` does, so a UDP receive without a peer never returns, with or
+without a provider.
+
+Request: `sock_xport_deadline()` builds the deadline from `sock->timeout`, as `php_sockop_read()` and
+`php_sockop_write()` do (`tv_sec == -1` infinite), and `STREAM_XPORT_OP_RECV` and
+`STREAM_XPORT_OP_SEND` set `sock->timeout_event` on `ETIMEDOUT`. A feature, not a fix: vanilla PHP
+ignores the timeout there.
+
+Waits for it: `stream/030` (`--XFAIL--` naming S8).

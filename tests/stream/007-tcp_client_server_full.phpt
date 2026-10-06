@@ -1,7 +1,5 @@
 --TEST--
 Full TCP client-server test with coroutine switching
---XFAIL--
-Not implemented yet: S6.4 of dev/PLAN.md
 --FILE--
 <?php
 
@@ -90,9 +88,9 @@ echo "End\n";
 --EXPECTF--
 Start
 Server: starting
-Worker: finished
 Server: listening on port %d
 Server: accepting connections
+Worker: finished
 Client: connected and send message...
 Client: connecting to port %d...
 Client: received 'Server response: Hello from client'

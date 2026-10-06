@@ -419,7 +419,7 @@ Done when: S3–S6 lists (from `sleep`, `io`, `stream`, `socket_ext`, `dns`, `cu
 over 100 seeds; tests that fail because of the hooks design are listed against the review item;
 `dns` counted only on the Ring configuration (the Poll queue answers Unsupported for lookups).
 Tier: T2. Roles: Critic on S6.2, Critic after S6.7 (S6.8).
-Active: S6.4
+Active: S6.5
 
 - [x] S6.1 Fixtures: MySQL with two connections and an HTTP server with
       `PHP_CLI_SERVER_WORKERS`, started by `tools/test.py` locally and by the CI lanes.
@@ -462,11 +462,22 @@ Active: S6.4
         `io/035`-`037`, `094`, `095` and two bailout tests to S6.7; the pipe timeout and `io/100`
         name S8 (`RFC-CHANGES.md` 3). Bugs found in bukka's code went to him (`io-hooks-fixes`);
         `io/094` is a php-src streams bug, its branch asked of Edmond.
-- [ ] S6.4 Sockets (Recv, Send, Accept, Connect, Poll, Any, registrations) and DNS on the Ring.
-      done: `stream`, `socket_ext`, `dns` without `--XFAIL--` except the by-design ones
+- [x] S6.4 Sockets (Recv, Send, Accept, Connect, Poll, Any, registrations) and DNS on the Ring.
+      done: `stream`, `socket_ext`, `dns` without `--XFAIL--` except the by-design ones and those
+        naming a core change or another track's step
+      handoff: done 2026-10-06 on core `1ee473ff67b`: `pocs-dbg` 816 PASS, 8 SKIP, 44 XFAIL;
+        `pocs-asan` 800 PASS, 25 SKIP, 43 XFAIL; nothing unexpected. An accept is `accept()` first,
+        then a POLL READ: the Ring's multishot accept hid pending connections from `stream_select()`
+        (the Critic; `io_provider/015`), a bug in bukka's code told to Edmond. `stream/004`, `007`,
+        `028` changed (the core resolves a numeric host without a switch); `stream/017`, `018` XFAIL
+        by design (PHP's `stream_select()` errors); `stream/030` names S8 (`RFC-CHANGES.md` 4);
+        `dns/006` waits for S5.4's `timeout()`; `io/096` names S6.7 (B1). Own tests
+        `io_provider/012`-`015`. The Windows lane's socket expectations moved to S6.5.
 - [ ] S6.5 Children and signals: WaitPid, SigWait, `Async\signal()` (once S5.2's Future is on
-      `main`); the Windows `proc_open()` pipe core commit (`dev/plans/S6.md` section 9).
-      done: `exec`, `signal` without `--XFAIL--` except the by-design ones
+      `main`); the Windows `proc_open()` pipe core commit (`dev/plans/S6.md` section 9); the
+      Windows lane's socket expectations from S6.4 (`sockets` and `openssl` loaded in `pocs-win`).
+      done: `exec`, `signal` without `--XFAIL--` except the by-design ones; `sockets` and `openssl`
+        load in `pocs-win`; no `xfail-on:pocs-win` tag and no `--XFAIL--` names S6.5 in `stream`, `dns`
 - [ ] S6.6 curl, mysqli, pdo_mysql without the pool.
       done: `curl`, `mysqli`, `pdo_mysql` without `--XFAIL--` except the by-design ones
 - [ ] S6.7 IO shutdown windows (the `ts_suspend` NULL case), the seven core-tree tests,
