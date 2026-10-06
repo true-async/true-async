@@ -45,6 +45,7 @@
 #include "php_true_async.h"
 #include "Zend/zend_observer.h"
 #include "scheduler.h"
+#include "await.h"
 #include "coroutine.h"
 #include "exceptions.h"
 #include "Zend/zend_smart_str.h"
@@ -1883,7 +1884,7 @@ static const async_wait_kind_t async_wait_kind_coroutine = {
 	.info = await_record_info,
 };
 
-bool async_await_coroutine(async_coroutine_t *target)
+bool async_await_coroutine(async_coroutine_t *target, async_awaitable_t *token)
 {
 	async_coroutine_t *waiter = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
 
@@ -1922,13 +1923,27 @@ bool async_await_coroutine(async_coroutine_t *target)
 	 * gets it: one cancelled before the target finishes never sees it, and the target's exception
 	 * then still ends the request. */
 	while (!ZEND_COROUTINE_IS_FINISHED(&target->coroutine)) {
+		if (token != NULL && UNEXPECTED(!async_await_token_check(token))) {
+			return false;
+		}
+
 		ASYNC_TEST_FAULT(ASYNC_TEST_FAULT_RESERVE);
 		async_callbacks_reserve(&target->callbacks, 1);
+
+		if (token != NULL) {
+			async_callbacks_reserve(async_awaitable_callbacks(token), 1);
+		}
+
 		async_wait_link(&waiter->waker.records[0],
 						waiter,
 						(async_awaitable_t *) target,
 						&async_wait_kind_coroutine,
 						await_record_wake);
+
+		if (token != NULL) {
+			async_await_token_link(&waiter->waker.records[1], waiter, token);
+		}
+
 		ASYNC_TEST_FAULT(ASYNC_TEST_FAULT_LINK);
 
 		if (UNEXPECTED(!ZEND_ASYNC_SUSPEND())) {
@@ -1963,7 +1978,7 @@ static bool scheduler_await(zend_coroutine_t *zend_coroutine)
 	async_coroutine_t *target = (async_coroutine_t *) zend_coroutine;
 
 	GC_ADDREF(&target->std);
-	const bool finished = async_await_coroutine(target);
+	const bool finished = async_await_coroutine(target, NULL);
 	OBJ_RELEASE(&target->std);
 
 	return finished;

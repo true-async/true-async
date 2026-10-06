@@ -1,7 +1,5 @@
 --TEST--
 await() completes normally when awaitable resolves before Future cancel token fires
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

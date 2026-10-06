@@ -1,7 +1,5 @@
 --TEST--
 proc_open() handle reuse UAF regression - concurrent rapid proc_close
---XFAIL--
-Not implemented yet: S6.5 of dev/PLAN.md
 --SKIPIF--
 <?php
 if (!function_exists("proc_open")) echo "skip proc_open() is not available";

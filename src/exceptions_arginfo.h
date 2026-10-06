@@ -1,5 +1,5 @@
 /* This is a generated file, edit exceptions.stub.php instead.
- * Stub hash: e924215449062014114f89103635e5ab5715651d */
+ * Stub hash: 30cc3b40580fb403a2dd0f531fbda3f37fee3b2f */
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_CompositeException_addException, 0, 1, IS_VOID, 0)
 	ZEND_ARG_OBJ_INFO(0, exception, Throwable, 0)
@@ -23,6 +23,16 @@ static zend_class_entry *register_class_Async_AsyncCancellation(zend_class_entry
 
 	INIT_NS_CLASS_ENTRY(ce, "Async", "AsyncCancellation", NULL);
 	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_Error, 0);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_Async_OperationCanceledException(zend_class_entry *class_entry_Async_AsyncCancellation)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_NS_CLASS_ENTRY(ce, "Async", "OperationCanceledException", NULL);
+	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_Async_AsyncCancellation, 0);
 
 	return class_entry;
 }

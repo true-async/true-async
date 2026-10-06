@@ -1,7 +1,5 @@
 --TEST--
 await() with pre-rejected Future cancel token containing CancellationException wraps in OperationCanceledException
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

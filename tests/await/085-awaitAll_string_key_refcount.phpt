@@ -1,7 +1,5 @@
 --TEST--
 await_all() - string keys must have correct refcount
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --DESCRIPTION--
 When await_all() receives an array with string keys, the returned
 $results and $errors arrays reuse those keys. Each hash table must

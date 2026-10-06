@@ -1,7 +1,5 @@
 --TEST--
 Closing a handle while another coroutine is inside stream_get_contents()
---XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
 --FILE--
 <?php
 

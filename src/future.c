@@ -17,6 +17,7 @@
 #include "php.h"
 #include "php_true_async.h"
 #include "Zend/zend_exceptions.h"
+#include "await.h"
 #include "coroutine.h"
 #include "exceptions.h"
 #include "future.h"
@@ -149,9 +150,8 @@ static void future_event_report_unobserved(const async_future_event_t *future)
 				   ZSTR_VAL(future->created_filename),
 				   future->created_lineno);
 	} else {
-		zend_error(E_CORE_WARNING,
-				   "Unhandled exception in Future: %s; use catch() or ignore() to handle",
-				   message_text);
+		zend_error(
+				E_CORE_WARNING, "Unhandled exception in Future: %s; use catch() or ignore() to handle", message_text);
 	}
 }
 
@@ -198,7 +198,7 @@ static void future_chain_free(async_future_chain_t *chain)
 	}
 }
 
-static void future_event_release(async_future_event_t *future)
+void async_future_event_release(async_future_event_t *future)
 {
 	if (--future->base.ref_count > 0) {
 		return;
@@ -274,10 +274,8 @@ typedef struct
 	bool stopped; /* an exit() in a mapper: no more items run; the rest go with the drain */
 } future_drain_t;
 
-static void future_event_complete(async_future_event_t *future,
-								  zval *result,
-								  zend_object *exception,
-								  future_drain_t *drain);
+static void
+future_event_complete(async_future_event_t *future, zval *result, zend_object *exception, future_drain_t *drain);
 
 static void future_drain_reserve(future_drain_t *drain, const uint32_t count)
 {
@@ -300,12 +298,11 @@ static void future_drain_reserve(future_drain_t *drain, const uint32_t count)
 }
 
 /* Takes a reference to `parent` and to `child`; room reserved before. */
-static zend_always_inline void future_drain_push(future_drain_t *drain,
-												 async_future_event_t *parent,
-												 zend_object *child)
+static zend_always_inline void
+future_drain_push(future_drain_t *drain, async_future_event_t *parent, zend_object *child)
 {
 	parent->base.ref_count++;
-	drain->items[drain->length++] = (future_drain_item_t) {parent, child};
+	drain->items[drain->length++] = (future_drain_item_t){ parent, child };
 }
 
 /* TrueAsync's process_future_mapper (future.c:1404-1526). map() runs on a result and passes an error
@@ -461,9 +458,9 @@ static void future_drain_run(future_drain_t *drain)
 		child_event->base.ref_count++;
 
 		future_mapper_run(drain, item.parent, child, child_event);
-		future_event_release(child_event);
+		async_future_event_release(child_event);
 		OBJ_RELEASE(item.child);
-		future_event_release(item.parent);
+		async_future_event_release(item.parent);
 
 		if (UNEXPECTED(EG(exception) != NULL)) {
 			if (UNEXPECTED(async_is_exit_object(EG(exception)))) {
@@ -538,7 +535,7 @@ static void future_drain_dtor(zend_async_microtask_t *microtask)
 
 	for (uint32_t i = drain->head; i < drain->length; i++) {
 		OBJ_RELEASE(drain->items[i].child);
-		future_event_release(drain->items[i].parent);
+		async_future_event_release(drain->items[i].parent);
 	}
 
 	if (drain->items != NULL) {
@@ -599,10 +596,8 @@ static void future_chain_to_drain(async_future_event_t *future, future_drain_t *
 /* Completes a pending future with `result` or `exception` (borrowed), as TrueAsync's
  * zend_future_resolve (future.c:481-512): the waiters wake, and the children go to `drain`, the
  * drain whose mapper completes it, or to a new drain. The caller holds a reference to `future`. */
-static void future_event_complete(async_future_event_t *future,
-								  zval *result,
-								  zend_object *exception,
-								  future_drain_t *drain)
+static void
+future_event_complete(async_future_event_t *future, zval *result, zend_object *exception, future_drain_t *drain)
 {
 	ZEND_ASSERT(!(future->base.flags & ASYNC_EVENT_F_CLOSED) && "a future completes once");
 
@@ -681,7 +676,7 @@ static bool future_event_take_outcome(async_future_event_t *future, zval *return
 	return true;
 }
 
-bool async_future_await(async_future_event_t *future, zval *return_value)
+bool async_future_await(async_future_event_t *future, zval *return_value, async_awaitable_t *token)
 {
 	if (future->base.flags & ASYNC_EVENT_F_CLOSED) {
 		return future_event_take_outcome(future, return_value);
@@ -705,21 +700,35 @@ bool async_future_await(async_future_event_t *future, zval *return_value)
 	/* Another enqueue than the completion (a foreign one) wakes the waiter early: it waits again, as
 	 * async_await_coroutine() does. */
 	do {
+		if (token != NULL && UNEXPECTED(!async_await_token_check(token))) {
+			async_future_event_release(future);
+			return false;
+		}
+
 		async_callbacks_reserve(&future->base.callbacks, 1);
+
+		if (token != NULL) {
+			async_callbacks_reserve(async_awaitable_callbacks(token), 1);
+		}
+
 		async_wait_link(&waiter->waker.records[0],
 						waiter,
 						(async_awaitable_t *) future,
 						&async_wait_kind_future,
 						future_record_wake);
 
+		if (token != NULL) {
+			async_await_token_link(&waiter->waker.records[1], waiter, token);
+		}
+
 		if (UNEXPECTED(!ZEND_ASYNC_SUSPEND())) {
-			future_event_release(future);
+			async_future_event_release(future);
 			return false;
 		}
 	} while (!(future->base.flags & ASYNC_EVENT_F_CLOSED));
 
 	const bool taken = future_event_take_outcome(future, return_value);
-	future_event_release(future);
+	async_future_event_release(future);
 
 	return taken;
 }
@@ -747,7 +756,7 @@ static void future_state_object_free(zend_object *object)
 	async_future_event_t *future = FUTURE_EVENT(state);
 
 	state->ref.event = NULL;
-	future_event_release(future);
+	async_future_event_release(future);
 
 	zend_object_std_dtor(object);
 }
@@ -793,7 +802,7 @@ static void future_release_held(zend_object *state, async_future_event_t *future
 	if (state != NULL) {
 		OBJ_RELEASE(state);
 	} else if (future != NULL) {
-		future_event_release(future);
+		async_future_event_release(future);
 	}
 }
 
@@ -1191,7 +1200,12 @@ ZEND_METHOD(Async_Future, finally)
  * caught when it is thrown in place or delivered by the wake. */
 ZEND_METHOD(Async_Future, await)
 {
-	ZEND_PARSE_PARAMETERS_NONE();
+	zend_object *cancellation = NULL;
+
+	ZEND_PARSE_PARAMETERS_START(0, 1)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_completable)
+	ZEND_PARSE_PARAMETERS_END();
 
 	THROW_IF_UNAVAILABLE();
 
@@ -1201,13 +1215,36 @@ ZEND_METHOD(Async_Future, await)
 		RETURN_THROWS();
 	}
 
+	async_awaitable_t *token = NULL;
+
+	if (cancellation != NULL) {
+		token = async_await_awaitable_of(cancellation);
+
+		if (UNEXPECTED(token == NULL)) {
+			RETURN_THROWS();
+		}
+
+		/* The future as its own token completes as it does: no token, as Async\await() drops it. */
+		if (token == (const async_awaitable_t *) future) {
+			token = NULL;
+		}
+	}
+
 	future->base.flags |= ASYNC_EVENT_F_RESULT_USED;
 
 	if ((future->base.flags & ASYNC_EVENT_F_CLOSED) && future->exception != NULL) {
 		future->base.flags |= ASYNC_EVENT_F_EXC_CAUGHT;
 	}
 
-	async_future_await(future, return_value);
+	if (token == NULL) {
+		async_future_await(future, return_value, NULL);
+		return;
+	}
+
+	/* The wait's own reference, as Async\await() takes it. */
+	async_awaitable_addref(token);
+	async_future_await(future, return_value, token);
+	async_awaitable_release(token);
 }
 
 ZEND_METHOD(Async_Future, getAwaitingInfo)

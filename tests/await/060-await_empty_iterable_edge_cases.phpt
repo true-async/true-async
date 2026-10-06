@@ -1,7 +1,5 @@
 --TEST--
 await_all() - empty iterators basic functionality
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

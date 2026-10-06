@@ -1,7 +1,5 @@
 --TEST--
 await_all() - iterator with object keys error
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

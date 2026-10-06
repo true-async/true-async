@@ -1,7 +1,5 @@
 --TEST--
 await_all() with all awaitables already completed does not deadlock
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

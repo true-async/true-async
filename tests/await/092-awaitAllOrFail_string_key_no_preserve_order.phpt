@@ -1,7 +1,5 @@
 --TEST--
 await_all_or_fail() - string keys refcount with preserve_key_order=false
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -1,7 +1,5 @@
 --TEST--
 await_any_or_fail() - coroutine throws exception
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

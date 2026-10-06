@@ -1,7 +1,5 @@
 --TEST--
 await_any_or_fail() with Future triggers — every position must wake the awaiter
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --DESCRIPTION--
 Regression test for #103. The previous bug: passing an array of Futures to
 await_any_or_fail() only wired up the listener for the first array slot.

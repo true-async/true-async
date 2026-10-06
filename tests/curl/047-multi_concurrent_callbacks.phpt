@@ -1,7 +1,5 @@
 --TEST--
 Async curl multi: two coroutines with different callback modes (WRITEFUNCTION vs FILE)
---XFAIL--
-Not implemented yet: S6.6 of dev/PLAN.md
 --EXTENSIONS--
 curl
 --FILE--

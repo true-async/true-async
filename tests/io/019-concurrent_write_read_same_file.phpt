@@ -1,7 +1,5 @@
 --TEST--
 Concurrent write and read on same file from different coroutines
---XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
 --FILE--
 <?php
 

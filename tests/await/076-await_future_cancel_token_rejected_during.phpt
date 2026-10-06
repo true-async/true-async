@@ -1,7 +1,5 @@
 --TEST--
 await() with Future cancel token rejected during suspension wraps exception in OperationCanceledException
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

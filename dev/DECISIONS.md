@@ -790,3 +790,26 @@ stack options were shown with the code).
   `async-core-io` (Edmond: «если мы находим баг в коде от Буки, тогда мы 1. говорим мне об этом и
   рассказываем проблему 2. делаем PR в его код 3. у нас должна быть своя ветка свободная от бага»).
   Why: our tests cannot wait for bukka's merge; `dev/WORKFLOW.md`, "Ownership".
+- 2026-10-06 `info/002-info_getCoroutines_integration.phpt` counts main from the request's start,
+  as `info/001` does since S3.8 (S5.3). Why: the scheduler and main exist before the script
+  (the 2026-10-02 entry on refusing while async is not active); TrueAsync creates main at the first
+  spawn, so its counts are one lower before and one higher after.
+- 2026-10-06 `await_*` does not count null triggers in `total`, refuses the waiting coroutine among
+  its triggers, and its wait for the rest counts the coroutines it links (S5.md section 5, "As
+  built in S5.3"). Why: TrueAsync's `total` counts nulls, so `await_all([$future, null])` never
+  ended; a self-await deadlocks there while `await()` refuses it (S3.md 4.1, phase 0); and its wait
+  for the rest waits for `resolved_count` to reach `total`, which a pending Future never lets it
+  reach (`await/103`, `104`, `106`).
+- 2026-10-06 The iterator coroutine of `await_*` goes on walking the Traversable after the wait is
+  over, without linking or writing, until the waiter's exit cancels it (S5.md section 5). Why:
+  TrueAsync's iterator does (`await/049`); the walk touches nothing of the departed waiter.
+- 2026-10-06 `await_*` checks its token after the Traversable's `getIterator()`, holds the token's
+  awaitable and every trigger's for the wait, and its wait for the rest goes over the triggers a
+  parked wait did not take, keeping the errors of coroutines that finished since the wake (S5.md
+  section 5, "As built in S5.3"). Why: `getIterator()` runs PHP code that may complete the token
+  or construct a Future again (`await/111`, `112`); without the walk a coroutine's error was marked
+  observed and never reported (`await/113`).
+- 2026-10-06 A Traversable's repeated trigger is linked again, and its completed trigger may wake
+  the waiter before the iteration ends (S5.md section 8, item 10). Why: the array path does the
+  same; TrueAsync's skip of a trigger already in the waker and its wake only at the iterator's end
+  need state S5 does not keep, and no test observes the difference.

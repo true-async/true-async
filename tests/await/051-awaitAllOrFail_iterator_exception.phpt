@@ -1,7 +1,5 @@
 --TEST--
 await_all_or_fail() - Exception in iterator current() should stop process immediately
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

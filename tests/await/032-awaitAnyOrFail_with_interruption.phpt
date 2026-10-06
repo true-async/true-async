@@ -1,7 +1,5 @@
 --TEST--
 await_any_or_fail() - With an unexpected interruption of execution.
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

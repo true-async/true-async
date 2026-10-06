@@ -1,7 +1,5 @@
 --TEST--
 MySQLi: Concurrent connections in separate coroutines
---XFAIL--
-Not implemented yet: S6.6 of dev/PLAN.md
 --EXTENSIONS--
 mysqli
 --SKIPIF--

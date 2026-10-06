@@ -21,6 +21,7 @@
 #include "php_true_async.h"
 #include "coroutine.h"
 #include "exceptions.h"
+#include "await.h"
 #include "future.h"
 #include "scheduler.h"
 #include "true_async_arginfo.h"
@@ -51,8 +52,8 @@ PHP_INI_BEGIN()
 						true_async_globals)
 PHP_INI_END()
 
-static zend_class_entry *async_ce_awaitable = NULL;
-static zend_class_entry *async_ce_completable = NULL;
+zend_class_entry *async_ce_awaitable = NULL;
+zend_class_entry *async_ce_completable = NULL;
 
 /* False when the extension is disabled or the core refused its scheduler: RINIT and RSHUTDOWN do
  * nothing then. */
@@ -257,34 +258,65 @@ ZEND_FUNCTION(Async_spawn)
 ZEND_FUNCTION(Async_await)
 {
 	zend_object *awaitable = NULL;
+	zend_object *cancellation = NULL;
 
 	THROW_IF_UNAVAILABLE();
 
-	ZEND_PARSE_PARAMETERS_START(1, 1)
+	ZEND_PARSE_PARAMETERS_START(1, 2)
 		Z_PARAM_OBJ_OF_CLASS(awaitable, async_ce_completable)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_completable)
 	ZEND_PARSE_PARAMETERS_END();
 
-	/* A Future is marked observed on entry, as in TrueAsync (async.c:318-320; dev/plans/S5.md, section 4). */
-	if (awaitable->ce == async_ce_future) {
-		async_future_event_t *future = async_future_event_from_object(awaitable);
+	async_awaitable_t *target_awaitable = async_await_awaitable_of(awaitable);
 
-		if (UNEXPECTED(future == NULL)) {
-			zend_throw_exception(async_ce_async_exception, "Future has no state", 0);
-			RETURN_THROWS();
-		}
-
-		future->base.flags |= ASYNC_EVENT_F_RESULT_USED | ASYNC_EVENT_F_EXC_CAUGHT;
-		async_future_await(future, return_value);
-		return;
-	}
-
-	ZEND_ASSERT(awaitable->ce == async_ce_coroutine);
-	async_coroutine_t *target = async_coroutine_from_object(awaitable);
-
-	if (UNEXPECTED(!async_await_coroutine(target))) {
+	if (UNEXPECTED(target_awaitable == NULL)) {
 		RETURN_THROWS();
 	}
 
+	async_awaitable_t *token = NULL;
+
+	if (cancellation != NULL) {
+		token = async_await_awaitable_of(cancellation);
+
+		if (UNEXPECTED(token == NULL)) {
+			RETURN_THROWS();
+		}
+
+		/* The awaitable as its own token: no token (async.c:322-325). */
+		if (token == target_awaitable) {
+			token = NULL;
+		}
+	}
+
+	/* The wait's own reference: the token's Future object may let go of its event meanwhile (a
+	 * second __construct()). */
+	if (token != NULL) {
+		async_awaitable_addref(token);
+	}
+
+	bool coroutine_finished = false;
+
+	/* A Future is marked observed on entry, as in TrueAsync (async.c:318-320; dev/plans/S5.md, section 4). */
+	if (awaitable->ce == async_ce_future) {
+		async_future_event_t *future = (async_future_event_t *) target_awaitable;
+
+		future->base.flags |= ASYNC_EVENT_F_RESULT_USED | ASYNC_EVENT_F_EXC_CAUGHT;
+		async_future_await(future, return_value, token);
+	} else {
+		ZEND_ASSERT(awaitable->ce == async_ce_coroutine);
+		coroutine_finished = async_await_coroutine((async_coroutine_t *) target_awaitable, token);
+	}
+
+	if (token != NULL) {
+		async_awaitable_release(token);
+	}
+
+	if (!coroutine_finished) {
+		return;
+	}
+
+	const async_coroutine_t *target = (const async_coroutine_t *) target_awaitable;
 	zend_object *exception = target->coroutine.exception;
 
 	if (UNEXPECTED(exception != NULL)) {

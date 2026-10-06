@@ -1,7 +1,5 @@
 --TEST--
 await_first_success() - Exception in generator body should stop process immediately
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

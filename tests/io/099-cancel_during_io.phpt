@@ -1,7 +1,5 @@
 --TEST--
 Cancelling a coroutine whose read or write is still in the thread pool
---XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
 --FILE--
 <?php
 

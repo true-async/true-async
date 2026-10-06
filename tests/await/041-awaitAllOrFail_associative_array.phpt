@@ -1,7 +1,5 @@
 --TEST--
 await_all_or_fail() - with associative array
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

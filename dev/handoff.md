@@ -144,18 +144,22 @@ and `bench/alloc_count.so`.
 
 ## S5
 
-S5.2 done 2026-10-06: `Future` and `FutureState` in `src/future.c`, `await()` and `Future::await()`
-on a Future, own tests `future/100`-`113`. Next is S5.3: `$cancellation` on `await()` and
-`Future::await()`, the `await_*` family, `OperationCanceledException`; the block of N records is
-S4.2's `waker.block` (S5.md section 7, N4-N5 "As built"). `timeout()` (S5.4) waits for `delay()`.
-Known, not fixed: a bailout while a coroutine is parked in `async_future_await()` leaks the wait's
-reference to the event, as `scheduler_await` leaks its target's (the Critic, low). A change S5
-needs in the layer goes through the coordinator. In a fresh container: build both cores with
-`tools/ci/build-core.sh` (`RUNNER_TEMP=/root` for ASAN, then `TRUE_ASYNC_CORE_SRC=/root/core-asan/php-src`),
-`git fetch --unshallow` before `check-lists.py` (a shallow clone takes its oldest commit as a list's
-freeze), the reference clone at `REFERENCE` for `--reference`. `gen_stub.php` cannot download
-PHP-Parser through the proxy: `git clone --depth 1 --branch v5.6.1 https://github.com/nikic/PHP-Parser
-build/PHP-Parser-5.6.1` in the core checkout first.
+S5.3 done 2026-10-06: `$cancellation` on `await()` and `Future::await()`, the `await_*` family in
+`src/await.c`, `OperationCanceledException`, own tests `await/100`-`115`. Next is S5.4: `timeout()`
+and `TimeoutException` on S4.4's Timer ops (S5.md section 6). Trap for S5.4: every helper of
+`src/await.c` that branches on the type bit (`await_outcome`, `async_awaitable_addref`/`release`,
+`await_mark_observed`, `async_await_token_check`) reads an event as an `async_future_event_t`, and
+`await_trigger_of` accepts only `Coroutine` and `Future`: the `Timeout` event needs its own branch in
+each. Known, not fixed: a bailout while a coroutine is parked in `async_future_await()` or an
+`await_*` wait leaks the wait's references until the request ends, as `scheduler_await` leaks its
+target's (the Critic, low); an enqueue that is not the wait's own ends an `await_*` wait with the
+results so far, as in TrueAsync (S5.md section 5). A change S5 needs in the layer goes through the
+coordinator. In a fresh container: build both cores with `tools/ci/build-core.sh` (`RUNNER_TEMP=/root`
+for ASAN, then `TRUE_ASYNC_CORE_SRC=/root/core-asan/php-src`), `git fetch --unshallow` before
+`check-lists.py` (a shallow clone takes its oldest commit as a list's freeze), the reference clone at
+`REFERENCE` for `--reference`. `gen_stub.php` cannot download PHP-Parser through the proxy: `git clone
+--depth 1 --branch v5.6.1 https://github.com/nikic/PHP-Parser build/PHP-Parser-5.6.1` in the core
+checkout first. Run `tools/format.sh` before a commit.
 
 ## Later steps
 

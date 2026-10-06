@@ -1,7 +1,5 @@
 --TEST--
 Async curl_write: multiple parallel curl_exec with CURLOPT_FILE
---XFAIL--
-Not implemented yet: S6.6 of dev/PLAN.md
 --EXTENSIONS--
 curl
 --FILE--

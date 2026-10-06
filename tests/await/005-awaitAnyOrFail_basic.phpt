@@ -1,7 +1,5 @@
 --TEST--
 await_any_or_fail() - basic usage with multiple coroutines
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

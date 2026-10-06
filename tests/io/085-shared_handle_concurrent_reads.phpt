@@ -1,7 +1,5 @@
 --TEST--
 Concurrent reads from one shared file handle deliver every byte exactly once
---XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
 --FILE--
 <?php
 

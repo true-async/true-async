@@ -1,7 +1,5 @@
 --TEST--
 Concurrent writes to different files from multiple coroutines
---XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
 --FILE--
 <?php
 

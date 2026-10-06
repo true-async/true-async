@@ -1,7 +1,5 @@
 --TEST--
 Appending a filter that waits for the buffer lock while the handle is closed
---XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
 --FILE--
 <?php
 

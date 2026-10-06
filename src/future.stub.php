@@ -71,8 +71,11 @@ final class Future implements Completable
     /** A future of this future's outcome once `$finally` returned; what `$finally` throws replaces it. */
     public function finally(callable $finally): Future {}
 
-    /** The result, or the error thrown. */
-    public function await(): mixed {}
+    /**
+     * The result, or the error thrown; OperationCanceledException once `$cancellation` completes
+     * first.
+     */
+    public function await(?Completable $cancellation = null): mixed {}
 
     /** One line: "FutureState(completed)" or "FutureState(pending)". */
     public function getAwaitingInfo(): array {}

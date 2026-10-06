@@ -1,7 +1,5 @@
 --TEST--
 Concurrent curl handle reuse with CURLOPT_FILE in multiple coroutines
---XFAIL--
-Not implemented yet: S6.6 of dev/PLAN.md
 --EXTENSIONS--
 curl
 --FILE--

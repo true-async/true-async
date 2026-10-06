@@ -57,6 +57,10 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 ZEND_END_MODULE_GLOBALS(true_async)
 
 ZEND_EXTERN_MODULE_GLOBALS(true_async)
+
+/* Implemented only by the classes of this extension: a Coroutine or a Future (src/true_async.c). */
+extern zend_class_entry *async_ce_awaitable;
+extern zend_class_entry *async_ce_completable;
 #define ASYNC_G(v) ZEND_MODULE_GLOBALS_ACCESSOR(true_async, v)
 
 /* Refuses while no scheduler runs (php -r launches none; after the request's last drain the core

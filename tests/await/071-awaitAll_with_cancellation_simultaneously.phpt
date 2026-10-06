@@ -1,7 +1,5 @@
 --TEST--
 await_all() - The object used to cancel the wait is simultaneously the object being awaited.
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

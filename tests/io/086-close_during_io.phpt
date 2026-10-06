@@ -1,7 +1,5 @@
 --TEST--
 Closing a handle from another coroutine while it is being read and written
---XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
 --FILE--
 <?php
 

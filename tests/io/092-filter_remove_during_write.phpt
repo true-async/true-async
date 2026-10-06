@@ -1,7 +1,5 @@
 --TEST--
 Closing a handle while a write filter is being flushed out of another coroutine
---XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
 --FILE--
 <?php
 

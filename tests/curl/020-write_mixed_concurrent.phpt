@@ -1,7 +1,5 @@
 --TEST--
 Async curl_write: mixed CURLOPT_FILE and CURLOPT_WRITEFUNCTION in parallel
---XFAIL--
-Not implemented yet: S6.6 of dev/PLAN.md
 --EXTENSIONS--
 curl
 --FILE--

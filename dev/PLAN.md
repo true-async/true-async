@@ -364,7 +364,7 @@ Goal: the API the ported tests use everywhere.
 Done when: S3–S5 lists pass, including the `await` group's combinator tests.
 Tier: T2. Roles: Critic on S5.1, Critic after S5.2.
 Notes: dev/plans/S5.md
-Active: S5.3
+Active: S5.4
 
 - [x] S5.1 Design note `dev/plans/S5.md`: `Future` and `FutureState` as TrueAsync has them within one
       thread (the remote and cross-thread futures wait for S10's thread pool), `map`/`catch`/
@@ -389,11 +389,18 @@ Active: S5.3
         removed, and 14 own tests `future/100`-`113` join S5.txt (GC cycles, the drain's order and
         helpers, `exit()` in a mapper, a 200000-deep chain). On core `9531d5b0b1f` after S4.3 and S6.2
         `pocs-dbg` 581 PASS, 8 SKIP and 218 XFAIL, `pocs-asan` 566 PASS, 25 SKIP and 216 XFAIL, 0
-        unexpected. The Critic's
-        three high findings and the re-check's medium one are fixed (S5.md section 3, "As built in S5.2"). `Future::await()` takes
-        no `$cancellation` until S5.3.
-- [ ] S5.3 `$cancellation` on `await()` and the `await_*` family.
+        unexpected. The Critic's three high findings and the re-check's medium one are fixed (S5.md
+        section 3, "As built in S5.2"). `Future::await()` takes no `$cancellation` until S5.3.
+- [x] S5.3 `$cancellation` on `await()` and the `await_*` family.
       done: every S5.txt test that needs no timer passes on debug and ASAN
+      handoff: done 2026-10-06: `src/await.c`, `OperationCanceledException`; the 87 S5.3 tests pass
+        with their `--XFAIL--` removed, and so do 48 S6 tests and `coroutine/038` that waited for
+        `await_*`; 16 own tests `await/100`-`115` join S5.txt. `await/062` waits for S9's scope. On
+        core `9531d5b0b1f` after S4.4 `pocs-dbg` 754 PASS, 10 SKIP and 74 XFAIL, `pocs-asan` 738
+        PASS, 27 SKIP and 73 XFAIL, nothing else unexpected (`edge_cases/016`, `017` skip in a
+        container whose cores lack zlib). The Critic's high finding (the token checked before
+        `getIterator()`) and five medium ones are fixed or documented (S5.md section 5, "As built in
+        S5.3"; section 8, item 10).
 - [ ] S5.4 `timeout()` and `TimeoutException` on Timer ops (once `delay()` is on `main`).
       done: the S5.txt tests marked for timers pass on debug and ASAN
 - [ ] S5.5 Stage review: Critic after S5.2-S5.4, coverage, Mull on the stage diff, the S3.md section

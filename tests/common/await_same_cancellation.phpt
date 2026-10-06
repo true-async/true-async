@@ -1,7 +1,5 @@
 --TEST--
 Async\await(): same awaitable and cancellation object clears the cancellation slot
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

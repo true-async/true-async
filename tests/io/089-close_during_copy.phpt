@@ -1,7 +1,5 @@
 --TEST--
 Closing the source handle while another coroutine is inside stream_copy_to_stream()
---XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
 --FILE--
 <?php
 

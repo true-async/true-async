@@ -1,7 +1,5 @@
 --TEST--
 Scheduler: shutdown functionality and cleanup
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

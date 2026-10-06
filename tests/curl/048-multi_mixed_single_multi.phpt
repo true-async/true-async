@@ -1,7 +1,5 @@
 --TEST--
 Async curl: concurrent coroutines mixing curl_exec and curl_multi
---XFAIL--
-Not implemented yet: S6.6 of dev/PLAN.md
 --EXTENSIONS--
 curl
 --FILE--

@@ -1,7 +1,5 @@
 --TEST--
 await() with pre-completed Future as cancel token throws AsyncCancellation immediately
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

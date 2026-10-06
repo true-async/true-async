@@ -1,7 +1,5 @@
 --TEST--
 Concurrent async writes to one descriptor do not corrupt the heap
---XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
 --DESCRIPTION--
 Regression test. Every coroutine writing the same descriptor parks on the
 shared async-IO event, so any single write's completion notifies them all.

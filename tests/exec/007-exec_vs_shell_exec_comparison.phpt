@@ -1,7 +1,5 @@
 --TEST--
 exec() vs shell_exec() async comparison
---XFAIL--
-Not implemented yet: S6.5 of dev/PLAN.md
 --SKIPIF--
 <?php
 if (!function_exists("exec") || !function_exists("shell_exec")) {

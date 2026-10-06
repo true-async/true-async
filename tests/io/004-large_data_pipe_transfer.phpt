@@ -1,7 +1,5 @@
 --TEST--
 Large data transfer through pipes in coroutines
---XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
 --SKIPIF--
 <?php
 if (!function_exists("proc_open")) echo "skip proc_open() is not available";

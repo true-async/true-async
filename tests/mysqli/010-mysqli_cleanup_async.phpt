@@ -1,7 +1,5 @@
 --TEST--
 MySQLi: Async resource cleanup and connection management
---XFAIL--
-Not implemented yet: S6.6 of dev/PLAN.md
 --EXTENSIONS--
 mysqli
 --SKIPIF--

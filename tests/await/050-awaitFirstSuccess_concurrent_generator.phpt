@@ -1,7 +1,5 @@
 --TEST--
 await_first_success() - With concurrent generator using suspend() in body
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

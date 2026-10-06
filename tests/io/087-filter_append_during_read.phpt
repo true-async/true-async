@@ -1,7 +1,5 @@
 --TEST--
 Appending a read filter while another coroutine is inside fread()
---XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
 --FILE--
 <?php
 

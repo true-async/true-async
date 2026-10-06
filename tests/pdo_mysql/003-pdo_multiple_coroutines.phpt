@@ -1,7 +1,5 @@
 --TEST--
 PDO MySQL: Multiple coroutines with separate connections
---XFAIL--
-Not implemented yet: S6.6 of dev/PLAN.md
 --EXTENSIONS--
 pdo_mysql
 --SKIPIF--

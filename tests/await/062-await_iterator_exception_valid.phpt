@@ -1,7 +1,7 @@
 --TEST--
 await_all() - iterator exception in valid() method
 --XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
+Needs S9: a coroutine spawned while a Traversable is iterated belongs to the iterator's scope, which its exception cancels (TrueAsync async_API.c:1072-1082, iterator.c:601-613)
 --FILE--
 <?php
 

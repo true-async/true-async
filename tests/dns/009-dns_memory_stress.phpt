@@ -1,7 +1,5 @@
 --TEST--
 DNS memory stress test with many concurrent lookups
---XFAIL--
-Not implemented yet: S6.4 of dev/PLAN.md
 --FILE--
 <?php
 

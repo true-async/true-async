@@ -1,7 +1,5 @@
 --TEST--
 Casting a handle to a file descriptor while another coroutine is inside fread()
---XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
 --SKIPIF--
 <?php
 if (!function_exists('proc_open')) die('skip proc_open() is disabled');

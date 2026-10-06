@@ -1,7 +1,5 @@
 --TEST--
 await() with Future cancel token completed during suspension throws AsyncCancellation
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

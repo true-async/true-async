@@ -1,7 +1,5 @@
 --TEST--
 await_all() — already-failed Coroutine as a trigger does not crash the awaiter
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --DESCRIPTION--
 Companion regression test to 094: same crash class, but the failing trigger is
 a Coroutine that threw rather than a Future that errored. The synchronous

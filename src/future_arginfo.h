@@ -1,5 +1,5 @@
 /* This is a generated file, edit future.stub.php instead.
- * Stub hash: 2c365b710c63231165b32c3539b4536ddfd144d6 */
+ * Stub hash: ac7839d6e87c5d207a1f6410301b5806e97d9b89 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_Async_FutureState___construct, 0, 0, 0)
 ZEND_END_ARG_INFO()
@@ -66,6 +66,7 @@ ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_class_Async_Future_finally, 0, 1,
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_Future_await, 0, 0, IS_MIXED, 0)
+	ZEND_ARG_OBJ_INFO_WITH_DEFAULT_VALUE(0, cancellation, Async\\Completable, 1, "null")
 ZEND_END_ARG_INFO()
 
 #define arginfo_class_Async_Future_getAwaitingInfo arginfo_class_Async_FutureState_getAwaitingInfo

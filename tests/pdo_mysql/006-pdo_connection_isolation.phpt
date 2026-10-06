@@ -1,7 +1,5 @@
 --TEST--
 PDO MySQL: Connection isolation test - connections cannot be shared between coroutines
---XFAIL--
-Not implemented yet: S6.6 of dev/PLAN.md
 --EXTENSIONS--
 pdo_mysql
 --SKIPIF--

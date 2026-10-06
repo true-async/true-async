@@ -1,7 +1,5 @@
 --TEST--
 Async curl multi: two coroutines each uploading CURLFile via curl_multi
---XFAIL--
-Not implemented yet: S6.6 of dev/PLAN.md
 --EXTENSIONS--
 curl
 --FILE--

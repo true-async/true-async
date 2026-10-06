@@ -1,7 +1,5 @@
 --TEST--
 Async\await_any_of(): exception from await_futures releases results/errors arrays
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

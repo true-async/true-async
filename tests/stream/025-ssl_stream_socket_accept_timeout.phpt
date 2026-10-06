@@ -1,7 +1,5 @@
 --TEST--
 SSL Stream: stream_socket_accept() with SSL and timeout
---XFAIL--
-Not implemented yet: S6.4 of dev/PLAN.md
 --SKIPIF--
 <?php if (!extension_loaded('openssl')) die('skip openssl extension not available'); ?>
 --FILE--

@@ -1,7 +1,5 @@
 --TEST--
 Concurrent file reads from separate coroutines with independent handles
---XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
 --FILE--
 <?php
 

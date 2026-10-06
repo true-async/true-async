@@ -10,6 +10,12 @@ namespace Async;
  */
 class AsyncCancellation extends \Error {}
 
+/**
+ * Thrown by a wait whose cancellation token completed; the token's exception, if any, is its
+ * previous.
+ */
+class OperationCanceledException extends AsyncCancellation {}
+
 /** Common type of exception. */
 class AsyncException extends \Exception {}
 

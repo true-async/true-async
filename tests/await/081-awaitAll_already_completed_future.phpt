@@ -1,7 +1,5 @@
 --TEST--
 await_all() with already completed Future does not deadlock
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -1,7 +1,5 @@
 --TEST--
 Multiple socket operations with coroutine switching
---XFAIL--
-Not implemented yet: S6.4 of dev/PLAN.md
 --FILE--
 <?php
 

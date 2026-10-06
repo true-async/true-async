@@ -1,7 +1,5 @@
 --TEST--
 await_all() - iterator exception in current() method
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

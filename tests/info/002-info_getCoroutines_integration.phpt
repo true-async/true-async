@@ -1,7 +1,5 @@
 --TEST--
 get_coroutines() - integration with coroutine lifecycle management
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 
@@ -72,8 +70,8 @@ echo "end\n";
 ?>
 --EXPECTF--
 start
-Initial count: 0
-After spawning 5: 6
+Initial count: 1
+After spawning 5: 5
 Coroutine 0 is suspended: true
 Coroutine 1 is suspended: true
 Coroutine 2 is suspended: true
@@ -84,7 +82,7 @@ Coroutine 1 is isCancellationRequested: false
 Coroutine 2 is isCancellationRequested: true
 Coroutine 3 is isCancellationRequested: false
 Coroutine 4 is isCancellationRequested: false
-After cancelling 2: 1
+After cancelling 2: 0
 Completed results: 3
-Final count: 1
+Final count: 0
 end

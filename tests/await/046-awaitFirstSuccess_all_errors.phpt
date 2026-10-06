@@ -1,7 +1,5 @@
 --TEST--
 await_first_success() - when all coroutines throw errors
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -1,7 +1,5 @@
 --TEST--
 Coroutine: isSuspended() returns false once the coroutine has finished
---XFAIL--
-Not implemented yet: S5.4 of dev/PLAN.md
 --FILE--
 <?php
 

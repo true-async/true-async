@@ -1,7 +1,5 @@
 --TEST--
 await_all_or_fail() — already-errored Future as a trigger must throw cleanly
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --DESCRIPTION--
 Regression test for the segfault that occurred when async_await_futures
 encountered an already-closed errored Future during iteration. The synchronous

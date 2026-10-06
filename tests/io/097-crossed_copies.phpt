@@ -1,7 +1,5 @@
 --TEST--
 Two copies running in opposite directions over the same pair of handles
---XFAIL--
-Not implemented yet: S6.3 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -1,7 +1,5 @@
 --TEST--
 await_any_of_or_fail() - with Iterator
---XFAIL--
-Not implemented yet: S5.3 of dev/PLAN.md
 --FILE--
 <?php
 

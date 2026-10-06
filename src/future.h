@@ -37,7 +37,7 @@ typedef struct
 typedef struct
 {
 	async_event_t base; /* CLOSED once completed */
-	zval result;         /* UNDEF until completed with a value */
+	zval result;        /* UNDEF until completed with a value */
 	zend_object *exception;
 	uint32_t created_lineno;
 	uint32_t completed_lineno;
@@ -55,12 +55,18 @@ extern zend_class_entry *async_ce_future;
 
 void async_register_future_ce(zend_class_entry *completable_interface);
 
+/* Drops one reference to `future`; the last one reports an outcome nobody observed and frees it,
+ * which may run PHP code. */
+void async_future_event_release(async_future_event_t *future);
+
 /* The event of a Future object; NULL for one never constructed (unserialize()). */
 async_future_event_t *async_future_event_from_object(zend_object *object);
 
 /* Parks the current coroutine until `future` completes and puts its outcome in `return_value`, or
  * throws it. Marks nothing observed: the caller marks the event first. False with an exception
- * when there is no coroutine to park, or the wait is aborted (a cancellation of the waiter). */
-bool async_future_await(async_future_event_t *future, zval *return_value);
+ * when there is no coroutine to park, the wait is aborted (a cancellation of the waiter), or
+ * `token`, NULL or a token the caller holds for the call, completes first (dev/plans/S5.md,
+ * section 4). */
+bool async_future_await(async_future_event_t *future, zval *return_value, async_awaitable_t *token);
 
 #endif /* TRUE_ASYNC_FUTURE_H */

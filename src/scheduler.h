@@ -83,8 +83,9 @@ void async_scheduler_exit_with(zend_object *exception);
 
 /* Parks the current coroutine until `target` finishes (S3.md 4.1); the caller holds a reference to
  * `target` and reads the outcome from it. Never called in scheduler context. True once the target
- * finished; false with an exception when there is no running current coroutine, on a self-await, or when
- * the wait is aborted (a cancellation of the waiter). */
-bool async_await_coroutine(async_coroutine_t *target);
+ * finished; false with an exception when there is no running current coroutine, on a self-await, when
+ * the wait is aborted (a cancellation of the waiter), or when `token`, NULL or a token the caller
+ * holds for the call, completes first (dev/plans/S5.md, section 4). */
+bool async_await_coroutine(async_coroutine_t *target, async_awaitable_t *token);
 
 #endif /* TRUE_ASYNC_SCHEDULER_H */
