@@ -23,6 +23,7 @@
 #include "exceptions.h"
 #include "future.h"
 #include "scheduler.h"
+#include "timeout.h"
 
 ///////////////////////////////////////////////////////////////////
 /// Awaitables and tokens
@@ -52,6 +53,8 @@ void async_awaitable_release(async_awaitable_t *awaitable)
 {
 	if (ASYNC_AWAITABLE_IS_COROUTINE(awaitable)) {
 		OBJ_RELEASE(&((async_coroutine_t *) awaitable)->std);
+	} else if (ASYNC_AWAITABLE_IS_TIMEOUT(awaitable)) {
+		async_timeout_release((async_timeout_event_t *) awaitable);
 	} else {
 		async_future_event_release((async_future_event_t *) awaitable);
 	}
@@ -88,6 +91,15 @@ static bool await_outcome(async_awaitable_t *awaitable, zval **result, zend_obje
 		return ZEND_COROUTINE_IS_FINISHED(&coroutine->coroutine);
 	}
 
+	if (ASYNC_AWAITABLE_IS_TIMEOUT(awaitable)) {
+		const async_timeout_event_t *timeout = (const async_timeout_event_t *) awaitable;
+
+		*result = NULL;
+		*exception = timeout->exception;
+
+		return (timeout->base.flags & ASYNC_EVENT_F_CLOSED) != 0;
+	}
+
 	async_future_event_t *future = (async_future_event_t *) awaitable;
 
 	*result = &future->result;
@@ -110,11 +122,30 @@ static zend_object *await_cancelled_error(zend_object *previous)
 	return error;
 }
 
+/* The error of a wait the completed `token` ends; `exception` is its outcome, borrowed. */
+static zend_object *await_token_cancelled_error(const async_awaitable_t *token, zend_object *exception)
+{
+	if (!ASYNC_AWAITABLE_IS_TIMEOUT(token)) {
+		return await_cancelled_error(exception);
+	}
+
+	zend_object *previous = async_timeout_exception((const async_timeout_event_t *) token);
+	zend_object *error = await_cancelled_error(previous);
+
+	if (EXPECTED(previous != NULL)) {
+		OBJ_RELEASE(previous);
+	}
+
+	return error;
+}
+
 bool async_await_token_check(async_awaitable_t *token)
 {
 	const bool is_coroutine = ASYNC_AWAITABLE_IS_COROUTINE(token);
 
-	if (!is_coroutine) {
+	if (ASYNC_AWAITABLE_IS_TIMEOUT(token)) {
+		async_timeout_fire_if_due((async_timeout_event_t *) token);
+	} else if (!is_coroutine) {
 		((async_event_t *) token)->flags |= ASYNC_EVENT_F_RESULT_USED | ASYNC_EVENT_F_EXC_CAUGHT;
 	}
 
@@ -130,7 +161,26 @@ bool async_await_token_check(async_awaitable_t *token)
 		((async_coroutine_t *) token)->coroutine.flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
 	}
 
-	zend_throw_exception_internal(await_cancelled_error(exception));
+	zend_throw_exception_internal(await_token_cancelled_error(token, exception));
+
+	return false;
+}
+
+bool async_await_token_arm(async_awaitable_t *token)
+{
+	if (!ASYNC_AWAITABLE_IS_TIMEOUT(token)) {
+		return true;
+	}
+
+	async_timeout_event_t *timeout = (async_timeout_event_t *) token;
+
+	if (EXPECTED(async_timeout_subscribe(timeout))) {
+		return true;
+	}
+
+	if (EXPECTED(EG(exception) == NULL)) {
+		zend_throw_exception_internal(await_token_cancelled_error(token, NULL));
+	}
 
 	return false;
 }
@@ -154,7 +204,7 @@ token_record_wake(async_awaitable_t *target, async_event_callback_t *callback, v
 		await_mark_handled(target);
 	}
 
-	async_scheduler_enqueue(&record->coroutine->coroutine, await_cancelled_error(exception), true);
+	async_scheduler_enqueue(&record->coroutine->coroutine, await_token_cancelled_error(target, exception), true);
 }
 
 static zend_string *token_record_info(const async_coroutine_event_callback_t *record)
@@ -164,6 +214,10 @@ static zend_string *token_record_info(const async_coroutine_event_callback_t *re
 				0, "cancellation: coroutine #%u", ((const async_coroutine_t *) record->event)->std.handle);
 	}
 
+	if (ASYNC_AWAITABLE_IS_TIMEOUT(record->event)) {
+		return zend_string_init(ZEND_STRL("cancellation: timeout"), 0);
+	}
+
 	return zend_string_init(ZEND_STRL("cancellation: future"), 0);
 }
 
@@ -171,11 +225,28 @@ static const async_wait_kind_t async_wait_kind_token = {
 	.info = token_record_info,
 };
 
+/* The wait's subscription leaves with its record. */
+static void timeout_token_record_unlink(async_coroutine_event_callback_t *record)
+{
+	async_timeout_event_t *timeout = (async_timeout_event_t *) record->event;
+
+	async_wait_record_remove(record);
+	async_timeout_unsubscribe(timeout);
+}
+
+static const async_wait_kind_t async_wait_kind_timeout_token = {
+	.info = token_record_info,
+	.unlink = timeout_token_record_unlink,
+};
+
 void async_await_token_link(async_coroutine_event_callback_t *record,
 							async_coroutine_t *waiter,
 							async_awaitable_t *token)
 {
-	async_wait_link(record, waiter, token, &async_wait_kind_token, token_record_wake);
+	const async_wait_kind_t *kind =
+			ASYNC_AWAITABLE_IS_TIMEOUT(token) ? &async_wait_kind_timeout_token : &async_wait_kind_token;
+
+	async_wait_link(record, waiter, token, kind, token_record_wake);
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -435,7 +506,8 @@ static void await_wake_waiter(const await_context_t *context, zend_object *error
 	zend_object *token_exception;
 
 	if (context->token != NULL && UNEXPECTED(await_outcome(context->token, &token_result, &token_exception))) {
-		async_scheduler_enqueue(&context->waiter->coroutine, await_cancelled_error(token_exception), true);
+		async_scheduler_enqueue(
+				&context->waiter->coroutine, await_token_cancelled_error(context->token, token_exception), true);
 		return;
 	}
 
@@ -566,6 +638,11 @@ static async_awaitable_t *await_trigger_of(zval *item, const async_coroutine_t *
 
 	if (Z_TYPE_P(item) == IS_NULL || Z_TYPE_P(item) == IS_UNDEF) {
 		*skip = true;
+		return NULL;
+	}
+
+	if (UNEXPECTED(Z_TYPE_P(item) == IS_OBJECT && Z_OBJCE_P(item) == async_ce_timeout)) {
+		zend_throw_error(NULL, "Async\\Timeout can only be used as a cancellation token");
 		return NULL;
 	}
 
@@ -881,6 +958,13 @@ static void await_array(await_context_t *context, HashTable *items, const bool w
 
 	zend_hash_destroy(&counts);
 
+	/* No record is linked yet: the block leaves the waker with nothing to unlink. */
+	if (context->token != NULL && UNEXPECTED(!async_await_token_arm(context->token))) {
+		waiter->waker.block = NULL;
+		await_context_release(context);
+		return;
+	}
+
 	for (uint32_t i = 0; i < chunk->length; i++) {
 		async_wait_link(&chunk->triggers[i].record,
 						waiter,
@@ -1054,6 +1138,17 @@ static void await_traversable(await_context_t *context, zend_object_iterator *it
 
 	if (context->token != NULL) {
 		async_callbacks_reserve(async_awaitable_callbacks(context->token), 1);
+
+		/* The iterator coroutine, cancelled before it runs, does not start the walk. */
+		if (UNEXPECTED(!async_await_token_arm(context->token))) {
+			context->finished = true;
+			waiter->waker.block = NULL;
+			await_context_release(context);
+			async_coroutine_cancel(iterator_coroutine, NULL, false);
+			OBJ_RELEASE(&iterator_coroutine->std);
+			return;
+		}
+
 		async_await_token_link(&waiter->waker.records[0], waiter, context->token);
 	}
 

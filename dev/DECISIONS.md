@@ -919,3 +919,22 @@ stack options were shown with the code).
   it closes a connection handed to a cancelled wait; TrueAsync polls and then accepts. The Ring's
   behaviour goes to bukka as a bug (`dev/WORKFLOW.md`, "Ownership"); the non-blocking accept that
   asked the Ring for its buffer (S6.3) is gone with it.
+- 2026-10-06 `Async\timeout()` takes its absolute deadline when it returns, arms S4's Timer op only
+  while a wait is parked on it, and stays fired once fired; `Timeout::cancel($cancellation)` is
+  terminal and wakes its waiters with `OperationCanceledException` whose `previous` is
+  `$cancellation` (D32, `dev/reviews/s3-structures/timeout-semantics.md` option B; S5.md section 6).
+  Why: TrueAsync restarts the timer for each wait, so a loop of waits never times out, loses the
+  outcome after the fire and ignores `cancel()`'s argument (S5.md section 8, item 11).
+- 2026-10-06 Each wait a fired `Timeout` ends gets a `TimeoutException` of its own as the
+  `previous`; the `Timeout` keeps only `cancel()`'s argument. Why: the engine's chaining onto a
+  thrown exception writes into its tail, so one kept exception carried what one wait chained to every
+  later use (`await/117`); TrueAsync makes one per fire.
+- 2026-10-06 `await($timeout)` and a `Timeout` among `await_*` triggers throw `Error("Async\Timeout
+  can only be used as a cancellation token")`. Why: TrueAsync accepts both untested, and every use
+  of `timeout()` in its tests is a token (S5.md section 6, point 6).
+- 2026-10-06 A wait subscribes to its `Timeout` after its reservations and right before its first
+  link, and in a forked child the subscribe runs the reactor's fork check before it reads the timer's
+  place on the lists (`async_reactor_check_fork()`, the one public addition to S4's reactor). Why: a
+  bailout in a reservation left an armed timer nothing unsubscribed (`await/127`), and a child whose
+  first wait came before any submit kept the parent's dropped op and never timed out (`await/124`;
+  the Critic on S5.4).

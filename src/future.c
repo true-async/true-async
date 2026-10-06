@@ -709,6 +709,11 @@ bool async_future_await(async_future_event_t *future, zval *return_value, async_
 
 		if (token != NULL) {
 			async_callbacks_reserve(async_awaitable_callbacks(token), 1);
+
+			if (UNEXPECTED(!async_await_token_arm(token))) {
+				async_future_event_release(future);
+				return false;
+			}
 		}
 
 		async_wait_link(&waiter->waker.records[0],

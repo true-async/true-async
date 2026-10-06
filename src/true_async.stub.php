@@ -44,6 +44,12 @@ function await_any_of_or_fail(int $count, iterable $triggers, ?Awaitable $cancel
 /** `[results, errors]` once `$count` triggers succeeded (all of them for 0 or less). */
 function await_any_of(int $count, iterable $triggers, ?Awaitable $cancellation = null, bool $preserveKeyOrder = true, bool $fillNull = false): array {}
 
+/**
+ * A cancellation token whose deadline is `$ms` milliseconds after the call; a wait it ends throws
+ * OperationCanceledException with a TimeoutException as the previous.
+ */
+function timeout(int $ms): Awaitable {}
+
 /** Gives up the CPU: the current coroutine goes to the back of the run queue and runs again in its turn. */
 function suspend(): void {}
 

@@ -21,6 +21,7 @@
 
 zend_class_entry *async_ce_cancellation = NULL;
 zend_class_entry *async_ce_operation_canceled = NULL;
+zend_class_entry *async_ce_timeout_exception = NULL;
 zend_class_entry *async_ce_async_exception = NULL;
 zend_class_entry *async_ce_deadlock_error = NULL;
 static zend_class_entry *async_ce_composite_exception = NULL;
@@ -110,6 +111,7 @@ void async_register_exceptions_ce(void)
 {
 	async_ce_cancellation = register_class_Async_AsyncCancellation(zend_ce_error);
 	async_ce_operation_canceled = register_class_Async_OperationCanceledException(async_ce_cancellation);
+	async_ce_timeout_exception = register_class_Async_TimeoutException(zend_ce_exception);
 	async_ce_async_exception = register_class_Async_AsyncException(zend_ce_exception);
 	async_ce_deadlock_error = register_class_Async_DeadlockError(zend_ce_error);
 	async_ce_composite_exception = register_class_Async_CompositeException(zend_ce_exception);

@@ -1,7 +1,5 @@
 --TEST--
 Comparison of manual cancellation vs timeout cancellation in await
---XFAIL--
-Not implemented yet: S5.4 of dev/PLAN.md
 --FILE--
 <?php
 

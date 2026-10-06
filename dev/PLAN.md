@@ -364,7 +364,7 @@ Goal: the API the ported tests use everywhere.
 Done when: S3–S5 lists pass, including the `await` group's combinator tests.
 Tier: T2. Roles: Critic on S5.1, Critic after S5.2.
 Notes: dev/plans/S5.md
-Active: S5.4
+Active: S5.5
 
 - [x] S5.1 Design note `dev/plans/S5.md`: `Future` and `FutureState` as TrueAsync has them within one
       thread (the remote and cross-thread futures wait for S10's thread pool), `map`/`catch`/
@@ -401,8 +401,17 @@ Active: S5.4
         container whose cores lack zlib). The Critic's high finding (the token checked before
         `getIterator()`) and five medium ones are fixed or documented (S5.md section 5, "As built in
         S5.3"; section 8, item 10).
-- [ ] S5.4 `timeout()` and `TimeoutException` on Timer ops (once `delay()` is on `main`).
+- [x] S5.4 `timeout()` and `TimeoutException` on Timer ops (once `delay()` is on `main`).
       done: the S5.txt tests marked for timers pass on debug and ASAN
+      handoff: done 2026-10-06: `src/timeout.c` (D32: one deadline per `timeout()`, the timer armed
+        only while a wait is parked on it, fired for good); the 9 S5.4 tests and S6's `dns/006` pass
+        with their `--XFAIL--` removed, and 12 own tests `await/116`-`127` join S5.txt. On core
+        `1ee473ff67b` after S6.4 and S7.2 `pocs-dbg` 863 PASS, 8 SKIP and 34 XFAIL, `pocs-asan` 847
+        PASS, 25 SKIP and 33 XFAIL, 0 unexpected (S6's `dns/003` failed once on an earlier dbg run:
+        `localhost` resolved before the other coroutine ran; 3 of 3 alone pass). The Critic's three defects (a forked child's first wait
+        before any submit, one shared `TimeoutException`, a bailout between the subscribe and the
+        link) are fixed with `await/117`, `124`, `127` (S5.md section 6). Also: the `const` that
+        broke the clang and MSVC builds since S5.3 (`src/true_async.c`).
 - [ ] S5.5 Stage review: Critic after S5.2-S5.4, coverage, Mull on the stage diff, the S3.md section
       12 benchmarks of `await_*` (N in 1, 2, 8, 100, 10 000).
       done: Done when of S5 holds on the day; survivors killed or explained; results in

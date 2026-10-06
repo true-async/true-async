@@ -154,6 +154,10 @@ bool async_trigger_link(async_coroutine_event_callback_t *record, async_coroutin
  * before its rebuild, where the parent's queue must not be touched. Creates and rebuilds nothing. */
 php_io_queue *async_reactor_live_queue(void);
 
+/* Rebuilds the reactor in a forked child before its first submit, which does it otherwise: for a holder
+ * that reads an IO event's place on the lists (a Timeout's timer). False with the rebuild's Error. */
+bool async_reactor_check_fork(void);
+
 /* Parks `waiter`, the running coroutine, on a Timer op for `ms` > 0 milliseconds: delay() (S4.md
  * 3.5). False with the exception that ended the wait (a cancellation). */
 bool async_reactor_delay(async_coroutine_t *waiter, zend_long ms);

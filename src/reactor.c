@@ -603,6 +603,11 @@ static int reactor_try_submit(async_reactor_t *reactor, async_io_event_t *event,
 	return 0;
 }
 
+bool async_reactor_check_fork(void)
+{
+	return reactor_check_fork(&ASYNC_G(reactor));
+}
+
 zend_result async_io_event_submit(async_io_event_t *event)
 {
 	async_reactor_t *reactor = &ASYNC_G(reactor);

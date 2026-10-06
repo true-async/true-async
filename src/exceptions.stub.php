@@ -16,6 +16,9 @@ class AsyncCancellation extends \Error {}
  */
 class OperationCanceledException extends AsyncCancellation {}
 
+/** The previous of the OperationCanceledException a Timeout ends a wait with. */
+class TimeoutException extends \Exception {}
+
 /** Common type of exception. */
 class AsyncException extends \Exception {}
 

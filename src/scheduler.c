@@ -1961,6 +1961,10 @@ bool async_await_coroutine(async_coroutine_t *target, async_awaitable_t *token)
 
 		if (token != NULL) {
 			async_callbacks_reserve(async_awaitable_callbacks(token), 1);
+
+			if (UNEXPECTED(!async_await_token_arm(token))) {
+				return false;
+			}
 		}
 
 		async_wait_link(&waiter->waker.records[0],

@@ -144,22 +144,23 @@ and `bench/alloc_count.so`.
 
 ## S5
 
-S5.3 done 2026-10-06: `$cancellation` on `await()` and `Future::await()`, the `await_*` family in
-`src/await.c`, `OperationCanceledException`, own tests `await/100`-`115`. Next is S5.4: `timeout()`
-and `TimeoutException` on S4.4's Timer ops (S5.md section 6). Trap for S5.4: every helper of
-`src/await.c` that branches on the type bit (`await_outcome`, `async_awaitable_addref`/`release`,
-`await_mark_observed`, `async_await_token_check`) reads an event as an `async_future_event_t`, and
-`await_trigger_of` accepts only `Coroutine` and `Future`: the `Timeout` event needs its own branch in
-each. Known, not fixed: a bailout while a coroutine is parked in `async_future_await()` or an
-`await_*` wait leaks the wait's references until the request ends, as `scheduler_await` leaks its
-target's (the Critic, low); an enqueue that is not the wait's own ends an `await_*` wait with the
-results so far, as in TrueAsync (S5.md section 5). A change S5 needs in the layer goes through the
-coordinator. In a fresh container: build both cores with `tools/ci/build-core.sh` (`RUNNER_TEMP=/root`
-for ASAN, then `TRUE_ASYNC_CORE_SRC=/root/core-asan/php-src`), `git fetch --unshallow` before
-`check-lists.py` (a shallow clone takes its oldest commit as a list's freeze), the reference clone at
-`REFERENCE` for `--reference`. `gen_stub.php` cannot download PHP-Parser through the proxy: `git clone
---depth 1 --branch v5.6.1 https://github.com/nikic/PHP-Parser build/PHP-Parser-5.6.1` in the core
-checkout first. Run `tools/format.sh` before a commit.
+S5.4 done 2026-10-06: `Async\timeout()`, `Timeout` and `TimeoutException` in `src/timeout.c` (S5.md
+section 6), own tests `await/116`-`127`. Next is S5.5, the stage review (PLAN). Left open from the
+Critic on S5.4: a Timer op that completes with an error status fires the `Timeout` as a deadline
+would, where `delay()` throws an Error (not seen; the core's Timer has no error path we know of);
+the wait for the rest of `await_*` does not link the token, as in TrueAsync (S5.md section 8). For
+S5.5's benchmark of many waiters on one token: each subscribe to an armed `Timeout` pays a `getpid()`
+for the fork check, as every submit does. Known,
+not fixed: a bailout while a coroutine is parked in `async_future_await()` or an `await_*` wait leaks
+the wait's references until the request ends, as `scheduler_await` leaks its target's (the Critic,
+low); an enqueue that is not the wait's own ends an `await_*` wait with the results so far, as in
+TrueAsync (S5.md section 5). A change S5 needs in the layer goes through the coordinator. In a fresh
+container: build both cores with `tools/ci/build-core.sh` (`RUNNER_TEMP=/root` for ASAN, then
+`TRUE_ASYNC_CORE_SRC=/root/core-asan/php-src`), `git fetch --unshallow` before `check-lists.py` (a
+shallow clone takes its oldest commit as a list's freeze), the reference clone at `REFERENCE` for
+`--reference`. `gen_stub.php` cannot download PHP-Parser through the proxy: `git clone --depth 1
+--branch v5.6.1 https://github.com/nikic/PHP-Parser build/PHP-Parser-5.6.1` in the core checkout
+first (the build script removes it). Run `tools/format.sh` before a commit.
 
 ## Later steps
 

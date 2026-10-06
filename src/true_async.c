@@ -25,6 +25,7 @@
 #include "await.h"
 #include "future.h"
 #include "scheduler.h"
+#include "timeout.h"
 #include "true_async_arginfo.h"
 
 #ifdef TRUE_ASYNC_KNOWN_ANSWER
@@ -138,6 +139,7 @@ static PHP_MINIT_FUNCTION(true_async)
 	async_register_exceptions_ce();
 	async_register_coroutine_ce(async_ce_completable);
 	async_register_future_ce(async_ce_completable);
+	async_register_timeout_ce(async_ce_completable);
 
 	scheduler_registered = async_scheduler_register();
 
@@ -304,6 +306,11 @@ ZEND_FUNCTION(Async_await)
 		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_completable)
 	ZEND_PARSE_PARAMETERS_END();
 
+	if (UNEXPECTED(awaitable->ce == async_ce_timeout)) {
+		zend_throw_error(NULL, "Async\\Timeout can only be used as a cancellation token");
+		RETURN_THROWS();
+	}
+
 	async_awaitable_t *target_awaitable = async_await_awaitable_of(awaitable);
 
 	if (UNEXPECTED(target_awaitable == NULL)) {
@@ -352,7 +359,7 @@ ZEND_FUNCTION(Async_await)
 		return;
 	}
 
-	const async_coroutine_t *target = (const async_coroutine_t *) target_awaitable;
+	async_coroutine_t *target = (async_coroutine_t *) target_awaitable;
 	zend_object *exception = target->coroutine.exception;
 
 	if (UNEXPECTED(exception != NULL)) {

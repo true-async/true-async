@@ -1,7 +1,5 @@
 --TEST--
 await_any_of_or_fail() - with cancellation timeout
---XFAIL--
-Not implemented yet: S5.4 of dev/PLAN.md
 --FILE--
 <?php
 

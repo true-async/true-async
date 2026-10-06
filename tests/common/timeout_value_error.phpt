@@ -1,7 +1,5 @@
 --TEST--
 Async\timeout(): ValueError on non-positive duration
---XFAIL--
-Not implemented yet: S5.4 of dev/PLAN.md
 --FILE--
 <?php
 

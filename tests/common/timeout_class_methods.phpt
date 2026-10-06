@@ -1,7 +1,5 @@
 --TEST--
 Async\Timeout: direct construct forbidden, isCompleted/isCancelled/cancel methods
---XFAIL--
-Not implemented yet: S5.4 of dev/PLAN.md
 --FILE--
 <?php
 
