@@ -289,10 +289,7 @@ scope (or of the coroutine's scope), with the scope or the coroutine as the argu
 (`coroutine.c:1225-1350`, `scope.c:1720-1753`). One handler error goes on as itself, two or more as a
 `CompositeException` (`coroutine.c:1195-1215`; `coroutine/017`, `bailout/015` expect "Caught single
 exception"), through the route of section 4. A handler added to a disposed scope or to a finished
-coroutine runs at once (`scope.c:581-625`, `coroutine.c:1395-1411`; `coroutine/015`). TrueAsync adds
-a reference to the coroutine for its handlers (`coroutine.c:1349`) before the "nobody holds it"
-check (`coroutine.c:737`), so an unheld coroutine with handlers keeps its unhandled error instead of
-ending the request; the layer keeps that and says so in a test.
+coroutine runs at once (`scope.c:581-625`, `coroutine.c:1395-1411`; `coroutine/015`).
 
 Bailout: `Coroutine::finally` handlers are destroyed unrun when the coroutine took a bailout
 (`coroutine.c:1334-1340`). Scope handlers have no such check in practice (`scope.c:1730` reads
@@ -319,6 +316,36 @@ which S5 already met (`src/future.c:458`):
   else holds the object. The iterator learns that a worker ended from a finish handler
   (`async_finish_handler_add`, `src/true_async_API.c:341`), as the interrupt coroutine does
   (`src/scheduler.c:852`).
+
+**As built (S9.6).** `src/iterator.c` ports `iterator.c:235-613` with the two contracts above: each
+worker and the queued microtask hold a reference, and a finish handler releases the slot of a worker
+that never ran. A walk that throws cancels the iterator's scope with "Cancellation of the iterator due
+to an exception" and keeps the error in `exception`, and the last worker to leave ends with it, where
+TrueAsync notifies a completion event (no waiter needs one in this layer; `iterate()` of the
+iterators layer adds its wait): one that ran throws it, one that never ran routes it from its finish
+handler (`internal/068`). A walk that one worker stops while another moves a suspending Traversable
+stays stopped; TrueAsync's end of the move restarts it and the walk runs on (`internal/069`, probe
+`s9.6/c2.php`). `TrueAsync\Test\iterate()` runs the core from a test (`internal/066` prints what
+TrueAsync's `Async\iterate()` prints for the same walks, `internal/067`). The finally run
+(`src/coroutine.c`, "Finally handlers") is an iterator with no concurrency limit and high priority in
+a new child scope of the target's scope; `finally_handler_call` collects the handlers' errors in the
+iterator's `exception`, a cancellation of a handler included, as TrueAsync's (`scope/117`), and an
+exit stops the run. `scope_dispose` starts the child scopes' handlers, then its own, and the scope stays
+until those runs end (`ASYNC_SCOPE_F_DISPOSING` keeps the walk from re-entering); `cancel()` of a scope
+with nothing to cancel runs them too (`scope/114`).
+
+The bailout trace: after a fatal error PHP marks every object destructed (`main/main.c:1486`), so the
+scope object's `free_obj` runs in `zend_call_destructors` without `__destruct`, disposes the scope and
+starts its finally run; the scheduler's last run after the destructors (`main.c:1938`) runs it, after
+the shutdown functions. TrueAsync takes the same path (gdb on the reference); no change of the bailout
+rule. A coroutine that took the bailout drops its own handlers unrun, as TrueAsync's (`bailout/016`),
+and so does a scope disposed while the bailout unwinds the coroutines (a zombie's fatal error after
+`disposeSafely()`): its run's worker is finalized unrun with the rest, and nothing runs after a fatal
+error but the scheduler's run after the shutdown destructors (`bailout/017`); the reference prints
+nothing there either (probe `s9.6/c3.php`). The plan's reading that TrueAsync's reference to a
+coroutine with handlers keeps an unheld coroutine's error from ending the request does not hold:
+probed, the reference ends the request as ours does (`s9.6/f6.php`); ours runs the handlers first
+(`scope/111`, section 9, item 18).
 
 ## 8. `await_*` over a Traversable
 
@@ -374,7 +401,11 @@ Traversable's exception; `await/062` loses its `--XFAIL--` in that step.
    survives `$scope->cancel()` and its coroutine's `cancel()`, the script's end waits for it, and one
    stuck on a pending Future reports the deadlock twice (probes `s9.3/q15.php`, `q16.php`). Running
    handlers in a coroutine of their own was weighed and rejected: it reorders the route against the
-   cascade, which TrueAsync runs after the handler (the Sage, 2026-10-07, Final).
+   cascade, which TrueAsync runs after the handler (the Sage, 2026-10-07, Final). One route of ours
+   does run in a notify (S9.6): an iterator worker cancelled before it ran and leaving last has no body
+   to end with the iterator's error, so its finish handler makes the error its outcome and takes
+   finalize's steps in its notify, where a handler that suspends throws as on the route of a finished
+   coroutine (`internal/068`).
 10. **`exit()` in a handler ends the request** as `exit()` in a coroutine does (D16), and the route
     stops there (S9.3, `scope/066`). TrueAsync chains the exit object as the handler's exception and
     goes on: `exit(3)` in a handler ends that request with status 255 (probe `s9.3/q13.php`).
@@ -414,8 +445,23 @@ Traversable's exception; `await/062` loses its `--XFAIL--` in that step.
     was rejected (the Sage, DECISIONS 2026-10-07). A cancelled scope is waited on once closed too, where
     the reference returns at once (`scope/107`); a closed scope that is not cancelled returns at once,
     as there, though zombies may run in its cancelled child scopes (`scope/109`, `scope/110`).
+18. **A coroutine's finally handlers start after the error route and the unheld check** (S9.6,
+    `scope/111`): an error that cancels the coroutine's scope or ends the request runs them first.
+    TrueAsync starts them before the route, in a child of the scope the error then cancels, so the
+    cascade cancels them unrun (probes `s9.6/f6.php`, `pa.php`).
+19. **A finally run's error is its last worker's own error** (S9.6, `scope/115`, `scope/117`): the
+    iterator ends that worker with it, and it goes up the route from the run's child scope.
+    TrueAsync first offers it to the target scope's own handler with the finished coroutine and
+    throws it in the worker only when that declines (`coroutine.c:1238-1265`), so with both handlers
+    set its own handler takes a `Coroutine::finally()` error where ours the child scope handler does
+    (probe `f12.php`).
+20. **`exit()` in a finally handler ends the request** (S9.6, `scope/113`), as item 10 for a scope's
+    handler; TrueAsync's run takes the exit as its worker's and the script goes on to its end, then
+    exits with the status (probe `pc.php`).
+21. **Handlers left when the scheduler is off are dropped unrun** (`async_finally_handlers_start`):
+    nothing would run their coroutine.
 
-The probes of S9.3 are `/mnt/project-files/s9/probes/s9.3/q1.php`-`q16.php`; on the reference and
+The probes of S9.6 are in `/mnt/project-files/s9/probes/s9.6/`. The probes of S9.3 are `/mnt/project-files/s9/probes/s9.3/q1.php`-`q16.php`; on the reference and
 on ours they print the same but for items 9 and 10 and for S3's report of an unobserved exception of
 a held coroutine at the end, which TrueAsync drops (`q11.php`, `q12.php`, `scope/060`).
 
@@ -467,6 +513,9 @@ that directory.
   departures of section 9, items 15-17, the collector's edges of the timer and of the waiter in
   `awaitAfterCancellation()`, `dispose()` of a running scope, the timer after a fork and on a closed
   scope, and errors that come while the handler runs or as the waiter is cancelled.
+- S9.6: `internal/066`-`069` for the iterator core through `TrueAsync\Test\iterate()`;
+  `scope/111`-`117`, `coroutine/040` and `bailout/016`, `017` for section 9, items 18-20, where the
+  handlers' errors go, a handler that suspends, a handler added late, and the handlers after a bailout.
 
 **Core dependencies**: none. `is_safely` and `get_coroutine_count` are in the pinned core
 (API version 2).

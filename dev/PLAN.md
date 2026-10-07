@@ -751,7 +751,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md
-Active: S9.6
+Active: S9.7
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -828,10 +828,18 @@ Active: S9.6
         closed scope cancelled; a forked child's `get_deadlocked_coroutines()` before its first
         suspension reads the parent's timer as armed. Tests that let members start with a
         top-level `delay(1)` flake under load (U2's short path, PLAN Open questions S6.8).
-- [ ] S9.6 TrueAsync's iterator core, `Scope::finally()` and `Coroutine::finally()` (note section 7),
+- [x] S9.6 TrueAsync's iterator core, `Scope::finally()` and `Coroutine::finally()` (note section 7),
       the bailout trace of `bailout/013`-`015` first.
       done: S9.txt's S9.6 tests pass on debug and ASAN; the S3-S7 lists pass as before
       tier: T2 · role: Critic
+      handoff: done 2026-10-07: `src/iterator.c` (the port; test hook `TrueAsync\Test\iterate()`),
+        both `finally()` methods; the 24 tests lose `--XFAIL--`; own tests `internal/066`-`069`,
+        `scope/111`-`117`, `coroutine/040`, `bailout/016`, `017`, each 36 runs under load clean. On
+        CORE_REF 0145ca90d78: debug 1165 PASS, 11 XFAIL; ASAN 1141 PASS, 10 XFAIL; 0 unexpected on
+        both. The bailout trace needs no rule change (note 7, "As built"). Departures: note 9, items
+        18-21 (handlers start after the route; a run's error is its last worker's; `exit()` in a
+        handler ends the request). Three Critic passes: an unrun last worker's error, a walk stopped
+        during a move restarting (TrueAsync's bug, `internal/069`), the DISPOSING walk fixed with tests.
 - [ ] S9.7 Layer review: Critic after S9.2-S9.6, coverage of `src/scope.c` and the iterator, Mull on
       the layer's diff, the fuzz oracle over 100 seeds, the measurements of note section 10.
       done: the layer's Done when holds on the day; survivors killed or explained

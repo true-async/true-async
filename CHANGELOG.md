@@ -65,3 +65,13 @@ can see goes here; tests, tools and CI are in the git history.
   without a handler that takes it is cancelled with its child scopes and coroutines on the way, so
   an error in the global scope cancels the coroutines that have not started yet
   ([S9](dev/plans/S9-scope.md)).
+- `Scope::dispose()`, `disposeSafely()`, `disposeAfterTimeout()` and `awaitAfterCancellation()`:
+  disposal cancels the scope with no error, or closes it when nothing is left to cancel; the timeout
+  disposes the scope once it passes; `awaitAfterCancellation()` waits until no coroutine of a
+  cancelled scope's subtree is left, zombies included, and hands the errors that come meanwhile to
+  its handler ([S9](dev/plans/S9-scope.md)).
+- `Scope::finally()` and `Coroutine::finally()`: the handlers run in coroutines of a child scope once
+  the scope is disposed or the coroutine finishes, also when the coroutine's error cancels its scope
+  or ends the request; one handler's error goes up from that child scope as itself, several as an
+  `Async\CompositeException`; a handler added to a finished coroutine or a gone scope runs at once
+  ([S9](dev/plans/S9-scope.md)).

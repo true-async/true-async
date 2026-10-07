@@ -24,7 +24,7 @@ zend_class_entry *async_ce_operation_canceled = NULL;
 zend_class_entry *async_ce_timeout_exception = NULL;
 zend_class_entry *async_ce_async_exception = NULL;
 zend_class_entry *async_ce_deadlock_error = NULL;
-static zend_class_entry *async_ce_composite_exception = NULL;
+zend_class_entry *async_ce_composite_exception = NULL;
 
 /* The typed `$exceptions` property as an array, or NULL before the first write. Read with silent=1:
  * an uninitialised one gives UNDEF instead of an error, so an empty composite reads back as [];
@@ -38,7 +38,7 @@ static zval *composite_exceptions(zend_object *composite)
 	return Z_TYPE_P(exceptions) == IS_ARRAY ? exceptions : NULL;
 }
 
-static void composite_exception_add_exception(zend_object *composite, zend_object *exception)
+void async_composite_exception_add_exception(zend_object *composite, zend_object *exception)
 {
 	zval *exceptions = composite_exceptions(composite);
 	zval element;
@@ -91,7 +91,7 @@ ZEND_METHOD(Async_CompositeException, addException)
 		Z_PARAM_OBJ_OF_CLASS(exception, zend_ce_throwable)
 	ZEND_PARSE_PARAMETERS_END();
 
-	composite_exception_add_exception(Z_OBJ_P(ZEND_THIS), exception);
+	async_composite_exception_add_exception(Z_OBJ_P(ZEND_THIS), exception);
 }
 
 ZEND_METHOD(Async_CompositeException, getExceptions)

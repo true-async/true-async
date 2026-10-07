@@ -1,7 +1,5 @@
 --TEST--
 Memory exhaustion bailout with exception in finally handler
---XFAIL--
-Not implemented yet: S9.6 of dev/PLAN.md
 --SKIPIF--
 <?php
 $zend_mm_enabled = getenv("USE_ZEND_ALLOC");

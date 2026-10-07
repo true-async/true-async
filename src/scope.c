@@ -17,6 +17,7 @@
 #include "php.h"
 #include "Zend/zend_exceptions.h"
 #include "Zend/zend_interfaces.h"
+#include "Zend/zend_closures.h"
 #include "php_true_async.h"
 #include "scope.h"
 #include "exceptions.h"
@@ -344,6 +345,19 @@ static void scope_free(async_scope_t *scope, zend_array **released_handlers)
 	scope_handler_keep_back(&scope->exception_handler, released_handlers);
 	scope_handler_keep_back(&scope->child_exception_handler, released_handlers);
 
+	/* Handlers no disposal started, when the request's end frees the scope: released unrun. */
+	if (UNEXPECTED(scope->finally_handlers != NULL)) {
+		zval finally_handlers;
+
+		if (*released_handlers == NULL) {
+			*released_handlers = zend_new_array(1);
+		}
+
+		ZVAL_ARR(&finally_handlers, scope->finally_handlers);
+		zend_hash_next_index_insert_new(*released_handlers, &finally_handlers);
+		scope->finally_handlers = NULL;
+	}
+
 	if (scope->filename != NULL) {
 		zend_string_release_ex(scope->filename, false);
 	}
@@ -351,10 +365,46 @@ static void scope_free(async_scope_t *scope, zend_array **released_handlers)
 	efree(scope);
 }
 
-/* TrueAsync's scope_dispose (scope.c:1179-1300) for a scope that can be disposed: it leaves its
- * parent, which the last child to go disposes in turn when it can, and goes with its child scopes. */
+/* Starts the finally handlers of the child scopes, then the scope's own, as TrueAsync's disposal
+ * disposes the child scopes first (scope.c:1203-1236). True when a run started: its scope keeps this
+ * one, whose disposal comes again once the run's scope goes. Backwards: a refused start may dispose a
+ * child scope, whose last sibling then takes its place. Every scope on the walk is DISPOSING, so the
+ * disposal a refused start passes up stops below the walk instead of freeing a scope it is in. */
+static bool scope_finally_start(async_scope_t *scope)
+{
+	bool is_started = false;
+
+	scope->event.flags |= ASYNC_SCOPE_F_DISPOSING;
+
+	for (uint32_t i = scope->child_scopes.length; i-- > 0;) {
+		is_started |= scope_finally_start(scope->child_scopes.data[i]);
+	}
+
+	HashTable *finally_handlers = scope->finally_handlers;
+
+	if (UNEXPECTED(finally_handlers != NULL)) {
+		scope->finally_handlers = NULL;
+		is_started |= async_finally_handlers_start(finally_handlers, scope, scope->scope_object);
+	}
+
+	scope->event.flags &= ~ASYNC_SCOPE_F_DISPOSING;
+
+	return is_started;
+}
+
+/* TrueAsync's scope_dispose (scope.c:1179-1300) for a scope that can be disposed: its finally handlers
+ * start, and it stays until they end; else it leaves its parent, which the last child to go disposes in
+ * turn when it can, and goes with its child scopes. */
 static void scope_dispose(async_scope_t *scope, zend_array **released_handlers)
 {
+	if (UNEXPECTED(scope->event.flags & ASYNC_SCOPE_F_DISPOSING)) {
+		return;
+	}
+
+	if (scope_finally_start(scope)) {
+		return;
+	}
+
 	async_scope_t *parent_scope = scope->parent_scope;
 
 	if (EXPECTED(parent_scope != NULL)) {
@@ -403,6 +453,14 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 
 		if (error != NULL && transfer_error) {
 			OBJ_RELEASE(error);
+		}
+
+		/* As TrueAsync's (scope.c:964-971); the run's scope keeps this one. */
+		HashTable *finally_handlers = scope->finally_handlers;
+
+		if (UNEXPECTED(finally_handlers != NULL)) {
+			scope->finally_handlers = NULL;
+			async_finally_handlers_start(finally_handlers, scope, scope->scope_object);
 		}
 
 		return;
@@ -907,8 +965,9 @@ static void scope_object_release_scope(async_scope_object_t *scope_object, const
 	}
 }
 
-/* The handlers, while the object has its scope: the object's destructor detaches it before the GC frees
- * a cycle through a handler's closure, which the scope then keeps until it goes. */
+/* The handlers, finally handlers included, while the object has its scope: the object's destructor
+ * detaches it before the GC frees a cycle through a handler's closure, which the scope then keeps until
+ * it goes. */
 static HashTable *scope_object_get_gc(zend_object *object, zval **table, int *num)
 {
 	async_scope_t *scope = async_scope_object_from_object(object)->scope;
@@ -921,6 +980,10 @@ static HashTable *scope_object_get_gc(zend_object *object, zval **table, int *nu
 
 		if (UNEXPECTED(ZEND_FCC_INITIALIZED(scope->child_exception_handler))) {
 			zend_get_gc_buffer_add_fcc(gc_buffer, &scope->child_exception_handler);
+		}
+
+		if (UNEXPECTED(scope->finally_handlers != NULL)) {
+			zend_get_gc_buffer_add_ht(gc_buffer, scope->finally_handlers);
 		}
 	}
 
@@ -1591,6 +1654,34 @@ ZEND_METHOD(Async_Scope, isCancelled)
 	}
 
 	RETURN_BOOL(scope_object->scope->event.flags & ASYNC_SCOPE_F_CANCELLED);
+}
+
+/* TrueAsync's METHOD(finally), scope.c:581-625: once the scope is gone the closure is called at once, in
+ * the caller, which gets what it throws. */
+ZEND_METHOD(Async_Scope, finally)
+{
+	zval *callback;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_OBJECT_OF_CLASS(callback, zend_ce_closure)
+	ZEND_PARSE_PARAMETERS_END();
+
+	async_scope_t *scope = THIS_SCOPE_OBJECT->scope;
+
+	if (UNEXPECTED(scope == NULL)) {
+		zval retval;
+
+		call_user_function(NULL, NULL, callback, &retval, 1, ZEND_THIS);
+		zval_ptr_dtor(&retval);
+		return;
+	}
+
+	if (scope->finally_handlers == NULL) {
+		scope->finally_handlers = zend_new_array(1);
+	}
+
+	Z_ADDREF_P(callback);
+	zend_hash_next_index_insert_new(scope->finally_handlers, callback);
 }
 
 ZEND_METHOD(Async_Scope, getChildScopes)

@@ -7,7 +7,7 @@ ARG_ENABLE("true-async-test-hooks", "true_async: TrueAsync\\Test functions for t
 if (PHP_TRUE_ASYNC != "no") {
 	// Subdirectory paths take backslashes: ADD_SOURCES splits on them, and a forward slash
 	// leaves the .obj outside src\, where the linker does not look.
-	EXTENSION("true_async", "src\\true_async.c src\\true_async_API.c src\\coroutine.c src\\scope.c src\\exceptions.c src\\scheduler.c src\\reactor.c src\\future.c src\\await.c src\\collector.c src\\timeout.c src\\os_signal.c", PHP_TRUE_ASYNC_SHARED, "/DZEND_ENABLE_STATIC_TSRMLS_CACHE=1");
+	EXTENSION("true_async", "src\\true_async.c src\\true_async_API.c src\\coroutine.c src\\scope.c src\\exceptions.c src\\scheduler.c src\\reactor.c src\\future.c src\\await.c src\\iterator.c src\\collector.c src\\timeout.c src\\os_signal.c", PHP_TRUE_ASYNC_SHARED, "/DZEND_ENABLE_STATIC_TSRMLS_CACHE=1");
 	ADD_SOURCES(configure_module_dirname + "\\src", "io_provider.c", "true_async");
 	ADD_SOURCES(configure_module_dirname + "\\src\\internal", "circular_buffer.c", "true_async");
 

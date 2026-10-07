@@ -1,7 +1,5 @@
 --TEST--
 Coroutine: finally() - call when coroutine is already finished
---XFAIL--
-Not implemented yet: S9.6 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -33,6 +33,7 @@ struct _async_coroutine_s
 	uint32_t scope_index;
 	zend_object *deferred_cancellation;                        /* the cancel that arrived inside protect() */
 	async_coroutine_switch_handlers_vector_t *switch_handlers; /* lazy */
+	HashTable *finally_handlers;                               /* lazy: the closures of Coroutine::finally() */
 	/* The callable and arguments of spawn(), which coroutine.fcall points to: one allocation less per
 	 * spawn than the core's separate block (O6, measured in dev/BENCHMARKS.md). Its cache owns a
 	 * reference to its object and closure and a copy of a __call trampoline; the core's block of a
@@ -42,10 +43,11 @@ struct _async_coroutine_s
 };
 
 /* The sizes of dev/plans/S3.md 3.1 with the waker of dev/plans/S4.md 2.2, checked at compile time on
- * 64-bit targets: 480 B with the scope's index (S9), allocated as 464 in the 512 B bin. */
+ * 64-bit targets: 488 B with the scope's index and the finally handlers (S9), allocated as 472 in the
+ * 512 B bin. */
 #if SIZEOF_SIZE_T == 8
-typedef char async_coroutine_size_check[sizeof(async_coroutine_t) == 480 ? 1 : -1];
-typedef char async_coroutine_std_offset_check[offsetof(async_coroutine_t, std) == 424 ? 1 : -1];
+typedef char async_coroutine_size_check[sizeof(async_coroutine_t) == 488 ? 1 : -1];
+typedef char async_coroutine_std_offset_check[offsetof(async_coroutine_t, std) == 432 ? 1 : -1];
 #endif
 
 extern zend_class_entry *async_ce_coroutine;
@@ -103,5 +105,12 @@ zend_execute_data *async_coroutine_suspend_frame(async_coroutine_t *coroutine);
  * Takes a reference. */
 void async_exit_exception_add(zend_object *exception);
 void async_unobserved_exception_add(zend_object *exception);
+
+/* Runs `finally_handlers` (taken), each called with `target` (a reference taken; NULL passes null), in a
+ * worker of a new child scope of `scope` (a root when NULL), at the front of the queue, as TrueAsync's
+ * async_call_finally_handlers (coroutine.c:1275-1318). One handler's error is the worker's outcome,
+ * several a CompositeException, and goes the worker's error route. False, with the handlers released,
+ * when nothing can run them: the core turned async off, or the scheduler refused the worker. */
+bool async_finally_handlers_start(HashTable *finally_handlers, async_scope_t *scope, zend_object *target);
 
 #endif /* TRUE_ASYNC_COROUTINE_H */

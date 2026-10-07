@@ -1,5 +1,5 @@
 /* This is a generated file, edit scope.stub.php instead.
- * Stub hash: 37907ba3ed45e2a94241266bc23d6fbd684bcba4 */
+ * Stub hash: 72699e94ade79744f02615a8397145e50a1ad4c7 */
 
 #include "zend_attributes.h"
 
@@ -70,6 +70,10 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_Scope_disposeAfterTi
 	ZEND_ARG_TYPE_INFO(0, timeout, IS_LONG, 0)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_Scope_finally, 0, 1, IS_VOID, 0)
+	ZEND_ARG_OBJ_INFO(0, callback, Closure, 0)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_Scope_getChildScopes, 0, 0, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
 
@@ -90,6 +94,7 @@ ZEND_METHOD(Async_Scope, setChildScopeExceptionHandler);
 ZEND_METHOD(Async_Scope, dispose);
 ZEND_METHOD(Async_Scope, disposeSafely);
 ZEND_METHOD(Async_Scope, disposeAfterTimeout);
+ZEND_METHOD(Async_Scope, finally);
 ZEND_METHOD(Async_Scope, getChildScopes);
 
 static const zend_function_entry class_Async_ScopeProvider_methods[] = {
@@ -121,6 +126,7 @@ static const zend_function_entry class_Async_Scope_methods[] = {
 	ZEND_ME(Async_Scope, dispose, arginfo_class_Async_Scope_dispose, ZEND_ACC_PUBLIC)
 	ZEND_ME(Async_Scope, disposeSafely, arginfo_class_Async_Scope_disposeSafely, ZEND_ACC_PUBLIC)
 	ZEND_ME(Async_Scope, disposeAfterTimeout, arginfo_class_Async_Scope_disposeAfterTimeout, ZEND_ACC_PUBLIC)
+	ZEND_ME(Async_Scope, finally, arginfo_class_Async_Scope_finally, ZEND_ACC_PUBLIC)
 	ZEND_ME(Async_Scope, getChildScopes, arginfo_class_Async_Scope_getChildScopes, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };

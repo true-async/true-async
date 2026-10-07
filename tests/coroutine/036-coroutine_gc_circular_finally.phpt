@@ -1,7 +1,5 @@
 --TEST--
 Coroutine: Circular references between coroutines and finally handlers
---XFAIL--
-Not implemented yet: S9.6 of dev/PLAN.md
 --FILE--
 <?php
 

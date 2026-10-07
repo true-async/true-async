@@ -49,4 +49,11 @@ final class Coroutine implements Completable
     public function getAwaitingInfo(): array {}
 
     public function cancel(?AsyncCancellation $cancellation = null): void {}
+
+    /**
+     * Called as fn(Coroutine $coroutine) in a new coroutine once this one finishes, after its waiters,
+     * with the other finally callbacks of this coroutine; at once when it has finished. Not called when
+     * the coroutine ended in a fatal error. What it throws goes up the coroutine's scope.
+     */
+    public function finally(\Closure $callback): void {}
 }

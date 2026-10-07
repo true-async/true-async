@@ -395,3 +395,12 @@ scope that is not cancelled, as TrueAsync's; its handler runs in the waiter, and
 comes while it runs climbs on (the Sage kept this over a scope-held intake). Own tests
 `scope/094`-`110`. Next is S9.6: the iterator core and `finally()`, the bailout trace of
 `bailout/013`-`015` first.
+
+S9.6 done 2026-10-07: `src/iterator.c` ports TrueAsync's iterator core (workers in the iterator's
+scope, the microtask that adds them, SAFE_MOVING); the last worker to leave ends with
+`iterator->exception`, routed from its finish handler when it never ran. `Scope::finally()` and
+`Coroutine::finally()` run on it (`async_finally_handlers_start`, `scope_finally_start`,
+`ASYNC_SCOPE_F_DISPOSING`). Test hook `TrueAsync\Test\iterate()`. Probes in
+`/mnt/project-files/s9/probes/s9.6/`. Own tests `internal/066`-`069`, `scope/111`-`117`,
+`coroutine/040`, `bailout/016`, `017`. Next is S9.7, the layer review; the iterator is new code for its
+coverage and Mull run.

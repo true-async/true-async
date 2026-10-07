@@ -1531,3 +1531,12 @@ stack options were shown with the code).
   reasons outside the extension (`dev/WORKFLOW.md`, "Building the core"), the failures the S9.5 run
   saw on clean main. The check asks the core, so it also catches io_uring refused at run time and a
   mistyped `IOR_BACKEND`, after which the reactor takes the Poll queue.
+- 2026-10-07 A coroutine's finally handlers start after its error's route and the unheld check, so
+  they run when that error cancels the scope or ends the request; a run's collected error becomes
+  its last worker's own and goes up from the run's child scope; `exit()` in a handler ends the
+  request (S9.6, note section 9, items 18-20). Why: TrueAsync's order lets the cascade cancel the
+  handlers unrun, and its two error paths (the target scope's catch, then a rethrow) pick a handler
+  by accident. Rejected: a completion event for the run, which nothing in this layer waits on.
+- 2026-10-07 After a fatal error a scope's finally handlers run in the scheduler's last run after the
+  shutdown destructors, as TrueAsync's; a scope disposed while the bailout unwinds the coroutines drops
+  them unrun, as the reference does; the bailout rule stays (S9.6, `bailout/013`-`017`).

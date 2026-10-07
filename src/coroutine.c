@@ -17,8 +17,10 @@
 #include "php.h"
 #include "php_true_async.h"
 #include "Zend/zend_builtin_functions.h"
+#include "Zend/zend_closures.h"
 #include "coroutine.h"
 #include "exceptions.h"
+#include "iterator.h"
 #include "scheduler.h"
 #include "scope.h"
 #include "coroutine_arginfo.h"
@@ -29,7 +31,7 @@ static zend_object_handlers coroutine_handlers;
 
 static zend_object *coroutine_object_create(zend_class_entry *class_entry)
 {
-	/* 464 B: a class without properties takes the inline properties slot off the size. */
+	/* 472 B: a class without properties takes the inline properties slot off the size. */
 	async_coroutine_t *coroutine = zend_object_alloc(sizeof(async_coroutine_t), class_entry);
 
 	ZVAL_UNDEF(&coroutine->coroutine.result);
@@ -62,7 +64,7 @@ static void spawn_fcall_cache_release(zend_fcall_t *fcall)
 }
 
 /* Releases the values a coroutine holds that can run PHP code when they go: its arguments, result,
- * outcome, contexts and wait state. Each field is cleared before its release, so a destructor that
+ * outcome, contexts, wait state and finally handlers. Each field is cleared before its release, so a destructor that
  * the release runs finds the coroutine without it. Returns the outcome exception, still referenced,
  * for the caller to release or throw. */
 static zend_object *coroutine_release_values(async_coroutine_t *coroutine)
@@ -119,6 +121,13 @@ static zend_object *coroutine_release_values(async_coroutine_t *coroutine)
 	}
 
 	zend_hash_clean(&zend_coroutine->internal_context);
+
+	HashTable *finally_handlers = coroutine->finally_handlers;
+
+	if (UNEXPECTED(finally_handlers != NULL)) {
+		coroutine->finally_handlers = NULL;
+		zend_array_release(finally_handlers);
+	}
 
 	zend_object *exception = zend_coroutine->exception;
 	zend_coroutine->exception = NULL;
@@ -258,6 +267,10 @@ static HashTable *coroutine_object_gc(zend_object *object, zval **table, int *nu
 
 	if (UNEXPECTED(coroutine->coroutine.context != NULL)) {
 		zend_get_gc_buffer_add_obj(gc_buffer, coroutine->coroutine.context);
+	}
+
+	if (UNEXPECTED(coroutine->finally_handlers != NULL)) {
+		zend_get_gc_buffer_add_ht(gc_buffer, coroutine->finally_handlers);
 	}
 
 	/* The table is a field of this block, not a refcounted array: the collector gets its values, never
@@ -466,11 +479,6 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 		}
 	}
 
-	/* After its waiters, as TrueAsync's (coroutine.c:727-731): the scope may be disposed with it. */
-	if (EXPECTED(coroutine->scope != NULL)) {
-		async_scope_remove_coroutine(coroutine);
-	}
-
 	/* Nobody can observe the exception when only the scheduler's reference and this function's are
 	 * left, or for main and a fiber, which nobody awaits through the object: it ends the request. A
 	 * cancellation is the scheduler's own doing; after a bailout the request ends anyway. */
@@ -481,6 +489,27 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 		zend_coroutine->flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
 		GC_ADDREF(exception);
 		async_scheduler_exit_with(exception);
+	}
+
+	/* After the route and the exit it may start, unlike TrueAsync, which starts them first
+	 * (coroutine.c:680), so that the route's cancel of this scope or the exit's of every coroutine does
+	 * not cancel them before they run (S9-scope.md 9). Destroyed unrun after a bailout, as TrueAsync's
+	 * (coroutine.c:1334-1340). While the coroutine is in its scope, which the run's scope hangs off. */
+	HashTable *finally_handlers = coroutine->finally_handlers;
+
+	if (UNEXPECTED(finally_handlers != NULL)) {
+		coroutine->finally_handlers = NULL;
+
+		if (EXPECTED(!is_bailout)) {
+			async_finally_handlers_start(finally_handlers, coroutine->scope, &coroutine->std);
+		} else {
+			zend_array_release(finally_handlers);
+		}
+	}
+
+	/* After its waiters, as TrueAsync's (coroutine.c:727-731): the scope may be disposed with it. */
+	if (EXPECTED(coroutine->scope != NULL)) {
+		async_scope_remove_coroutine(coroutine);
 	}
 
 	/* What the waiters and finish handlers threw ends the request too. */
@@ -498,6 +527,109 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 	OBJ_RELEASE(&coroutine->std);
 	/* The scheduler's birth reference. */
 	OBJ_RELEASE(&coroutine->std);
+}
+
+///////////////////////////////////////////////////////////////////
+/// Finally handlers
+///////////////////////////////////////////////////////////////////
+
+/* A run of the finally handlers of a scope or a coroutine on the iterator core (S9-scope.md 7). */
+typedef struct
+{
+	async_iterator_t iterator;
+	zend_object *target; /* the handlers' argument, held; NULL passes null */
+} finally_run_t;
+
+/* Calls one handler; its error goes to the iterator's exception, which the run's last worker ends with,
+ * so the next handlers run too: the first alone, then a CompositeException of all (TrueAsync's
+ * finally_handlers_iterator_handler, coroutine.c:1168-1222). An exit stops the run. */
+static zend_result finally_handler_call(async_iterator_t *iterator, zval *handler, zval *key)
+{
+	(void) key;
+
+	finally_run_t *run = (finally_run_t *) iterator;
+	zval argument;
+	zval retval;
+
+	if (EXPECTED(run->target != NULL)) {
+		ZVAL_OBJ(&argument, run->target);
+	} else {
+		ZVAL_NULL(&argument);
+	}
+
+	call_user_function(NULL, NULL, handler, &retval, 1, &argument);
+	zval_ptr_dtor(&retval);
+
+	zend_object *error = EG(exception);
+
+	if (EXPECTED(error == NULL) || UNEXPECTED(async_is_exit_object(error))) {
+		return SUCCESS;
+	}
+
+	GC_ADDREF(error);
+	zend_clear_exception();
+
+	if (iterator->exception == NULL) {
+		iterator->exception = error;
+		return SUCCESS;
+	}
+
+	if (iterator->exception->ce != async_ce_composite_exception) {
+		zend_object *composite = async_new_exception(async_ce_composite_exception, "");
+
+		async_composite_exception_add_exception(composite, iterator->exception);
+		OBJ_RELEASE(iterator->exception);
+		iterator->exception = composite;
+	}
+
+	async_composite_exception_add_exception(iterator->exception, error);
+	OBJ_RELEASE(error);
+
+	return SUCCESS;
+}
+
+static void finally_run_dtor(async_iterator_t *iterator)
+{
+	finally_run_t *run = (finally_run_t *) iterator;
+
+	if (run->target != NULL) {
+		zend_object *target = run->target;
+		run->target = NULL;
+		OBJ_RELEASE(target);
+	}
+}
+
+bool async_finally_handlers_start(HashTable *finally_handlers, async_scope_t *scope, zend_object *target)
+{
+	if (UNEXPECTED(!ZEND_ASYNC_IS_ACTIVE)) {
+		zend_array_release(finally_handlers);
+		return false;
+	}
+
+	zval handlers;
+
+	ZVAL_ARR(&handlers, finally_handlers);
+
+	finally_run_t *run = (finally_run_t *) async_iterator_new(
+			&handlers, NULL, NULL, finally_handler_call, async_scope_new(scope), 0, true, sizeof(finally_run_t));
+
+	zval_ptr_dtor(&handlers);
+
+	run->target = target;
+
+	if (target != NULL) {
+		GC_ADDREF(target);
+	}
+
+	run->iterator.extended_dtor = finally_run_dtor;
+
+	/* A refused worker took the run's empty scope with it. */
+	if (UNEXPECTED(!async_iterator_run_in_coroutine(&run->iterator))) {
+		ZEND_ASYNC_MICROTASK_RELEASE(&run->iterator.microtask);
+		return false;
+	}
+
+	return true;
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -741,6 +873,36 @@ ZEND_METHOD(Async_Coroutine, cancel)
 	ZEND_PARSE_PARAMETERS_END();
 
 	async_coroutine_cancel(THIS_COROUTINE, cancellation, false, false);
+}
+
+/* TrueAsync's METHOD(finally), coroutine.c:1381-1420: a finished coroutine calls the closure at once, in
+ * the caller, which gets what it throws. */
+ZEND_METHOD(Async_Coroutine, finally)
+{
+	zval *callback;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_OBJECT_OF_CLASS(callback, zend_ce_closure)
+	ZEND_PARSE_PARAMETERS_END();
+
+	async_coroutine_t *coroutine = THIS_COROUTINE;
+
+	if (UNEXPECTED(ZEND_COROUTINE_IS_FINISHED(&coroutine->coroutine))) {
+		zval argument;
+		zval retval;
+
+		ZVAL_OBJ(&argument, &coroutine->std);
+		call_user_function(NULL, NULL, callback, &retval, 1, &argument);
+		zval_ptr_dtor(&retval);
+		return;
+	}
+
+	if (coroutine->finally_handlers == NULL) {
+		coroutine->finally_handlers = zend_new_array(1);
+	}
+
+	Z_ADDREF_P(callback);
+	zend_hash_next_index_insert_new(coroutine->finally_handlers, callback);
 }
 
 void async_register_coroutine_ce(zend_class_entry *completable_interface)

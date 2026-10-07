@@ -119,6 +119,14 @@ final class Scope implements ScopeProvider
      */
     public function disposeAfterTimeout(int $timeout): void {}
 
+    /**
+     * Called as fn(?Scope $scope) in a new coroutine of a child scope once this scope is disposed or
+     * closed with nothing left to run, with the other finally callbacks of this scope; `$scope` is null
+     * when the object is gone. At once when the scope is gone. What it throws goes up from that child
+     * scope.
+     */
+    public function finally(\Closure $callback): void {}
+
     /** @return Scope[] the child scopes that still have their object */
     public function getChildScopes(): array {}
 }

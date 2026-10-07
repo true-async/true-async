@@ -35,7 +35,7 @@ if test "$PHP_TRUE_ASYNC" != "no"; then
     [#include "php.h"])
   CPPFLAGS=$old_CPPFLAGS
 
-  true_async_sources="src/true_async.c src/true_async_API.c src/coroutine.c src/scope.c src/exceptions.c src/scheduler.c src/reactor.c src/future.c src/await.c src/collector.c src/timeout.c src/os_signal.c src/internal/circular_buffer.c"
+  true_async_sources="src/true_async.c src/true_async_API.c src/coroutine.c src/scope.c src/exceptions.c src/scheduler.c src/reactor.c src/future.c src/await.c src/iterator.c src/collector.c src/timeout.c src/os_signal.c src/internal/circular_buffer.c"
   true_async_sources="$true_async_sources src/io_provider.c"
 
   if test "$PHP_TRUE_ASYNC_KNOWN_ANSWER" != "no"; then

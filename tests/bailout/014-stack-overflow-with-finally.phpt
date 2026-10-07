@@ -1,7 +1,5 @@
 --TEST--
 Stack overflow bailout with finally handlers
---XFAIL--
-Not implemented yet: S9.6 of dev/PLAN.md
 --INI--
 opcache.jit_hot_func=0
 --SKIPIF--

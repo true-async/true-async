@@ -20,7 +20,8 @@
  * TrueAsync\Test\buffer_scenario(string $name): string runs one on the circular buffer and returns
  * what it popped and the sizes it saw;
  * TrueAsync\Test\fail_at(string $site): void arms a fault site of the scheduler. The rest reach the
- * core API a PHP script has no path to: defer() queues a microtask; add_throwing_finish_handler(),
+ * core API a PHP script has no path to: defer() queues a microtask; iterate() walks an iterable on the
+ * iterator core before iterate() of the iterators layer; add_throwing_finish_handler(),
  * add_clearing_finish_handler() and add_printing_switch_handler() add handlers to a coroutine;
  * enqueue_with_error() wakes one with an error; coroutine_from_object() asks the
  * coroutine_from_object slot; call_on_main_stack() runs a probe through the call_on_main_stack
@@ -45,6 +46,8 @@
 #include "scheduler.h"
 #include "exceptions.h"
 #include "timeout.h"
+#include "iterator.h"
+#include "scope.h"
 #include "src/internal/circular_buffer.h"
 
 #include <signal.h>
@@ -1012,6 +1015,67 @@ static ZEND_FUNCTION(defer)
 
 	if (UNEXPECTED(!ZEND_ASYNC_DEFER(&test_microtask->microtask))) {
 		ZEND_ASYNC_MICROTASK_RELEASE(&test_microtask->microtask);
+	}
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_iterate, 0, 2, IS_VOID, 0)
+	ZEND_ARG_TYPE_INFO(0, items, IS_ITERABLE, 0)
+	ZEND_ARG_TYPE_INFO(0, callback, IS_CALLABLE, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, concurrency, IS_LONG, 0, "0")
+ZEND_END_ARG_INFO()
+
+/* Walks `items` on the iterator core (iterator.c) in workers of a new child scope of the current scope,
+ * at most `concurrency` at a time (0: no limit), calling fn($value, $key); false from it stops the walk.
+ * What the walk throws is the last worker's outcome. */
+static ZEND_FUNCTION(iterate)
+{
+	zval *items;
+	zend_fcall_info fci;
+	zend_fcall_info_cache fcc;
+	zend_long concurrency = 0;
+
+	ZEND_PARSE_PARAMETERS_START(2, 3)
+		Z_PARAM_ITERABLE(items)
+		Z_PARAM_FUNC(fci, fcc)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_LONG(concurrency)
+	ZEND_PARSE_PARAMETERS_END();
+
+	if (concurrency < 0 || concurrency > UINT_MAX) {
+		zend_argument_value_error(3, "must be between 0 and %u", UINT_MAX);
+		RETURN_THROWS();
+	}
+
+	zval array;
+	zend_object_iterator *zend_iterator = NULL;
+
+	ZVAL_UNDEF(&array);
+
+	if (Z_TYPE_P(items) == IS_ARRAY) {
+		ZVAL_ARR(&array, zend_array_dup(Z_ARRVAL_P(items)));
+	} else {
+		zend_iterator = Z_OBJCE_P(items)->get_iterator(Z_OBJCE_P(items), items, 0);
+
+		if (UNEXPECTED(zend_iterator == NULL)) {
+			RETURN_THROWS();
+		}
+	}
+
+	ZEND_ASYNC_FCALL_DEFINE(fcall, fci, fcc, fci.params, fci.param_count, fci.named_params);
+
+	async_iterator_t *iterator = async_iterator_new(zend_iterator == NULL ? &array : NULL,
+													zend_iterator,
+													fcall,
+													NULL,
+													async_scope_new(async_scope_current()),
+													(unsigned int) concurrency,
+													false,
+													0);
+
+	zval_ptr_dtor(&array);
+
+	if (UNEXPECTED(!async_iterator_run_in_coroutine(iterator))) {
+		ZEND_ASYNC_MICROTASK_RELEASE(&iterator->microtask);
 	}
 }
 
@@ -2245,6 +2309,7 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\callbacks_scenario", ZEND_FN(callbacks_scenario), arginfo_callbacks_scenario, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\buffer_scenario", ZEND_FN(buffer_scenario), arginfo_callbacks_scenario, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\defer", ZEND_FN(defer), arginfo_defer, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\iterate", ZEND_FN(iterate), arginfo_iterate, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_throwing_finish_handler", ZEND_FN(add_throwing_finish_handler), arginfo_add_throwing_finish_handler, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\enqueue_with_error", ZEND_FN(enqueue_with_error), arginfo_enqueue_with_error, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_throwing_subscriber", ZEND_FN(add_throwing_subscriber), arginfo_add_throwing_subscriber, 0, NULL, NULL)

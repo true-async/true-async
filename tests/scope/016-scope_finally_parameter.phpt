@@ -1,7 +1,5 @@
 --TEST--
 Scope: finally() - finally handler receives scope parameter
---XFAIL--
-Not implemented yet: S9.6 of dev/PLAN.md
 --FILE--
 <?php
 

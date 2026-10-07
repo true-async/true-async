@@ -1,7 +1,5 @@
 --TEST--
 Scope cancellation with double-exception case in finally handlers execution
---XFAIL--
-Not implemented yet: S9.6 of dev/PLAN.md
 --DESCRIPTION--
 This test triggers a double-exception case: first in the coroutine, and then in the finally handler.
 --FILE--

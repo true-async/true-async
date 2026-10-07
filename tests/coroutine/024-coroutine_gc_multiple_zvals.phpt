@@ -1,7 +1,5 @@
 --TEST--
 Coroutine: GC handler with multiple ZVALs
---XFAIL--
-Not implemented yet: S9.6 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -48,6 +48,10 @@ typedef struct
 #define ASYNC_SCOPE_F_CANCELLED (1u << (ASYNC_EVENT_F_TYPE_SHIFT + 2))
 /* The global scope and the engine's: never disposed by being empty, freed at the request's end. */
 #define ASYNC_SCOPE_F_REQUEST_LIFETIME (1u << (ASYNC_EVENT_F_TYPE_SHIFT + 3))
+/* A disposal's walk is starting the finally handlers of this scope or below it: a refused start disposes
+ * the run's scope, and the disposal that passes up must not free this one under the walk (TrueAsync's
+ * DISPOSING). */
+#define ASYNC_SCOPE_F_DISPOSING (1u << (ASYNC_EVENT_F_TYPE_SHIFT + 4))
 
 struct _async_scope_s
 {
@@ -70,6 +74,7 @@ struct _async_scope_s
 	 * The scope's free and close withdraw it. */
 	async_io_event_t *dispose_timer;
 	async_event_callback_t dispose_timer_callback; /* in `dispose_timer`'s vector while armed */
+	HashTable *finally_handlers;                   /* lazy: the closures of Scope::finally() */
 };
 
 /* Async\Scope. A stand-in is the object a SpawnStrategy's hooks get for a scope without one; it stays

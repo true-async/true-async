@@ -1,7 +1,5 @@
 --TEST--
 Scope finally multiple exceptions handling
---XFAIL--
-Not implemented yet: S9.6 of dev/PLAN.md
 --FILE--
 <?php
 

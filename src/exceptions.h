@@ -20,6 +20,7 @@ extern zend_class_entry *async_ce_operation_canceled;
 extern zend_class_entry *async_ce_timeout_exception;
 extern zend_class_entry *async_ce_async_exception;
 extern zend_class_entry *async_ce_deadlock_error;
+extern zend_class_entry *async_ce_composite_exception;
 
 void async_register_exceptions_ce(void);
 
@@ -27,5 +28,8 @@ void async_register_exceptions_ce(void);
  * the reference (TrueAsync's async_new_exception, exceptions.c:83). */
 zend_object *async_new_exception(zend_class_entry *exception_ce, const char *format, ...)
 		ZEND_ATTRIBUTE_FORMAT(printf, 2, 3);
+
+/* Appends `exception` to the composite's getExceptions(), with a reference of its own. */
+void async_composite_exception_add_exception(zend_object *composite, zend_object *exception);
 
 #endif /* TRUE_ASYNC_EXCEPTIONS_H */

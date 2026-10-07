@@ -1,7 +1,5 @@
 --TEST--
 Scope: finally() invoked on a scope whose internal scope has already been released runs the callable immediately
---XFAIL--
-Not implemented yet: S9.6 of dev/PLAN.md
 --FILE--
 <?php
 
