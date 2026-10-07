@@ -13,10 +13,11 @@ if (PHP_OS_FAMILY === 'Windows') echo "skip Unix-only test";
 use Async\Signal;
 use function Async\signal;
 
-// Blocking SIGCHLD, which nothing here uses, to read the mask the call returns.
+// SIGCHLD, unused here: the call refuses an empty list.
 function is_blocked(int $signo): bool
 {
     pcntl_sigprocmask(SIG_BLOCK, [SIGCHLD], $mask);
+    pcntl_sigprocmask(SIG_SETMASK, $mask);
 
     return in_array($signo, $mask, true);
 }

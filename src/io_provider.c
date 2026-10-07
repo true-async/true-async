@@ -120,11 +120,8 @@ static void io_wait_copy_in_flight(const async_io_event_t *event, php_io_op *op)
 
 static void io_wait_drain(php_io_op *op)
 {
-	/* An op with neither keeps nothing frozen: the Ring orphans only an op with an owner
-	 * (php_io_ring_op_keeps), and a NULL owner would match every record it has, so its drain would
-	 * wait for all of them (php_io_ring_drain). Such an op still comes back `in_flight` when the Ring
-	 * answers it with an early Timeout before its main completion: a CONNECT of
-	 * php_network_connect_socket() without a stream (ext/ftp). */
+	/* An op with neither stream nor handle has nothing frozen in the Ring, and with a NULL owner the
+	 * drain would wait for every live record (php_io_ring_drain), a pending SIGWAIT among them. */
 	const void *owner = op->stream != NULL ? (const void *) op->stream : (const void *) op->handle;
 	php_io_queue *queue = async_reactor_live_queue();
 

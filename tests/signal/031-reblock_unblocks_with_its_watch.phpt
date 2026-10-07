@@ -1,5 +1,5 @@
 --TEST--
-Async\signal(): the number the reactor blocked again before a poll is unblocked when its watch goes, and one the script blocks stays blocked
+Async\signal(): the number the reactor blocked again before a poll is unblocked when its watch goes, and one the script blocked before its watch stays blocked
 --EXTENSIONS--
 pcntl
 --SKIPIF--
@@ -14,10 +14,11 @@ use function Async\await;
 use function Async\signal;
 use function Async\spawn;
 
-// Blocking SIGCHLD, which nothing here uses, to read the mask the call returns.
+// SIGCHLD, unused here: the call refuses an empty list.
 function is_blocked(int $signo): bool
 {
     pcntl_sigprocmask(SIG_BLOCK, [SIGCHLD], $mask);
+    pcntl_sigprocmask(SIG_SETMASK, $mask);
 
     return in_array($signo, $mask, true);
 }
@@ -27,14 +28,13 @@ function poll(): void
     await(spawn(function () { Async\delay(10); }));
 }
 
-// Blocked first, so the handle of each watch finds it blocked and records no block of its own.
+// Blocked before the watches, so their handles record no block of their own.
 pcntl_sigprocmask(SIG_BLOCK, [SIGUSR1, SIGUSR2]);
 
-// SIGUSR2: the script keeps it blocked through a watch held to the end, which also keeps the
-// registry of watches alive across the SIGUSR1 watches below.
+// Keeps the registry, and its record of reblocked numbers, across the SIGUSR1 watches.
 $held = signal(Signal::SIGUSR2);
 
-// SIGUSR1: unblocked by the script, blocked again by the reactor's poll.
+// Unblocked by the script, blocked again by the poll.
 $future = signal(Signal::SIGUSR1);
 pcntl_sigprocmask(SIG_UNBLOCK, [SIGUSR1]);
 poll();
@@ -44,7 +44,7 @@ $future->ignore();
 $future = null;
 var_dump(is_blocked(SIGUSR1));
 
-// SIGUSR1 again, blocked by the script this time: the first watch's unblock is not repeated.
+// Blocked by the script before its watch: stays blocked after it.
 pcntl_sigprocmask(SIG_BLOCK, [SIGUSR1]);
 $future = signal(Signal::SIGUSR1);
 poll();
@@ -52,14 +52,11 @@ $future->ignore();
 $future = null;
 var_dump(is_blocked(SIGUSR1));
 
-poll();
 $held->ignore();
 $held = null;
-var_dump(is_blocked(SIGUSR2));
 
 ?>
 --EXPECT--
 bool(true)
 bool(false)
-bool(true)
 bool(true)

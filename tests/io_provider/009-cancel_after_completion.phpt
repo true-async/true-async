@@ -1,16 +1,15 @@
 --TEST--
-A coroutine cancelled after its read completed but before it resumed gets the cancellation; the bytes the read took stay in the stream (TrueAsync drops them)
+A coroutine cancelled after its read completed but before it resumed gets the cancellation; the bytes the read took stay in the stream (the reference TrueAsync drops them)
 --SKIPIF--
-<?php if (PHP_OS_FAMILY === 'Windows') echo 'skip Unix-only: cat, sh and Unix sockets';
+<?php if (PHP_OS_FAMILY === 'Windows') echo 'skip Unix-only: Unix sockets';
 ?>
 --FILE--
 <?php
 use function Async\await;
 use function Async\spawn;
 
-// Both reads are meant to complete in one tick, with the canceller resuming first. Which of two
-// sockets' reads the Ring completes first is the kernel's order, not the test's: an attempt where
-// the reader resumed first is checked (its read returns the bytes) and made again.
+// The reader may resume first, as the kernel orders the two sockets' completions: such an attempt
+// is checked and made again.
 for ($attempt = 1; $attempt <= 20; $attempt++) {
     [$r1, $w1] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
     [$r2, $w2] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
@@ -21,7 +20,6 @@ for ($attempt = 1; $attempt <= 20; $attempt++) {
             $data = fread($r1, 10);
             $log[] = "read: " . var_export($data, true);
         } catch (Async\AsyncCancellation $e) {
-            // The completed read has put its bytes into the stream's buffer.
             $log[] = "cancelled, unread: " . stream_get_meta_data($r1)['unread_bytes'];
         }
 

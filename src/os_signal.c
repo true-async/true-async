@@ -173,10 +173,8 @@ void async_signal_reblock(void)
 		return;
 	}
 
-	/* The handle's removal unblocks only a number it found unblocked at its add
-	 * (`php_io_poll_signals_blocked_by_handles`, ext/standard/io_poll.c): one the script had blocked
-	 * then and unblocked since would stay blocked here after its watch. The core's child mask does not
-	 * know this block either: a child of exec() started meanwhile inherits it (RFC-CHANGES.md 5). */
+	/* The handle's removal unblocks only what was unblocked at its add
+	 * (php_io_poll_signals_blocked_by_handles): signal_watch_free() unblocks what is blocked here. */
 	for (int signo = 1; signo < PHP_NSIG; signo++) {
 		if (UNEXPECTED(sigismember(&mask_before, signo) == 0 && sigismember(&registry->watched, signo) == 1)) {
 			sigaddset(&registry->reblocked, signo);
@@ -287,8 +285,7 @@ static void signal_watch_disarm(async_signal_watch_t *watch)
 
 /* With its last wait: the number leaves the context, which unblocks it and records what arrived
  * since the last delivery into the handle. Nothing waited for that, so it is raised again for the
- * process's own action, as without a watch. A number only async_signal_reblock() blocked is left
- * blocked by the context and unblocked here; what is pending for it arrives at that unblock. */
+ * process's own action, as without a watch. A number async_signal_reblock() blocked is unblocked here. */
 static void signal_watch_free(async_signal_watch_t *watch)
 {
 	async_signal_registry_t *registry = ASYNC_G(signals);
