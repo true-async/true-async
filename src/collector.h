@@ -34,9 +34,34 @@ typedef enum
  * stays within 64 bits. */
 #define ASYNC_COLLECTOR_INTERVAL_MAX INT32_MAX
 
-/* For a kind's collector_target: the record's target is `target`; `owned` when the record holds a
- * reference to it that its waiter's frame does not. */
+/* What an event of a type owns, reported with the functions below; NULL for a type that reports
+ * nothing, whose contents then count as held from outside. */
+typedef void (*async_collector_event_references_t)(async_event_t *event, async_collector_t *collector);
+
+/* For a kind's collector_target: the record's target is `target`; `owned` when the wait took a
+ * reference to it in C, released when the wait ends, which no slot the walk reads reports (a local of
+ * an internal function, a block). */
 void async_collector_report_target(async_collector_t *collector, zend_object *target, bool owned);
+void async_collector_report_event_target(async_collector_t *collector,
+										 async_event_t *target,
+										 async_collector_event_references_t references,
+										 bool owned);
+/* For a kind's collector_target whose record waits for an outside source this time (a Timeout): its
+ * waiter is live. */
+void async_collector_report_outside(async_collector_t *collector);
+
+/* For a source the walk does not reach that will complete `event` (S7.md 3.4), before the wake edges:
+ * the event and what it owns are live. */
+void async_collector_report_live_event(async_collector_t *collector,
+									   async_event_t *event,
+									   async_collector_event_references_t references);
+
+/* For a reporter of what a node owns: one reference each. */
+void async_collector_report_object(async_collector_t *collector, zend_object *object);
+void async_collector_report_zval(async_collector_t *collector, zval *value);
+void async_collector_report_event(async_collector_t *collector,
+								  async_event_t *event,
+								  async_collector_event_references_t references);
 
 /* Runs the walk now and returns the coroutines that can never wake, in registry order, as an array
  * of borrowed pointers the caller frees with efree(); NULL when there is none. Runs no PHP code. */
@@ -55,6 +80,13 @@ void async_collector_request_startup(void);
  * waiter the collector found and nobody cancelled since was not stuck: the run aborts, unless the
  * waiter or the target was handed out to PHP code, which may cancel through the registry. */
 void async_collector_check_wake(async_coroutine_t *waiter, const async_coroutine_t *target);
+
+/* The oracle for a wake by an event (a future, a token): `waiter` is woken because the running code
+ * completed the event. Only a completer in the bailout is excused. One handed out was live at the
+ * run, so the targets it reaches were too, and whatever cancels the found coroutines (the registry's
+ * walks, get_deadlocked_coroutines()) hands out the waiter itself; an outside source completes in
+ * scheduler context, and what it holds the walk counts live. */
+void async_collector_check_event_wake(async_coroutine_t *waiter);
 
 /* The same oracle for a cancel: a coroutine the collector found is cancelled only through the
  * registry's walks (registry_cancel) or by the bailout; anything else held it. */

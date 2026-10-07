@@ -522,7 +522,7 @@ cross-thread wakeups are never reported; a run over 10 000 parked coroutines cos
 time, recorded; scheduler fuzz over 100 seeds reports no false positives.
 Tier: T2. Roles: Critic on S7.1, Critic after S7.4 (S7.5).
 Notes: dev/plans/S7.md
-Active: S7.3
+Active: S7.4
 
 - [x] S7.1 Design note: roots (runnable coroutines, pending external sources: provider ops,
       timers, signals, wakeups, main), edges (waiter → awaitable → completers), when it runs (on
@@ -559,10 +559,24 @@ Active: S7.3
         S5.3 and 3 after: no crash, assertion, leak or oracle abort, and no partial-deadlock
         warning outside `collector/`; some seeds see an `--XFAIL--` test pass in a random order
         (`exec/002`, `dns/003`, `io/094`).
-- [ ] S7.3 Futures, tokens, Timeouts and `await_*` blocks; the holders' table of S7.md 10 (once
+- [x] S7.3 Futures, tokens, Timeouts and `await_*` blocks; the holders' table of S7.md 10 (once
       S5.3 is on `main`).
       done: S7.txt's S7.3 tests pass on debug and ASAN, those waiting for S4.5 and S6.5 with
         `--XFAIL--` naming them
+      handoff: done 2026-10-07: a future event is a walk node counted by `base.ref_count`, and
+        `Future`/`FutureState` report through `async_future_collector_references()` instead of
+        `get_gc`; FUTURE, the token kinds and the `await_*` trigger report their target as owned (a
+        reference the wait took in C), a Timeout token makes its waiter live, the iterator kind stays
+        NULL. S6.5's signal watch seeds its Futures live (`async_signal_collector_seed()`, agreed with
+        S6); the reactor lists seed nothing. The walk finds nothing once the request shuts down (the
+        engine's destructor pass). The fuzz oracle now checks the event wakes, excusing only a
+        completer in the bailout; `TrueAsync\Test\mark_found()` and `collector/040` test it in child
+        processes. Tests `collector/026`-`041`, each new report killed by a mutation. Critic three
+        rounds; node size kept (simple code over bytes); nothing went to Edmond. Lanes on the day,
+        core `async-core-io-2026-10-06` with S6.5 in: `pocs-dbg` 895 PASS, 8 SKIP, 25 XFAIL, one
+        `dns/003` order failure that three reruns pass; `pocs-asan` 880 PASS, 25 SKIP, 24 XFAIL,
+        nothing unexpected; 5 seeds: no oracle abort, crash or leak, one `reactor/011` timeout under
+        the full load that 5 seeds alone pass, and `--XFAIL--` tests passing (`io/094`, `io/100`).
 - [ ] S7.4 The `cancel` policy; B6 (S7.md 11).
       done: S7.txt's S7.4 tests pass on debug and ASAN; B6 in `dev/BENCHMARKS.md`
 - [ ] S7.5 Stage review: Critic after S7.2-S7.4, coverage of the collector, Mull on the stage

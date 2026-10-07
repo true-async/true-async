@@ -233,19 +233,21 @@ first (the build script removes it). Run `tools/format.sh` before a commit.
 
 ## S7
 
-S7.2 done 2026-10-06: the walk (`src/collector.c`), `Async\get_deadlocked_coroutines()`, the
-automatic run with `report` at the idle point, the fuzz oracle; `collector/001`-`025` in
-`tests/lists/S7.txt`. Next is S7.3, once S5.3 is on `main`:
-- give FUTURE, the token kinds, TIMEOUT and the `await_*` block records their `collector_target`,
-  and in the same step seed the events on the reactor's `waits` list and the triggers on S4.5's
-  `triggers` with `start_count > 0` as live (S7.md 3.4; the list holds unstarted ones too); the D16 exit Timer is on `own` and is not seeded;
-- write the holders' table of S7.md 10 from S5's code first (S5.2: the FUTURE wait owns a
-  reference, `src/future.c:703`); S6.5's `SignalHandle` must report its `signal()` Futures.
-S7.4's `cancel` must cancel through `registry_cancel()` or mark the coroutine handed out, or the
-oracle (`async_collector_check_cancel()`) aborts the seed. Known miss: generator frames are not
-walked (`zend_generator_frame_gc` has no `ZEND_API`, `collector/017`), an S8 change-request
-candidate. The TrueAsync reference clone is needed for `check-lists.py --reference`
-(`/root/php-async` at `REFERENCE` in this container).
+S7.3 done 2026-10-07 (S7.2 before it): the walk (`src/collector.c`) covers coroutines, Futures,
+tokens and `await_*` items; future events are nodes of their own, counted by `base.ref_count`, and
+`Future`/`FutureState` report through `async_future_collector_references()`; S6.5's signal watch
+seeds its Futures live; nothing is found once the request shuts down. Tests `collector/001`-`041` in
+`tests/lists/S7.txt`; the holders' table is S7.md 10. Next is S7.4, the `cancel` policy and B6:
+- `cancel` must cancel through `registry_cancel()` or mark the coroutine handed out, or the oracle
+  (`async_collector_check_cancel()`) aborts the seed; a wake by an event excuses only a completer
+  in the bailout (`async_collector_check_event_wake()`), and `TrueAsync\Test\mark_found()` with
+  `collector/040` shows each rule in a child process;
+- a new wait kind names its target through `collector_target` and reports it as owned only for a
+  reference its wait took in C that no walked slot reports (collector.h); a source outside the walk
+  that will complete an event seeds it with `async_collector_report_live_event()`.
+Known miss: generator frames are not walked (`zend_generator_frame_gc` has no `ZEND_API`,
+`collector/017`), an S8 change-request candidate. The TrueAsync reference clone is needed for
+`check-lists.py --reference` (`/root/php-async` at `REFERENCE` in this container).
 
 ## S6
 

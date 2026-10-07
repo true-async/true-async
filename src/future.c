@@ -18,6 +18,7 @@
 #include "php_true_async.h"
 #include "Zend/zend_exceptions.h"
 #include "await.h"
+#include "collector.h"
 #include "coroutine.h"
 #include "exceptions.h"
 #include "future.h"
@@ -244,6 +245,34 @@ static void future_event_gc(async_future_event_t *future, zend_get_gc_buffer *gc
 	for (uint32_t i = 0; i < future->chain.length; i++) {
 		zend_get_gc_buffer_add_obj(gc_buffer, future->chain.children[i]);
 	}
+}
+
+/* The event as a node of the collector of coroutines that can never wake (src/collector.c): it counts
+ * its holders in ref_count, so each holder reports the event and the event reports its contents
+ * once, whatever holds it. */
+static void future_event_collector_references(async_event_t *event, async_collector_t *collector)
+{
+	async_future_event_t *future = (async_future_event_t *) event;
+
+	async_collector_report_zval(collector, &future->result);
+
+	if (UNEXPECTED(future->exception != NULL)) {
+		async_collector_report_object(collector, future->exception);
+	}
+
+	for (uint32_t i = 0; i < future->chain.length; i++) {
+		async_collector_report_object(collector, future->chain.children[i]);
+	}
+}
+
+void async_future_collector_live(async_collector_t *collector, async_future_event_t *future)
+{
+	async_collector_report_live_event(collector, &future->base, future_event_collector_references);
+}
+
+void async_future_collector_target(async_collector_t *collector, async_future_event_t *future)
+{
+	async_collector_report_event_target(collector, &future->base, future_event_collector_references, true);
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -638,9 +667,16 @@ static zend_string *future_record_info(const async_coroutine_event_callback_t *r
 	return zend_string_init(ZEND_STRL("await: future"), false);
 }
 
+/* The wait's reference to the event, taken in async_future_await(), sits in no slot the walk reads. */
+static void future_record_collector_target(const async_coroutine_event_callback_t *record, async_collector_t *collector)
+{
+	async_future_collector_target(collector, (async_future_event_t *) record->event);
+}
+
 /* A wait for a future: its outcome is in the event, so nothing but the vector to leave. */
 static const async_wait_kind_t async_wait_kind_future = {
 	.info = future_record_info,
+	.collector_target = future_record_collector_target,
 };
 
 /* The waiter reads the outcome from the event. A wake with an error marks it handled, as TrueAsync's
@@ -656,6 +692,11 @@ future_record_wake(async_awaitable_t *target, async_event_callback_t *callback, 
 	}
 
 	async_coroutine_event_callback_t *record = (async_coroutine_event_callback_t *) callback;
+
+#ifdef TRUE_ASYNC_TEST_HOOKS
+	async_collector_check_event_wake(record->coroutine);
+#endif
+
 	async_scheduler_enqueue(&record->coroutine->coroutine, NULL, false);
 }
 
@@ -863,6 +904,25 @@ void async_future_event_resolve(async_future_event_t *future, zval *result, zend
 	future->base.ref_count++;
 	future_event_complete(future, result, exception, NULL);
 	async_future_event_release(future);
+}
+
+void async_future_collector_references(zend_object *object, async_collector_t *collector)
+{
+	if (object->ce == async_ce_future_state) {
+		async_collector_report_event(
+				collector, future_state_from_object(object)->ref.event, future_event_collector_references);
+		return;
+	}
+
+	future_t *future_object = future_from_object(object);
+
+	if (future_object->state != NULL) {
+		async_collector_report_object(collector, future_object->state);
+	} else if (future_object->ref.event != NULL) {
+		async_collector_report_event(collector, future_object->ref.event, future_event_collector_references);
+	}
+
+	async_collector_report_zval(collector, &future_object->mapper);
 }
 
 async_future_event_t *async_future_event_from_object(zend_object *object)

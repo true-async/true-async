@@ -106,7 +106,9 @@ function get_coroutines(): array {}
 /**
  * The coroutines nothing can wake any more: each waits only for targets that no code able to run
  * can complete or cancel, and no such code holds the coroutine itself. The walk runs now; holding the
- * returned coroutines makes them reachable, and they may be cancelled.
+ * returned coroutines makes them reachable, and they may be cancelled. Empty once the request shuts
+ * down (in a shutdown function or a destructor called then): the engine then calls every remaining
+ * destructor, whatever holds its object.
  *
  * @return Coroutine[]
  */

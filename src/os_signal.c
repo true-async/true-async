@@ -295,7 +295,8 @@ static void signal_watch_free(async_signal_watch_t *watch)
 	signal_registry_release_if_empty(registry);
 }
 
-static void signal_op_wake(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception);
+static void
+signal_op_wake(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception);
 
 /* timeout_arm()'s steps: an op the submit completes at once delivers before the return. */
 static bool signal_watch_arm(async_signal_watch_t *watch)
@@ -355,7 +356,8 @@ static void signal_watch_settle(async_signal_watch_t *watch)
  * is ready and the signal is taken from it, as php_io_sigwait() does (main/io/php_io_hooks.c:2003-2013).
  * A Done with EAGAIN, or a source with nothing to take, lost the signal to another sigwait: the watch
  * waits again. */
-static void signal_op_wake(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
+static void
+signal_op_wake(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
 {
 	(void) target;
 	(void) exception;
@@ -390,10 +392,8 @@ static void signal_op_wake(async_awaitable_t *target, async_event_callback_t *ca
 		signal_forward(signo, &watch->info);
 		signal_watch_notify(watch, &signal_case, NULL);
 	} else if (UNEXPECTED(error != 0)) {
-		zend_object *failure = async_new_exception(zend_ce_error,
-												   "The signal wait ended with status %d: %s",
-												   (int) op_result->status,
-												   strerror(error));
+		zend_object *failure = async_new_exception(
+				zend_ce_error, "The signal wait ended with status %d: %s", (int) op_result->status, strerror(error));
 
 		signal_watch_notify(watch, NULL, failure);
 		OBJ_RELEASE(failure);
@@ -528,7 +528,8 @@ void async_signal_rebuild(void)
 		registry->context = Z_OBJ(context);
 
 		for (uint32_t index = 0; index < count; index++) {
-			if (UNEXPECTED(!signal_watch_renew(watches[index], registry->context) || !signal_watch_arm(watches[index]))) {
+			if (UNEXPECTED(!signal_watch_renew(watches[index], registry->context) ||
+						   !signal_watch_arm(watches[index]))) {
 				signal_watch_fail(watches[index]);
 			}
 		}
@@ -576,6 +577,23 @@ void async_signal_request_shutdown(void)
 	}
 }
 
+void async_signal_collector_seed(async_collector_t *collector)
+{
+	for (int signo = 1; ASYNC_G(signals) != NULL && signo < PHP_NSIG; signo++) {
+		async_signal_watch_t *watch = ASYNC_G(signals)->watches[signo];
+
+		if (EXPECTED(watch == NULL)) {
+			continue;
+		}
+
+		async_event_callback_t **slots = async_callbacks_slots(&watch->base.callbacks);
+
+		for (uint32_t index = 0; index < watch->base.callbacks.length; index++) {
+			async_future_collector_live(collector, SIGNAL_WAIT_OF(slots[index], on_signal)->future);
+		}
+	}
+}
+
 ///////////////////////////////////////////////////////////////////
 /// The waits
 ///////////////////////////////////////////////////////////////////
@@ -613,7 +631,8 @@ signal_wait_on_token(async_awaitable_t *target, async_event_callback_t *callback
 	OBJ_RELEASE(token_error);
 }
 
-static void signal_wait_on_future(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
+static void
+signal_wait_on_future(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
 {
 	(void) target;
 	(void) callback;
@@ -745,8 +764,9 @@ ZEND_FUNCTION(Async_signal)
 	const int signo = signal_native_number(signal_case);
 
 	if (UNEXPECTED(signo == 0)) {
-		zend_argument_value_error(
-				1, "must not be %s, which this platform lacks", ZSTR_VAL(Z_STR_P(zend_enum_fetch_case_name(signal_case))));
+		zend_argument_value_error(1,
+								  "must not be %s, which this platform lacks",
+								  ZSTR_VAL(Z_STR_P(zend_enum_fetch_case_name(signal_case))));
 		RETURN_THROWS();
 	}
 

@@ -1,5 +1,5 @@
 /* This is a generated file, edit true_async.stub.php instead.
- * Stub hash: 46e7fed4c9195bfca6915f5c09913a40d67323ba */
+ * Stub hash: 79731f4105faa7aa1d4011132bd16406dfbb30fa */
 
 #include "zend_enum.h"
 

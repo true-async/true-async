@@ -886,6 +886,36 @@ stack options were shown with the code).
   the new INI entries `true_async.partial_deadlock` and `true_async.partial_deadlock_interval`
   (S7.md 6 and its INI table), as they did for `true_async.debug_deadlock` on 2026-10-02. The Critic
   judged the reason.
+- 2026-10-07 The walk counts a future event as a node of its own, with `base.ref_count` as its count,
+  and reads `Future` and `FutureState` through `async_future_collector_references()` instead of their
+  `get_gc` (S7.3, S7.md 10). Why: `future_event_gc` folds the event into its holder only while it has
+  one holder and reports nothing while a waiter holds it too, which is right for PHP's collector and
+  would hide every awaited Future from this walk.
+- 2026-10-07 Every record kind of S5 names its target as owned: FUTURE (`async_future_await()` takes
+  the wait's reference), the token kinds (every caller holds the token for the call) and the `await_*`
+  trigger (`await_trigger_add()`); a Timeout token makes its waiter live (S7.3). Why: each of these
+  references sits in a C frame or a block the walk does not read, so only the record can report it,
+  and a Timeout's timer may fire whatever the walk sees.
+- 2026-10-07 The iterator kind of an `await_*` over a Traversable keeps `collector_target` NULL, so its
+  waiter is never a candidate (S7.3). Why: the Traversable's own code decides when the iteration
+  ends; a miss is allowed, a false finding is not.
+- 2026-10-07 Of the outside sources of S7.md 3.4 only S6.5's signal watch is seeded: it reports the
+  event of each `signal()` Future it will complete as live (`async_signal_collector_seed()` in
+  `src/os_signal.c`, agreed with S6); the reactor's `waits` and `triggers` lists seed nothing (S7.3,
+  `collector/032`). Why: no node of the walk is ever on those lists itself, while a `signal()` Future's
+  event is borrowed by its wait and has only its Future object as a counted holder.
+- 2026-10-07 The walk finds nothing once the request shuts down (`EG_FLAGS_IN_SHUTDOWN`), from the
+  shutdown functions on (S7.3, S7.md 2, `collector/041`). Why: the engine's destructor pass calls every
+  destructor not yet called whatever holds its object, a route into any subgraph that no reference
+  counts, and no drain of the scheduler runs between the shutdown functions and that pass.
+- 2026-10-07 The fuzz oracle checks the wakes of FUTURE, the tokens and the `await_*` triggers too; the
+  completer, the running coroutine, is excused only in the bailout, and scheduler context gives no
+  excuse (S7.3, S7.md 11, `collector/040` through `TrueAsync\Test\mark_found()`). Why: a handed-out
+  completer was live at the run, so whatever it reaches was counted live, and everything that cancels
+  found coroutines hands the waiter out itself; a wider excuse only hid bugs.
+- 2026-10-07 A walk node keeps its event reporter as a pointer, 32 bytes a node instead of 24 (S7.3; the
+  Critic asked for a type tag and a table). Why: simple code over saved bytes, with no lookup to save
+  memory.
 - 2026-10-06 `stream/004-stream_socket_client_server.phpt` and `stream/007-tcp_client_server_full.phpt`
   expect the worker's line after the server's accept line, and `stream/028-udp_basic_operations.phpt`
   no longer sets the shared address to null in its client (S6.4). Why: TrueAsync resolves a numeric

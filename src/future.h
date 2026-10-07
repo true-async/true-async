@@ -76,4 +76,11 @@ void async_future_event_resolve(async_future_event_t *future, zval *result, zend
  * section 4). */
 bool async_future_await(async_future_event_t *future, zval *return_value, async_awaitable_t *token);
 
+/* For the collector of coroutines that can never wake (collector.h): what a FutureState or a Future
+ * object owns, and a record's wait for `future` that took a reference to it in C. */
+void async_future_collector_references(zend_object *object, async_collector_t *collector);
+void async_future_collector_target(async_collector_t *collector, async_future_event_t *future);
+/* `future` as one a source outside the walk will complete (S7.md 3.4). */
+void async_future_collector_live(async_collector_t *collector, async_future_event_t *future);
+
 #endif /* TRUE_ASYNC_FUTURE_H */

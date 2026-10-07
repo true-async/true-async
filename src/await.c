@@ -19,6 +19,7 @@
 #include "zend_interfaces.h"
 #include "php_true_async.h"
 #include "await.h"
+#include "collector.h"
 #include "coroutine.h"
 #include "exceptions.h"
 #include "future.h"
@@ -215,6 +216,18 @@ bool async_await_token_arm(async_awaitable_t *token)
 	return false;
 }
 
+#ifdef TRUE_ASYNC_TEST_HOOKS
+/* The collector's oracle for a record whose target completed. */
+static void await_collector_check_wake(async_coroutine_t *waiter, const async_awaitable_t *target)
+{
+	if (ASYNC_AWAITABLE_IS_COROUTINE(target)) {
+		async_collector_check_wake(waiter, (const async_coroutine_t *) target);
+	} else {
+		async_collector_check_event_wake(waiter);
+	}
+}
+#endif
+
 /* The token's notify, or the teardown of a token whose notify stopped at a throwing callback before
  * this record: the teardown passes no outcome, which the token holds. */
 static void
@@ -234,6 +247,10 @@ token_record_wake(async_awaitable_t *target, async_event_callback_t *callback, v
 		await_mark_handled(target);
 	}
 
+#ifdef TRUE_ASYNC_TEST_HOOKS
+	await_collector_check_wake(record->coroutine, target);
+#endif
+
 	async_scheduler_enqueue(&record->coroutine->coroutine, await_token_cancelled_error(target, exception), true);
 }
 
@@ -251,8 +268,27 @@ static zend_string *token_record_info(const async_coroutine_event_callback_t *re
 	return zend_string_init(ZEND_STRL("cancellation: future"), 0);
 }
 
+/* The record's target, to which its wait holds a reference taken in C (by the caller that links a
+ * token, by await_trigger_add() for an item) that no slot the walk reads reports: whoever reaches the
+ * target can end the wait, and a Timeout's timer can end it at any time. */
+static void await_record_report_held_target(const async_coroutine_event_callback_t *record,
+											async_collector_t *collector)
+{
+	async_awaitable_t *target = record->event;
+
+	if (ASYNC_AWAITABLE_IS_COROUTINE(target)) {
+		async_collector_report_target(collector, &((async_coroutine_t *) target)->std, true);
+	} else if (ASYNC_AWAITABLE_IS_TIMEOUT(target)) {
+		async_collector_report_outside(collector);
+	} else {
+		async_future_collector_target(collector, (async_future_event_t *) target);
+	}
+}
+
+/* Every caller that links a token holds it for the call: Async\await(), Future::await(), await_*(). */
 static const async_wait_kind_t async_wait_kind_token = {
 	.info = token_record_info,
+	.collector_target = await_record_report_held_target,
 };
 
 /* The wait's subscription leaves with its record. */
@@ -267,6 +303,7 @@ static void timeout_token_record_unlink(async_coroutine_event_callback_t *record
 static const async_wait_kind_t async_wait_kind_timeout_token = {
 	.info = token_record_info,
 	.unlink = timeout_token_record_unlink,
+	.collector_target = await_record_report_held_target,
 };
 
 void async_await_token_link(async_coroutine_event_callback_t *record,
@@ -557,8 +594,10 @@ static zend_string *await_record_info(const async_coroutine_event_callback_t *re
 	return zend_string_init(ZEND_STRL("await: future"), 0);
 }
 
+/* The trigger holds its target (await_trigger_add()). */
 static const async_wait_kind_t async_wait_kind_trigger = {
 	.info = await_record_info,
+	.collector_target = await_record_report_held_target,
 };
 
 /* A trigger completed, or its teardown fired the record a throwing callback left; the teardown
@@ -584,6 +623,10 @@ trigger_record_wake(async_awaitable_t *target, async_event_callback_t *callback,
 
 	zend_object *error = NULL;
 
+#ifdef TRUE_ASYNC_TEST_HOOKS
+	await_collector_check_wake(context->waiter, target);
+#endif
+
 	trigger->taken = true;
 
 	if (await_take(context, &trigger->key, result, exception, &error)) {
@@ -603,6 +646,10 @@ rest_record_wake(async_awaitable_t *target, async_event_callback_t *callback, vo
 
 	async_wait_record_unlink(&trigger->record);
 	exception = ((async_coroutine_t *) target)->coroutine.exception;
+
+#ifdef TRUE_ASYNC_TEST_HOOKS
+	async_collector_check_wake(context->waiter, (const async_coroutine_t *) target);
+#endif
 
 	if (exception != NULL) {
 		await_mark_handled(target);

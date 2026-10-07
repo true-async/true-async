@@ -15,6 +15,7 @@
 
 #include "php.h"
 #include "main/php_poll.h"
+#include "true_async_API.h"
 
 /* Async\signal() (dev/plans/S6.md, section 8): one watch per signal number of the thread while a
  * Future waits for it. A watch's Io\Poll\SignalHandle sits in the thread's Io\Poll\Context, which
@@ -42,6 +43,10 @@ void async_signal_request_shutdown(void);
 /* zend_sigaction() unblocks the number it installs a handler for (Zend/zend_signal.c:258-263):
  * blocks the watched numbers again, before every poll of the reactor. */
 void async_signal_reblock(void);
+
+/* For the collector of coroutines that can never wake (collector.h): every Future a watch will
+ * complete is live, since the watch's op, which the walk does not reach, delivers the signal. */
+void async_signal_collector_seed(async_collector_t *collector);
 
 /* In a forked child, at the end of the reactor's rebuild: the watches go to a new context and their
  * ops to the child's queue. A watch that cannot fails its Futures; no exception is left. */
