@@ -1475,3 +1475,9 @@ stack options were shown with the code).
 - 2026-10-07 `tools/check-gates.py`'s ban on "the event embedded in a coroutine" (`->event.`) no
   longer matches a scope's own event (`scope->event.`, `..._scope)->event.`), which `src/scope.h`
   embeds; the gate failed on main since S9.2 for that alone (S9.9).
+- 2026-10-07 `tests/io_provider/009-cancel_after_completion.phpt` repeats an attempt whose reader
+  resumed before the canceller, after checking that order too (the read returns the bytes, nothing
+  stays behind), and shows the bytes in the stream's buffer at the cancellation. Why: the test
+  relied on the Ring completing the canceller's socket before the reader's, an order the kernel does
+  not promise; the S9.5 thread saw the reader first under load (core `3af71f889e6`). Judged by the
+  Critic, who asked for the check of the other order and the buffer count.

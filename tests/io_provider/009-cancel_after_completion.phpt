@@ -5,36 +5,52 @@ A coroutine cancelled after its read completed but before it resumed gets the ca
 ?>
 --FILE--
 <?php
+use function Async\await;
 use function Async\spawn;
 
-[$r1, $w1] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
-[$r2, $w2] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+// Both reads are meant to complete in one tick, with the canceller resuming first. Which of two
+// sockets' reads the Ring completes first is the kernel's order, not the test's: an attempt where
+// the reader resumed first is checked (its read returns the bytes) and made again.
+for ($attempt = 1; $attempt <= 20; $attempt++) {
+    [$r1, $w1] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+    [$r2, $w2] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+    $log = [];
 
-$reader = spawn(function () use ($r1) {
-    try {
-        $data = fread($r1, 10);
-        echo "read: ", var_export($data, true), "\n";
-    } catch (Async\AsyncCancellation $e) {
-        echo "cancelled\n";
+    $reader = spawn(function () use ($r1, &$log) {
+        try {
+            $data = fread($r1, 10);
+            $log[] = "read: " . var_export($data, true);
+        } catch (Async\AsyncCancellation $e) {
+            // The completed read has put its bytes into the stream's buffer.
+            $log[] = "cancelled, unread: " . stream_get_meta_data($r1)['unread_bytes'];
+        }
+
+        stream_set_blocking($r1, false);
+        $log[] = "left in the stream: " . var_export(fread($r1, 10), true);
+    });
+
+    $canceller = spawn(function () use ($r2, $reader, &$log) {
+        fread($r2, 10);
+        $log[] = "canceller resumed first";
+        $reader->cancel();
+    });
+
+    spawn(function () use ($w1, $w2) {
+        fwrite($w2, "wake");
+        fwrite($w1, "data");
+    });
+
+    await($reader);
+    await($canceller);
+
+    if ($log !== ["read: 'data'", "left in the stream: ''", "canceller resumed first"]) {
+        break;
     }
+}
 
-    stream_set_blocking($r1, false);
-    echo "left in the stream: ", var_export(fread($r1, 10), true), "\n";
-});
-
-// Both reads complete in one tick, the canceller's first: it runs before the reader resumes.
-spawn(function () use ($r2, $reader) {
-    fread($r2, 10);
-    echo "canceller resumed first\n";
-    $reader->cancel();
-});
-
-spawn(function () use ($w1, $w2) {
-    fwrite($w2, "wake");
-    fwrite($w1, "data");
-});
+echo implode("\n", $log), "\n";
 ?>
 --EXPECT--
 canceller resumed first
-cancelled
+cancelled, unread: 4
 left in the stream: 'data'

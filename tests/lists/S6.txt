@@ -355,7 +355,7 @@ io_provider/005-cancel_parked_pipe_read.phpt  own:6a357c10f12fa438a873ae97818080
 io_provider/006-output_handler_after_deactivation.phpt  own:101461bb26092c9df9632b4e4ec890ce9986db8826c27f80026561c723391d42
 io_provider/007-fatal_error_with_parked_read.phpt  own:2e0dff32b2fead0726252064416deb91329bbab169c8337e1ccfb15cf0fd9ba8  skip-on:*-win(Unix-only)
 io_provider/008-refused_install_keeps_userland_provider.phpt  own:4cb80756e0fff65927a2a6ef0e1bb326c246e8f3696066a975befa054d2e90fd
-io_provider/009-cancel_after_completion.phpt  own:7c7fa89d5721374431f090c777731848832a4da7d5268e58bc780ed7949455ee  skip-on:*-win(Unix-only)
+io_provider/009-cancel_after_completion.phpt  own:7c7fa89d5721374431f090c777731848832a4da7d5268e58bc780ed7949455ee  changed:2026-10-07:aa5e63113c1769c5e0ab0fd32eb40cc7d328adcea11c1ff98c8e342b1376a24b  skip-on:*-win(Unix-only)
 io_provider/010-cancelled_pipe_read_reads_again.phpt  own:293421b6b2f09026d17c72b39a3e6358fb11cb51192c33b9e7fec1eb81ddfd94  skip-on:*-win(Unix-only)
 io_provider/011-io_after_bailout_in_shutdown_function.phpt  own:31f01d304c7da9462d9829243291e40297072cdd8b5bb796564b58f4ae251471  skip-on:*-win(Unix-only)
 io_provider/012-cancel_parked_stream_select.phpt  own:aae6a829a811826f25a6548b3d76fca0538d694a96e09c4d9ad7ad1f9fd2e7a0
