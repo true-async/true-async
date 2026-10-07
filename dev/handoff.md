@@ -233,15 +233,17 @@ first (the build script removes it). Run `tools/format.sh` before a commit.
 
 ## S7
 
-S7.3 done 2026-10-07 (S7.2 before it): the walk (`src/collector.c`) covers coroutines, Futures,
-tokens and `await_*` items; future events are nodes of their own, counted by `base.ref_count`, and
-`Future`/`FutureState` report through `async_future_collector_references()`; S6.5's signal watch
-seeds its Futures live; nothing is found once the request shuts down. Tests `collector/001`-`041` in
-`tests/lists/S7.txt`; the holders' table is S7.md 10. Next is S7.4, the `cancel` policy and B6:
-- `cancel` must cancel through `registry_cancel()` or mark the coroutine handed out, or the oracle
-  (`async_collector_check_cancel()`) aborts the seed; a wake by an event excuses only a completer
-  in the bailout (`async_collector_check_event_wake()`), and `TrueAsync\Test\mark_found()` with
-  `collector/040` shows each rule in a child process;
+S7.4 done 2026-10-07 (S7.2, S7.3 before it): the walk (`src/collector.c`) covers coroutines,
+Futures, tokens and `await_*` items; future events are nodes of their own, counted by
+`base.ref_count`, and `Future`/`FutureState` report through `async_future_collector_references()`;
+S6.5's signal watch seeds its Futures live; nothing is found once the request shuts down. The
+`cancel` policy warns once and cancels every parked coroutine but main; the back-off resets on a
+first warning or a first cancel. B6 is in `dev/BENCHMARKS.md` (debug build). Tests `collector/001`-`047`
+in `tests/lists/S7.txt`; the holders' table is S7.md 10. Next is S7.5, the stage review:
+- the oracle (`async_collector_check_cancel()`, `async_collector_check_event_wake()`) aborts on a
+  wake or cancel of a found coroutine not handed out; `registry_cancel()` and the `cancel` policy
+  mark what they cancel as handed out, so the fuzz keeps `report` (under `cancel` it sees nothing);
+  `TrueAsync\Test\mark_found()` with `collector/040` shows each rule in a child process;
 - a new wait kind names its target through `collector_target` and reports it as owned only for a
   reference its wait took in C that no walked slot reports (collector.h); a source outside the walk
   that will complete an event seeds it with `async_collector_report_live_event()`.

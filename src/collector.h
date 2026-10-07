@@ -28,6 +28,7 @@ typedef enum
 {
 	ASYNC_PARTIAL_DEADLOCK_OFF = 0, /* no automatic run */
 	ASYNC_PARTIAL_DEADLOCK_REPORT,  /* one E_WARNING per coroutine */
+	ASYNC_PARTIAL_DEADLOCK_CANCEL,  /* the warning, then AsyncCancellation("Deadlock detected") into each but main */
 } async_partial_deadlock_t;
 
 /* The largest true_async.partial_deadlock_interval, in ms (24.8 days): the backed-off interval in ns
@@ -69,8 +70,8 @@ async_coroutine_t **async_collector_find(uint32_t *count);
 
 /* The idle point of the scheduler's loop, before it blocks in the reactor (S7.md section 5): runs the
  * walk once true_async.partial_deadlock_interval allows and applies true_async.partial_deadlock to
- * what it finds. True when PHP code ran (a warning's error handler), which may have queued
- * coroutines: the loop then takes another pass before it blocks. Scheduler context. */
+ * what it finds. True when it warned (an error handler may have run and queued coroutines) or
+ * cancelled: the loop then takes another pass before it blocks. Scheduler context. */
 bool async_collector_idle(void);
 
 void async_collector_request_startup(void);
@@ -89,7 +90,7 @@ void async_collector_check_wake(async_coroutine_t *waiter, const async_coroutine
 void async_collector_check_event_wake(async_coroutine_t *waiter);
 
 /* The same oracle for a cancel: a coroutine the collector found is cancelled only through the
- * registry's walks (registry_cancel) or by the bailout; anything else held it. */
+ * registry's walks (registry_cancel), the `cancel` policy or the bailout; anything else held it. */
 void async_collector_check_cancel(async_coroutine_t *coroutine);
 #endif
 

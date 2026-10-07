@@ -916,6 +916,18 @@ stack options were shown with the code).
 - 2026-10-07 A walk node keeps its event reporter as a pointer, 32 bytes a node instead of 24 (S7.3; the
   Critic asked for a type tag and a table). Why: simple code over saved bytes, with no lookup to save
   memory.
+- 2026-10-07 `true_async.partial_deadlock=cancel` warns once, then cancels every coroutine still
+  parked as `registry_cancel()` does (protection cleared, handed out for the oracle), main aside
+  (S7.4, S7.md 6). Why: as the global deadlock cancels its waiters; main's uncaught cancellation would
+  end the script silently with exit status 0, while parked main gets the global deadlock's
+  `DeadlockError` (`collector/046`).
+- 2026-10-07 Under `cancel` a run that cancels a coroutine never cancelled before resets the back-off,
+  one that only cancels a coroutine again does not (S7.4, S7.md 5). Why: a coroutine that catches the
+  cancellation and parks again would otherwise pay a full walk every interval forever; with
+  `E_WARNING` off the first cancel is still the run's new finding.
+- 2026-10-07 `tests/collector/020-automatic_off.phpt` checks the refusal of an unknown policy with
+  `'kill'` instead of `'cancel'` (S7.4). Why: `cancel` is a valid value now; `kill` takes the same
+  refused branch.
 - 2026-10-06 `stream/004-stream_socket_client_server.phpt` and `stream/007-tcp_client_server_full.phpt`
   expect the worker's line after the server's accept line, and `stream/028-udp_basic_operations.phpt`
   no longer sets the shared address to null in its client (S6.4). Why: TrueAsync resolves a numeric

@@ -28,7 +28,7 @@ function start_pair(): void
 start_pair();
 delay(10);
 delay(10);
-var_dump(ini_set('true_async.partial_deadlock', 'cancel'));
+var_dump(ini_set('true_async.partial_deadlock', 'kill'));
 
 $found = get_deadlocked_coroutines();
 echo count($found), " found\n";

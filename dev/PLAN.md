@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-06 · Active: per stage, under its `Tier:` line (Parallel tracks)
+Updated: 2026-10-07 · Active: per stage, under its `Tier:` line (Parallel tracks)
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -528,7 +528,7 @@ cross-thread wakeups are never reported; a run over 10 000 parked coroutines cos
 time, recorded; scheduler fuzz over 100 seeds reports no false positives.
 Tier: T2. Roles: Critic on S7.1, Critic after S7.4 (S7.5).
 Notes: dev/plans/S7.md
-Active: S7.4
+Active: S7.5
 
 - [x] S7.1 Design note: roots (runnable coroutines, pending external sources: provider ops,
       timers, signals, wakeups, main), edges (waiter → awaitable → completers), when it runs (on
@@ -583,8 +583,19 @@ Active: S7.4
         `dns/003` order failure that three reruns pass; `pocs-asan` 880 PASS, 25 SKIP, 24 XFAIL,
         nothing unexpected; 5 seeds: no oracle abort, crash or leak, one `reactor/011` timeout under
         the full load that 5 seeds alone pass, and `--XFAIL--` tests passing (`io/094`, `io/100`).
-- [ ] S7.4 The `cancel` policy; B6 (S7.md 11).
+- [x] S7.4 The `cancel` policy; B6 (S7.md 11).
       done: S7.txt's S7.4 tests pass on debug and ASAN; B6 in `dev/BENCHMARKS.md`
+      2026-10-07: `true_async.partial_deadlock=cancel` warns once and cancels every parked coroutine
+        but main, as `registry_cancel()` (protection cleared, handed out for the oracle); main stays
+        parked for the global deadlock's `DeadlockError`, since its uncaught cancellation ended the
+        script silently. The back-off resets on a first warning or a first cancel, not on a repeated
+        cancel. Tests `collector/042`-`047`, each rule killed by a mutation; `collector/020` checks
+        the refusal with `kill` (DECISIONS). Critic one round: main, the back-off and a useless
+        `graceful_shutdown` guard fixed. B6 on the debug build: 10 000 coroutines in pairs 24-26 ms,
+        4.9 MiB; with a shared graph of 1M objects 238-262 ms, 76 MiB; 10 000 on timers 0.5 ms.
+        Lanes on the day, core `1ee473ff67b`: `pocs-dbg` 902 PASS, 8 SKIP, 25 XFAIL; `pocs-asan`
+        886 PASS, 25 SKIP, 24 XFAIL, nothing unexpected; 5 seeds: no oracle abort, crash or leak, only
+        `--XFAIL--` tests passing (`io/094`, `io/100`).
 - [ ] S7.5 Stage review: Critic after S7.2-S7.4, coverage of the collector, Mull on the stage
       diff, the fuzz oracle over 100 seeds.
       done: Done when of S7 holds on the day, the channel case aside (S9); survivors killed or

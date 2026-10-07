@@ -3,6 +3,27 @@
 The results journal: every measurement with its date, builds and outcome. The method and the
 benchmarks are `dev/plans/S3.md`, section 12; the scripts are `bench/`, the runner `tools/bench.py`.
 
+## 2026-10-07, S7.4: B6, one walk of the collector
+
+**Builds.** The debug ZTS core of the lanes (`pocs-dbg`, the pinned core `1ee473ff67b`), our
+extension with the test hooks at `96449e3` plus S7.4's change; 4 CPUs, three runs each, ranges. Not a
+release build: these are bounds. `bench/b6.php` times one `get_deadlocked_coroutines()` with
+`hrtime()` and takes the memory it adds as `memory_get_peak_usage()` after `memory_reset_peak_usage()`
+minus the usage before the call (checked on a 1 MiB string: 1,028 KiB). That includes the returned
+array and the C list of found coroutines.
+
+| Case (S7.md section 11) | wall | peak added | found |
+|---|---|---|---|
+| 10 000 coroutines in pairs awaiting each other | 24.0-25.6 ms | 4.9 MiB | 10 000 |
+| the same, each stack also reaching one array of 1 000 000 objects | 238.4-261.8 ms | 76.2 MiB | 10 000 |
+| 10 000 coroutines on `delay(60000)` (no candidate) | 0.5 ms | 0.1 KiB | 0 |
+
+The shared graph is walked once per pass, not once per stack: a global keeps it live, so the count
+and the spread each walk it, about 240 ns and 80 B per node in all. Without a
+candidate the call stops after the registry scan. The automatic run pays the same walk at the idle
+point, at most once per `true_async.partial_deadlock_interval` (backing off to 64 times it while it
+finds nothing new; an interval of 0 walks at every idle point).
+
 ## 2026-10-06, S4.4: delay() and the S4 lanes
 
 **Builds.** The debug ZTS core of the lanes (`pocs-dbg`, the pinned core `9531d5b0b1f`, now with

@@ -45,6 +45,8 @@ static ZEND_INI_MH(OnUpdatePartialDeadlock)
 {
 	if (zend_string_equals_literal_ci(new_value, "report")) {
 		ASYNC_G(partial_deadlock) = ASYNC_PARTIAL_DEADLOCK_REPORT;
+	} else if (zend_string_equals_literal_ci(new_value, "cancel")) {
+		ASYNC_G(partial_deadlock) = ASYNC_PARTIAL_DEADLOCK_CANCEL;
 	} else if (ZSTR_LEN(new_value) == 0 || zend_string_equals_literal(new_value, "0") ||
 			   zend_string_equals_literal_ci(new_value, "off")) {
 		/* php.ini and -d read a bare off as a boolean: the empty string. */

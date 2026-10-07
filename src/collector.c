@@ -20,6 +20,7 @@
 #include "php_true_async.h"
 #include "collector.h"
 #include "scheduler.h"
+#include "exceptions.h"
 #include "future.h"
 #include "os_signal.h"
 
@@ -774,32 +775,65 @@ static bool collector_warn(async_coroutine_t *coroutine)
 	return true;
 }
 
-/* `report`: one warning per coroutine, ever (ASYNC_COROUTINE_F_DEADLOCK_REPORTED). An error handler
- * runs PHP code between the warnings, so each coroutine is held across them. True when it warned. */
+/* Whether `coroutine` is still parked where the run found it: an earlier warning's handler may have
+ * ended its wait. */
+static zend_always_inline bool collector_still_parked(async_coroutine_t *coroutine)
+{
+	return ZEND_COROUTINE_IS_SUSPENDED(&coroutine->coroutine) && !async_wait_is_empty(coroutine);
+}
+
+/* One warning per coroutine, ever (ASYNC_COROUTINE_F_DEADLOCK_REPORTED). True when it warned. */
 static bool collector_report(async_coroutine_t **found, const uint32_t count)
 {
 	bool warned = false;
 
 	for (uint32_t i = 0; i < count; i++) {
-		GC_ADDREF(&found[i]->std);
+		async_coroutine_t *coroutine = found[i];
+		zend_coroutine_t *zend_coroutine = &coroutine->coroutine;
+
+		if (EXPECTED(!(zend_coroutine->flags & ASYNC_COROUTINE_F_DEADLOCK_REPORTED) &&
+					 collector_still_parked(coroutine)) &&
+			EXPECTED(collector_warn(coroutine))) {
+			zend_coroutine->flags |= ASYNC_COROUTINE_F_DEADLOCK_REPORTED;
+			warned = true;
+		}
 	}
+
+	return warned;
+}
+
+/* `cancel` (S7.md 6): each coroutine still parked is cancelled as the global deadlock cancels its
+ * waiters, protection cleared. True when it cancelled one; `*first` when one of them had never been
+ * cancelled before, which is what resets the back-off. */
+static bool collector_cancel(async_coroutine_t **found, const uint32_t count, bool *first)
+{
+	bool cancelled = false;
 
 	for (uint32_t i = 0; i < count; i++) {
 		async_coroutine_t *coroutine = found[i];
 		zend_coroutine_t *zend_coroutine = &coroutine->coroutine;
 
-		/* An earlier warning's handler may have ended its wait. */
-		if (EXPECTED(!(zend_coroutine->flags & ASYNC_COROUTINE_F_DEADLOCK_REPORTED) &&
-					 ZEND_COROUTINE_IS_SUSPENDED(zend_coroutine) && !async_wait_is_empty(coroutine)) &&
-			EXPECTED(collector_warn(coroutine))) {
-			zend_coroutine->flags |= ASYNC_COROUTINE_F_DEADLOCK_REPORTED;
-			warned = true;
+		/* Main's uncaught cancellation would end the script silently with status 0; parked, main
+		 * meets the global deadlock and its DeadlockError once the rest of the request ends. */
+		if (UNEXPECTED(ZEND_COROUTINE_IS_MAIN(zend_coroutine) || !collector_still_parked(coroutine))) {
+			continue;
 		}
 
-		OBJ_RELEASE(&coroutine->std);
+		if (EXPECTED(!ZEND_COROUTINE_IS_CANCELLED(zend_coroutine))) {
+			*first = true;
+		}
+
+		/* As registry_cancel() in scheduler.c: no holder cancels it, so the oracle takes it as handed
+		 * out. */
+		zend_coroutine->flags &= ~ASYNC_COROUTINE_F_PROTECTED;
+#ifdef TRUE_ASYNC_TEST_HOOKS
+		zend_coroutine->flags |= ASYNC_COROUTINE_F_HANDED_OUT;
+#endif
+		async_coroutine_cancel(coroutine, async_new_exception(async_ce_cancellation, "Deadlock detected"), true);
+		cancelled = true;
 	}
 
-	return warned;
+	return cancelled;
 }
 
 bool async_collector_idle(void)
@@ -830,19 +864,35 @@ bool async_collector_idle(void)
 	uint32_t count = 0;
 	async_coroutine_t **found = async_collector_find(&count);
 	bool warned = false;
+	bool cancelled = false;
+	bool first_cancel = false;
 
 	if (UNEXPECTED(found != NULL)) {
+		/* An error handler runs PHP code between the warnings: each coroutine is held across them. */
+		for (uint32_t i = 0; i < count; i++) {
+			GC_ADDREF(&found[i]->std);
+		}
+
 		warned = collector_report(found, count);
+
+		if (ASYNC_G(partial_deadlock) == ASYNC_PARTIAL_DEADLOCK_CANCEL) {
+			cancelled = collector_cancel(found, count, &first_cancel);
+		}
+
+		for (uint32_t i = 0; i < count; i++) {
+			OBJ_RELEASE(&found[i]->std);
+		}
+
 		efree(found);
 	}
 
-	if (UNEXPECTED(warned)) {
+	if (UNEXPECTED(warned || first_cancel)) {
 		ASYNC_G(collector_backoff) = 0;
 	} else if (EXPECTED(interval != 0 && ASYNC_G(collector_backoff) < COLLECTOR_BACKOFF_MAX)) {
 		ASYNC_G(collector_backoff)++;
 	}
 
-	return warned;
+	return warned || cancelled;
 }
 
 void async_collector_request_startup(void)
