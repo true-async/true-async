@@ -58,6 +58,7 @@ How work is done in this repository and in the core branch it builds on.
 | `async-core` | php/php-src master | the scheduler RFC PoC, head of php/php-src#22561; our scheduler changes |
 | `io-hooks-fixes` | bukka's `io_hooks_poc` head | our fixes to bukka's IO hooks PoC, sent to him as PRs |
 | `php-src-fixes` | `PHP-8.4` and master's merge base | our fixes to php-src bugs outside both RFCs, merged into the core |
+| `io-hooks-connect-started` | bukka's `io_hooks_poc` head | one fix to the IO hooks PoC, the branch of its PR to bukka |
 | `stream-chunk-size-read-filter`, `stream-filter-remove-in-callback`, `stream-copy-close-in-callback`, `stream-pclose-in-filter`, `zlib-inflate-error-handler` | `php-src-fixes`' base | one fix each from `php-src-fixes`, the branch of its PR to php/php-src |
 | `async-core-io-<date>` | the previous one | the core this repository builds on: merges of the four above and bukka's head; the pinned one is in "Pinned core" |
 | `async-core-io` | php/php-src master | the first core branch, kept as it was |
@@ -68,12 +69,13 @@ The other branches there belong to the TrueAsync fork's earlier work and are not
 
 ## Pinned core
 
-| Part | Revision | In `async-core-io-2026-10-07-2` `8159f7baa5c` |
+| Part | Revision | In `async-core-io-2026-10-07-4` `a6fbd0776e9` |
 |---|---|---|
 | php-src master | `d7f966e073b` | merged |
 | Scheduler PoC (`async-core`, php/php-src#22561) | `6e43d6074e0` | merged |
 | IO hooks PoC (php/php-src#23997) | `608927ebe09` | merged |
 | Our fixes to the IO hooks PoC (`io-hooks-fixes`) | `c43e1d5797a` | merged; `dev/RFC-CHANGES.md` 2 |
+| The connect fix (`io-hooks-connect-started`, bukka/php-src#4, on bukka's `2bf149c2f50`) | `dca62e39da4` | picked onto `8159f7baa5c` |
 | Our fixes to php-src (`php-src-fixes`) | `cfa0923ac31` | merged |
 | ior | `2bfd2319896` | built per tree, "Building the core" |
 | `ext/async` (reference tests, true-async/php-async) | `1fdacf8575b` | `tests/lists/REFERENCE` |

@@ -287,12 +287,11 @@ Written 2026-10-07. S6.8 (stage review) done, results in S6.md section 17; S6.9 
   the copy of an ACCEPT op into a POLL (note section 4). The Ring's multishot accept hid pending
   connections from `stream_select()`; that Ring bug goes to bukka (a pull request is being
   prepared in the S6.4 thread, `dev/WORKFLOW.md` "Ownership").
-- The core is `async-core-io-2026-10-07-2` (`8159f7baa5c`): `php-src-fixes` `cfa0923ac31`,
-  `io-hooks-fixes` `c43e1d5797a`, `async-core` `6e43d6074e0` (the GC threshold rises once per GC
-  coroutine run; DECISIONS 2026-10-07). The seven tests that include a php-src helper need
-  `TRUE_ASYNC_CORE_SRC` (the core's checkout); `tools/test.py` stops without it, so a Mull
-  `--diff-ref` run needs it too. `async-core` (php/php-src#22561) carries `6e43d6074e0` since
-  Edmond's approval of 2026-10-07.
+- The core is `async-core-io-2026-10-07-4` (`a6fbd0776e9`): `async-core-io-2026-10-07-2` with the
+  connect fix of `io-hooks-connect-started` picked (bukka/php-src#4, DECISIONS 2026-10-07);
+  `php-src-fixes` `cfa0923ac31`, `io-hooks-fixes` `c43e1d5797a`, `async-core` `6e43d6074e0`. The
+  seven tests that include a php-src helper need `TRUE_ASYNC_CORE_SRC` (the core's checkout);
+  `tools/test.py` stops without it, so a Mull `--diff-ref` run needs it too.
 - S6.10 takes the Windows lane's socket expectations: load `sockets` and `openssl` in `pocs-win`,
   then settle the `xfail-on:pocs-win(S6.10)` tags and `stream/001`, `002`, `046-…_win`, `exec/001`,
   `003`. The `skip-on:pocs-win(...-until-S6.4)` and `(...-until-S6.5)` tags are frozen text; they

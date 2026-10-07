@@ -1402,3 +1402,12 @@ stack options were shown with the code).
   agreed ("продолжай работу") after explaining that a scope belongs to no one and a coroutine's +1
   belongs to the scheduler, so the walk never follows a scope's members as references. TrueAsync has
   no partial-deadlock walk to compare with (`resolve_deadlocks()`, php-async `scheduler.c:749`).
+- 2026-10-07 Core `async-core-io-2026-10-07-4` (`a6fbd0776e9`): `8159f7baa5c` with the commit of
+  `io-hooks-connect-started` (`dca62e39da4`, bukka/php-src#4, on bukka's `2bf149c2f50`) picked, not
+  bukka's head merged, so the core takes only this fix. After its own `connect()` the core waits
+  for write readiness from the kernel and reads `SO_ERROR`, as `php_network_connect_socket()`
+  does without hooks, instead of submitting the Connect op again: IOCP's `ConnectEx()` on a
+  socket with a connect under way fails with WSAEINVAL (`socket_ext/006` on Windows). Five Critic
+  passes. `pocs-dbg` 1080 PASS, 0 unexpected; `pocs-asan` 1058 PASS, `io/046` failing under the
+  full lane's load only (passes alone and with `io`, `exec`; its child gets 500 ms); `pocs-win`
+  986 PASS, 0 unexpected from the fix. Why: the BUKKA rule, our core fixed while the PR waits.
