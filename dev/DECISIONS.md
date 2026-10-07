@@ -1525,3 +1525,9 @@ stack options were shown with the code).
   closed, and a cancelled scope's timer no longer marks the reach node live, since its fire only
   closes the scope (S9.5, the Critic; `scope/107`, `scope/108`). After a fork the parent's timer counts as unarmed,
   as `timeout.c` checks it, so a later call arms its own (`scope/106`).
+- 2026-10-07 `tools/test.py` refuses a core whose ior runs a backend other than io_uring, or other
+  than the thread backend under `IOR_BACKEND=threads`. Why: CI runs io_uring, and a cloud container
+  without `liburing-dev` built a core on the thread backend whose ASAN lane failed 10 fork tests for
+  reasons outside the extension (`dev/WORKFLOW.md`, "Building the core"), the failures the S9.5 run
+  saw on clean main. The check asks the core, so it also catches io_uring refused at run time and a
+  mistyped `IOR_BACKEND`, after which the reactor takes the Poll queue.

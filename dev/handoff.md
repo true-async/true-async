@@ -165,8 +165,9 @@ pass. Known, not fixed (low): `await_*` refused for its token, or a Traversable 
 throws, warns "never used" for the Futures it was given; a Timer op that completes with an error
 fires the `Timeout` as a deadline; a bailout while parked in `async_future_await()` or an `await_*`
 wait leaks the wait's references until the request ends. Mull runs one S5 file at a time
-(`tools/mull.py`'s `lane_for`, `run_mull` and `changed_lines`). In a fresh container: build both
-cores with `tools/ci/build-core.sh` (`TRUE_ASYNC_CORE_SRC=/tmp/core-<tree>/php-src` then), `git
+(`tools/mull.py`'s `lane_for`, `run_mull` and `changed_lines`). In a fresh container: install the
+packages of the "Packages" step of `.github/workflows/ci.yml` (`liburing-dev` among them), build
+both cores with `tools/ci/build-core.sh` (`TRUE_ASYNC_CORE_SRC=/tmp/core-<tree>/php-src` then), `git
 fetch --unshallow` and a clone of true-async/php-async at `REFERENCE` for `check-lists.py
 --reference`; `gen_stub.php` needs `git clone --depth 1 --branch v5.6.1
 https://github.com/nikic/PHP-Parser build/PHP-Parser-5.6.1` in the core checkout first.

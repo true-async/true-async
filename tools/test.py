@@ -198,6 +198,7 @@ def build(lane):
     installed core, config.m4 or the lane flags changed, so a module never outlives its core; then
     the objects are rebuilt too, since configure leaves an unchanged config.h alone.
     """
+    check_ior_backend(lane)
     BUILD.mkdir(exist_ok=True)
     m4 = ROOT / 'config.m4'
     phpize_key = f'{lane.prefix}\n{hashlib.sha256(m4.read_bytes()).hexdigest()}'
@@ -245,6 +246,28 @@ def check_sanitized(module):
     for producer in producers:
         if SAN not in producer:
             sys.exit(f'{module}: a unit built without {SAN}: {producer[:200]}')
+
+
+def check_ior_backend(lane):
+    """Refuse a core whose ior runs a backend other than the one the run asked for: io_uring, or the
+    thread backend under IOR_BACKEND=threads. ior falls back to threads unasked when built without liburing
+    or when io_uring is refused (seccomp, kernel.io_uring_disabled, a kernel before 5.19), and fork
+    tests fail there under ASAN (dev/WORKFLOW.md, "Building the core"); an IOR_BACKEND value ior does
+    not know fails the ring, and the reactor would take the Poll queue. A core without Io\\Ring has no ior."""
+    expected = 'Threads' if os.environ.get('IOR_BACKEND') == 'threads' else 'IoUring'
+    code = r'echo class_exists("Io\\Ring\\Engine") ? (new Io\Ring\Engine)->getBackend()->name : "none";'
+    probe = subprocess.run([lane.php, '-n', '-r', code], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    backend = probe.stdout.strip()
+
+    if backend in (expected, 'none'):
+        return
+
+    if backend not in ('IoUring', 'Threads', 'Iocp'):
+        sys.exit(f'{lane.php}: the ior backend check failed, exit {probe.returncode}:\n'
+                 f'{probe.stdout[-2000:]}{probe.stderr[-2000:]}')
+
+    sys.exit(f'{lane.php}: ior runs the {backend} backend, not {expected} (core built without liburing-dev, '
+             'or io_uring refused here); set IOR_BACKEND=threads to run on the thread backend')
 
 
 def compose(lane, stage, selected):

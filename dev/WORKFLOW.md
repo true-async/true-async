@@ -173,7 +173,23 @@ php/php-src#23997 does (`-DIOR_WITH_THREADS=ON`, tests and bench off, Release), 
 `~/ior-<tree>`; the ASAN tree adds `-DIOR_ENABLE_ASAN=ON`.
 
 Both trees carry the io_uring and the thread backends; io_uring needs `liburing-dev`.
-`IOR_BACKEND=threads` selects the thread backend at run time.
+`IOR_BACKEND=threads` selects the thread backend at run time. Without liburing 2.2+ ior's cmake
+leaves the io_uring backend out without an error, and ior also falls back to the thread backend
+when io_uring is refused (seccomp, `kernel.io_uring_disabled`, a kernel before 5.19). A cloud
+container lacks `liburing-dev` until the packages of the "Packages" step of
+`.github/workflows/ci.yml` are installed. `tools/test.py` refuses a core whose ior runs a backend
+other than io_uring, or other than the thread backend under `IOR_BACKEND=threads`: CI runs io_uring.
+
+Fork tests under ASAN can fail when ior threads are alive at `fork()`. On the thread backend they
+always are; on core -6, 10 of 17 fork tests fail, `reactor/011` passes on a retry, while the
+debug lane passes all 17. On io_uring ior starts its worker pool, with a timer thread, at the first
+work op (`getaddrinfo`, `getnameinfo`, `fsync`), so a parent that ran one before the fork can meet
+the same failures (read from ior's code, not seen in a test). The causes are outside the extension:
+LeakSanitizer in the child warns about every thread of the parent (`dev/plans/S1-lsan-fork.md`);
+`ior_queue_forget()` leaves the child the parent's thread pool by design, which LeakSanitizer
+reports as leaks from `ior_threads_pool_*`; the child's new ior threads can block for good on a
+lock of ASAN's allocator that the child inherited locked (`reactor/035` then prints
+`child: not woken` and times out).
 
 Configure line of every core tree (the ASAN tree adds `--enable-address-sanitizer
 --enable-undefined-sanitizer`):
