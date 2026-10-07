@@ -1,7 +1,5 @@
 --TEST--
 Scope: awaitAfterCancellation() from a coroutine that belongs to the same scope throws
---XFAIL--
-Not implemented yet: S9.5 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -94,8 +94,8 @@ current scope, at the top level the global one; `new Scope()` has no parent and 
 
 Coroutines the extension creates for itself join the scope TrueAsync gives their counterpart: the
 `await_*` iterator coroutine a child scope of the caller's (section 8), a finally coroutine the
-child scope of section 7, the `disposeAfterTimeout()` coroutine the global scope
-(`scope.c:699-723`). S5's chain drain serves chains of every scope and joins the global scope
+child scope of section 7; TrueAsync's `disposeAfterTimeout()` coroutine of the global scope
+(`scope.c:699-723`) has no counterpart, its timer cancels in place (section 9, item 15). S5's chain drain serves chains of every scope and joins the global scope
 (S5.md section 8, item 1, keeps its departure from the iterator).
 
 Coroutines the core creates: the RFC core creates them only through `ZEND_ASYNC_GC_NEW_COROUTINE`
@@ -186,10 +186,13 @@ error is the question of section 12.
   (`scope.c:282-299`): the error goes to the child scopes, recursively, and to the coroutines as
   given, and the route does not climb to the parent. A scope that `cancel()` leaves with no members
   is closed (`scope.c:964-974`); `scope/004` and `026` need it, so it comes with `cancel()` in S9.2.
-- `dispose()` closes the scope and cancels as the flag says, `disposeSafely()` closes it with
-  `is_safely` true, `disposeAfterTimeout($ms)` arms an S4 Timer op whose fire spawns a coroutine in
-  the global scope that cancels the scope (`scope.c:627-784`). A scope with no members left is
-  closed and its finally handlers run at once (`scope.c:964-974`).
+- `dispose()` is `cancel()` with no error and the scope's flag, `disposeSafely()` the same with
+  `is_safely` true (TrueAsync's `ZEND_ASYNC_SCOPE_CLOSE`, `F:1531`): a scope with nothing left to
+  cancel is closed and its finally handlers run at once (`scope.c:964-974`), one whose members still
+  run is only cancelled and still accepts a spawn, on the reference as on ours (probe `s9.5/d6.php`,
+  `scope/101`). `disposeAfterTimeout($ms)` arms an S4 Timer op on the reactor's waits, so a script that
+  ends by itself waits for it as for TrueAsync's libuv timer (`d1.php`, `scope/102`); its fire cancels
+  the scope with "Scope has been disposed due to timeout" (`scope.c:627-784`; section 9, items 15-16).
 - `isFinished()`, `isClosed()` are true and `isCancelled()` reads the object's own copy of the flag
   once the internal scope is gone (`scope.c:485-519`); `getChildScopes()` lists only child scopes
   that still have an object (`scope.c:786-808`).
@@ -211,10 +214,13 @@ error is the question of section 12.
 
 `awaitCompletion(Awaitable $cancellation)` waits until the scope and its child scopes have no active
 member; `awaitAfterCancellation(?callable $errorHandler, ?Awaitable $cancellation)` waits for
-zombies too, only on a cancelled scope, and passes each error to the handler as `fn(Throwable $e,
-Scope $scope)` (`scope.c:301-483, 810-864`). Both refuse a waiter that is a member of the scope or
-of a child scope (`scope.c:866-894`; ours walks up, section 9, item 12), mark the token used, return
-at once on a closed or finished scope, and throw "The scope has been cancelled" on a cancelled one.
+zombies too, only on a cancelled scope, until no coroutine of the subtree is left (section 9,
+item 17), and passes each error a member's route brings while it waits to the handler as
+`fn(Throwable $e, Scope $scope)`, or throws it without one (`scope.c:301-483, 810-864`). Both refuse a
+waiter that is a member of the scope or of a child scope (`scope.c:866-894`; ours walks up, section 9,
+item 12) and mark the token used. `awaitCompletion()` returns at once on a closed or finished scope
+and throws "The scope has been cancelled" on a cancelled one; `awaitAfterCancellation()` returns at
+once on a gone scope, a closed one that is not cancelled, or one with nothing left to wait for.
 
 The scope is an event of S4's wait-record layer: a new kind SCOPE (`async_wait_kind_t`) with its
 `info` (`await: scope created at <file>:<line>`, after TrueAsync's `scope_info`, `scope.c:1166-1182`),
@@ -252,7 +258,7 @@ follows a scope's members as references. Of the three edges this note first plan
    million for 10 000 members and 1 000 waiters; with one node per scope a run over them took 42 ms
    on the debug build, 2026-10-07).
 
-Two cancels hold no Scope object:
+Three cancels hold no Scope object:
 
 - the route's, at every level, left out as in edge 2: `scope_hand_out_found()` also hands out the
   found waiters of each scope it visits, since the level's cancels wake them wherever they run, so
@@ -260,7 +266,12 @@ Two cancels hold no Scope object:
 - the `await_*` iterator's (section 8), which cancels its scope when the walk throws: the iterator
   coroutine is reported as a holder of that scope's reach node (`iterator_coroutine`, cleared when the
   walk finishes), so the walk counts it: while it can still throw, the subtree's members and their
-  waiters are not found (`scope/091`; S7.7 found them).
+  waiters are not found (`scope/091`; S7.7 found them);
+- S9.5: the `disposeAfterTimeout()` timer's, which no walk reaches: while it is armed on a scope that
+  is not cancelled, whose fire would only close it (`scope/108`), the scope's reach node is live (`async_collector_report_live_reach()`), so its subtree's members and their waiters are
+  not found, and its cancel in scheduler context wakes no found waiter (`scope/098`). The waiter of
+  `awaitAfterCancellation()` uses the SCOPE kind and its completion node, zombies counting as sources
+  already (`scope/097`).
 
 The oracle runs at the notify sites, before the wake, since the notify runs its callbacks in
 scheduler context: `scope_notify_completion()` checks the scope's waiters against the member that
@@ -382,6 +393,27 @@ Traversable's exception; `await/062` loses its `--XFAIL--` in that step.
     reference is unwrapped; TrueAsync's `async_provide_scope()` (`async_API.c:32-58`) reads the
     reference's type and throws "Scope provider must return an instance of Async\Scope" for a valid
     null or Scope (the S7 thread's Critic).
+15. **The `disposeAfterTimeout()` timer cancels in its notify** (S9.5), where TrueAsync spawns a
+    coroutine of the global scope that cancels (`scope.c:676-723`): the cancel only queues, so it needs
+    no coroutine, and none can be cancelled unstarted by a cancel of the global scope, which would
+    drop the timeout. The scope's free withdraws the timer, so the object's destruction disposing an
+    empty scope ends the wait for it (`scope/099`); TrueAsync's timer holds a reference to the scope and
+    the script still waits (probe `s9.5/d8.php`), and leaks 32 bytes there.
+16. **Of several `disposeAfterTimeout()` calls the earliest deadline wins** (S9.5, `scope/100`): one
+    timer per scope. TrueAsync arms one per call, and a later one cancels a cancelled scope again,
+    which closes it while zombies run (section 4, the second `cancel()`; probe `d9.php`).
+17. **`awaitAfterCancellation()` returns once no coroutine of the subtree is left**, as its comment
+    and the thread pool's use of it say (`scope.c:374-377`, TrueAsync's CHANGELOG "drained"); the
+    reference returns at the first member's end, its check reading "completely done" as true for any
+    cancelled scope (probe `s9.5/d3.php`, `scope/095`). Its handler runs in the waiting coroutine
+    after the wake, not in the finishing one inside the notify, which runs in scheduler context
+    (D26): the handler may suspend (`scope/096`). The error reaches the waiter as its waker's error,
+    which a cancel of the waiter takes as its previous (`scope/105`). An error that comes while the
+    handler runs finds the wait unlinked and climbs on as if nobody waited (`scope/104`); the
+    reference loses every error after the first (probes `d4.php`, `d5.php`), and a scope-held intake
+    was rejected (the Sage, DECISIONS 2026-10-07). A cancelled scope is waited on once closed too, where
+    the reference returns at once (`scope/107`); a closed scope that is not cancelled returns at once,
+    as there, though zombies may run in its cancelled child scopes (`scope/109`, `scope/110`).
 
 The probes of S9.3 are `/mnt/project-files/s9/probes/s9.3/q1.php`-`q16.php`; on the reference and
 on ours they print the same but for items 9 and 10 and for S3's report of an unobserved exception of
@@ -431,7 +463,10 @@ that directory.
   of a child scope, a found waiter woken by a handed-out member's end and error, the `cancel` policy,
   the route's excuse, the `await_*` iterator as its scope's holder, a fatal error after a run, and
   main found and woken by a coroutine the policy cancelled;
-- S9.5: `p3.php` (a zombie keeps the request running).
+- S9.5: `p3.php` (a zombie keeps the request running) as `scope/094`; `scope/095`-`110` for the
+  departures of section 9, items 15-17, the collector's edges of the timer and of the waiter in
+  `awaitAfterCancellation()`, `dispose()` of a running scope, the timer after a fork and on a closed
+  scope, and errors that come while the handler runs or as the waiter is cancelled.
 
 **Core dependencies**: none. `is_safely` and `get_coroutine_count` are in the pinned core
 (API version 2).

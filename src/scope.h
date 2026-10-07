@@ -17,6 +17,7 @@
 #include "true_async_API.h"
 #include "coroutine.h"
 #include "collector.h"
+#include "reactor.h"
 
 /* Scopes (dev/plans/S9-scope.md): a tree of groups of coroutines, cancelled together. The scope and
  * its PHP object Async\Scope are two allocations, as TrueAsync's: the scope outlives its object
@@ -65,6 +66,10 @@ struct _async_scope_s
 	/* The await_* walk whose exception cancels this scope (await.c); NULL for any other scope, and once
 	 * the walk has finished. */
 	async_coroutine_t *iterator_coroutine;
+	/* disposeAfterTimeout()'s Timer op while armed, NULL otherwise; the scope owns one reference to it.
+	 * The scope's free and close withdraw it. */
+	async_io_event_t *dispose_timer;
+	async_event_callback_t dispose_timer_callback; /* in `dispose_timer`'s vector while armed */
 };
 
 /* Async\Scope. A stand-in is the object a SpawnStrategy's hooks get for a scope without one; it stays

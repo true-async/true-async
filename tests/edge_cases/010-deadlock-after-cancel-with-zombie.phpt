@@ -1,7 +1,5 @@
 --TEST--
 Deadlock - Deadlock is an operation after coroutines are cancelled, when they are already zombies.
---XFAIL--
-Not implemented yet: S9.5 of dev/PLAN.md
 --INI--
 true_async.debug_deadlock=0
 --FILE--

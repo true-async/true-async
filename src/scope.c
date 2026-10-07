@@ -158,6 +158,23 @@ static bool scope_is_completed(const async_scope_t *scope, const bool with_zombi
 	return true;
 }
 
+/* A coroutine of the scope or of its child scopes has not finished, zombies included, whatever the
+ * scope's state: what awaitAfterCancellation() waits for. */
+static bool scope_has_coroutines(const async_scope_t *scope)
+{
+	if (scope->coroutines.length > 0) {
+		return true;
+	}
+
+	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
+		if (scope_has_coroutines(scope->child_scopes.data[i])) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 /* Nothing can use the scope any more: no coroutine, zombies included, it is cancelled or its object is
  * gone, and every child scope is the same (TrueAsync's can_be_disposed with both checks). */
 static bool scope_can_be_disposed(const async_scope_t *scope)
@@ -235,6 +252,29 @@ static void scope_notify_completion(async_scope_t *scope, const bool with_zombie
 /// Disposal
 ///////////////////////////////////////////////////////////////////
 
+/* Withdraws disposeAfterTimeout()'s timer when it is armed, as timeout.c's disarm; a completed op
+ * withdraws as nothing. */
+static void scope_dispose_timer_disarm(async_scope_t *scope)
+{
+	async_io_event_t *timer = scope->dispose_timer;
+
+	if (EXPECTED(timer == NULL)) {
+		return;
+	}
+
+	scope->dispose_timer = NULL;
+	async_io_event_orphan(timer);
+	async_callbacks_remove(&timer->base.callbacks, &scope->dispose_timer_callback);
+	async_io_event_release(timer);
+}
+
+/* The timer can still fire: a forked child's rebuild drops the parent's ops from the reactor's lists
+ * unrun (timeout.c's check). */
+static bool scope_dispose_timer_is_armed(const async_scope_t *scope)
+{
+	return scope->dispose_timer != NULL && scope->dispose_timer->reactor_link.prev != NULL;
+}
+
 /* Moves the references `handler` holds into `released_handlers`, made on the first one; the copy of a
  * __call trampoline goes here, which runs no PHP code. */
 static void scope_handler_keep_back(zend_fcall_info_cache *handler, zend_array **released_handlers)
@@ -290,6 +330,7 @@ static void scope_free(async_scope_t *scope, zend_array **released_handlers)
 		async_scope_object_from_object(scope->scope_object)->scope = NULL;
 	}
 
+	scope_dispose_timer_disarm(scope);
 	async_callbacks_free((async_awaitable_t *) &scope->event, &scope->event.callbacks);
 
 	if (scope->child_scopes.data != NULL) {
@@ -357,6 +398,8 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 
 	if (scope_is_completed(scope, true)) {
 		scope->event.flags |= ASYNC_SCOPE_F_CLOSED;
+		/* Its fire would find the scope closed. */
+		scope_dispose_timer_disarm(scope);
 
 		if (error != NULL && transfer_error) {
 			OBJ_RELEASE(error);
@@ -612,6 +655,11 @@ void async_scope_collector_reach(async_collector_t *collector, async_coroutine_t
 		/* It cancels the scope when it throws, holding no object. */
 		if (UNEXPECTED(scope->iterator_coroutine != NULL)) {
 			async_collector_report_holder(collector, &scope->iterator_coroutine->std, scope_node);
+		}
+
+		/* It cancels the scope when it fires, holding no object; a cancelled scope's fire only closes it. */
+		if (UNEXPECTED(scope_dispose_timer_is_armed(scope) && !(scope->event.flags & ASYNC_SCOPE_F_CANCELLED))) {
+			async_collector_report_live_reach(collector, scope_node);
 		}
 
 		reached = scope_node;
@@ -1036,6 +1084,104 @@ ZEND_METHOD(Async_Scope, cancel)
 	}
 }
 
+ZEND_METHOD(Async_Scope, dispose)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	async_scope_t *scope = THIS_SCOPE_OBJECT->scope;
+
+	if (scope != NULL) {
+		async_scope_cancel(scope, NULL, false, (scope->event.flags & ASYNC_SCOPE_F_DISPOSE_SAFELY) != 0);
+	}
+}
+
+ZEND_METHOD(Async_Scope, disposeSafely)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	async_scope_t *scope = THIS_SCOPE_OBJECT->scope;
+
+	if (scope != NULL) {
+		async_scope_cancel(scope, NULL, false, true);
+	}
+}
+
+/* The timer's completion, in its notify. The cancel only queues, so it runs here; TrueAsync spawns a
+ * coroutine of the global scope to make it (scope.c:676-723). */
+static void scope_dispose_timer_fire(async_awaitable_t *target,
+									 async_event_callback_t *callback,
+									 void *result,
+									 zend_object *exception)
+{
+	(void) target;
+	(void) result;
+	(void) exception;
+
+	async_scope_t *scope = (async_scope_t *) ((char *) callback - offsetof(async_scope_t, dispose_timer_callback));
+
+	scope_dispose_timer_disarm(scope);
+
+	zend_object *error = async_new_exception(async_ce_cancellation, "Scope has been disposed due to timeout");
+
+	async_scope_cancel(scope, error, true, (scope->event.flags & ASYNC_SCOPE_F_DISPOSE_SAFELY) != 0);
+}
+
+/* The Timer op is on the reactor's waits, so a script that ends by itself waits for it, as TrueAsync's
+ * libuv timer holds its loop. */
+ZEND_METHOD(Async_Scope, disposeAfterTimeout)
+{
+	zend_long timeout;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_LONG(timeout)
+	ZEND_PARSE_PARAMETERS_END();
+
+	if (UNEXPECTED(timeout < 0)) {
+		zend_argument_value_error(1, "must be greater than or equal to 0");
+		RETURN_THROWS();
+	}
+
+	async_scope_t *scope = THIS_SCOPE_OBJECT->scope;
+
+	if (scope == NULL || (scope->event.flags & ASYNC_SCOPE_F_CLOSED) ||
+		(scope->coroutines.length == 0 && scope->child_scopes.length == 0)) {
+		return;
+	}
+
+	const php_deadline deadline = timeout == 0 ? php_io_deadline_from_ns(0) : async_reactor_deadline_from_ms(timeout);
+
+	if (scope->dispose_timer != NULL) {
+		/* The rebuild runs lazily, so it goes before the check. */
+		async_reactor_check_fork();
+
+		if (scope_dispose_timer_is_armed(scope) && scope->dispose_timer->op.deadline.hrtime <= deadline.hrtime) {
+			return;
+		}
+
+		scope_dispose_timer_disarm(scope);
+	}
+
+	/* timeout.c's arm; a Timer op never completes in its submit (reactor.c, queue_push). */
+	async_io_event_t *timer = async_io_event_new();
+
+	php_io_op_timer(&timer->op, deadline);
+	async_callbacks_reserve(&timer->base.callbacks, 1);
+
+	scope->dispose_timer_callback.flags = 0;
+	scope->dispose_timer_callback.callback = scope_dispose_timer_fire;
+	scope->dispose_timer_callback.dispose = NULL;
+	async_callbacks_push_reserved(&timer->base.callbacks, &scope->dispose_timer_callback);
+
+	scope->dispose_timer = timer;
+
+	if (UNEXPECTED(async_io_event_submit(timer) == FAILURE)) {
+		scope->dispose_timer = NULL;
+		async_callbacks_remove(&timer->base.callbacks, &scope->dispose_timer_callback);
+		async_io_event_release(timer);
+		RETURN_THROWS();
+	}
+}
+
 /* Replaces `handler` with a copy of the callable `callable`. The old one goes last: its release may run
  * a destructor. */
 static void scope_handler_replace(zend_fcall_info_cache *handler, const zend_fcall_info_cache *callable)
@@ -1154,6 +1300,25 @@ static const async_wait_kind_t async_wait_kind_scope = {
 	.collector_target = scope_record_collector_target,
 };
 
+/* Throws for a waiter that belongs to `scope` or to one of its child scopes, which the wait would wait
+ * for: the waiter's own scopes, walked up where TrueAsync walks the scope's subtree down
+ * (scope.c:866-894). */
+static bool scope_refuses_waiter(const async_scope_t *scope, const async_coroutine_t *waiter)
+{
+	for (const async_scope_t *waiter_scope = waiter->scope; waiter_scope != NULL;
+		 waiter_scope = waiter_scope->parent_scope) {
+		if (UNEXPECTED(waiter_scope == scope)) {
+			zend_throw_exception(async_ce_async_exception,
+								 "Cannot await completion of scope from a coroutine that belongs to the same scope or "
+								 "its children",
+								 0);
+			return true;
+		}
+	}
+
+	return false;
+}
+
 /* TrueAsync's awaitCompletion (scope.c:299-372): until no coroutine of the scope or of its child scopes
  * runs, zombies aside. */
 ZEND_METHOD(Async_Scope, awaitCompletion)
@@ -1189,17 +1354,8 @@ ZEND_METHOD(Async_Scope, awaitCompletion)
 		RETURN_THROWS();
 	}
 
-	/* The waiter's own scopes, walked up where TrueAsync walks the scope's subtree down
-	 * (scope.c:866-894). */
-	for (const async_scope_t *waiter_scope = waiter->scope; waiter_scope != NULL;
-		 waiter_scope = waiter_scope->parent_scope) {
-		if (UNEXPECTED(waiter_scope == scope)) {
-			zend_throw_exception(async_ce_async_exception,
-								 "Cannot await completion of scope from a coroutine that belongs to the same scope or "
-								 "its children",
-								 0);
-			RETURN_THROWS();
-		}
+	if (UNEXPECTED(scope_refuses_waiter(scope, waiter))) {
+		RETURN_THROWS();
 	}
 
 	if (scope_is_completed(scope, false)) {
@@ -1245,6 +1401,165 @@ ZEND_METHOD(Async_Scope, awaitCompletion)
 	} while (scope != NULL && !scope_is_completed(scope, false));
 
 	async_awaitable_release(token);
+}
+
+/* The wake of a waiter in awaitAfterCancellation(). An error the route brings goes to its waker, as
+ * awaitCompletion()'s; a member's end wakes it only once the subtree has no coroutine left, or as the
+ * scope's teardown fires the record (`event` NULL), when the child scopes are freed already. The
+ * enqueue unlinks the wait (D26). */
+static void scope_after_cancellation_record_wake(async_awaitable_t *target,
+												 async_event_callback_t *callback,
+												 void *result,
+												 zend_object *exception)
+{
+	(void) result;
+
+	const async_coroutine_event_callback_t *record = (async_coroutine_event_callback_t *) callback;
+
+	if (exception == NULL && record->event != NULL && scope_has_coroutines((const async_scope_t *) target)) {
+		return;
+	}
+
+	if (exception != NULL) {
+		GC_ADDREF(exception);
+	}
+
+	async_scheduler_enqueue(&record->coroutine->coroutine, exception, true);
+}
+
+/* TrueAsync's awaitAfterCancellation (scope.c:374-483), until no coroutine of the subtree is left, as
+ * its comment says; the reference returns at the first member's end (probe s9.5/d3.php). Its handler
+ * runs in the finishing coroutine inside the notify; ours in the waiter, since a notify runs in
+ * scheduler context. */
+ZEND_METHOD(Async_Scope, awaitAfterCancellation)
+{
+	zend_fcall_info error_handler = empty_fcall_info;
+	zend_fcall_info_cache error_handler_cache = empty_fcall_info_cache;
+	zend_object *cancellation = NULL;
+
+	ZEND_PARSE_PARAMETERS_START(0, 2)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_FUNC_OR_NULL(error_handler, error_handler_cache)
+		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_awaitable)
+	ZEND_PARSE_PARAMETERS_END();
+
+	async_awaitable_t *token = NULL;
+
+	if (cancellation != NULL) {
+		token = async_await_awaitable_of(cancellation);
+
+		if (UNEXPECTED(token == NULL)) {
+			RETURN_THROWS();
+		}
+
+		if (cancellation->ce == async_ce_future) {
+			((async_event_t *) token)->flags |= ASYNC_EVENT_F_RESULT_USED | ASYNC_EVENT_F_EXC_CAUGHT;
+		}
+	}
+
+	async_coroutine_t *waiter = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
+	const async_scope_object_t *scope_object = THIS_SCOPE_OBJECT;
+	async_scope_t *scope = scope_object->scope;
+
+	if (UNEXPECTED(waiter == NULL || scope == NULL)) {
+		return;
+	}
+
+	/* As TrueAsync's, a closed scope that was not cancelled returns at once, though its cancelled child
+	 * scopes may have zombies: a member's end there notifies it only through scopes that completed. */
+	if (UNEXPECTED(!(scope->event.flags & ASYNC_SCOPE_F_CANCELLED))) {
+		if (scope->event.flags & ASYNC_SCOPE_F_CLOSED) {
+			return;
+		}
+
+		zend_throw_exception(async_ce_async_exception, "Attempt to await a Scope that has not been cancelled", 0);
+		RETURN_THROWS();
+	}
+
+	if (UNEXPECTED(scope_refuses_waiter(scope, waiter))) {
+		RETURN_THROWS();
+	}
+
+	if (!scope_has_coroutines(scope)) {
+		return;
+	}
+
+	if (UNEXPECTED(ZEND_COROUTINE_IS_FINISHED(&waiter->coroutine) || ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) {
+		zend_throw_error(NULL, "awaitAfterCancellation() requires a running coroutine");
+		RETURN_THROWS();
+	}
+
+	if (token != NULL) {
+		async_awaitable_addref(token);
+	}
+
+	async_wait_end(waiter);
+
+	/* Each error wakes the waiter, which waits again after its handler while the subtree has a
+	 * coroutine. */
+	do {
+		if (token != NULL && UNEXPECTED(!async_await_token_check(token))) {
+			break;
+		}
+
+		async_callbacks_reserve(&scope->event.callbacks, 1);
+
+		if (token != NULL) {
+			async_callbacks_reserve(async_awaitable_callbacks(token), 1);
+
+			if (UNEXPECTED(!async_await_token_arm(token))) {
+				break;
+			}
+		}
+
+		async_wait_link(&waiter->waker.records[0],
+						waiter,
+						(async_awaitable_t *) &scope->event,
+						&async_wait_kind_scope,
+						scope_after_cancellation_record_wake);
+
+		if (token != NULL) {
+			async_await_token_link(&waiter->waker.records[1], waiter, token);
+		}
+
+		if (UNEXPECTED(!ZEND_ASYNC_SUSPEND())) {
+			zend_object *error = EG(exception);
+
+			/* A cancel or the token always brings a cancellation, on top of a routed error it finds
+			 * pending (scheduler.c, waker_apply_error), and an exit replaces it. The route brings one
+			 * only when a scope's exception handler threw it in place of the error: it is thrown too. */
+			if (!ZEND_FCI_INITIALIZED(error_handler) || instanceof_function(error->ce, async_ce_cancellation) ||
+				async_is_exit_object(error)) {
+				break;
+			}
+
+			GC_ADDREF(error);
+			zend_clear_exception();
+
+			zval arguments[2];
+			zval retval;
+
+			ZVAL_OBJ(&arguments[0], error);
+			ZVAL_OBJ(&arguments[1], Z_OBJ_P(ZEND_THIS));
+			ZVAL_UNDEF(&retval);
+			error_handler.param_count = 2;
+			error_handler.params = arguments;
+			error_handler.retval = &retval;
+			zend_call_function(&error_handler, &error_handler_cache);
+			zval_ptr_dtor(&retval);
+			OBJ_RELEASE(error);
+
+			if (UNEXPECTED(EG(exception) != NULL)) {
+				break;
+			}
+		}
+
+		scope = scope_object->scope;
+	} while (scope != NULL && scope_has_coroutines(scope));
+
+	if (token != NULL) {
+		async_awaitable_release(token);
+	}
 }
 
 ZEND_METHOD(Async_Scope, isFinished)

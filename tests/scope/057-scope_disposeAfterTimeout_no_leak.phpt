@@ -1,7 +1,5 @@
 --TEST--
 Scope: disposeAfterTimeout() does not leak the cancellation exception
---XFAIL--
-Not implemented yet: S9.5 of dev/PLAN.md
 --DESCRIPTION--
 Covers scope_timeout_coroutine_entry(). When the timer fires it creates a
 fresh AsyncCancellation and hands it to ZEND_ASYNC_SCOPE_CANCEL. That call

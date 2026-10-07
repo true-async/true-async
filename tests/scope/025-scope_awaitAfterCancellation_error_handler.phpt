@@ -1,7 +1,5 @@
 --TEST--
 Scope: awaitAfterCancellation() - with error handler
---XFAIL--
-Not implemented yet: S9.5 of dev/PLAN.md
 --FILE--
 <?php
 

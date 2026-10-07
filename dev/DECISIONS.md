@@ -1481,3 +1481,47 @@ stack options were shown with the code).
   relied on the Ring completing the canceller's socket before the reader's, an order the kernel does
   not promise; the S9.5 thread saw the reader first under load (core `3af71f889e6`). Judged by the
   Critic, who asked for the check of the other order and the buffer count.
+- 2026-10-07 `Scope::dispose()` and `disposeSafely()` are `cancel()` with no error, the scope's flag
+  or `is_safely` true, as TrueAsync's `ZEND_ASYNC_SCOPE_CLOSE` (S9.5): a scope whose members still run
+  is cancelled, not closed, and still accepts a spawn (probe `s9/probes/s9.5/d6.php`, `scope/101`).
+  Why: Edmond, "сделай как в TrueAsync" (S9-scope.md 12); no reference test tells it apart.
+- 2026-10-07 `disposeAfterTimeout()` arms one S4 Timer op per scope (`async_scope_t.dispose_timer`,
+  the earliest deadline wins), on the reactor's waits, and its fire cancels the scope in the
+  timer's notify with "Scope has been disposed due to timeout" (S9.5, S9-scope.md 9 items 15, 16).
+  TrueAsync spawns a coroutine of the global scope to cancel and arms one timer per call, each holding
+  a reference to the scope. Why: the cancel only queues; a coroutine adds a registry entry, a holder
+  for the collector, and a safe cancel of the global scope would cancel it unstarted and drop the
+  timeout. The scope's free withdraws the timer, so a disposed scope no longer keeps the script
+  waiting, where the reference waits and leaks 32 bytes (probe `d8.php`). While armed it marks the
+  scope's reach node live, a reporter added to S7's `src/collector.h`
+  (`async_collector_report_live_reach()`): it may cancel the subtree, and no walk reaches it
+  (`scope/098`).
+- 2026-10-07 `Scope::awaitAfterCancellation()` waits until no coroutine of the scope's subtree is
+  left, zombies included (S9.5, S9-scope.md 9 item 17). TrueAsync returns at the first member's end
+  (probe `d3.php`), against its own comment and the thread pool's use of it. Its error handler runs in
+  the waiting coroutine after the wake, which may suspend there, not in the finishing coroutine inside
+  the notify (D26: a record's wake only enqueues; a notify runs in scheduler context). The error
+  reaches the waiter as its waker's error, as in `awaitCompletion()`: the route brings no
+  cancellation of a member's own and a cancel always brings one, so the waiter tells them apart by
+  class, needing no field, and its own cancellation keeps the error in its chain of previous
+  (`scope/105`). A member's end wakes it only once the subtree is empty. An error that comes while the handler runs, before the wait is linked
+  again, climbs on as if nobody waited (`scope/104`); the reference loses every error after the
+  first that way (probes `d4.php`, `d5.php`). Why not a scope-held intake of errors (the Critic's
+  proposal): the Sage's verdict, two new scope fields the reference lacks, and errors queued for a
+  waiter that is then cancelled would vanish, where now they climb to a handler or the request's end;
+  `setExceptionHandler()`, which the route calls first, sees every error. Known and kept (the third
+  Critic): an AsyncCancellation that a scope's handler throws in place of the error is thrown from
+  the wait as a cancellation, with the error in its chain; uncaught it is not reported, as no
+  cancellation is, where without a waiter the error ends the request. A cancelled scope is waited on
+  even once it is closed (`scope/107`), where the reference returns at once. A closed scope that is
+  not cancelled returns at once, as on the reference, even while coroutines run in its child scopes: a
+  cancel closes an idle scope without cancelling it (`scope/109`, `scope/110`). The awaited scope's own
+  CANCELLED flag decides; below a cancelled one every coroutine counts, cancelled or not. Left for
+  S9.7: the route marks a closed scope cancelled, which turns that at-once return into a wait. Why: waiting
+  there needed either counting only cancelled subtrees, which a member's end below an open busy scope
+  never notifies, or a second, ungated notify walk with a waiter flag (the third and fourth Critic);
+  the reference's rule needs neither.
+- 2026-10-07 Closing a scope withdraws its `disposeAfterTimeout()` timer, whose fire would find it
+  closed, and a cancelled scope's timer no longer marks the reach node live, since its fire only
+  closes the scope (S9.5, the Critic; `scope/107`, `scope/108`). After a fork the parent's timer counts as unarmed,
+  as `timeout.c` checks it, so a later call arms its own (`scope/106`).

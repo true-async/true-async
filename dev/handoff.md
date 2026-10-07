@@ -383,3 +383,14 @@ cancels without an object: the route's `scope_hand_out_found()` also hands out f
 record's wake to the notify sites, since a notify runs its callbacks in scheduler context. Own tests
 `scope/084`-`091`. Next is S9.5: `awaitAfterCancellation()` is a second SCOPE-kind user, and the
 `disposeAfterTimeout()` timer cancels without an object, so it must hold one or be reported.
+
+S9.5 done 2026-10-07: `dispose()`/`disposeSafely()` are `cancel()` with no error, as TrueAsync's
+`ZEND_ASYNC_SCOPE_CLOSE`; `disposeAfterTimeout()` arms one Timer op per scope
+(`async_scope_t.dispose_timer`, earliest deadline wins) whose notify cancels the scope; the scope's
+free and close withdraw it, a fork leaves it unarmed, and while armed on a scope that is not cancelled
+it marks the reach node live (`async_collector_report_live_reach()`). `awaitAfterCancellation()`
+waits for the whole subtree of a cancelled scope, zombies included, and returns at once for a closed
+scope that is not cancelled, as TrueAsync's; its handler runs in the waiter, and an error that
+comes while it runs climbs on (the Sage kept this over a scope-held intake). Own tests
+`scope/094`-`110`. Next is S9.6: the iterator core and `finally()`, the bailout trace of
+`bailout/013`-`015` first.

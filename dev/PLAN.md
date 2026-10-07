@@ -751,7 +751,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md
-Active: S9.5
+Active: S9.6
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -813,11 +813,21 @@ Active: S9.5
         Own tests `scope/084`-`093`, `spawnWith/017`. Debug 1094 PASS, 48 XFAIL; ASAN 1075 PASS,
         44 XFAIL; 0 unexpected on both, on CORE_REF 3af71f889e6; 10 fuzz seeds over scope,
         collector and spawnWith, 0 failed. Four Critic passes: 4 false findings or aborts fixed.
-- [ ] S9.5 `dispose()`, `disposeSafely()`, `disposeAfterTimeout()`, `awaitAfterCancellation()`, the
+- [x] S9.5 `dispose()`, `disposeSafely()`, `disposeAfterTimeout()`, `awaitAfterCancellation()`, the
       object's destruction (note section 5).
       done: S9.txt's S9.5 tests and `p3` of the note as an own test pass on debug and ASAN; the
         S3-S7 lists pass as before
       tier: T2 · role: Critic
+      handoff: done 2026-10-07: 13 tests lose `--XFAIL--`; own tests `scope/094`-`110`, each 36
+        runs under load clean. On CORE_REF 0145ca90d78 (-6): debug 1127 PASS, 35 XFAIL, 0
+        unexpected; ASAN 1096 PASS, 31 XFAIL, 12 unexpected: 11 fork tests leak under LSan in this
+        container on clean main too ("Running thread was not suspended"), and `io_provider/009`
+        (S6's flake). Five Critic passes, the Sage once: errors that come while the
+        `awaitAfterCancellation()` handler runs climb on (no scope-held intake); a closed scope
+        that is not cancelled returns at once, as TrueAsync's. Left for S9.7: the route marks a
+        closed scope cancelled; a forked child's `get_deadlocked_coroutines()` before its first
+        suspension reads the parent's timer as armed. Tests that let members start with a
+        top-level `delay(1)` flake under load (U2's short path, PLAN Open questions S6.8).
 - [ ] S9.6 TrueAsync's iterator core, `Scope::finally()` and `Coroutine::finally()` (note section 7),
       the bailout trace of `bailout/013`-`015` first.
       done: S9.txt's S9.6 tests pass on debug and ASAN; the S3-S7 lists pass as before

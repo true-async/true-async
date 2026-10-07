@@ -69,6 +69,21 @@ final class Scope implements ScopeProvider
      */
     public function awaitCompletion(Awaitable $cancellation): void {}
 
+    /**
+     * Waits on a cancelled scope until no coroutine of it or of its child scopes is left, zombies
+     * included; returns at once for a gone scope and, as TrueAsync's, for a closed one that is not
+     * cancelled (a cancel closes an idle scope without cancelling it). A coroutine's unhandled
+     * exception that no scope's exception handler took on its way up comes here while the coroutine
+     * waits: it goes to `$errorHandler` as fn(\Throwable $error, Scope $scope), which runs in the
+     * waiting coroutine, and the wait goes on; without a handler it is thrown. One that comes while
+     * the handler runs goes on up as if nobody waited; one that came before the waiting coroutine was
+     * cancelled is in the chain of previous of the cancellation thrown, and so is the error an
+     * AsyncCancellation that a scope's handler threw in its place, which is thrown too.
+     * OperationCanceledException when `$cancellation` completes first. Refused for a scope that is neither cancelled nor closed, and,
+     * unless it returns at once, from a coroutine of the scope or of its children.
+     */
+    public function awaitAfterCancellation(?callable $errorHandler = null, ?Awaitable $cancellation = null): void {}
+
     /** True once the scope is cancelled, closed or gone, or no coroutine of it or of its children runs. */
     public function isFinished(): bool {}
 
@@ -87,6 +102,22 @@ final class Scope implements ScopeProvider
 
     /** The same for an error coming up from a child scope; it is called instead of setExceptionHandler()'s. */
     public function setChildScopeExceptionHandler(callable $exceptionHandler): void {}
+
+    /**
+     * cancel() with no error, as TrueAsync's: it cancels a scope that has coroutines or child scopes,
+     * which refuses a spawn once it is closed or gone, and closes one that has nothing left to cancel.
+     */
+    public function dispose(): void {}
+
+    /** dispose() with safe disposal whatever the scope's own: started coroutines become zombies. */
+    public function disposeSafely(): void {}
+
+    /**
+     * Cancels the scope as dispose() does with AsyncCancellation("Scope has been disposed due to
+     * timeout") once `$timeout` ms have passed, unless the scope is gone by then; the earliest of
+     * several calls wins. Nothing for a closed scope or one with no coroutine and no child scope.
+     */
+    public function disposeAfterTimeout(int $timeout): void {}
 
     /** @return Scope[] the child scopes that still have their object */
     public function getChildScopes(): array {}

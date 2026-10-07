@@ -1,7 +1,5 @@
 --TEST--
 Scope: awaitAfterCancellation() without an error handler propagates the coroutine exception
---XFAIL--
-Not implemented yet: S9.5 of dev/PLAN.md
 --FILE--
 <?php
 

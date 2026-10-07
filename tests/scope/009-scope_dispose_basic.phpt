@@ -1,7 +1,5 @@
 --TEST--
 Scope: dispose() and disposeSafely() - basic usage
---XFAIL--
-Not implemented yet: S9.5 of dev/PLAN.md
 --FILE--
 <?php
 

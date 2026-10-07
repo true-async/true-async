@@ -82,6 +82,9 @@ void async_collector_report_event(async_collector_t *collector,
 uint32_t async_collector_reach_node(async_collector_t *collector, const void *key, bool *added);
 void async_collector_report_reach(async_collector_t *collector, uint32_t from, uint32_t to);
 void async_collector_report_holder(async_collector_t *collector, zend_object *holder, uint32_t node);
+/* A source the walk does not reach that may cancel through the reach node `node` (a scope's
+ * disposeAfterTimeout() timer): the node is live. */
+void async_collector_report_live_reach(async_collector_t *collector, uint32_t node);
 
 /* Runs the walk now and returns the coroutines that can never wake, in registry order, as an array
  * of borrowed pointers the caller frees with efree(); NULL when there is none. Runs no PHP code. A

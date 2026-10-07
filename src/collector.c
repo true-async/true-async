@@ -424,6 +424,13 @@ void async_collector_report_holder(async_collector_t *collector, zend_object *ho
 	collector->holder_count++;
 }
 
+void async_collector_report_live_reach(async_collector_t *collector, const uint32_t node)
+{
+	if (EXPECTED(node != COLLECTOR_NONE)) {
+		collector->nodes[node].flags |= COLLECTOR_NODE_KNOWN_LIVE;
+	}
+}
+
 void async_collector_report_target(async_collector_t *collector, zend_object *target, const bool owned)
 {
 	if (EXPECTED(collector->pass != COLLECTOR_PASS_WAKE_EDGES)) {

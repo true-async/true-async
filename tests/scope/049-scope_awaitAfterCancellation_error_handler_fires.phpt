@@ -1,7 +1,5 @@
 --TEST--
 Scope: awaitAfterCancellation() error handler is invoked when a coroutine finishes with an exception
---XFAIL--
-Not implemented yet: S9.5 of dev/PLAN.md
 --FILE--
 <?php
 
