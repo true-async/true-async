@@ -932,6 +932,27 @@ stack options were shown with the code).
 - 2026-10-07 `tests/collector/020-automatic_off.phpt` checks the refusal of an unknown policy with
   `'kill'` instead of `'cancel'` (S7.4). Why: `cancel` is a valid value now; `kill` takes the same
   refused branch.
+- 2026-10-07 The walk counts `$this` of a frame `zend_call_function()` pushed (`ZEND_CALL_TOP`, `$this`,
+  no `ZEND_CALL_RELEASE_THIS`), off for user frames while `zend_execute_ex` is replaced (S7.5, S7.md
+  3.2). Why: that call pins the object with no flag on the frame, so a coroutine whose body is
+  `[$object, 'method']` was never found; a profiler's VM marks its own user calls so without a
+  reference, which made a false report (`collector/054`).
+- 2026-10-07 The automatic run stops before its tables would take the memory in use past
+  `memory_limit` and finds nothing; `get_deadlocked_coroutines()` has no ceiling; the tables stay on
+  the request heap (S7.5, S7.md 3.5, the Sage). Why: a fatal error from a warning that changes no
+  outcome would end the request; PHP's collector also walks on the request heap; persistent tables
+  would hide memory from the limit and leak on a bailout.
+- 2026-10-07 The collector is not seeded from the reactor's `waits` or `triggers`; a source that
+  completes a counted awaitable seeds it from `async_collector_find()`, and the fuzz oracle is the
+  guard (S7.5, S7.md 3.4, the Sage). Why: S10's remote Future is on `triggers` and a foreign loop's
+  bridge on neither list, and an event without a seed op would make every Future waiter live, a
+  silent miss.
+- 2026-10-07 S7.5's Mull runs the mutants of `src/collector.c` and of the S7 lines of the hook files
+  (`git blame` names an S7 commit) against `tests/collector/` only. Why: a run of every list per
+  mutant does not fit in hours (S3.24); the collector's mutants are killed by its own tests, and one
+  only another list kills counts here as a survivor, never the other way.
+- 2026-10-07 A run stopped by the ceiling raises nothing (S7.5; the Critic asked for a notice). Why:
+  a new message is user-visible text; S8 or Edmond decides.
 - 2026-10-06 `stream/004-stream_socket_client_server.phpt` and `stream/007-tcp_client_server_full.phpt`
   expect the worker's line after the server's accept line, and `stream/028-udp_basic_operations.phpt`
   no longer sets the shared address to null in its client (S6.4). Why: TrueAsync resolves a numeric

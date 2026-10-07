@@ -913,7 +913,7 @@ void async_future_event_resolve(async_future_event_t *future, zval *result, zend
 
 void async_future_collector_references(zend_object *object, async_collector_t *collector)
 {
-	if (object->ce == async_ce_future_state) {
+	if (UNEXPECTED(object->ce == async_ce_future_state)) {
 		async_collector_report_event(
 				collector, future_state_from_object(object)->ref.event, future_event_collector_references);
 		return;
@@ -921,9 +921,9 @@ void async_future_collector_references(zend_object *object, async_collector_t *c
 
 	future_t *future_object = future_from_object(object);
 
-	if (future_object->state != NULL) {
+	if (EXPECTED(future_object->state != NULL)) {
 		async_collector_report_object(collector, future_object->state);
-	} else if (future_object->ref.event != NULL) {
+	} else if (EXPECTED(future_object->ref.event != NULL)) {
 		async_collector_report_event(collector, future_object->ref.event, future_event_collector_references);
 	}
 

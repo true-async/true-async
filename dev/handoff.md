@@ -233,23 +233,24 @@ build/PHP-Parser-5.6.1` in the core checkout first. Run `tools/format.sh` before
 
 ## S7
 
-S7.4 done 2026-10-07 (S7.2, S7.3 before it): the walk (`src/collector.c`) covers coroutines,
-Futures, tokens and `await_*` items; future events are nodes of their own, counted by
-`base.ref_count`, and `Future`/`FutureState` report through `async_future_collector_references()`;
-S6.5's signal watch seeds its Futures live; nothing is found once the request shuts down. The
-`cancel` policy warns once and cancels every parked coroutine but main; the back-off resets on a
-first warning or a first cancel. B6 is in `dev/BENCHMARKS.md` (debug build). Tests `collector/001`-`047`
-in `tests/lists/S7.txt`; the holders' table is S7.md 10. Next is S7.5, the stage review:
+S7.5 done 2026-10-07 (S7.2-S7.4 before it); next is S7.6, the security pass by `dev/SECURITY.md`.
+The walk (`src/collector.c`) covers coroutines, Futures, tokens and `await_*` items; future events
+are nodes of their own, counted by `base.ref_count`; a frame `zend_call_function()` pushed gives
+its pinned `$this` (off for user frames under a replaced `zend_execute_ex`); the automatic run stops
+before `memory_limit` and finds nothing; S6.5's signal watch seeds its Futures live; nothing is found
+once the request shuts down. `cancel` warns once and cancels every parked coroutine but main. Tests
+`collector/001`-`061` in `tests/lists/S7.txt`; the holders' table is S7.md 10.
 - the oracle (`async_collector_check_cancel()`, `async_collector_check_event_wake()`) aborts on a
   wake or cancel of a found coroutine not handed out; `registry_cancel()` and the `cancel` policy
-  mark what they cancel as handed out, so the fuzz keeps `report` (under `cancel` it sees nothing);
-  `TrueAsync\Test\mark_found()` with `collector/040` shows each rule in a child process;
-- a new wait kind names its target through `collector_target` and reports it as owned only for a
-  reference its wait took in C that no walked slot reports (collector.h); a source outside the walk
-  that will complete an event seeds it with `async_collector_report_live_event()`.
-Known miss: generator frames are not walked (`zend_generator_frame_gc` has no `ZEND_API`,
-`collector/017`), an S8 change-request candidate. The TrueAsync reference clone is needed for
-`check-lists.py --reference` (`/root/php-async` at `REFERENCE` in this container).
+  mark what they cancel as handed out, so the fuzz keeps `report`; `TrueAsync\Test\mark_found()`
+  with `collector/040` shows each rule in a child process;
+- a source that completes a counted awaitable without a counted reference seeds it from
+  `async_collector_find()` (S7.md 3.4); S10's remote Future must add its seed (S7.md 10);
+- `TrueAsync\Test\replace_execute_ex()` replaces `zend_execute_ex` for a test, as a profiler does.
+Known misses: generator frames (`collector/017`, an S8 change-request candidate); a run stopped by
+the ceiling raises nothing (DECISIONS). The TrueAsync reference clone is needed for
+`check-lists.py --reference` (`/root/php-async`). Mull for the stage: `mull.py` builds every mutant
+of `src/`; S7.5 scoped it to the collector tests with a scratch script (DECISIONS).
 
 ## S6
 

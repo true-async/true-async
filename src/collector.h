@@ -16,8 +16,8 @@
 /* The collector of coroutines that can never wake (dev/plans/S7.md): a parked coroutine none of whose
  * targets can be completed or cancelled by code that can still run, and whose own object no such code
  * holds. It finds them by PHP's trial deletion (zend_gc.c) over what the parked coroutines reach,
- * without freeing anything, and counts a parked stack only once one of its targets is live, as Go's
- * leak profile does. A holder the walk does not know counts as outside, so a miss is possible and a
+ * without freeing anything, and spreads liveness into a parked stack only once one of its targets is
+ * live, as Go's leak profile does. A holder the walk does not know counts as outside, so a miss is possible and a
  * false finding is not. */
 
 #include "php.h"
@@ -65,8 +65,10 @@ void async_collector_report_event(async_collector_t *collector,
 								  async_collector_event_references_t references);
 
 /* Runs the walk now and returns the coroutines that can never wake, in registry order, as an array
- * of borrowed pointers the caller frees with efree(); NULL when there is none. Runs no PHP code. */
-async_coroutine_t **async_collector_find(uint32_t *count);
+ * of borrowed pointers the caller frees with efree(); NULL when there is none. Runs no PHP code. A
+ * `ceiling` other than 0 stops a walk whose tables would take the memory in use past it, which then
+ * finds nothing. */
+async_coroutine_t **async_collector_find(uint32_t *count, size_t ceiling);
 
 /* The idle point of the scheduler's loop, before it blocks in the reactor (S7.md section 5): runs the
  * walk once true_async.partial_deadlock_interval allows and applies true_async.partial_deadlock to

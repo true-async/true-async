@@ -276,9 +276,9 @@ static void await_record_report_held_target(const async_coroutine_event_callback
 {
 	async_awaitable_t *target = record->event;
 
-	if (ASYNC_AWAITABLE_IS_COROUTINE(target)) {
+	if (EXPECTED(ASYNC_AWAITABLE_IS_COROUTINE(target))) {
 		async_collector_report_target(collector, &((async_coroutine_t *) target)->std, true);
-	} else if (ASYNC_AWAITABLE_IS_TIMEOUT(target)) {
+	} else if (UNEXPECTED(ASYNC_AWAITABLE_IS_TIMEOUT(target))) {
 		async_collector_report_outside(collector);
 	} else {
 		async_future_collector_target(collector, (async_future_event_t *) target);

@@ -1220,6 +1220,23 @@ static ZEND_FUNCTION(mark_found)
 	async_coroutine_from_object(coroutine)->coroutine.flags |= ASYNC_COROUTINE_F_DEADLOCK_FOUND;
 }
 
+static void test_execute_ex(zend_execute_data *execute_data)
+{
+	execute_ex(execute_data);
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_replace_execute_ex, 0, 0, IS_VOID, 0)
+ZEND_END_ARG_INFO()
+
+/* Replaces zend_execute_ex for the rest of the request, as a profiler does: the VM then marks every
+ * user call it makes ZEND_CALL_TOP and runs it through the replacement. */
+static ZEND_FUNCTION(replace_execute_ex)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	zend_execute_ex = test_execute_ex;
+}
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_coroutine_count, 0, 0, IS_LONG, 0)
 ZEND_END_ARG_INFO()
 
@@ -2008,6 +2025,10 @@ static void test_trigger_free(void)
 void async_test_hooks_request_shutdown(void)
 {
 	test_trigger_free();
+
+	if (UNEXPECTED(zend_execute_ex == test_execute_ex)) {
+		zend_execute_ex = execute_ex;
+	}
 }
 
 static async_trigger_t *test_trigger_get(void)
@@ -2234,6 +2255,7 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\coroutine_from_object", ZEND_FN(coroutine_from_object), arginfo_coroutine_from_object, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\collector_age", ZEND_FN(collector_age), arginfo_collector_age, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\mark_found", ZEND_FN(mark_found), arginfo_mark_found, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\replace_execute_ex", ZEND_FN(replace_execute_ex), arginfo_replace_execute_ex, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\await_records", ZEND_FN(await_records), arginfo_await_records, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\link_into_wait", ZEND_FN(link_into_wait), arginfo_link_into_wait, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\wait_counters", ZEND_FN(wait_counters), arginfo_wait_counters, 0, NULL, NULL)

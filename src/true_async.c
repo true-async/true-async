@@ -557,7 +557,7 @@ ZEND_FUNCTION(Async_get_deadlocked_coroutines)
 	ZEND_PARSE_PARAMETERS_NONE();
 
 	uint32_t count = 0;
-	async_coroutine_t **found = async_collector_find(&count);
+	async_coroutine_t **found = async_collector_find(&count, 0);
 
 	array_init_size(return_value, count);
 

@@ -569,7 +569,7 @@ cross-thread wakeups are never reported; a run over 10 000 parked coroutines cos
 time, recorded; scheduler fuzz over 100 seeds reports no false positives.
 Tier: T2. Roles: Critic on S7.1, Critic after S7.4 (S7.5).
 Notes: dev/plans/S7.md
-Active: S7.5
+Active: S7.6
 
 - [x] S7.1 Design note: roots (runnable coroutines, pending external sources: provider ops,
       timers, signals, wakeups, main), edges (waiter → awaitable → completers), when it runs (on
@@ -637,10 +637,27 @@ Active: S7.5
         Lanes on the day, core `1ee473ff67b`: `pocs-dbg` 902 PASS, 8 SKIP, 25 XFAIL; `pocs-asan`
         886 PASS, 25 SKIP, 24 XFAIL, nothing unexpected; 5 seeds: no oracle abort, crash or leak, only
         `--XFAIL--` tests passing (`io/094`, `io/100`).
-- [ ] S7.5 Stage review: Critic after S7.2-S7.4, coverage of the collector, Mull on the stage
+- [x] S7.5 Stage review: Critic after S7.2-S7.4, coverage of the collector, Mull on the stage
       diff, the fuzz oracle over 100 seeds.
       done: Done when of S7 holds on the day, the channel case aside (S9); survivors killed or
         explained
+      2026-10-07, core `8f89755d2b10`: the Critic over the stage found a false report (a profiler's
+        replaced `zend_execute_ex`, `collector/054`), a fatal error the automatic run could raise at
+        `memory_limit` (it now stops and finds nothing, `collector/057`; the Sage chose that over
+        persistent tables) and a stale 3.4 (seeding kept to the sources themselves, the Sage); the
+        coverage showed a coroutine whose body is a method never found (`zend_call_function()`'s
+        pinned `$this`, now counted, `collector/050`, `052`, `061`). Tests `collector/048`-`061`.
+        Critic two rounds on the fixes. Coverage `pocs-dbg-cov` 92.5 % of `src/` (5507 of 5954),
+        `collector.c` 420 of 442 before `061`: the rest are asserts, the oracle's aborts (child
+        processes), out-of-memory exits and the unwinding-frame skip no known path reaches (S7.md
+        3.2). Mull scoped to `tests/collector/` (DECISIONS): `collector.c` 62 mutants, 59 killed, 3
+        equivalent (a record counter only tested against 0; the wake-edge pre-pass, an optimisation
+        the spread repeats); the S7 lines of the hooks 6 mutants, the survivor killed by `053`. 100
+        seeds over 955 tests: no oracle abort, no false report; 23 seeds counted failed, for `io/100`
+        passing while `--XFAIL--` (23 seeds) and one `reactor/011` timeout under the full load (seen
+        in S7.3 too); the new diagnostics are order artifacts. All 60 collector tests also pass with `zend_execute_ex` replaced. Lanes on
+        main with S4.6 and S5.6: `pocs-dbg` 967 PASS, 9 SKIP, 12 XFAIL; `pocs-asan` 951 PASS, 26
+        SKIP, 11 XFAIL, 6 left out, nothing unexpected. B6 again: 28.6 ms, 255.1 ms, 0.5 ms (one run each).
 - [ ] S7.6 Security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item; findings fixed with a test or recorded
 

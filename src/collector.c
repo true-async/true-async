@@ -93,7 +93,8 @@ struct _async_collector_s
 	zend_get_gc_buffer frame_buffer; /* the frames' references; get_gc answers in the engine's own */
 	collector_pass_t pass;
 	uint32_t waiter; /* the candidate whose records report, in the wake-edge pass */
-	bool failed;     /* the passes disagreed: the run finds nothing (collector_spread) */
+	size_t ceiling;  /* the memory the tables may grow to; 0: none */
+	bool failed;     /* the passes disagreed, or the tables would pass the ceiling: the run finds nothing */
 };
 
 /* Nodes are allocated with at least 8-byte alignment: the low bits would leave most buckets of the
@@ -125,10 +126,38 @@ static uint32_t collector_node_add(async_collector_t *collector, void *address, 
 	return collector->node_count++;
 }
 
-/* The node of `ref`, added on first sight. Every candidate is added before anything else, so a
- * coroutine met here is not one: it runs or waits for an outside source. */
+/* Whether the next doubling of `nodes` and of the index, which grow in step, and a worklist entry per
+ * node keep the memory in use under the ceiling, with a chunk to spare for the small allocations of
+ * the walk (the heap wants one free before it maps another). A run that would pass it stops and finds
+ * nothing: the automatic run's ceiling is memory_limit, and a fatal error there would end the request. */
+static bool collector_has_room(async_collector_t *collector)
+{
+	if (EXPECTED(collector->ceiling == 0 || collector->node_count != collector->node_capacity)) {
+		return true;
+	}
+
+	const size_t next =
+			(size_t) collector->node_capacity * 2 * (sizeof(collector_node_t) + sizeof(Bucket) + 3 * sizeof(uint32_t)) +
+			ZEND_MM_CHUNK_SIZE;
+
+	if (EXPECTED(zend_memory_usage(true) + next <= collector->ceiling)) {
+		return true;
+	}
+
+	collector->failed = true;
+
+	return false;
+}
+
+/* The node of `ref`, added on first sight; COLLECTOR_NONE once the run failed. Every candidate is
+ * added before anything else, so a coroutine met here is not one: it runs or waits for an outside
+ * source. */
 static uint32_t collector_node_of(async_collector_t *collector, zend_refcounted *ref)
 {
+	if (UNEXPECTED(collector->failed || !collector_has_room(collector))) {
+		return COLLECTOR_NONE;
+	}
+
 	zval *position = zend_hash_index_lookup(&collector->index, collector_key(ref));
 
 	if (EXPECTED(Z_TYPE_P(position) == IS_LONG)) {
@@ -152,6 +181,10 @@ static uint32_t collector_event_node_of(async_collector_t *collector,
 										async_event_t *event,
 										async_collector_event_references_t references)
 {
+	if (UNEXPECTED(collector->failed || !collector_has_room(collector))) {
+		return COLLECTOR_NONE;
+	}
+
 	zval *position = zend_hash_index_lookup(&collector->index, collector_key(event));
 
 	if (EXPECTED(Z_TYPE_P(position) == IS_LONG)) {
@@ -216,10 +249,14 @@ static void collector_reference_counted(async_collector_t *collector, zend_refco
 		return;
 	}
 
-	if (collector->pass == COLLECTOR_PASS_COUNT) {
+	if (EXPECTED(collector->pass == COLLECTOR_PASS_COUNT)) {
 		/* Apart: the lookup may move `nodes`. */
 		const uint32_t node = collector_node_of(collector, ref);
-		collector->nodes[node].internal++;
+
+		if (EXPECTED(node != COLLECTOR_NONE)) {
+			collector->nodes[node].internal++;
+		}
+
 		return;
 	}
 
@@ -230,9 +267,13 @@ static void collector_event_reference(async_collector_t *collector,
 									  async_event_t *event,
 									  async_collector_event_references_t references)
 {
-	if (collector->pass == COLLECTOR_PASS_COUNT) {
+	if (EXPECTED(collector->pass == COLLECTOR_PASS_COUNT)) {
 		const uint32_t node = collector_event_node_of(collector, event, references);
-		collector->nodes[node].internal++;
+
+		if (EXPECTED(node != COLLECTOR_NONE)) {
+			collector->nodes[node].internal++;
+		}
+
 		return;
 	}
 
@@ -281,6 +322,10 @@ void async_collector_report_event(async_collector_t *collector,
 /* In the wake-edge pass: an edge from the target's node to the candidate whose records report. */
 static void collector_wake_edge_add(async_collector_t *collector, const uint32_t node)
 {
+	if (UNEXPECTED(node == COLLECTOR_NONE)) {
+		return;
+	}
+
 	if (UNEXPECTED(collector->edge_count == collector->edge_capacity)) {
 		collector_grow((void **) &collector->edges, &collector->edge_capacity, sizeof(collector_wake_edge_t));
 	}
@@ -294,7 +339,7 @@ static void collector_wake_edge_add(async_collector_t *collector, const uint32_t
 void async_collector_report_target(async_collector_t *collector, zend_object *target, const bool owned)
 {
 	if (EXPECTED(collector->pass != COLLECTOR_PASS_WAKE_EDGES)) {
-		if (owned) {
+		if (EXPECTED(owned)) {
 			collector_reference_counted(collector, (zend_refcounted *) target);
 		}
 
@@ -309,7 +354,10 @@ void async_collector_report_live_event(async_collector_t *collector,
 									   async_collector_event_references_t references)
 {
 	const uint32_t node = collector_event_node_of(collector, event, references);
-	collector->nodes[node].flags |= COLLECTOR_NODE_KNOWN_LIVE;
+
+	if (EXPECTED(node != COLLECTOR_NONE)) {
+		collector->nodes[node].flags |= COLLECTOR_NODE_KNOWN_LIVE;
+	}
 }
 
 void async_collector_report_outside(async_collector_t *collector)
@@ -327,7 +375,7 @@ void async_collector_report_event_target(async_collector_t *collector,
 										 const bool owned)
 {
 	if (EXPECTED(collector->pass != COLLECTOR_PASS_WAKE_EDGES)) {
-		if (owned) {
+		if (EXPECTED(owned)) {
 			collector_event_reference(collector, target, references);
 		}
 
@@ -374,12 +422,26 @@ static void collector_internal_frame_references(async_collector_t *collector, ze
  * hides a finding: what it holds then counts as held from outside. */
 static void collector_stack_references(async_collector_t *collector, const async_coroutine_t *coroutine)
 {
+	/* With zend_execute_ex replaced (a profiler), the VM marks its own user calls ZEND_CALL_TOP too, and
+	 * one on $this, parent:: or self:: takes no reference: a user frame's pin is then left uncounted,
+	 * which can only hide a finding. The VM never marks an internal frame so. */
+	const bool own_vm = zend_execute_ex == execute_ex;
+
 	for (zend_execute_data *frame = coroutine->fiber_context->execute_data; frame != NULL;
 		 frame = frame->prev_execute_data) {
 		/* A generator's frame: zend_generator_frame_gc is not exported. One with no function is a
 		 * generator's fake frame. */
 		if (UNEXPECTED(frame->func == NULL || (ZEND_CALL_INFO(frame) & ZEND_CALL_GENERATOR))) {
 			continue;
+		}
+
+		/* zend_call_function() keeps the object of the frame it pushes until the call returns
+		 * (pinned_this), and no flag of the frame says so. */
+		if ((own_vm || !ZEND_USER_CODE(frame->func->type)) &&
+			UNEXPECTED((ZEND_CALL_INFO(frame) &
+						(ZEND_CALL_TOP | ZEND_CALL_CODE | ZEND_CALL_HAS_THIS | ZEND_CALL_RELEASE_THIS)) ==
+					   (ZEND_CALL_TOP | ZEND_CALL_HAS_THIS))) {
+			collector_reference_counted(collector, (zend_refcounted *) Z_OBJ(frame->This));
 		}
 
 		if (UNEXPECTED(!ZEND_USER_CODE(frame->func->type))) {
@@ -440,7 +502,7 @@ static void collector_object_references(async_collector_t *collector, zend_objec
 		collector_reference_counted(collector, (zend_refcounted *) properties);
 	}
 
-	if (is_candidate) {
+	if (UNEXPECTED(is_candidate)) {
 		async_coroutine_t *coroutine = async_coroutine_from_object(object);
 
 		collector_stack_references(collector, coroutine);
@@ -524,19 +586,19 @@ static void collector_destroy(async_collector_t *collector)
 	zend_hash_destroy(&collector->index);
 	zend_hash_destroy(&collector->symbol_tables);
 
-	if (collector->nodes != NULL) {
+	if (EXPECTED(collector->nodes != NULL)) {
 		efree(collector->nodes);
 	}
 
-	if (collector->edges != NULL) {
+	if (EXPECTED(collector->edges != NULL)) {
 		efree(collector->edges);
 	}
 
-	if (collector->worklist != NULL) {
+	if (EXPECTED(collector->worklist != NULL)) {
 		efree(collector->worklist);
 	}
 
-	if (collector->frame_buffer.start != NULL) {
+	if (EXPECTED(collector->frame_buffer.start != NULL)) {
 		efree(collector->frame_buffer.start);
 	}
 }
@@ -579,7 +641,7 @@ static void collector_count(async_collector_t *collector)
 {
 	collector->pass = COLLECTOR_PASS_COUNT;
 
-	for (uint32_t node = 0; node < collector->node_count; node++) {
+	for (uint32_t node = 0; node < collector->node_count && EXPECTED(!collector->failed); node++) {
 		if (EXPECTED(!(collector->nodes[node].flags & COLLECTOR_NODE_KNOWN_LIVE))) {
 			collector_node_references(collector, node);
 		}
@@ -625,7 +687,7 @@ static bool collector_spread(async_collector_t *collector)
 	return !collector->failed;
 }
 
-async_coroutine_t **async_collector_find(uint32_t *count)
+async_coroutine_t **async_collector_find(uint32_t *count, const size_t ceiling)
 {
 	async_collector_t collector;
 	async_coroutine_t *coroutine = NULL;
@@ -647,6 +709,7 @@ async_coroutine_t **async_collector_find(uint32_t *count)
 
 		if (UNEXPECTED(candidate_count == 0)) {
 			collector_init(&collector);
+			collector.ceiling = ceiling;
 		}
 
 		/* A WeakReference or a WeakMap in running code may still reach it. */
@@ -673,7 +736,7 @@ async_coroutine_t **async_collector_find(uint32_t *count)
 	collector_wake_edges(&collector, candidate_count);
 	collector_count(&collector);
 
-	if (UNEXPECTED(!collector_spread(&collector))) {
+	if (UNEXPECTED(collector.failed || !collector_spread(&collector))) {
 		collector_destroy(&collector);
 		return NULL;
 	}
@@ -713,7 +776,7 @@ static void collector_first_record(const async_coroutine_event_callback_t *recor
 {
 	const async_coroutine_event_callback_t **first = arg;
 
-	if (*first == NULL) {
+	if (EXPECTED(*first == NULL)) {
 		*first = record;
 	}
 }
@@ -862,7 +925,8 @@ bool async_collector_idle(void)
 	ASYNC_G(collector_last_run) = now;
 
 	uint32_t count = 0;
-	async_coroutine_t **found = async_collector_find(&count);
+	/* memory_limit is -1 when unlimited. */
+	async_coroutine_t **found = async_collector_find(&count, PG(memory_limit) > 0 ? (size_t) PG(memory_limit) : 0);
 	bool warned = false;
 	bool cancelled = false;
 	bool first_cancel = false;

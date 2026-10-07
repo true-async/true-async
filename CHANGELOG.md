@@ -50,8 +50,4 @@ can see goes here; tests, tools and CI are in the git history.
 - A destructor run at the end of the request may wait or yield: the remaining destructors run in
   the meantime, so one destructor can wait for another.
 - A parked coroutine takes no VM page from `memory_limit`; up to 1024 finished stacks are reused.
-- `Async\get_deadlocked_coroutines()`: the coroutines parked on targets that nothing running can
-  complete or cancel, found while other coroutines run. INI `true_async.partial_deadlock` (`report`
-  by default: one `E_WARNING` per such coroutine at the scheduler's idle point; `cancel`: the
-  warning, then `AsyncCancellation("Deadlock detected")` into each but main; `off`) and
-  `true_async.partial_deadlock_interval` (ms between the automatic runs, default `1000`).
+- `Async\get_deadlocked_coroutines()` and INI `true_async.partial_deadlock` (`report`, `cancel`, `off`), `true_async.partial_deadlock_interval`: finds coroutines that can never wake ([S7](dev/plans/S7.md)).
