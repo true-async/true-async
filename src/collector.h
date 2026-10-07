@@ -68,6 +68,14 @@ void async_collector_report_event(async_collector_t *collector,
 								  async_event_t *event,
 								  async_collector_event_references_t references);
 
+/* A scope's reach (S7.md 10): a holder without a reference. A reach node, found or added by `key`, is
+ * live once a node with an edge to it is, or once an object reported as its holder is held from
+ * outside the walk; an edge makes `to` live with `from`. COLLECTOR_NONE (a failed run) passes
+ * through. */
+uint32_t async_collector_reach_node(async_collector_t *collector, void *key, bool *added);
+void async_collector_report_reach(async_collector_t *collector, uint32_t from, uint32_t to);
+void async_collector_report_holder(async_collector_t *collector, zend_object *holder, uint32_t node);
+
 /* Runs the walk now and returns the coroutines that can never wake, in registry order, as an array
  * of borrowed pointers the caller frees with efree(); NULL when there is none. Runs no PHP code. A
  * `ceiling` other than 0 stops a walk whose tables would take the memory in use past it, which then

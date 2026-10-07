@@ -23,6 +23,7 @@
 #include "scheduler.h"
 #include "await.h"
 #include "future.h"
+#include "collector.h"
 #include "scope_arginfo.h"
 
 zend_class_entry *async_ce_scope = NULL;
@@ -452,6 +453,28 @@ static bool scope_handle_error(async_scope_t *scope,
 	return false;
 }
 
+#ifdef TRUE_ASYNC_TEST_HOOKS
+/* The collector leaves out the route, whose level gets its scope's object, and a SpawnStrategy's hooks
+ * for a null provideScope(), which get the current scope's (S7.md 10): what it found in that subtree
+ * is handed out, as registry_cancel() hands out what it cancels, so the oracle excuses them. Once is
+ * enough: while the hooks run, the reference spawn_with_strategy() holds is one the count never sees,
+ * and a handler cannot park. */
+static void scope_hand_out_found(const async_scope_t *scope)
+{
+	for (uint32_t i = 0; i < scope->coroutines.length; i++) {
+		zend_coroutine_t *member = &scope->coroutines.data[i]->coroutine;
+
+		if (UNEXPECTED(member->flags & ASYNC_COROUTINE_F_DEADLOCK_FOUND)) {
+			member->flags |= ASYNC_COROUTINE_F_HANDED_OUT;
+		}
+	}
+
+	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
+		scope_hand_out_found(scope->child_scopes.data[i]);
+	}
+}
+#endif
+
 bool async_scope_catch(async_coroutine_t *coroutine, zend_object *error)
 {
 	async_scope_t *scope = coroutine->scope;
@@ -468,6 +491,10 @@ bool async_scope_catch(async_coroutine_t *coroutine, zend_object *error)
 	 * ran and that threw stops the route; the caller ends the request with it. */
 	while (scope != NULL && EXPECTED(EG(exception) == NULL)) {
 		bool is_taken = false;
+
+#ifdef TRUE_ASYNC_TEST_HOOKS
+		scope_hand_out_found(scope);
+#endif
 
 		/* A fatal error in a handler skips the caller's removal from the scope; the coroutine leaves it
 		 * here, and the request's end frees the scope. */
@@ -513,6 +540,29 @@ bool async_scope_catch(async_coroutine_t *coroutine, zend_object *error)
 	OBJ_RELEASE(error);
 
 	return is_handled;
+}
+
+void async_scope_collector_reach(async_collector_t *collector, async_coroutine_t *coroutine, const uint32_t node)
+{
+	uint32_t reached = node;
+
+	for (async_scope_t *scope = coroutine->scope; scope != NULL; scope = scope->parent_scope) {
+		bool added;
+		const uint32_t scope_node = async_collector_reach_node(collector, &scope->coroutines, &added);
+
+		async_collector_report_reach(collector, scope_node, reached);
+
+		/* Its parents are linked already. */
+		if (EXPECTED(!added)) {
+			return;
+		}
+
+		if (EXPECTED(scope->scope_object != NULL)) {
+			async_collector_report_holder(collector, scope->scope_object, scope_node);
+		}
+
+		reached = scope_node;
+	}
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -1221,6 +1271,13 @@ ZEND_FUNCTION(Async_spawn_with)
 
 	if (EXPECTED(scope != NULL)) {
 		zend_object *spawn_strategy = instanceof_function(provider->ce, async_ce_spawn_strategy) ? provider : NULL;
+
+#ifdef TRUE_ASYNC_TEST_HOOKS
+		if (spawn_strategy != NULL && Z_TYPE(scope_value) == IS_NULL) {
+			scope_hand_out_found(scope);
+		}
+#endif
+
 		coroutine = async_scope_spawn(scope, spawn_strategy, &fci, &fcc, args, args_count, named_args);
 	} else {
 		zend_release_fcall_info_cache(&fcc);

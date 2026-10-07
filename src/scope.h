@@ -16,6 +16,7 @@
 #include "php.h"
 #include "true_async_API.h"
 #include "coroutine.h"
+#include "collector.h"
 
 /* Scopes (dev/plans/S9-scope.md): a tree of groups of coroutines, cancelled together. The scope and
  * its PHP object Async\Scope are two allocations, as TrueAsync's: the scope outlives its object
@@ -121,6 +122,11 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
  * safely. True when a handler took the error, or called exit(), which ends the request. Runs PHP code;
  * `error` stays the caller's. */
 bool async_scope_catch(async_coroutine_t *coroutine, zend_object *error);
+
+/* For the collector (S7.md 10): a candidate `coroutine` at `node` is reached from its scope's reach node,
+ * each scope's from its parent's, and a scope's node is live while its object is held from outside. A
+ * cancel goes down the tree: an object reaches its scope's coroutines and those of its child scopes. */
+void async_scope_collector_reach(async_collector_t *collector, async_coroutine_t *coroutine, uint32_t node);
 
 /* Starts the callable in a new coroutine of `scope`, the body of spawn(), Scope::spawn() and
  * spawn_with(): the cache comes from Z_PARAM_FUNC_NO_TRAMPOLINE_FREE and goes with the coroutine, or

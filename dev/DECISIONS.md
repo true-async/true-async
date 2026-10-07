@@ -1390,3 +1390,15 @@ stack options were shown with the code).
 - 2026-10-07 The collector's edges for scopes move from S9.4 to a step of their own, S9.9. Why:
   they need S7.7, which Edmond questioned on 2026-10-07; the SCOPE kind has no `collector_target`
   meanwhile, so its waiter is never reported, never wrongly.
+- 2026-10-07 The collector leaves out the route of an unhandled error through the scopes, at every
+  level, as it leaves out the registry's walks (S7.7, S7.md 2 and 10; reversible). Why: the route
+  cancels each level's subtree with the origin's safe flag, read when the error happens, and any
+  live coroutine of a tree can make an unsafe origin later, so counting it makes a tree all or
+  nothing: a server's `new Scope()` with a live accept loop would never find a stuck handler (the
+  Critic). Edmond agreed ("продолжай работу"). A `SpawnStrategy`'s hooks, which get the current
+  scope's object, are left out the same way (the Critic, S7.7).
+- 2026-10-07 A held `Scope` object makes the coroutines of its scope and of its child scopes
+  reachable, through one reach node per scope that no count makes live (S7.7, S7.md 10). Edmond
+  agreed ("продолжай работу") after explaining that a scope belongs to no one and a coroutine's +1
+  belongs to the scheduler, so the walk never follows a scope's members as references. TrueAsync has
+  no partial-deadlock walk to compare with (`resolve_deadlocks()`, php-async `scheduler.c:749`).

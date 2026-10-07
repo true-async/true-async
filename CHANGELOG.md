@@ -50,7 +50,7 @@ can see goes here; tests, tools and CI are in the git history.
 - A destructor run at the end of the request may wait or yield: the remaining destructors run in
   the meantime, so one destructor can wait for another.
 - A parked coroutine takes no VM page from `memory_limit`; up to 1024 finished stacks are reused.
-- `Async\get_deadlocked_coroutines()` and INI `true_async.partial_deadlock` (`report`, `cancel`, `off`), `true_async.partial_deadlock_interval` (ms, 5000 by default, at least 1000 or 0): finds coroutines that can never wake ([S7](dev/plans/S7.md)).
+- `Async\get_deadlocked_coroutines()` and INI `true_async.partial_deadlock` (`report`, `cancel`, `off`), `true_async.partial_deadlock_interval` (ms, 5000 by default, at least 1000 or 0): finds coroutines that can never wake; a coroutine whose scope, or a parent scope, has a `Scope` object live code holds is not found ([S7](dev/plans/S7.md)).
 - `Async\Scope`, `Async\ScopeProvider`, `Async\SpawnStrategy` and `Async\spawn_with()`: a coroutine
   is spawned into a scope, the current coroutine's or at the top level the global scope;
   `Scope::cancel()` cancels the scope's coroutines and child scopes, and with safe disposal

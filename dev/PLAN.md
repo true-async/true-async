@@ -608,7 +608,7 @@ cross-thread wakeups are never reported; a run over 10 000 parked coroutines cos
 time, recorded; scheduler fuzz over 100 seeds reports no false positives.
 Tier: T2. Roles: Critic on S7.1, Critic after S7.4 (S7.5).
 Notes: dev/plans/S7.md
-Active: S7.7
+Active: none; the channel case waits for S9's channels
 
 - [x] S7.1 Design note: roots (runnable coroutines, pending external sources: provider ops,
       timers, signals, wakeups, main), edges (waiter → awaitable → completers), when it runs (on
@@ -709,9 +709,15 @@ Active: S7.7
         (`changed:`). The rest recorded in `dev/SECURITY.md`. Critic two rounds. Lanes: `pocs-dbg`
         970 PASS, 9 SKIP, 12 XFAIL; `pocs-asan` 953 PASS, 27 SKIP, 11 XFAIL, 6 left out (`064`
         skips there), nothing unexpected.
-- [ ] S7.7 For S9.4 (`dev/plans/S9-scope.md` 6): a reporter of a wake edge that owns no reference,
-      and the oracle's `check_cancel` excusing a scope's cancel whose canceller was live at the run.
+- [x] S7.7 For S9.4 (`dev/plans/S9-scope.md` 6): a held `Scope` object keeps the coroutines of its
+      scope and of its child scopes; the error route and a SpawnStrategy's hooks left out.
       done: the API agreed with the S9 thread, S7.md and DECISIONS updated, tests
+      2026-10-07, core `8159f7baa5c`: Edmond's rule (a scope belongs to no one, a coroutine's +1 to
+      the scheduler): one reach node per scope, live through a held object, edges down to the
+      candidates (S7.md 10). The route and a null `provideScope()` strategy are left out; in
+      test-hook builds they hand out what was found in their subtree. Tests `collector/065`-`072`,
+      each caught by a mutation. Critic three rounds. Lanes on S9.4 `7f3068f`: `pocs-dbg` 1080
+      PASS, 9 SKIP, 48 XFAIL; `pocs-asan` 1061 PASS, 32 SKIP, 44 XFAIL, nothing unexpected.
 
 ## S8 — Review checks and RFC change list  [ ]
 

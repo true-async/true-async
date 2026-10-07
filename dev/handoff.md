@@ -241,9 +241,11 @@ https://github.com/nikic/PHP-Parser build/PHP-Parser-5.6.1` in the core checkout
 
 ## S7
 
-S7.6 done 2026-10-07 (S7.2-S7.5 before it); next is S7.7, the non-owning wake edge and the
-scope's cancel in the oracle that S9.4 asked for (S9-scope.md 6); agree its signatures with the S9
-thread before code.
+S7.7 done 2026-10-07 (S7.2-S7.6 before it); no step left: the channel case waits for S9's
+channels. S7.7 by Edmond's rule: a held `Scope` object keeps the coroutines of its scope and its
+child scopes (one reach node per scope, S7.md 10); the error route and a SpawnStrategy with a null
+`provideScope()` are left out and, in test-hook builds, hand out what was found in their subtree.
+The SCOPE kind's `collector_target` stays NULL, so an `awaitCompletion()` waiter is never found.
 The walk (`src/collector.c`) covers coroutines, Futures, tokens and `await_*` items; future events
 are nodes of their own, counted by `base.ref_count`; a frame `zend_call_function()` pushed gives
 its pinned `$this` (off for user frames under a replaced `zend_execute_ex`); the automatic run stops
@@ -251,7 +253,7 @@ before `memory_limit` and finds nothing (checked at every growth of the node tab
 the wake edges); `true_async.partial_deadlock_interval` is 5000 ms by default, at least 1000 or a
 literal 0; S6.5's signal watch seeds its Futures live; nothing is found
 once the request shuts down. `cancel` warns once and cancels every parked coroutine but main. Tests
-`collector/001`-`064` in `tests/lists/S7.txt` (`064` skips on ASAN, DECISIONS); the holders' table is S7.md 10.
+`collector/001`-`072` in `tests/lists/S7.txt` (`064` skips on ASAN, DECISIONS); the holders' table is S7.md 10.
 - the oracle (`async_collector_check_cancel()`, `async_collector_check_event_wake()`) aborts on a
   wake or cancel of a found coroutine not handed out; `registry_cancel()` and the `cancel` policy
   mark what they cancel as handed out, so the fuzz keeps `report`; `TrueAsync\Test\mark_found()`
