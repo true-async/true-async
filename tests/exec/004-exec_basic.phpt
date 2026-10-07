@@ -3,6 +3,7 @@ exec() async basic functionality
 --SKIPIF--
 <?php
 if (!function_exists("exec")) echo "skip exec() is not available";
+if (PHP_OS_FAMILY === "Windows") echo "skip exec() reads the child's output synchronously on Windows";
 ?>
 --FILE--
 <?php

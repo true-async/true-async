@@ -20,6 +20,7 @@ function start(): void
     spawn(function () use ($on_trigger) {
         await($on_trigger);
         echo "waiter woke\n";
+        $GLOBALS['waiter_woke'] = true;
     });
 }
 
@@ -31,7 +32,13 @@ for ($i = 0; $i < 4; $i++) {
 
 echo count(get_deadlocked_coroutines()), " found\n";
 Test\trigger_fire();
-delay(20);
+
+/* Not a fixed delay: on a loaded machine the trigger's completion and the delay's timer can come in
+ * one poll, and main then runs ahead of the waiter. The bound turns a waiter that never wakes into a
+ * wrong output rather than a timeout. */
+for ($i = 0; $i < 1000 && !isset($GLOBALS['waiter_woke']); $i++) {
+    delay(1);
+}
 
 Test\trigger_free();
 echo "end\n";

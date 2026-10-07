@@ -1,5 +1,9 @@
 --TEST--
 A socket that waited before the reactor's queue existed registers with the queue at its next wait
+--SKIPIF--
+<?php
+if (PHP_OS_FAMILY === 'Windows') die('skip the IOCP Ring takes no registrations');
+?>
 --FILE--
 <?php
 use function Async\spawn;

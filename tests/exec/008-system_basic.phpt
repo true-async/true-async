@@ -3,6 +3,7 @@ system() async basic functionality
 --SKIPIF--
 <?php
 if (!function_exists("system")) echo "skip system() is not available";
+if (PHP_OS_FAMILY === "Windows") echo "skip system() reads the child's output synchronously on Windows";
 ?>
 --FILE--
 <?php

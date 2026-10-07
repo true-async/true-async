@@ -284,9 +284,9 @@ def compose(lane, stage, selected):
 
 
 def test_path(arg):
-    """A TEST argument as a list path, relative to tests/."""
+    """A TEST argument as a list path: relative to tests/, with forward slashes."""
     try:
-        return str(Path(arg).resolve().relative_to(ROOT / 'tests'))
+        return Path(arg).resolve().relative_to(ROOT / 'tests').as_posix()
     except ValueError:
         sys.exit(f'{arg}: not under {ROOT / "tests"}')
 

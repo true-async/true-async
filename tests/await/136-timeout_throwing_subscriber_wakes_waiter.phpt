@@ -10,7 +10,9 @@ use Async\Future;
 use Async\OperationCanceledException;
 use TrueAsync\Test;
 
-$timeout = timeout(10);
+/* Long enough for the waiter to subscribe first on a loaded machine: an await() that finds the
+ * deadline passed fires the Timeout itself, and the subscriber's exception then joins the waiter's. */
+$timeout = timeout(1000);
 
 /* Ahead of the waiter's record in the Timeout's callbacks. */
 Test\add_throwing_subscriber($timeout);

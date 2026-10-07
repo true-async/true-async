@@ -127,6 +127,23 @@ Written 2026-10-06. S3 closed: S3.24 re-ran its Done when on the final core; S4,
   (the stub hash is the stub's sha1); local `clang-format-18` (18.1.3) flags lines CI accepts, so
   check only changed lines (`git clang-format-18 --diff HEAD`).
 
+## S1
+
+S1.5 done 2026-10-07 on Edmond's Windows PC (folder `E:\php`, Remote Control): `tools/windows/`
+builds ior and the core with this repository as `ext\true_async` and runs the core's suites and
+`pocs-win`; the CI windows job builds Release_TS only. Left for S6.10 (the S6 track's step):
+`xfail-on:pocs-win(S6.10)` on `stream/033`, `035`, `036` (`stream_select()` on `proc_open()` pipes
+gives 0; `035` loops until run-tests' timeout, after which the runner now kills the process tree),
+`dns/005`, `io/044`, and `--XFAIL--` in `stream/001`, `002`; Release_TS loads no shared extension,
+so it skips the `sockets`, `openssl` and `curl` tests (157 SKIP against 78 on Debug_TS);
+`socket_ext/006` gets WSAEINVAL (10022) from `socket_connect()` to `localhost:65000` on Windows,
+outside a coroutine too, where the test accepts ECONNREFUSED and the like. For the next core update:
+`ext/test_scheduler/tests/091_command_line_code.phpt` builds its path with `'/'` and misses the
+path PHP prints on Windows; `__DIR__ . DIRECTORY_SEPARATOR` passes there. Open for the S5 rules: an
+`await()` that finds a Timeout's deadline passed fires it in the waiter, so a throwing subscriber's
+exception is chained under the waiter's `TimeoutException`, while the reactor's fire starts the
+shutdown (`await/136` keeps a margin, DECISIONS 2026-10-07).
+
 ## S4
 
 Stage closed 2026-10-07 with S4.7, the security pass (`dev/SECURITY.md`, the S4.7 entries; DECISIONS

@@ -121,7 +121,7 @@ While tracks run in parallel:
   runs only in a stage review. Timer tests wait on the clock, not the CPU: S4.4
   times a lane with `--jobs` above the core count (assumption until then, not measured).
 
-## S1 — Core branch `async-core-io`  [x] (S1.5 deferred)
+## S1 — Core branch `async-core-io`  [x]
 
 Goal: the php-src the extension is built on: master + the two PoCs + ior, nothing else.
 
@@ -129,11 +129,19 @@ Goal: the php-src the extension is built on: master + the two PoCs + ior, nothin
 - [x] S1.2 Baselines of the scheduler PoC and the IO hooks PoC with the same configure line.
 - [x] S1.3 `async-core-io` from `async-core`, master and the IO hooks PoC merged; diffed against S1.2.
 - [x] S1.4 Rules in `dev/WORKFLOW.md` ("Branches", "Pinned core"): a core update is a new merge-only branch.
-- [ ] S1.5 Windows: `async-core-io` built with nmake (Debug_TS) and ior for IOCP (as the PR's
+- [x] S1.5 Windows: `async-core-io` built with nmake (Debug_TS) and ior for IOCP (as the PR's
       `build-ior-windows` action does); the three suites run; per-test diff against Linux.
-      Deferred (Edmond, 2026-10-01): no Windows agent yet. When one exists, this session writes
-      `tools/windows/` (README, build-ior.ps1 with Debug `/MDd`, build-core.bat, run-suites.bat;
-      structure agreed) and the agent runs it.
+      handoff: done 2026-10-07 on core `8f89755d2b1`, Edmond's PC (VS 2026 Build Tools, php-sdk
+        2.8.4), with `tools/windows/` (README, build-ior.ps1, build-core.bat, run-suites.bat). The
+        suites (`test_scheduler`, `poll`, `streams/hooks`, 234 tests): Linux debug 229 PASS, 5 SKIP;
+        Windows Debug_TS 176 PASS, 55 SKIP (each test's own Windows reason: no pcntl or posix,
+        POSIX pipes and descriptors, no Edge registrations on IOCP), 2 passed on a retry
+        (`provider-completes`, `registrations-edge-select`), 1 FAIL (`091_command_line_code`, the
+        test's path separator; for the next core update); 4 tests Linux skips pass on Windows.
+        `pocs-win` had 26 (Debug_TS) and 25 (Release_TS) unexpected on `d196cbd`: xfail tags of
+        passing tests dropped, three pipe tests tagged for S6.10, tests whose subject Windows lacks
+        skipped, two timing-dependent own tests fixed (DECISIONS 2026-10-07); `config.w32` gains
+        `src\scope.c`, missing since S9.2. Left for S6.10 and the core: `dev/handoff.md`, S1.
 
 ## S2 — Repository and test system  [done]
 

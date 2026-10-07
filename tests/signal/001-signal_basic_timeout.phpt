@@ -1,5 +1,9 @@
 --TEST--
 Async\signal() - timeout cancellation when no signal arrives
+--SKIPIF--
+<?php
+if (PHP_OS_FAMILY === 'Windows') die('skip Async\signal() throws on Windows');
+?>
 --FILE--
 <?php
 

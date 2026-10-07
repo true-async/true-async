@@ -22,8 +22,6 @@ if (PHP_OS_FAMILY !== 'Windows') {
     echo 'skip Windows-only; POSIX path covered by 046-write_wakes_on_peer_reset.phpt';
 }
 ?>
---XFAIL--
-Not implemented yet: S6.10 of dev/PLAN.md (the Windows lane's socket expectations)
 --FILE--
 <?php
 

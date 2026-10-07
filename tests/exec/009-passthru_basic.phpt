@@ -3,6 +3,7 @@ passthru() async basic functionality
 --SKIPIF--
 <?php
 if (!function_exists("passthru")) echo "skip passthru() is not available";
+if (PHP_OS_FAMILY === "Windows") echo "skip passthru() reads the child's output synchronously on Windows";
 ?>
 --FILE--
 <?php

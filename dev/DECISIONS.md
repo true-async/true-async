@@ -1302,3 +1302,21 @@ stack options were shown with the code).
   lane and in S9.2's dbg run. A slower reply only made that rarer (the Critic); with the barrier
   the curl coroutine cannot finish before the other runs, and a select that blocked the thread
   ends in curl's 5 s timeout (checked: run without the other coroutine, both replies are empty).
+- 2026-10-07 S1.5 skips on Windows, by a SKIPIF and a `skip-on:*-win` tag, the tests whose subject
+  Windows lacks by design: `signal/001-signal_basic_timeout.phpt` (`Async\signal()` throws there,
+  S6.md section 9; its tag was there without the SKIPIF); `exec/004-exec_basic.phpt`,
+  `exec/005-shell_exec_basic.phpt`, `exec/008-system_basic.phpt`, `exec/009-passthru_basic.phpt`
+  (the output of `_popen()` is read synchronously, S6.md section 11, so the other coroutine prints
+  last); `io_provider/014-registration_before_the_queue.phpt` (the IOCP Ring offers no Edge
+  registrations, `main/io/php_io_ring.c:283-288`);
+  `collector/064-automatic_run_stops_before_memory_limit_on_candidates.phpt` (Windows commits each
+  2 MB fiber stack in full, `Zend/zend_fibers.c:234`, 33 GB for its 16 500 coroutines; in CI it timed
+  out, its retry got "Permission denied" writing the test's `.php`, and run-tests' worker stopped).
+- 2026-10-07 S1.5 changes two own tests that failed only under the load of a full Windows run
+  (single runs passed 20 of 20). `collector/031-waiter_on_coroutine_parked_on_trigger.phpt`
+  waits for the waiter's mark, not `delay(20)`: the trigger's completion and the delay's timer came
+  in one poll, so main printed "end" first. `await/136-timeout_throwing_subscriber_wakes_waiter.phpt`
+  takes `timeout(1000)`, not 10, a margin for the waiter to subscribe first: when the deadline has
+  passed before the waiter's `await()`, that `await()` fires the Timeout in the waiter, and the
+  subscriber's exception is chained under the waiter's `TimeoutException` and starts no shutdown
+  (reproduced on Linux with a 50 ms busy wait after `timeout()`; open in `dev/handoff.md`).

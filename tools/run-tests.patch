@@ -30,7 +30,20 @@
      $data = '';
  
      $bin_env = [];
-@@ -1395,7 +1411,7 @@
+@@ -1372,6 +1388,12 @@
+         if ($n === 0) {
+             /* timed out */
+             $data .= "\n ** ERROR: process timed out **\n";
++            /* true_async runner: on Windows $proc is the cmd.exe of `start /b /wait`, and terminating
++             * it leaves the test's php.exe running; that one keeps the test's files open, so a retry
++             * cannot write them. */
++            if (IS_WINDOWS) {
++                exec('taskkill /F /T /PID ' . proc_get_status($proc)['pid'] . ' > NUL 2>&1');
++            }
+             proc_terminate($proc, 9);
+             return $data;
+         }
+@@ -1395,7 +1417,7 @@
      $stat = proc_get_status($proc);
  
      if ($stat['signaled']) {
@@ -39,7 +52,7 @@
      }
      if ($stat["exitcode"] > 128 && $stat["exitcode"] < 160) {
          $data .= "\nTermsig=" . ($stat["exitcode"] - 128) . "\n";
-@@ -2885,7 +2901,21 @@
+@@ -2885,7 +2907,21 @@
  
          $wanted_re = null;
      }

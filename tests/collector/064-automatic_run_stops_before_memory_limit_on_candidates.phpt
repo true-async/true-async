@@ -3,6 +3,7 @@ The automatic run: a walk whose candidates alone would take the memory in use pa
 --SKIPIF--
 <?php
 if (getenv('SKIP_ASAN') || getenv('SKIP_SLOW_TESTS')) die('skip 16 500 parked coroutines cost minutes of system time under ASAN');
+if (PHP_OS_FAMILY === 'Windows') die('skip Windows commits each fiber stack in full: 16 500 stacks of 2 MB');
 ?>
 --INI--
 true_async.partial_deadlock_interval=0

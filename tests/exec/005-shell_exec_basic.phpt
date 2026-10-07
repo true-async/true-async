@@ -3,6 +3,7 @@ shell_exec() async basic functionality
 --SKIPIF--
 <?php
 if (!function_exists("shell_exec")) echo "skip shell_exec() is not available";
+if (PHP_OS_FAMILY === "Windows") echo "skip shell_exec() reads the child's output synchronously on Windows";
 ?>
 --FILE--
 <?php
