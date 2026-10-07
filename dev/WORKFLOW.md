@@ -69,14 +69,14 @@ The other branches there belong to the TrueAsync fork's earlier work and are not
 
 ## Pinned core
 
-| Part | Revision | In `async-core-io-2026-10-07-5` `3af71f889e6` |
+| Part | Revision | In `async-core-io-2026-10-07-6` `0145ca90d78` |
 |---|---|---|
 | php-src master | `d7f966e073b` | merged |
-| Scheduler PoC (`async-core`, php/php-src#22561) | `50cd33b0eec` | merged |
+| Scheduler PoC (`async-core`, php/php-src#22561) | `f6f3eb6e44b` | merged |
 | IO hooks PoC (php/php-src#23997) | `608927ebe09` | merged |
 | Our fixes to the IO hooks PoC (`io-hooks-fixes`) | `c43e1d5797a` | merged; `dev/RFC-CHANGES.md` 2 |
 | The connect fix (`io-hooks-connect-started`, bukka/php-src#4, on bukka's `2bf149c2f50`) | `dca62e39da4` | picked onto `8159f7baa5c` (`async-core-io-2026-10-07-4`) |
-| Our fixes to php-src (`php-src-fixes`) | `cfa0923ac31` | merged |
+| Our fixes to php-src (`php-src-fixes`) | `74a581afc06` | merged |
 | ior | `2bfd2319896` | built per tree, "Building the core" |
 | `ext/async` (reference tests, true-async/php-async) | `1fdacf8575b` | `tests/lists/REFERENCE` |
 

@@ -275,8 +275,8 @@ the stage's last step.
   blocked itself, and `signal_watch_free()` unblocks them (`signal/031`). `pcntl_signal_dispatch()`
   restores the whole mask it found, so a watch that goes inside a pcntl handler leaves its number
   blocked: fixed in php-src on `php-src-fixes` `74a581afc06` (branch `pcntl-dispatch-keeps-handler-mask`,
-  PR text `notes/pcntl-dispatch-keeps-handler-mask-pr.md`, Edmond opens it). The next core update
-  merges it and removes `signal/033`'s `--XFAIL--`.
+  PR text `notes/pcntl-dispatch-keeps-handler-mask-pr.md`, Edmond opens it); core -6 carries it and
+  `signal/033` passes.
 - The drain after a park skips an op with neither stream nor handle (`io_wait_drain()`): bukka's
   `php_io_ring_drain()` with a NULL owner matches every record, and `php_io_ring_deliver_one()` leaves
   such an op `in_flight` after an early Timeout (read, not reproduced; told to Edmond).
@@ -297,10 +297,11 @@ the stage's last step.
   the copy of an ACCEPT op into a POLL (note section 4). The Ring's multishot accept hid pending
   connections from `stream_select()`; that Ring bug goes to bukka (a pull request is being
   prepared in the S6.4 thread, `dev/WORKFLOW.md` "Ownership").
-- The core is `async-core-io-2026-10-07-5` (`3af71f889e6`): `async-core-io-2026-10-07-4` (the connect
-  fix of `io-hooks-connect-started`, bukka/php-src#4) with `async-core` `50cd33b0eec` merged (the
-  GC run first in the queue, API version 3, DECISIONS 2026-10-07); `php-src-fixes` `cfa0923ac31`,
-  `io-hooks-fixes` `c43e1d5797a`. The
+- The core is `async-core-io-2026-10-07-6` (`0145ca90d78`): `async-core-io-2026-10-07-5` with
+  `php-src-fixes` `74a581afc06` (the pcntl dispatch fix) and `async-core` `f6f3eb6e44b` (a test
+  file only) merged. -5 is `async-core-io-2026-10-07-4` (the connect fix of
+  `io-hooks-connect-started`, bukka/php-src#4) with `async-core` `50cd33b0eec` (the GC run first in
+  the queue, API version 3, DECISIONS 2026-10-07); `io-hooks-fixes` `c43e1d5797a`. The
   seven tests that include a php-src helper need `TRUE_ASYNC_CORE_SRC` (the core's checkout);
   `tools/test.py` stops without it, so a Mull `--diff-ref` run needs it too.
 - S6.10 takes the Windows lane's socket expectations: load `sockets` and `openssl` in `pocs-win`,

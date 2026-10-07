@@ -7,8 +7,6 @@ posix
 <?php
 if (PHP_OS_FAMILY === 'Windows') echo "skip Unix-only test";
 ?>
---XFAIL--
-Needs the core update that merges php-src-fixes 74a581afc06: pcntl_signal_dispatch() restores the whole mask it found, which blocks the number again (dev/SECURITY.md, S6.9)
 --FILE--
 <?php
 
