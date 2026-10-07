@@ -1,7 +1,5 @@
 --TEST--
 Async cURL timeout handling
---XFAIL--
-Not implemented yet: S6.6 of dev/PLAN.md
 --EXTENSIONS--
 curl
 --FILE--
@@ -13,11 +11,15 @@ use function Async\await;
 
 $server = async_test_server_start();
 
-function test_timeout() {
+// Never accepts: the connection waits in the backlog and no answer comes.
+$silent = stream_socket_server('tcp://127.0.0.1:0');
+$silent_url = 'http://' . stream_socket_get_name($silent, false) . '/';
+
+function test_timeout($url) {
     echo "Testing timeout\n";
     
     $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, "http://192.0.2.1/timeout"); // Non-routable IP for timeout
+    curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 1); // 1 second timeout
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
@@ -62,7 +64,7 @@ function test_normal_request($server) {
 
 echo "Test start\n";
 
-$timeout_coroutine = spawn(fn() => test_timeout());
+$timeout_coroutine = spawn(fn() => test_timeout($silent_url));
 $normal_coroutine = spawn(fn() => test_normal_request($server));
 
 $timeout_result = await($timeout_coroutine);

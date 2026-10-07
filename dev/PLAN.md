@@ -428,7 +428,7 @@ Done when: S3–S6 lists (from `sleep`, `io`, `stream`, `socket_ext`, `dns`, `cu
 over 100 seeds; tests that fail because of the hooks design are listed against the review item;
 `dns` counted only on the Ring configuration (the Poll queue answers Unsupported for lookups).
 Tier: T2. Roles: Critic on S6.2, Critic after S6.7 (S6.8).
-Active: S6.6
+Active: S6.7
 
 - [x] S6.1 Fixtures: MySQL with two connections and an HTTP server with
       `PHP_CLI_SERVER_WORKERS`, started by `tools/test.py` locally and by the CI lanes.
@@ -494,8 +494,14 @@ Active: S6.6
         tests `signal/016`-`023`. `exec/012`, `025` XFAIL by design. `SIGBREAK` and `SIGABRT2`
         throw (TrueAsync maps them to other numbers); `Async\signal()` throws on Windows. Moved:
         the Windows parts to S6.10 (Edmond deferred S1.5). Core requests in `RFC-CHANGES.md` 5.
-- [ ] S6.6 curl, mysqli, pdo_mysql without the pool.
+- [x] S6.6 curl, mysqli, pdo_mysql without the pool.
       done: `curl`, `mysqli`, `pdo_mysql` without `--XFAIL--` except the by-design ones
+      handoff: done 2026-10-07 on core `1ee473ff67b`: `pocs-dbg` 884 PASS, 8 SKIP, 20 XFAIL;
+        `pocs-asan` 868 PASS, 25 SKIP, 19 XFAIL; one left out (`core:6`); nothing unexpected. No code
+        changed: `curl/006` times out on a listener of its own; `curl/025`, `054`, `043` expect
+        what the core's curl gives (two send warnings; no error on a multi handle before
+        `curl_multi_info_read()`); `pdo_mysql/029` waits for `RFC-CHANGES.md` 6 (the cancellation
+        under a driver error). Windows curl moved to S6.10; coverage lanes skip Windows-only tests.
 - [ ] S6.7 IO shutdown windows (the `ts_suspend` NULL case), the seven core-tree tests,
       `io/035`-`037` (Async in a `php -r` child), `io/094`, `095` (streams fixes), the `run()`
       bailout tests S6.3 moved here (`dev/plans/S6.md` section 12), every list

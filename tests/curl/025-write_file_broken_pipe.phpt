@@ -1,7 +1,5 @@
 --TEST--
 Async curl_write: CURLOPT_FILE to broken pipe triggers write error
---XFAIL--
-Not implemented yet: S6.6 of dev/PLAN.md
 --SKIPIF--
 <?php
 if (!extension_loaded('curl')) die("skip curl not available");
@@ -48,6 +46,8 @@ async_test_server_stop($server);
 echo "Done\n";
 ?>
 --EXPECTF--
+Warning: %sSend of %d bytes failed with errno=%d %s in %s on line %d
+
 Warning: %sSend of %d bytes failed with errno=%d %s in %s on line %d
 curl_exec returned: false
 errno: 23

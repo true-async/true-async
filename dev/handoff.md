@@ -251,8 +251,8 @@ Known miss: generator frames are not walked (`zend_generator_frame_gc` has no `Z
 
 ## S6
 
-Written 2026-10-06. S6.5 (children, signals) done; S6.6 (curl, mysqli, pdo_mysql) next; the Windows
-part is S6.10, waiting for a Windows agent (S1.5).
+Written 2026-10-07. S6.6 (curl, mysqli, pdo_mysql) done; S6.7 (shutdown windows, every list run)
+next; the Windows part is S6.10, waiting for a Windows agent (S1.5).
 
 - `run()` parks on a heap copy of the op and keeps its own reference to the event; the result and
   `in_flight` are read after the suspend (note 3.2-3.3). A non-running coroutine is answered
@@ -276,7 +276,15 @@ part is S6.10, waiting for a Windows agent (S1.5).
   flush, so the provider returns without suspending and the other coroutine prints second
   (`io_wait_submit()`, `src/io_provider.c`). TrueAsync always yields for DNS. Not fixed; S6.7's
   "every list run" decides (yield after an inline DNS completion, or a by-design tag).
-- `curl/006` (CI) and `pdo_mysql/029` (local ASAN) passed once while XFAIL for S6.6: timing, S6.6's.
+- S6.6 changed no code: `curl/006` times out on `/very-slow` (1 s budget for the other request, so a
+  loaded ASAN run may need its retry), `curl/025`, `054` expect the core's two send warnings,
+  `curl/043` is by design, `pdo_mysql/029` waits for `RFC-CHANGES.md` 6 (it passes when no cancel
+  lands mid-connect, so a run may see it pass on one attempt). Coverage lanes skip Windows-only tests.
+- php-src bugs found on 2026-10-07 while answering devnexen on php/php-src#24168: `pclose()` from a
+  filter and `zlib.inflate`'s notice, both on `php-src-fixes` with PR branches (WORKFLOW); the
+  per-filter check for #24168 is `stream-filter-remove-per-filter`, waiting for Edmond. Open in the
+  same family: `fclose()` from an error handler during an internal filter, `proc_close()` from a
+  filter, and `NO_FCLOSE` saved and restored per callback (overlapping Fibers clear it early).
 - `stream/030` (UDP receive timeout) is `RFC-CHANGES.md` 4; the pipe timeout is 3; `F_FILES` off.
 - MySQL: `tools/test.py` starts a private `mysqld` when `MYSQL_TEST_HOST` is unset; a container
   needs `apt-get install mysql-server-core-8.0` (WORKFLOW "Test fixtures").

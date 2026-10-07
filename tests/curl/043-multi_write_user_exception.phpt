@@ -1,7 +1,5 @@
 --TEST--
 Async curl multi: exception in CURLOPT_WRITEFUNCTION propagates to curl_multi_exec
---XFAIL--
-Not implemented yet: S6.6 of dev/PLAN.md
 --EXTENSIONS--
 curl
 --FILE--
@@ -56,5 +54,5 @@ echo "Done\n";
 ?>
 --EXPECTF--
 caught: multi callback error
-curl_errno: CURLE_WRITE_ERROR
+curl_errno: errno=0
 Done

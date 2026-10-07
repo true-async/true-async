@@ -994,3 +994,22 @@ stack options were shown with the code).
   `(...-until-S6.5)` texts mean S6.10. Why: a core commit for Windows needs a build and runs on
   Windows, and S1.5 (a Windows agent) is deferred by Edmond; S6's done line asks for debug and ASAN
   only.
+- 2026-10-07 Tests changed for S6.6: `curl/006-timeout_handling.phpt` times out on a local listener
+  that never accepts instead of connecting to `192.0.2.1`; `curl/025-write_file_broken_pipe.phpt`
+  and `curl/054-multi_write_file_broken_pipe.phpt` expect the send warning twice;
+  `curl/043-multi_write_user_exception.phpt` expects `curl_errno()` 0. Why: where no route to
+  `192.0.2.1` exists the connect fails at once (error 7, no timeout), so `006` passed only on
+  networks that drop the packets; a listener of its own keeps the timeout independent of the other
+  request, which the test server's slow route did not (one server process can take both). The
+  core's curl writes `CURLOPT_FILE` through a stdio `FILE` over the stream, which reports the failed
+  send twice, and sets a multi handle's error only in `curl_multi_info_read()`, which `043` never
+  calls; php/php-src without the extension prints the same. TrueAsync's fork writes and records the
+  error in its own curl event (`curl_async_write_file()`). The write error `025` and `054` check is
+  the same.
+- 2026-10-07 `pdo_mysql/029` is tagged `core:6`, left out of the `pocs` lanes: a driver error raised
+  under a pending cancellation replaces it (`RFC-CHANGES.md` 6), where the fork's `pdo_dbh.c` keeps
+  the cancellation on top. An `--XFAIL--` section would not do: the test passes whenever no cancel
+  lands mid-connect.
+- 2026-10-07 The Windows part of S6.6 (curl in `pocs-win`) goes to S6.10 with the rest; the frozen
+  `skip-on:pocs-win(curl-not-loaded-until-S6.6)` texts mean S6.10. The Windows-only tests skip on the
+  coverage lane too (`skip-on:*-cov`), which counted them as unexpected skips (S5's report).

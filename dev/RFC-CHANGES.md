@@ -1,8 +1,9 @@
 # RFC changes
 
-Requests to bukka's RFCs (IO hooks, Poll API additions, Ring), one topic per pull request, oldest
-first. Each entry gives what the extension needs, the request, the code that waits for it, and the
-state. Threads cannot reach php/php-src: Edmond sends each request himself.
+Requests to the RFCs the core is built from (bukka's IO hooks, Poll API additions, Ring; the
+scheduler RFC), one topic per pull request, oldest first. Each entry gives what the extension needs,
+the request, the code that waits for it, and the state. Threads cannot reach php/php-src: Edmond
+sends each request himself.
 
 ## 1. Poll API additions: a C API for the notification descriptor pair
 
@@ -95,3 +96,20 @@ provider needs no Context it never waits on.
 
 Waits for it: `async_signal_reblock()` in `src/os_signal.c` and its call in `reactor_poll()`
 (`src/reactor.c`); the Context of `async_signal_registry_t`.
+
+## 6. Async core: a driver error under a pending cancellation keeps the cancellation
+
+State: drafted 2026-10-07 (S6.6), not sent. PR: none.
+
+Need: a cancellation that lands while a driver waits on IO (`pdo_mysql` connecting, here) makes the
+provider fail the op with the `AsyncCancellation` pending; the driver then reports its own error and
+PDO throws a `PDOException` over it, so `catch (AsyncCancellation)` in the coroutine no longer
+catches the cancellation.
+
+Request: an exception thrown while a cancellation is pending leaves the cancellation on top and
+attaches the new one to it, as TrueAsync's fork does for PDO (`ext/pdo/pdo_dbh.c:40-89`,
+`pdo_keep_pending_cancellation()`); either in PDO's error path or once in the core's exception
+throwing, which would cover every extension. Edmond's call which.
+
+Waits for it: `tests/pdo_mysql/029-cancel_during_connect.phpt` (`core:6` in `tests/lists/S6.txt`).
+

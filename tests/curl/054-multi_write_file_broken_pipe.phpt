@@ -1,7 +1,5 @@
 --TEST--
 Async curl multi: CURLOPT_FILE to broken pipe triggers write error
---XFAIL--
-Not implemented yet: S6.6 of dev/PLAN.md
 --EXTENSIONS--
 curl
 --SKIPIF--
@@ -62,6 +60,8 @@ async_test_server_stop($server);
 echo "Done\n";
 ?>
 --EXPECTF--
+Warning: %sSend of %d bytes failed with errno=%d %s in %s on line %d
+
 Warning: %sSend of %d bytes failed with errno=%d %s in %s on line %d
 Transfer result: CURLE_WRITE_ERROR
 curl_errno: CURLE_WRITE_ERROR

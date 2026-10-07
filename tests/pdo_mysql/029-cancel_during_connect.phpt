@@ -1,7 +1,5 @@
 --TEST--
 PDO MySQL: a cancellation landing mid-connect surfaces as AsyncCancellation
---XFAIL--
-Not implemented yet: S6.6 of dev/PLAN.md
 --EXTENSIONS--
 pdo_mysql
 --SKIPIF--
