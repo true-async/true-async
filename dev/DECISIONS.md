@@ -1355,3 +1355,18 @@ stack options were shown with the code).
   `scope/072`). Why: the bailout skipped the scope removal that finalize does after the route, and
   the coroutine's free asserted on a scope still set (the Critic). The `zend_try` is on the error
   route only, not a hot path.
+- 2026-10-07 Core `async-core-io-2026-10-07-2` (`8159f7baa5c`): `async-core` `6e43d6074e0` and
+  `php-src-fixes` `cfa0923ac31` merged onto `async-core-io-2026-10-07`; ior unchanged. `async-core`
+  fixes the GC threshold: every coroutine that found the root buffer full awaited the same GC
+  coroutine run and then raised the threshold by a step (12000 coroutines, threshold 90020001); now
+  the GC coroutine takes one step after its run, as TrueAsync's core does (`c8acbdccc14`, core tests
+  `ext/test_scheduler/tests/092`-`094`). `php-src-fixes` brings php/php-src#24168's explicit
+  `running_calls` field in place of `Z_EXTRA(filter->abstract)` and #24177 (`scope/075` passes, its
+  `--XFAIL--` removed); the `user_filters.c` conflict keeps master's `userfilter_assign_stream()`
+  with `running_calls`. `scope/058` keeps `zend.enable_gc=0` for another reason: a full buffer parks
+  every coroutine that adds a root until the GC coroutine, queued behind them, runs, and tens of
+  thousands of parked fibers pass `vm.max_map_count` ("Fiber stack protect failed"); TrueAsync's
+  core returns without waiting, an S8 change-request candidate (S4.md section 5). Compared on main
+  `73a8469`: `pocs-dbg` 1049 PASS, 9 SKIP, 62 XFAIL and `scope/058` passing alone after its comment
+  change, `pocs-asan` 1032 PASS, 31 SKIP, 58 XFAIL, nothing unexpected. Why: the threshold bug grew
+  the root buffer to about 720 MB and made `scope/058` quadratic on ASAN.

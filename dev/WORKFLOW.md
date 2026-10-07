@@ -68,13 +68,13 @@ The other branches there belong to the TrueAsync fork's earlier work and are not
 
 ## Pinned core
 
-| Part | Revision | In `async-core-io-2026-10-07` `8f89755d2b1` |
+| Part | Revision | In `async-core-io-2026-10-07-2` `8159f7baa5c` |
 |---|---|---|
 | php-src master | `d7f966e073b` | merged |
-| Scheduler PoC (`async-core`, php/php-src#22561) | `ae85ef88d00` | merged; the `async-core` head `bea718cf966` adds only the removal of a comment |
+| Scheduler PoC (`async-core`, php/php-src#22561) | `6e43d6074e0` | merged |
 | IO hooks PoC (php/php-src#23997) | `608927ebe09` | merged |
 | Our fixes to the IO hooks PoC (`io-hooks-fixes`) | `c43e1d5797a` | merged; `dev/RFC-CHANGES.md` 2 |
-| Our fixes to php-src (`php-src-fixes`) | `6e9d801dcc5` | merged |
+| Our fixes to php-src (`php-src-fixes`) | `cfa0923ac31` | merged |
 | ior | `2bfd2319896` | built per tree, "Building the core" |
 | `ext/async` (reference tests, true-async/php-async) | `1fdacf8575b` | `tests/lists/REFERENCE` |
 

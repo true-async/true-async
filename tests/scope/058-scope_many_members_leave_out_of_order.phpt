@@ -9,8 +9,8 @@ use Async\Scope;
 use function Async\suspend;
 use function TrueAsync\Test\coroutine_count;
 
-// The collector is off: with it, every coroutine waiting for one run raises its threshold, which
-// grows the root buffer by a copy per waiter on ASAN lanes.
+// GC is off: a full root buffer parks every coroutine that adds a root until the GC coroutine,
+// queued behind them, runs, and tens of thousands of parked fibers pass vm.max_map_count.
 $scope = new Scope();
 $count = 100000;
 $survivors = [];

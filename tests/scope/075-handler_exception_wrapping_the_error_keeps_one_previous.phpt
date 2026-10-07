@@ -1,7 +1,5 @@
 --TEST--
 Scope: a handler exception that already has the error as previous goes to the parent with the chain unchanged
---XFAIL--
-Needs a core update: zend_exception_set_previous() leaks an exception already in the chain (php/php-src#24177, on php-src-fixes, not in the pinned core)
 --FILE--
 <?php
 
