@@ -60,9 +60,21 @@ static ZEND_INI_MH(OnUpdatePartialDeadlock)
 
 static ZEND_INI_MH(OnUpdatePartialDeadlockInterval)
 {
-	const zend_long interval = zend_ini_parse_quantity_warn(new_value, entry->name);
+	zend_string *error = NULL;
+	const zend_long interval = zend_ini_parse_quantity(new_value, &error);
 
-	if (interval < 0 || interval > ASYNC_COLLECTOR_INTERVAL_MAX) {
+	if (UNEXPECTED(error != NULL)) {
+		zend_string_release(error);
+		return FAILURE;
+	}
+
+	/* The parser reads an empty value as 0, and php.ini turns a bare `off` into one: only a literal 0
+	 * walks at every idle point. */
+	if (interval == 0 && !zend_string_equals_literal(new_value, "0")) {
+		return FAILURE;
+	}
+
+	if (interval != 0 && (interval < ASYNC_COLLECTOR_INTERVAL_MIN || interval > ASYNC_COLLECTOR_INTERVAL_MAX)) {
 		return FAILURE;
 	}
 
@@ -83,7 +95,7 @@ PHP_INI_BEGIN()
 						zend_true_async_globals,
 						true_async_globals)
 	PHP_INI_ENTRY("true_async.partial_deadlock", "report", PHP_INI_ALL, OnUpdatePartialDeadlock)
-	PHP_INI_ENTRY("true_async.partial_deadlock_interval", "1000", PHP_INI_ALL, OnUpdatePartialDeadlockInterval)
+	PHP_INI_ENTRY("true_async.partial_deadlock_interval", "5000", PHP_INI_ALL, OnUpdatePartialDeadlockInterval)
 PHP_INI_END()
 
 zend_class_entry *async_ce_awaitable = NULL;

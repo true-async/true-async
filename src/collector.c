@@ -104,8 +104,13 @@ static zend_always_inline zend_ulong collector_key(const void *address)
 	return (zend_ulong) ((uintptr_t) address >> 3);
 }
 
+/* Positions are uint32_t with COLLECTOR_NONE at the top, so no table outgrows half of that range. */
 static void collector_grow(void **array, uint32_t *capacity, const size_t element_size)
 {
+	if (UNEXPECTED(*capacity > UINT32_MAX / 2)) {
+		zend_error_noreturn(E_ERROR, "The coroutine collector cannot track more than %u entries", *capacity);
+	}
+
 	*capacity = *capacity == 0 ? 16 : *capacity * 2;
 	*array = safe_erealloc(*array, *capacity, element_size, 0);
 }
@@ -126,21 +131,14 @@ static uint32_t collector_node_add(async_collector_t *collector, void *address, 
 	return collector->node_count++;
 }
 
-/* Whether the next doubling of `nodes` and of the index, which grow in step, and a worklist entry per
- * node keep the memory in use under the ceiling, with a chunk to spare for the small allocations of
- * the walk (the heap wants one free before it maps another). A run that would pass it stops and finds
- * nothing: the automatic run's ceiling is memory_limit, and a fatal error there would end the request. */
-static bool collector_has_room(async_collector_t *collector)
+/* Whether `bytes` more keep the memory in use under the ceiling, with a chunk to spare for the small
+ * allocations of the walk (the heap wants one free before it maps another). A run that would pass it
+ * stops and finds nothing: the automatic run's ceiling is memory_limit, and a fatal error there would
+ * end the request. */
+static bool collector_has_room(async_collector_t *collector, const size_t bytes)
 {
-	if (EXPECTED(collector->ceiling == 0 || collector->node_count != collector->node_capacity)) {
-		return true;
-	}
-
-	const size_t next =
-			(size_t) collector->node_capacity * 2 * (sizeof(collector_node_t) + sizeof(Bucket) + 3 * sizeof(uint32_t)) +
-			ZEND_MM_CHUNK_SIZE;
-
-	if (EXPECTED(zend_memory_usage(true) + next <= collector->ceiling)) {
+	if (EXPECTED(collector->ceiling == 0 ||
+				 zend_memory_usage(true) + bytes + ZEND_MM_CHUNK_SIZE <= collector->ceiling)) {
 		return true;
 	}
 
@@ -149,12 +147,25 @@ static bool collector_has_room(async_collector_t *collector)
 	return false;
 }
 
+/* Whether the next doubling of `nodes` and of the index, which grow in step, and a worklist entry per
+ * node fit under the ceiling. */
+static bool collector_has_node_room(async_collector_t *collector)
+{
+	if (EXPECTED(collector->node_count != collector->node_capacity)) {
+		return true;
+	}
+
+	return collector_has_room(collector,
+							  (size_t) collector->node_capacity * 2 *
+									  (sizeof(collector_node_t) + sizeof(Bucket) + 3 * sizeof(uint32_t)));
+}
+
 /* The node of `ref`, added on first sight; COLLECTOR_NONE once the run failed. Every candidate is
  * added before anything else, so a coroutine met here is not one: it runs or waits for an outside
  * source. */
 static uint32_t collector_node_of(async_collector_t *collector, zend_refcounted *ref)
 {
-	if (UNEXPECTED(collector->failed || !collector_has_room(collector))) {
+	if (UNEXPECTED(collector->failed || !collector_has_node_room(collector))) {
 		return COLLECTOR_NONE;
 	}
 
@@ -181,7 +192,7 @@ static uint32_t collector_event_node_of(async_collector_t *collector,
 										async_event_t *event,
 										async_collector_event_references_t references)
 {
-	if (UNEXPECTED(collector->failed || !collector_has_room(collector))) {
+	if (UNEXPECTED(collector->failed || !collector_has_node_room(collector))) {
 		return COLLECTOR_NONE;
 	}
 
@@ -326,7 +337,13 @@ static void collector_wake_edge_add(async_collector_t *collector, const uint32_t
 		return;
 	}
 
+	/* An edge per record, not per node: many candidates awaiting the same items make far more edges than nodes. */
 	if (UNEXPECTED(collector->edge_count == collector->edge_capacity)) {
+		if (UNEXPECTED(!collector_has_room(collector,
+										   (size_t) collector->edge_capacity * 2 * sizeof(collector_wake_edge_t)))) {
+			return;
+		}
+
 		collector_grow((void **) &collector->edges, &collector->edge_capacity, sizeof(collector_wake_edge_t));
 	}
 
@@ -608,7 +625,7 @@ static void collector_wake_edges(async_collector_t *collector, const uint32_t ca
 {
 	collector->pass = COLLECTOR_PASS_WAKE_EDGES;
 
-	for (uint32_t candidate = 0; candidate < candidate_count; candidate++) {
+	for (uint32_t candidate = 0; candidate < candidate_count && EXPECTED(!collector->failed); candidate++) {
 		collector->waiter = candidate;
 		async_wait_walk(async_coroutine_from_object((zend_object *) collector->nodes[candidate].address),
 						collector_record_target,
@@ -710,6 +727,11 @@ async_coroutine_t **async_collector_find(uint32_t *count, const size_t ceiling)
 		if (UNEXPECTED(candidate_count == 0)) {
 			collector_init(&collector);
 			collector.ceiling = ceiling;
+		}
+
+		if (UNEXPECTED(!collector_has_node_room(&collector))) {
+			collector_destroy(&collector);
+			return NULL;
 		}
 
 		/* A WeakReference or a WeakMap in running code may still reach it. */

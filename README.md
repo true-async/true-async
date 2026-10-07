@@ -96,7 +96,7 @@ flowchart TB
 | ▶ **S4 · Reactor on Poll, Poll additions and Ring** | `█████████░` | 86 % |
 | ✓ S5 · Futures, timeouts and combinators | `██████████` | 100 % |
 | ▶ **S6 · IO hooks provider** | `███████░░░` | 70 % |
-| ▶ **S7 · Async object collector** | `████████░░` | 83 % |
+| ▶ **S7 · Async object collector** | `█████████░` | 86 % |
 | S8 · Review checks and RFC change list | `░░░░░░░░░░` | 0 % |
 | ▶ **S9 · Higher layers, one at a time** | `█░░░░░░░░░` | 12 % |
 | S10 · Beyond the RFCs | `░░░░░░░░░░` | 0 % |

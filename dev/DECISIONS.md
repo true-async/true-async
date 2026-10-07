@@ -1214,3 +1214,16 @@ stack options were shown with the code).
 - 2026-10-07 `edge_cases/010-deadlock-after-cancel-with-zombie.phpt` sets `true_async.debug_deadlock`
   instead of `async.debug_deadlock`, as `edge_cases/001`-`003` did on 2026-10-02. Why: INI names take
   the module prefix (2026-10-01).
+- 2026-10-07 `true_async.partial_deadlock_interval` is 5000 ms by default and refuses 1 to 999; a
+  literal 0 still walks at every idle point, and an empty value is refused (S7.6, Edmond). Why: a
+  run walks every parked stack, and a coroutine that can never wake loses nothing by waiting
+  seconds; 0 is what the tests and the fuzz run on; the parser reads an empty value, which php.ini
+  makes of a bare `off`, as 0 (the Critic). `collector/019-automatic_interval_and_backoff.phpt` and
+  `collector/047-cancel_backoff.phpt` (`changed:2026-10-07`) ran at 200 ms, now refused: they run at
+  1000 ms with every `collector_age()` step and its line scaled by five, same checks.
+  `module/002-info.phpt` (`changed:2026-10-07`) prints the new default.
+- 2026-10-07 `collector/064-automatic_run_stops_before_memory_limit_on_candidates.phpt` skips on
+  `pocs-asan` (S7.6). Why: the node table and its index first double past the heap chunk the
+  ceiling keeps spare at 16 384 candidates, and 10 000 parked coroutines already take over three
+  minutes under ASAN, almost all of it system time (1.1 s of it to spawn them; 16 500 take 0.3 s on
+  the debug build); `collector/063` runs the same check on ASAN.

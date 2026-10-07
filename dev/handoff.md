@@ -233,13 +233,17 @@ build/PHP-Parser-5.6.1` in the core checkout first. Run `tools/format.sh` before
 
 ## S7
 
-S7.5 done 2026-10-07 (S7.2-S7.4 before it); next is S7.6, the security pass by `dev/SECURITY.md`.
+S7.6 done 2026-10-07 (S7.2-S7.5 before it); next is S7.7, the non-owning wake edge and the
+scope's cancel in the oracle that S9.4 asked for (S9-scope.md 6); agree its signatures with the S9
+thread before code.
 The walk (`src/collector.c`) covers coroutines, Futures, tokens and `await_*` items; future events
 are nodes of their own, counted by `base.ref_count`; a frame `zend_call_function()` pushed gives
 its pinned `$this` (off for user frames under a replaced `zend_execute_ex`); the automatic run stops
-before `memory_limit` and finds nothing; S6.5's signal watch seeds its Futures live; nothing is found
+before `memory_limit` and finds nothing (checked at every growth of the node table, its index and
+the wake edges); `true_async.partial_deadlock_interval` is 5000 ms by default, at least 1000 or a
+literal 0; S6.5's signal watch seeds its Futures live; nothing is found
 once the request shuts down. `cancel` warns once and cancels every parked coroutine but main. Tests
-`collector/001`-`061` in `tests/lists/S7.txt`; the holders' table is S7.md 10.
+`collector/001`-`064` in `tests/lists/S7.txt` (`064` skips on ASAN, DECISIONS); the holders' table is S7.md 10.
 - the oracle (`async_collector_check_cancel()`, `async_collector_check_event_wake()`) aborts on a
   wake or cancel of a found coroutine not handed out; `registry_cancel()` and the `cancel` policy
   mark what they cancel as handed out, so the fuzz keeps `report`; `TrueAsync\Test\mark_found()`

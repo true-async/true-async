@@ -569,7 +569,7 @@ cross-thread wakeups are never reported; a run over 10 000 parked coroutines cos
 time, recorded; scheduler fuzz over 100 seeds reports no false positives.
 Tier: T2. Roles: Critic on S7.1, Critic after S7.4 (S7.5).
 Notes: dev/plans/S7.md
-Active: S7.6
+Active: S7.7
 
 - [x] S7.1 Design note: roots (runnable coroutines, pending external sources: provider ops,
       timers, signals, wakeups, main), edges (waiter → awaitable → completers), when it runs (on
@@ -658,8 +658,21 @@ Active: S7.6
         in S7.3 too); the new diagnostics are order artifacts. All 60 collector tests also pass with `zend_execute_ex` replaced. Lanes on
         main with S4.6 and S5.6: `pocs-dbg` 967 PASS, 9 SKIP, 12 XFAIL; `pocs-asan` 951 PASS, 26
         SKIP, 11 XFAIL, 6 left out, nothing unexpected. B6 again: 28.6 ms, 255.1 ms, 0.5 ms (one run each).
-- [ ] S7.6 Security pass by `dev/SECURITY.md`.
+- [x] S7.6 Security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item; findings fixed with a test or recorded
+      2026-10-07, core `8f89755d2b10`: the pass over the stage's four commits, about 25 scripts on
+        the debug and ASAN builds, found no use after free; the automatic run still died at
+        `memory_limit` where the wake edges (coroutines awaiting the same dead Futures,
+        `collector/063`) or the candidates' registration (16 500 parked coroutines, the Critic,
+        `collector/064`) grew the tables unchecked: both check the ceiling now. Edmond's interval:
+        5000 ms by default, at least 1000, or a literal 0 for tests and fuzz (`collector/062`; an
+        empty value, a bare `off` in php.ini, had meant 0). Tests `019` and `047` rescaled to 1000 ms
+        (`changed:`). The rest recorded in `dev/SECURITY.md`. Critic two rounds. Lanes: `pocs-dbg`
+        970 PASS, 9 SKIP, 12 XFAIL; `pocs-asan` 953 PASS, 27 SKIP, 11 XFAIL, 6 left out (`064`
+        skips there), nothing unexpected.
+- [ ] S7.7 For S9.4 (`dev/plans/S9-scope.md` 6): a reporter of a wake edge that owns no reference,
+      and the oracle's `check_cancel` excusing a scope's cancel whose canceller was live at the run.
+      done: the API agreed with the S9 thread, S7.md and DECISIONS updated, tests
 
 ## S8 — Review checks and RFC change list  [ ]
 

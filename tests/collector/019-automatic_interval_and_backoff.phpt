@@ -1,7 +1,7 @@
 --TEST--
 The automatic run: the first idle point starts the interval, a run waits for it, and a run that finds nothing new doubles it
 --INI--
-true_async.partial_deadlock_interval=200
+true_async.partial_deadlock_interval=1000
 --FILE--
 <?php
 use function Async\spawn;
@@ -35,22 +35,22 @@ delay(1);
 echo "the first idle point starts the clock\n";
 delay(1);
 echo "at once: no run\n";
-Test\collector_age(200);
+Test\collector_age(1000);
 delay(1);
-echo "after 200 ms: the run warns twice\n";
-Test\collector_age(100);
+echo "after 1000 ms: the run warns twice\n";
+Test\collector_age(500);
 delay(1);
-echo "after 100 ms: no run\n";
-Test\collector_age(100);
+echo "after 500 ms: no run\n";
+Test\collector_age(500);
 delay(1);
-echo "after 200 ms: the run finds nothing new, and the interval doubles\n";
+echo "after 1000 ms: the run finds nothing new, and the interval doubles\n";
 start_pair();
-Test\collector_age(200);
+Test\collector_age(1000);
 delay(1);
-echo "after 200 ms: no run\n";
-Test\collector_age(200);
+echo "after 1000 ms: no run\n";
+Test\collector_age(1000);
 delay(1);
-echo "after 400 ms: the run warns twice\n";
+echo "after 2000 ms: the run warns twice\n";
 
 foreach (get_deadlocked_coroutines() as $coroutine) {
     $coroutine->cancel();
@@ -61,10 +61,10 @@ the first idle point starts the clock
 at once: no run
 warning
 warning
-after 200 ms: the run warns twice
-after 100 ms: no run
-after 200 ms: the run finds nothing new, and the interval doubles
-after 200 ms: no run
+after 1000 ms: the run warns twice
+after 500 ms: no run
+after 1000 ms: the run finds nothing new, and the interval doubles
+after 1000 ms: no run
 warning
 warning
-after 400 ms: the run warns twice
+after 2000 ms: the run warns twice

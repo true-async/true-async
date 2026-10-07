@@ -31,6 +31,10 @@ typedef enum
 	ASYNC_PARTIAL_DEADLOCK_CANCEL,  /* the warning, then AsyncCancellation("Deadlock detected") into each but main */
 } async_partial_deadlock_t;
 
+/* The smallest true_async.partial_deadlock_interval but 0, in ms; 0 walks at every idle point, for
+ * tests and fuzz. */
+#define ASYNC_COLLECTOR_INTERVAL_MIN 1000
+
 /* The largest true_async.partial_deadlock_interval, in ms (24.8 days): the backed-off interval in ns
  * stays within 64 bits. */
 #define ASYNC_COLLECTOR_INTERVAL_MAX INT32_MAX

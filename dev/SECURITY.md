@@ -149,6 +149,35 @@ finding left open gets an owner step in `PLAN.md`.
   already in the chain, so `throw new LogicException("y", 0, $e)` in a `finally` that `$e` left
   leaks it in plain PHP; `Future::finally()` reaches it the same way. Sent to the coordinator for
   `php-src-fixes` (WORKFLOW, the php-src bug rule); no workaround here.
+- 2026-10-07 Security pass of stage S7 (S7.6) over the S7 commits `cb6d213`, `96449e3`, `f483f57`,
+  `be20b82` (`src/collector.c` and its parts of `scheduler.c`, `future.c`, `await.c`,
+  `true_async.c`, `test_hooks.c`), by checklist item, with about 25 scripts run on the debug and
+  ASAN builds. Lifetimes: no use after free found (a warning handler that cancels, drops, collects,
+  throws, exits, dies with a fatal error, blocks or calls the registry; the walk inside a Fiber, a
+  generator, a destructor during GC and at request end; fork between runs; holders from SPL, DOM,
+  PDO, curl, SQLite3 and others; stacks parked in `eval`, `include`, `extract` and `$$var` tables).
+  The handler cannot reach a found coroutine, and `cancel` only enqueues. Refcounts: the references
+  taken around the report and the cancel are released on every return path and die with the request
+  on a bailout. Engine state: `error_reporting` and the exception are restored around the warning.
+  Sizes: the walk iterates (10^6-deep arrays found in 0.9 s); the memory ceiling of the automatic
+  run was checked only when the node table doubled during the count, so coroutines awaiting the
+  same dead Futures, whose wake edges outnumber the nodes, ended the request with a fatal error at
+  `memory_limit` (`collector/063`), and so did 16 500 parked coroutines, whose registration as
+  candidates doubled the node table unchecked (`collector/064`, the Critic): both check it now, and
+  a table that would pass 2^31 entries stops with a fatal error instead of wrapping its position.
+  INI: both entries are `PHP_INI_ALL` and per request; the interval is now 5000 ms by default and at
+  least 1000 ms, or a literal 0: an empty value, which php.ini makes of a bare `off`, parsed as 0
+  and walked at every idle point (`collector/062`).
+  Test-only code: the hooks and the oracle's flags sit under `TRUE_ASYNC_TEST_HOOKS`; every S7 file
+  compiles without it. CI: no change but the fuzz seeds' interval 0.
+- 2026-10-07 Accepted (S7.6): a walk costs time and memory in proportion to the stuck graph (a stuck
+  pair holding 10^6 objects: 164 ms and 76 bytes a node per run on the debug build), and under
+  `report` the stuck coroutines stay, so each first warning resets the back-off and the next run
+  walks them all again. The interval and `memory_limit` bound the rate and the size; interval 0 and
+  `memory_limit=-1` are the script's own choice. The engine's `get_gc` buffer and the frames' buffer
+  (a parked frame's arguments and variables) grow outside the ceiling (S7.md 3.5). The test-only `replace_execute_ex()` restores the executor only at request
+  end, so a run after an extension put `execute_ex` back mid-request was not tried; the extensions
+  that replace it do so at module startup.
 
 ## Open findings
 
