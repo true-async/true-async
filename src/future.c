@@ -154,6 +154,11 @@ static void future_event_report_unobserved(const async_future_event_t *future)
 		zend_error(
 				E_CORE_WARNING, "Unhandled exception in Future: %s; use catch() or ignore() to handle", message_text);
 	}
+
+	/* A property hook on the message returns a value of its own. */
+	if (UNEXPECTED(message == &message_holder)) {
+		zval_ptr_dtor(&message_holder);
+	}
 }
 
 static void future_chain_reserve(async_future_chain_t *chain, const uint32_t count)

@@ -117,6 +117,39 @@ finding left open gets an owner step in `PLAN.md`.
   function bails out, `exit()` included, so no finished coroutine stays current. The deadlock report
   shows only where its error does (`scheduler/083`-`085`).
 
+- 2026-10-07 Security pass of stage S5 (S5.6) over the S5 commits `756e6c3`, `266f092`, `1be2667`,
+  `4268e50` (`src/future.c`, `await.c`, `timeout.c` and their parts of `true_async.c`,
+  `scheduler.c`), by checklist item, with scripts run on the debug and ASAN builds. Lifetimes: no
+  use after free found (a NULL-state Future from `unserialize()`, clone and reflection refused,
+  exit() and fatal errors in mappers, iterators and items, GC mid-wait, fork with an armed timer, a
+  Timeout cancelled with 2 000 waiters parked); one leak fixed: a Traversable whose items hold the
+  coroutine walking it, directly, as a result or as a Future's value, held that coroutine and the
+  wait's context in a cycle the GC cannot see; the iterator coroutine lets go of the context when
+  its walk ends (`await/140`). Refcounts on exception and bailout paths: balanced; the
+  unobserved-exception report leaked the message a property hook builds (`future/122`). Engine
+  state: the drain saves and chains what a release throws, and an exit is not chained. Sizes:
+  chains, the drain's FIFO, the vectors and the result tables are bounded by `memory_limit`;
+  completion and the drain iterate (a `map()` chain of 10^6 links completes); one Future repeated N
+  times in an `await_*` array cost O(N^2) to unlink (200 000 copies 8 s), and two waits over the
+  same copies 31 s; N `Async\signal()` Futures on one signal, dropped, 200 000 in 8.3 s; a callback
+  keeps its index in its vector, so its removal searches nothing (`await/141`, `signal/024`,
+  `internal/063`); the per-wait table of reservations hashed aligned addresses into few buckets
+  (10^6 items linked in 1.9 s before the fix, 0.3 s after). `$count` of `await_any_of*` is clamped
+  to `UINT32_MAX` and a count of 0 or less waits for all. INI entries: none new. Test-only code:
+  `add_throwing_subscriber` and its call sit under `TRUE_ASYNC_TEST_HOOKS`. CI: no change.
+- 2026-10-07 Accepted (S5.6): releasing a long object graph recurses in the engine, so a chain of
+  Futures held through re-constructed children or mapper closures overflows the C stack at about
+  30 000 links, the depth at which a plain linked list of `stdClass` does on the same build. A drain
+  coroutine cancelled by a graceful shutdown leaves its queued children uncompleted, so a `finally`
+  that awaits one ends in the deadlock report, as TrueAsync's iterator coroutine does. The counters
+  of an `await_*` wait are 32-bit: a Traversable that yields 2^32 items wraps them, which takes
+  hours and no memory. A message property hook runs user code while a Future is freed, as the
+  core's own uncaught-exception report does.
+- 2026-10-07 A php-src leak (S5.6): `zend_exception_set_previous()` does not release an exception
+  already in the chain, so `throw new LogicException("y", 0, $e)` in a `finally` that `$e` left
+  leaks it in plain PHP; `Future::finally()` reaches it the same way. Sent to the coordinator for
+  `php-src-fixes` (WORKFLOW, the php-src bug rule); no workaround here.
+
 ## Open findings
 
 None.

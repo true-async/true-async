@@ -376,7 +376,7 @@ Goal: the API the ported tests use everywhere.
 Done when: S3–S5 lists pass, including the `await` group's combinator tests.
 Tier: T2. Roles: Critic on S5.1, Critic after S5.2.
 Notes: dev/plans/S5.md
-Active: S5.6
+Active: none; every step is done, and the stage closes after S4 (Parallel tracks)
 
 - [x] S5.1 Design note `dev/plans/S5.md`: `Future` and `FutureState` as TrueAsync has them within one
       thread (the remote and cross-thread futures wait for S10's thread pool), `map`/`catch`/
@@ -436,8 +436,19 @@ Active: S5.6
         core's minimum crashed (`scheduler/106`, `056` at 32 KiB). On core `8f89755d2b1` after S6.7
         and S7.4 `pocs-dbg` 943 PASS, 9 SKIP, 12 XFAIL, `pocs-asan` 927 PASS, 26 SKIP, 11 XFAIL,
         6 left out by `core:` tags, 0 unexpected.
-- [ ] S5.6 Security pass by `dev/SECURITY.md`.
+- [x] S5.6 Security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item; findings fixed with a test or recorded
+      handoff: done 2026-10-07 (`dev/SECURITY.md`, three entries): fixed with a test each, a
+        Traversable whose items hold its iterator coroutine leaked the wait (`await/140`), a message
+        property hook leaked its value (`future/122`), and removal from a callbacks vector searched,
+        so N copies of one Future in two waits or N `Async\signal()` Futures left in O(N^2) (200 000
+        copies 31 s): every callback keeps its index in the vector (S3.md section 12; `await/141`,
+        `signal/024`, `internal/063`; B11-10000 22,032 to 7,052 instructions a waiter). Accepted
+        with a reason: recursion of long releases, the drain under graceful shutdown, 32-bit
+        counters, a hook in the release. A php-src leak in `zend_exception_set_previous()` went to
+        the coordinator. On core `8f89755d2b1` after S4.6
+        `pocs-dbg` 953 PASS, 9 SKIP, 12 XFAIL, `pocs-asan` 937 PASS, 26 SKIP, 11 XFAIL, 6 left out by
+        `core:` tags, 0 unexpected.
 
 ## S6 — IO hooks provider  [ ]
 

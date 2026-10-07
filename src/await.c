@@ -407,8 +407,10 @@ static void await_block_unlink(async_wait_block_t *head)
 
 	context->finished = true;
 
+	/* In reverse link order, the newest chunk first: a record this wait linked last is often its
+	 * target's last element, and removing that one moves nothing. */
 	for (await_chunk_t *chunk = context->chunks; chunk != NULL; chunk = chunk->next) {
-		for (uint32_t i = 0; i < chunk->length; i++) {
+		for (uint32_t i = chunk->length; i-- > 0;) {
 			async_wait_record_unlink(&chunk->triggers[i].record);
 		}
 	}
@@ -683,7 +685,10 @@ iterator_record_wake(async_awaitable_t *target, async_event_callback_t *callback
 
 	async_coroutine_event_callback_t *record = (async_coroutine_event_callback_t *) callback;
 	async_coroutine_t *iterator_coroutine = (async_coroutine_t *) target;
-	await_context_t *context = iterator_coroutine->coroutine.extended_data;
+	/* The iterator coroutine let go of the context as its walk ended; the waiter's block is set
+	 * while this record is linked. */
+	await_context_t *context = (await_context_t *) record->coroutine->waker.block;
+	ZEND_ASSERT(context->head.ops == &await_block_ops);
 	zend_object *iterator_exception = iterator_coroutine->coroutine.exception;
 
 	if (UNEXPECTED(iterator_exception != NULL)) {
@@ -743,13 +748,17 @@ static async_awaitable_t *await_trigger_of(zval *item, const async_coroutine_t *
  * the wait go there, so a trigger that repeats gets a slot per record (S3.md 4.1, phase 2). */
 static void await_reserve(HashTable *counts, async_awaitable_t *awaitable)
 {
+	/* Awaitables sit at a fixed stride, so the low bits of their addresses, which pick the bucket,
+	 * repeat. Folding in higher bits spreads them, and the key stays unique: each bit mixes in only
+	 * higher ones, so the fold can be undone. */
 	const zend_ulong address = (zend_ulong) (uintptr_t) awaitable;
-	zval *count = zend_hash_index_find(counts, address);
+	const zend_ulong key = address ^ (address >> 7) ^ (address >> 15);
+	zval *count = zend_hash_index_find(counts, key);
 	zval one;
 
 	if (count == NULL) {
 		ZVAL_LONG(&one, 1);
-		count = zend_hash_index_add_new(counts, address, &one);
+		count = zend_hash_index_add_new(counts, key, &one);
 	} else {
 		Z_LVAL_P(count)++;
 	}
@@ -1128,7 +1137,7 @@ static bool await_iterator_item(await_context_t *context, zval *item, zval *key)
  * cancels it. */
 static void await_iterator_entry(void)
 {
-	const async_coroutine_t *coroutine = (const async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
+	async_coroutine_t *coroutine = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
 	await_context_t *context = coroutine->coroutine.extended_data;
 	zend_object_iterator *iterator = context->iterator;
 
@@ -1174,12 +1183,21 @@ static void await_iterator_entry(void)
 
 	context->iterator = NULL;
 	zend_iterator_dtor(iterator);
+
+	/* Let go here, not when the coroutine's object is freed: a trigger may hold this coroutine (an
+	 * item that is it or returns it), and the edge to the context is one the GC does not see. */
+	coroutine->coroutine.extended_data = NULL;
+	await_context_release(context);
 }
 
-/* The iterator coroutine's reference, for one that never ran too. */
+/* The iterator coroutine's reference, when its walk did not end: it never ran, or a bailout left it. */
 static void await_iterator_dispose(zend_coroutine_t *coroutine)
 {
 	await_context_t *context = coroutine->extended_data;
+
+	if (EXPECTED(context == NULL)) {
+		return;
+	}
 
 	coroutine->extended_data = NULL;
 	await_context_release(context);

@@ -54,16 +54,23 @@ void async_callbacks_reserve(async_callbacks_vector_t *vector, const uint32_t co
 	vector->capacity = new_capacity | (vector->capacity & ASYNC_CALLBACKS_F_NOTIFYING);
 }
 
+static zend_always_inline void callbacks_slot_update(async_event_callback_t **slots, const uint32_t index)
+{
+	async_event_callback_t *callback = slots[index];
+
+	if (EXPECTED(!(callback->flags & ASYNC_CALLBACK_F_SHARED))) {
+		callback->slot = index;
+	}
+}
+
 bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callback_t *callback)
 {
 	async_event_callback_t **slots = async_callbacks_slots(vector);
 	const bool notifying = (vector->capacity & ASYNC_CALLBACKS_F_NOTIFYING) != 0;
-	uint32_t index;
+	uint32_t index = callback->slot;
 
-	/* A callback removing itself during the notify sits just behind the cursor. */
-	if (notifying && vector->cursor > 0 && slots[vector->cursor - 1] == callback) {
-		index = vector->cursor - 1;
-	} else {
+	if (UNEXPECTED((callback->flags & ASYNC_CALLBACK_F_SHARED) || index >= vector->length ||
+				   slots[index] != callback)) {
 		for (index = 0; index < vector->length && slots[index] != callback; index++) {
 		}
 
@@ -80,8 +87,22 @@ bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callba
 		const uint32_t last_run_index = --vector->cursor;
 		slots[index] = slots[last_run_index];
 		slots[last_run_index] = slots[last_index];
+
+		/* The positions coincide when the cursor is at the end or the removed element ran last: a
+		 * slot is updated only where an element stays. */
+		if (index < last_index) {
+			callbacks_slot_update(slots, index);
+		}
+
+		if (last_run_index < last_index) {
+			callbacks_slot_update(slots, last_run_index);
+		}
 	} else {
 		slots[index] = slots[last_index];
+
+		if (index < last_index) {
+			callbacks_slot_update(slots, index);
+		}
 	}
 
 	return true;

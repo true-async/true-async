@@ -1137,3 +1137,18 @@ stack options were shown with the code).
   waiter: two paths no test reached (coverage). `reactor/035-trigger_fire_before_fork_wakes_child.phpt`
   links its child's waiter before any poll: with the fork check at the tick's poll, the walk at the
   child's first poll drops a fire nobody waits for, as the parent's would.
+- 2026-10-07 A callback keeps its index in the vector it is in (`slot`, in the padding after
+  `flags`), set on push and on every move of a removal, so removing it searches nothing; only a
+  callback marked `ASYNC_CALLBACK_F_SHARED` (the exit deadline's, one static for all threads) and
+  one not in the vector are found by a search. The order rule stays: a removal moves the last
+  element into the gap (`triggers_end_parent_waits()` relies on it). Why: two waits over the same
+  array of N copies of a Future unlinked in O(N^2) (200 000 copies 31 s, 0.016 s after), and N
+  `Async\signal()` Futures left their watch the same way (200 000 8.3 s, 0.27 s after); the S3.md
+  section 12 row "Linear unlink under fan-in" left this for a measured O(N^2), for records; the
+  Critic on S5.6 found the signal case, so every callback keeps a slot (`await/141`, `signal/024`,
+  `internal/063`).
+- 2026-10-07 The iterator coroutine of an `await_*` over a Traversable lets go of the wait's context
+  when its walk ends, not when its object is freed, and the iterator record reads the context from
+  the waiter. Why: an item that holds that coroutine, directly, as a result or as a Future's value,
+  made a cycle through an edge the GC does not see; refusing the current coroutine as an item caught
+  only the direct case and broke a program that worked (`await/140`; the Critic on S5.6).

@@ -654,6 +654,63 @@ static void scenario_finish_once(smart_str *trace)
 	async_callbacks_free((async_awaitable_t *) &coroutine, &coroutine.callbacks);
 }
 
+static void test_callbacks_remove_all(async_callbacks_vector_t *vector,
+									  test_callback_t *callbacks,
+									  const uint32_t count,
+									  smart_str *trace)
+{
+	async_event_callback_t **slots = async_callbacks_slots(vector);
+	bool slots_right = true;
+
+	for (uint32_t i = 0; i < vector->length; i++) {
+		slots_right = slots_right && slots[i]->slot == i;
+	}
+
+	smart_str_appends(trace, slots_right ? " slots right" : " slots wrong");
+	smart_str_appends(trace, " removed:");
+
+	for (uint32_t i = 0; i < count; i++) {
+		smart_str_append_printf(trace, "%d", async_callbacks_remove(vector, &callbacks[i].event_callback));
+	}
+
+	smart_str_append_printf(trace, " length=%u", vector->length);
+}
+
+/* A B C D; B removes A, which has already run: the cursor rule moves B and D, and each callback is
+ * then found at its slot. A B C; C runs last and removes A: the cursor rule's two positions
+ * coincide, and C's slot follows it to the front. */
+static void scenario_slots(smart_str *trace)
+{
+	test_target_t target = { ASYNC_AWAITABLE_F_EVENT };
+	test_callback_t callbacks[4];
+
+	for (int i = 0; i < 4; i++) {
+		test_callback_init(&callbacks[i], (char) ('A' + i), trace);
+	}
+
+	callbacks[1].action = action_remove_other;
+	callbacks[1].other_vector = &target.callbacks;
+	callbacks[1].other_callback = &callbacks[0];
+	test_vector_fill(&target.callbacks, callbacks, 4);
+	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
+	test_callbacks_remove_all(&target.callbacks, callbacks + 1, 3, trace);
+	async_callbacks_free((async_awaitable_t *) &target, &target.callbacks);
+
+	smart_str_appends(trace, "; ");
+
+	for (int i = 0; i < 3; i++) {
+		test_callback_init(&callbacks[i], (char) ('A' + i), trace);
+	}
+
+	callbacks[2].action = action_remove_other;
+	callbacks[2].other_vector = &target.callbacks;
+	callbacks[2].other_callback = &callbacks[0];
+	test_vector_fill(&target.callbacks, callbacks, 3);
+	async_callbacks_notify((async_awaitable_t *) &target, &target.callbacks, NULL, NULL);
+	test_callbacks_remove_all(&target.callbacks, callbacks + 1, 2, trace);
+	async_callbacks_free((async_awaitable_t *) &target, &target.callbacks);
+}
+
 typedef struct
 {
 	const char *name;
@@ -661,15 +718,25 @@ typedef struct
 } test_scenario_t;
 
 static const test_scenario_t test_scenarios[] = {
-	{ "remove-run", scenario_remove_run },           { "remove-self", scenario_remove_self },
-	{ "single-self", scenario_single_self },         { "add-during", scenario_add_during },
-	{ "nested-same", scenario_nested_same },         { "nested-other", scenario_nested_other },
-	{ "finish-ids", scenario_finish_ids },           { "finish-remove-last", scenario_finish_remove_last },
-	{ "finish-once", scenario_finish_once },         { "throw-stops", scenario_throw_stops },
-	{ "bailout-caught", scenario_bailout_caught },   { "sched-kept", scenario_sched_kept },
-	{ "remove-pending", scenario_remove_pending },   { "remove-past-cursor", scenario_remove_past_cursor },
-	{ "remove-absent", scenario_remove_absent },     { "free-disposes", scenario_free_disposes },
-	{ "switch-handlers", scenario_switch_handlers }, { "switch-handlers-running", scenario_switch_handlers_running },
+	{ "remove-run", scenario_remove_run },
+	{ "remove-self", scenario_remove_self },
+	{ "single-self", scenario_single_self },
+	{ "add-during", scenario_add_during },
+	{ "nested-same", scenario_nested_same },
+	{ "nested-other", scenario_nested_other },
+	{ "finish-ids", scenario_finish_ids },
+	{ "finish-remove-last", scenario_finish_remove_last },
+	{ "finish-once", scenario_finish_once },
+	{ "throw-stops", scenario_throw_stops },
+	{ "bailout-caught", scenario_bailout_caught },
+	{ "sched-kept", scenario_sched_kept },
+	{ "remove-pending", scenario_remove_pending },
+	{ "remove-past-cursor", scenario_remove_past_cursor },
+	{ "remove-absent", scenario_remove_absent },
+	{ "free-disposes", scenario_free_disposes },
+	{ "switch-handlers", scenario_switch_handlers },
+	{ "switch-handlers-running", scenario_switch_handlers_running },
+	{ "slots", scenario_slots },
 };
 
 /* Small integers stand for the pointers the scheduler's queues hold, pushed and popped by the

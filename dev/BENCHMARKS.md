@@ -3,6 +3,30 @@
 The results journal: every measurement with its date, builds and outcome. The method and the
 benchmarks are `dev/plans/S3.md`, section 12; the scripts are `bench/`, the runner `tools/bench.py`.
 
+## 2026-10-07, S5.6: a callback keeps its index in the vector
+
+**Builds.** As the S5.5 entry: release, ZTS, `-O2`, gcc 13.3, the core `1ee473ff67b` of that entry
+(the extension's code changed only in the files measured), our extension as a `phpize` module of
+`main` at `bbe516b` with S5.6's changes; `before` with `src/true_async_API.{c,h}` and `src/await.c`
+of `4268e50`, `after` with S5.6's: a callback keeps its index in its vector, so its removal
+searches nothing (S3.md section 12, "Linear unlink under fan-in"); an `await_*` wait unlinks
+its records in reverse link order, and its table of reservations folds the address into the key (B9
+only uses that table). One count per side.
+
+| Bench | before | after | after / before |
+|---|---|---|---|
+| B1 | 2,701.8 / 1.020 | 2,702.0 / 1.020 | 1.000 |
+| B9-100 | 299,470.0 / 316 | 293,037.5 / 316 | 0.979 |
+| B11-1000 | 7,974.5 / 5.004 | 6,494.0 / 5.004 | 0.814 |
+| B11-10000 | 22,032.4 / 6.000 | 7,051.9 / 6.000 | 0.320 |
+
+Instructions / allocations per operation. B11's cost per waiter grows 1.09 times from 1 000 to
+10 000 waiters, 2.76 times before. Two searches measured on the way, each worse: from the end alone
+B11-10000 24,534.4 (B11's waiters leave in link order, so their records sit near the front); from
+both ends 17,036.4, still O(N^2) for two waits sharing a vector. The security cases on the debug
+build: one pending Future repeated 200 000 times in `await_any_or_fail()` 8.07 s before, 0.040 s
+after; two waits over the same 200 000 copies 30.8 s before, 0.016 s after, 10^6 copies 0.081 s.
+
 ## 2026-10-07, S7.4: B6, one walk of the collector
 
 **Builds.** The debug ZTS core of the lanes (`pocs-dbg`, the pinned core `1ee473ff67b`), our

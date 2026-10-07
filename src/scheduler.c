@@ -1611,6 +1611,7 @@ static void exit_deadline_withdraw(void)
 }
 
 static async_event_callback_t exit_deadline_callback = {
+	.flags = ASYNC_CALLBACK_F_SHARED,
 	.callback = exit_deadline_fire,
 };
 

@@ -79,13 +79,17 @@ typedef void (*async_event_callback_dispose_fn)(async_event_callback_t *callback
 /* A record whose kind has an unlink: the generic unlink calls it instead of removing the record from
  * the target's vector itself. */
 #define ASYNC_CALLBACK_F_TYPED (1u << 1)
+/* One object pushed into vectors of several threads: it keeps no slot and is found by a search. */
+#define ASYNC_CALLBACK_F_SHARED (1u << 2)
 
 typedef struct _async_wait_kind_s async_wait_kind_t;
 typedef struct _async_collector_s async_collector_t;
 
 struct _async_event_callback_s
 {
-	uint32_t flags; /* 4 B of padding follow */
+	uint32_t flags;
+	/* The index in the vector the callback is in, so removing it searches nothing under fan-in. */
+	uint32_t slot;
 	async_event_callback_fn callback;
 
 	union
@@ -166,10 +170,16 @@ static zend_always_inline void async_callbacks_push_reserved(async_callbacks_vec
 	const uint32_t capacity = ASYNC_CALLBACKS_CAPACITY(vector);
 
 	ZEND_ASSERT(vector->length < (capacity == 0 ? 1 : capacity));
+
+	if (EXPECTED(!(callback->flags & ASYNC_CALLBACK_F_SHARED))) {
+		callback->slot = vector->length;
+	}
+
 	async_callbacks_slots(vector)[vector->length++] = callback;
 }
 
-/* Removes `callback`; false when it is not in the vector. Order is not kept. During a notify of
+/* Removes `callback`; false when it is not in the vector. Order is not kept. A callback is found
+ * by its slot; a shared one, or one not in the vector, by a search. During a notify of
  * the vector, every callback the notify has not reached yet still runs at most once, and the
  * removed one does not run again. Allocates nothing, runs no PHP code. */
 bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callback_t *callback);

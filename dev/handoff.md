@@ -146,19 +146,18 @@ and `bench/alloc_count.so`.
 
 ## S5
 
-S5.5 done 2026-10-07: the stage review (S5.md section 11: the Critic's findings, coverage with the
-lines left and why, Mull survivors, benchmarks in `dev/BENCHMARKS.md`). Next is S5.6, the security
-pass by `dev/SECURITY.md`. Mull runs one S5 file at a time: `tools/mull.py` over the stage diff of all
-`src/` does not fit, so the S5.5 run narrowed its lane to one file and the S5 list (the script is not
-kept; `tools/mull.py`'s `lane_for`, `run_mull` and `changed_lines` do the work). Benchmarks need
-release builds of both sides (BENCHMARKS, S3.11's configure line; the reference built inside the
-fork core's tree). Known, not fixed (low): `await_*` refused for its token, or a Traversable whose
-`key()` throws, warns "never used" for the Futures it was given; a Timer op that completes with an
-error fires the `Timeout` as a deadline; a bailout while parked in `async_future_await()` or an
-`await_*` wait leaks the wait's references until the request ends; the token's records are removed
-by search (B11: 2.76 times per waiter from 1 000 to 10 000, under S3.md's limit). A change S5 needs
-in the layer goes through the coordinator. In a fresh container: build both cores with
-`tools/ci/build-core.sh` (`RUNNER_TEMP=/root` for ASAN, then
+S5.6 done 2026-10-07: the security pass (`dev/SECURITY.md`, the S5.6 entries; DECISIONS of the day).
+Every S5 step is done; the stage closes after S4 (PLAN, Parallel tracks), so nothing is left for
+this track but the stage's close. Mull runs one S5 file at a time: `tools/mull.py` over the stage
+diff of all `src/` does not fit, so the S5.5 run narrowed its lane to one file and the S5 list (the
+script is not kept; `tools/mull.py`'s `lane_for`, `run_mull` and `changed_lines` do the work).
+Benchmarks need release builds of both sides (BENCHMARKS, S3.11's configure line; the reference
+built inside the fork core's tree). Known, not fixed (low): `await_*` refused for its token, or a
+Traversable whose `key()` throws, warns "never used" for the Futures it was given; a Timer op that
+completes with an error fires the `Timeout` as a deadline; a bailout while parked in
+`async_future_await()` or an `await_*` wait leaks the wait's references until the request ends. A
+change S5 needs in the layer goes through the coordinator. In a fresh container: build both cores
+with `tools/ci/build-core.sh` (`RUNNER_TEMP=/root` for ASAN, then
 `TRUE_ASYNC_CORE_SRC=/root/core-asan/php-src`), `git fetch --unshallow` before `check-lists.py`, the
 reference clone at `REFERENCE` for `--reference`. `gen_stub.php` cannot download PHP-Parser through
 the proxy: `git clone --depth 1 --branch v5.6.1 https://github.com/nikic/PHP-Parser
