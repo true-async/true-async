@@ -1320,3 +1320,38 @@ stack options were shown with the code).
   passed before the waiter's `await()`, that `await()` fires the Timeout in the waiter, and the
   subscriber's exception is chained under the waiter's `TimeoutException` and starts no shutdown
   (reproduced on Linux with a 50 ms busy wait after `timeout()`; open in `dev/handoff.md`).
+- 2026-10-07 A scope's exception handler cannot park: it runs as its coroutine finishes, where
+  `suspend()`, `await()` and `delay()` throw, and an uncaught throw is the handler's exception
+  (S9.3, `scope/065`). Why: a finished coroutine has given back its fiber context and left the
+  registry before its notify, so a parked handler would be invisible to `exit()`, the deadlock
+  count and the bailout walk; TrueAsync parks it, and its parked handler cannot be cancelled
+  (S9-scope.md 9 item 9). Rejected: a coroutine of its own per handler call (the Critic), which
+  reorders the route against the cascade (the Sage). Edmond may want handlers that wait.
+- 2026-10-07 `exit()` in a scope's exception handler ends the request as in a coroutine's body, and
+  the route stops (S9.3, `scope/066`). Why: TrueAsync chains the exit object as the handler's
+  exception and loses its status (`exit(3)` ends with 255) (S9-scope.md 9 item 10).
+- 2026-10-07 The handlers are kept as `zend_fcall_info_cache` fields of the scope, released when the
+  scope goes, and the object's `get_gc` reports them while the object has its scope (S9.3,
+  `scope/069`, `070`). Why: the core's own idiom for a stored callable (`zend_fcc_dup`,
+  `zend_call_known_fcc`); the destructor, which the GC runs first, detaches the scope, so a scope
+  that outlives its object keeps its handler's closure alive and never under a freed object.
+- 2026-10-07 `scheduler/009-callable_release_throws.phpt`, `scheduler/022-await_finished_outcome.phpt`,
+  `scheduler/088-unobserved_exception_of_global_printed_at_end.phpt`,
+  `scheduler/089-unobserved_exceptions_printed_at_end_whatever_holds_them.phpt`,
+  `scheduler/091-unobserved_exception_throwing_tostring_does_not_stop_the_rest.phpt`,
+  `scheduler/092-exit_exception_not_printed_again_for_a_holder.phpt` and
+  `scheduler/102-unobserved_exception_tostring_not_called_after_one_bailed_out.phpt`
+  (`changed:2026-10-07`) start every coroutine with `suspend()` before the first one fails, and main
+  yields once more. Why: with S9.3's route an unawaited error in the global scope cancels the
+  coroutines that have not started (Edmond's option 1 above), so their sibling or reader never ran;
+  the reference build prints the same as ours for the changed tests, but for S3's report of the
+  unobserved ones.
+- 2026-10-07 A scope's disposal moves its handlers' closures and objects into an array released
+  after the scope and its parents are freed (`scope_handler_keep_back`, S9.3, `scope/073`). Why:
+  a closure's release may free the last holder of the parent scope while `scope_dispose` still
+  reads it (the Critic; heap-use-after-free under ASAN at `scope_dispose`).
+- 2026-10-07 A fatal error in a scope's exception handler takes the coroutine out of its scope
+  before the bailout goes on (`zend_try` around the call in `async_scope_catch`, S9.3,
+  `scope/072`). Why: the bailout skipped the scope removal that finalize does after the route, and
+  the coroutine's free asserted on a scope still set (the Critic). The `zend_try` is on the error
+  route only, not a hot path.

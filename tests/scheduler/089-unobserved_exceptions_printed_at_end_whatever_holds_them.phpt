@@ -16,18 +16,21 @@ class Logger {
     }
 }
 
-$tasks = [spawn(function () { throw new RuntimeException("in an array"); })];
-Holder::$coroutine = spawn(function () { throw new LogicException("in a static property"); });
-$shared = spawn(function () { throw new DomainException("held twice"); });
+// Every coroutine starts before the first one fails: an unawaited error of the global scope cancels
+// the coroutines that have not started (dev/plans/S9-scope.md 4).
+$tasks = [spawn(function () { suspend(); throw new RuntimeException("in an array"); })];
+Holder::$coroutine = spawn(function () { suspend(); throw new LogicException("in a static property"); });
+$shared = spawn(function () { suspend(); throw new DomainException("held twice"); });
 $copy = $shared;
 $cycle = new stdClass;
 $cycle->self = $cycle;
-$cycle->coroutine = spawn(function () { throw new LengthException("in a cycle"); });
+$cycle->coroutine = spawn(function () { suspend(); throw new LengthException("in a cycle"); });
 // Both waiters rethrow the one object their awaited coroutine failed with.
-$failed = spawn(function () { throw new UnexpectedValueException("rethrown by two waiters"); });
+$failed = spawn(function () { suspend(); throw new UnexpectedValueException("rethrown by two waiters"); });
 $waiters = [spawn(fn() => await($failed)), spawn(fn() => await($failed))];
-$lost = spawn(function () { throw new OverflowException("in a plain global"); });
+$lost = spawn(function () { suspend(); throw new OverflowException("in a plain global"); });
 $logger = new Logger;
+suspend();
 suspend();
 echo "end\n";
 ?>

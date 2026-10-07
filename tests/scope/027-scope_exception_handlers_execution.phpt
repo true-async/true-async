@@ -1,7 +1,5 @@
 --TEST--
 Scope: exception handlers - actual execution and propagation
---XFAIL--
-Not implemented yet: S9.3 of dev/PLAN.md
 --FILE--
 <?php
 

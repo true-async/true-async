@@ -1,7 +1,5 @@
 --TEST--
 Scope: setExceptionHandler() handler actually fires and suppresses coroutine exception
---XFAIL--
-Not implemented yet: S9.3 of dev/PLAN.md
 --FILE--
 <?php
 

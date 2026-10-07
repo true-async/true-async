@@ -68,6 +68,17 @@ final class Scope implements ScopeProvider
 
     public function isCancelled(): bool {}
 
+    /**
+     * Called as fn(Scope $scope, Coroutine $coroutine, \Throwable $error) for an error of a coroutine of
+     * this scope that nobody awaited, before the scope is cancelled for it; returning without throwing
+     * keeps the scope running. What it throws goes on up instead, with the error as its previous. It
+     * runs as the coroutine finishes, where suspend(), await() and delay() throw.
+     */
+    public function setExceptionHandler(callable $exceptionHandler): void {}
+
+    /** The same for an error coming up from a child scope; it is called instead of setExceptionHandler()'s. */
+    public function setChildScopeExceptionHandler(callable $exceptionHandler): void {}
+
     /** @return Scope[] the child scopes that still have their object */
     public function getChildScopes(): array {}
 }

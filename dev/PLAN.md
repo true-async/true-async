@@ -730,7 +730,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md
-Active: S9.3
+Active: S9.4
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -757,11 +757,19 @@ Active: S9.3
         0 unexpected on both. The Critic's 2 high findings (hooks that suspend, a fatal error in a
         hook) and the stand-in shared by concurrent hooks fixed with tests; a core GC bug it exposed
         (the threshold raised once per waiter of a run) reported for a core fix.
-- [ ] S9.3 The error route with both exception handlers and its cascade of fresh cancellations
+- [x] S9.3 The error route with both exception handlers and its cascade of fresh cancellations
       (note section 4).
       done: S9.txt's S9.3 tests and `p5`-`p7` of the note as own tests pass on debug and ASAN;
         the S3-S7 lists pass as before
       tier: T2 · role: Critic
+      handoff: done 2026-10-07: `async_scope_catch` in `src/scope.c`, called from finalize when no
+        wait record was called (`async_callbacks_notify` returns it); the 5 tests lose
+        `--XFAIL--`; own tests `scope/059`-`075` (`075` XFAIL until the core carries
+        php/php-src#24177); 7 `scheduler/` tests of S3 start their coroutines before the first
+        failure (`changed:`). Debug 1049 PASS, 63 XFAIL; ASAN 1031 PASS, 59 XFAIL; 0 unexpected on both. The Critic's 2 high
+        findings (a handler's release freeing the parent under `scope_dispose`, a fatal error in a
+        handler) fixed with `scope/072`, `073`; the Sage kept the handler that cannot park (note
+        9, item 9), a question for Edmond.
 - [ ] S9.4 `awaitCompletion()`, the SCOPE wait kind, the route's wake of the scope's waiters with
       the error (note section 4, step 2), the collector's edges (an S7 reporter asked through the
       coordinator) and the `await_*` child scope (note sections 6, 8).

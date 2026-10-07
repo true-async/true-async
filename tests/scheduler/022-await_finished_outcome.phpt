@@ -6,7 +6,10 @@ use function Async\spawn;
 use function Async\await;
 use function Async\suspend;
 
+// Every coroutine starts before the first one fails: an unawaited error of the global scope cancels
+// the coroutines that have not started (dev/plans/S9-scope.md 4).
 $failing = spawn(function () {
+    suspend();
     throw new RuntimeException("failed");
 });
 
@@ -14,6 +17,7 @@ $returning = spawn(function () {
     return [1, 2];
 });
 
+suspend();
 suspend();
 
 var_dump($failing->isCompleted(), $returning->isCompleted());

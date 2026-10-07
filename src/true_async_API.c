@@ -108,17 +108,17 @@ bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callba
 	return true;
 }
 
-void async_callbacks_notify(async_awaitable_t *target,
+bool async_callbacks_notify(async_awaitable_t *target,
 							async_callbacks_vector_t *vector,
 							void *result,
 							zend_object *exception)
 {
 	if (UNEXPECTED(vector->capacity & ASYNC_CALLBACKS_F_NOTIFYING)) {
-		return;
+		return false;
 	}
 
 	if (vector->length == 0) {
-		return;
+		return false;
 	}
 
 	vector->capacity |= ASYNC_CALLBACKS_F_NOTIFYING;
@@ -139,8 +139,12 @@ void async_callbacks_notify(async_awaitable_t *target,
 	 * vector. A bailout out of a callback leaves the vector marked, as in TrueAsync: the scheduler's
 	 * bailout handling unwinds every unfinished coroutine itself, waiters included (TrueAsync's
 	 * bailout_all_coroutines()). */
+	bool is_record_called = false;
+
 	while (vector->cursor < vector->length) {
 		async_event_callback_t *callback = async_callbacks_slots(vector)[vector->cursor++];
+		/* Read before the call, which may free a heap subscriber. */
+		is_record_called |= (callback->flags & ASYNC_CALLBACK_F_RECORD) != 0;
 		callback->callback(target, callback, result, exception);
 
 		if (UNEXPECTED(EG(exception) != NULL)) {
@@ -152,6 +156,8 @@ void async_callbacks_notify(async_awaitable_t *target,
 	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = was_in_scheduler_context;
 
 	async_exception_restore_fast(&EG(exception), &saved_exception);
+
+	return is_record_called;
 }
 
 void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *vector)

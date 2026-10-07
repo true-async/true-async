@@ -20,8 +20,11 @@ final class Holder {
     public static $second;
 }
 
-Holder::$first = spawn(function () { throw new Loud("loud"); });
-Holder::$second = spawn(function () { throw new RuntimeException("second"); });
+// Every coroutine starts before the first one fails: an unawaited error of the global scope cancels
+// the coroutines that have not started (dev/plans/S9-scope.md 4).
+Holder::$first = spawn(function () { suspend(); throw new Loud("loud"); });
+Holder::$second = spawn(function () { suspend(); throw new RuntimeException("second"); });
+suspend();
 suspend();
 echo "end\n";
 ?>

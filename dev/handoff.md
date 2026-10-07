@@ -339,3 +339,14 @@ one run, reported to the coordinator for a core fix), `spawnWith/013`-`016`. Nex
 needs a non-owning edge reporter from S7 (note section 6); the S7 thread takes it after S7.6 and
 sends the signatures for review. Known, left for S9.7: the collector's `cancel` mode does not reset
 its back-off for a parked zombie (its cancelled bit was set without a wake).
+
+S9.3 done 2026-10-07: the error route (note section 4) in `src/scope.c` (`async_scope_catch`,
+`scope_handle_error`), called from `async_coroutine_finalize` after the notify and before the scope
+removal, skipped when a wait record was called, for a cancellation, after a bailout, for a coroutine
+already caught. The handlers are `zend_fcall_info_cache` fields; disposal releases them after the
+scopes (`scope_handler_keep_back`). A handler runs in the finished coroutine and cannot park (note 9,
+item 9; the Sage), `exit()` in it ends the request (item 10). Probes `s9.3/q1.php`-`q16.php`.
+`scope/075` waits for php/php-src#24177 in the pinned core (the leak of a previous already in the
+chain). Open for Edmond: handlers that park (TrueAsync's parked handler cannot be cancelled, `q15`,
+`q16`). Next is S9.4; S7.7 brings the collector's non-owning edge, agreed with the S7 thread: the scope
+reporter also reports the handlers' object and closure as owned references.

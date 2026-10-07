@@ -194,8 +194,9 @@ bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callba
  * exception is chained over the one pending at entry and left in EG(exception). A bailout out of
  * a callback leaves the vector marked, so later notifies of it run nothing (as in TrueAsync). A vector
  * already being notified further up the stack is not notified again. The caller holds a reference
- * to `target` for the call (async_coroutine_finalize does), so no callback frees the vector. */
-void async_callbacks_notify(async_awaitable_t *target,
+ * to `target` for the call (async_coroutine_finalize does), so no callback frees the vector. True
+ * when it called a wait record: a coroutine was parked on `target`. */
+bool async_callbacks_notify(async_awaitable_t *target,
 							async_callbacks_vector_t *vector,
 							void *result,
 							zend_object *exception);

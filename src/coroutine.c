@@ -444,7 +444,8 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 	/* Set by the records of await_* (await.c, await_mark_handled), as TrueAsync's callbacks
 	 * (async_API.c:390, 487); the record of await() marks nothing (scheduler.c, await_record_wake). */
 	zend_coroutine->flags &= ~ASYNC_COROUTINE_F_EXCEPTION_HANDLED;
-	async_callbacks_notify((async_awaitable_t *) coroutine, &coroutine->callbacks, &zend_coroutine->result, exception);
+	const bool is_waiter_woken = async_callbacks_notify(
+			(async_awaitable_t *) coroutine, &coroutine->callbacks, &zend_coroutine->result, exception);
 
 	/* Observed: a waiter took the exception, or a finish handler cleared it. */
 	if (exception != NULL &&
@@ -453,6 +454,17 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 	}
 
 	async_callbacks_free((async_awaitable_t *) coroutine, &coroutine->callbacks);
+
+	/* An error no waiter was parked for and nothing observed goes through the scope (S9-scope.md 4 and
+	 * 9, item 6); a cancellation ends here, and after a bailout nothing more runs. A handler that takes it
+	 * observes it. What the waiters threw is left for the request's end below. */
+	if (UNEXPECTED(exception != NULL && !is_bailout && !is_waiter_woken && coroutine->scope != NULL &&
+				   !(zend_coroutine->flags & ASYNC_COROUTINE_F_EXC_CAUGHT) &&
+				   !instanceof_function(exception->ce, async_ce_cancellation) && EG(exception) == NULL)) {
+		if (async_scope_catch(coroutine, exception)) {
+			zend_coroutine->flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
+		}
+	}
 
 	/* After its waiters, as TrueAsync's (coroutine.c:727-731): the scope may be disposed with it. */
 	if (EXPECTED(coroutine->scope != NULL)) {

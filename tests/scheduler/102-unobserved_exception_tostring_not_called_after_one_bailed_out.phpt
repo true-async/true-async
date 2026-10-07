@@ -20,14 +20,19 @@ class Hungry extends Exception {
     }
 }
 
+// Every coroutine starts before the first one fails: an unawaited error of the global scope cancels
+// the coroutines that have not started (dev/plans/S9-scope.md 4).
 $coroutines = [
     Async\spawn(function () {
+        Async\suspend();
         throw new Hungry("first");
     }),
     Async\spawn(function () {
+        Async\suspend();
         throw new Hungry("second");
     }),
 ];
+Async\suspend();
 Async\suspend();
 echo "main\n";
 ?>

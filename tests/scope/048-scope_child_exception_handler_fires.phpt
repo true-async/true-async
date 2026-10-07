@@ -1,7 +1,5 @@
 --TEST--
 Scope: setChildScopeExceptionHandler() handler fires when a child scope coroutine throws
---XFAIL--
-Not implemented yet: S9.3 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -56,6 +56,9 @@ struct _async_scope_s
 	async_coroutines_vector_t coroutines;
 	uint32_t active_coroutines_count; /* coroutines that are not zombies */
 	uint32_t zombie_coroutines_count;
+	/* setExceptionHandler() and setChildScopeExceptionHandler(); not initialized while unset. */
+	zend_fcall_info_cache exception_handler;
+	zend_fcall_info_cache child_exception_handler;
 };
 
 /* Async\Scope. A stand-in is the object a SpawnStrategy's hooks get for a scope without one; it stays
@@ -104,6 +107,14 @@ void async_scope_mark_zombie(async_coroutine_t *coroutine);
  * (TrueAsync's catch_or_cancel in CANCEL mode, scope.c:942-1080). A transferred `error` is the
  * callee's. */
 void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_error, bool is_safely);
+
+/* The route of an unhandled error of `coroutine`, which belongs to a scope (S9-scope.md 4, TrueAsync's
+ * catch_or_cancel in CATCH mode, scope.c:942-1080): from the coroutine's scope up to its root, each
+ * scope's handler is called, and a scope whose handler does not take the error is cancelled with its
+ * child scopes and coroutines, a started one becoming a zombie when the coroutine's own scope disposes
+ * safely. True when a handler took the error, or called exit(), which ends the request. Runs PHP code;
+ * `error` stays the caller's. */
+bool async_scope_catch(async_coroutine_t *coroutine, zend_object *error);
 
 /* Starts the callable in a new coroutine of `scope`, the body of spawn(), Scope::spawn() and
  * spawn_with(): the cache comes from Z_PARAM_FUNC_NO_TRAMPOLINE_FREE and goes with the coroutine, or

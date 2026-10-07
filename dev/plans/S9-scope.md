@@ -48,10 +48,8 @@ struct _async_scope_s {
 	uint32_t zombie_coroutines_count;
 	zend_string *filename;                /* where the scope was created, for awaiting info */
 	uint32_t lineno;
-	zend_fcall_info *exception_fci;       /* setExceptionHandler(); NULL when unset */
-	zend_fcall_info_cache *exception_fcc;
-	zend_fcall_info *child_exception_fci; /* setChildScopeExceptionHandler() */
-	zend_fcall_info_cache *child_exception_fcc;
+	zend_fcall_info_cache exception_handler;       /* setExceptionHandler(); not initialized when unset */
+	zend_fcall_info_cache child_exception_handler; /* setChildScopeExceptionHandler() */
 	HashTable *finally_handlers;          /* lazy */
 };
 ```
@@ -135,12 +133,16 @@ every child scope, coroutine and parent the route reaches (`scope.c:1029-1031, 1
    handler, then every scope its `setExceptionHandler()` handler, called as
    `fn(Scope $scope, Coroutine $coroutine, Throwable $e)`; a handler that returns without throwing
    ends the route (`scope.c:996-1002, 1594-1718`). From the scheduler's context the handler runs in a
-   coroutine spawned to throw the error (`scope.c:1608-1620`). A scope whose object has died gets a
-   stand-in `Scope` object for the call (`scope.c:1620-1636`);
+   coroutine spawned to throw the error (`scope.c:1608-1620`); ours never routes from there (section
+   9, item 9). A scope whose object has died gets a stand-in `Scope` object for the call
+   (`scope.c:1620-1636`). A handler that throws has its exception go on in place of the error, with
+   the error as its previous (`scope.c:1010-1014`, probe `s9.3/q3.php`);
 2. otherwise the scope is marked CANCELLED, its child scopes and coroutines are cancelled (each
    with a fresh cancellation, not the error), and the scope's waiters are woken with the error; a
    waiter that takes it marks the scope's event handled and the route ends there
-   (`scope.c:1004-1062`);
+   (`scope.c:1004-1062`). A child scope the cancellation leaves empty is closed (section 5), so
+   after an unhandled error of the global scope its empty child scopes refuse a spawn while the
+   global scope still spawns, on the reference as on ours (probe `s9.3/q14.php`, `scope/074`);
 3. the route then continues in the parent scope, up to the global one (`scope.c:1064-1069`).
 
 After the route, the error is rethrown into the scheduler when nobody holds the coroutine object,
@@ -324,6 +326,30 @@ Traversable's exception; `await/062` loses its `--XFAIL--` in that step.
    whose `provideScope()` returns `null` at the top level, after one spawn, ends in a segmentation
    fault. A reference bug, for Edmond.
 
+9. **A handler cannot park** (S9.3, `scope/065`): it runs while its coroutine is finished and still
+   current, where `suspend()`, `await()` and `delay()` throw `Error`, so TrueAsync's coroutine spawned
+   to throw the error from the scheduler's context (`exceptions.c:335`) is not ported: no route of
+   ours runs there. TrueAsync's handler parks the finished coroutine (probe `s9.3/q2.php`); ours has
+   given its fiber context back and left the registry before its notify (`src/coroutine.c`, finalize),
+   so a parked handler would be invisible to `exit()`, the deadlock count and the bailout walk.
+   An `Error` the handler does not catch is its exception (step 1). TrueAsync's parking is a side
+   effect of its finalize running on the live fiber, and a reference bug for Edmond: a parked handler
+   survives `$scope->cancel()` and its coroutine's `cancel()`, the script's end waits for it, and one
+   stuck on a pending Future reports the deadlock twice (probes `s9.3/q15.php`, `q16.php`). Running
+   handlers in a coroutine of their own was weighed and rejected: it reorders the route against the
+   cascade, which TrueAsync runs after the handler (the Sage, 2026-10-07, Final).
+10. **`exit()` in a handler ends the request** as `exit()` in a coroutine does (D16), and the route
+    stops there (S9.3, `scope/066`). TrueAsync chains the exit object as the handler's exception and
+    goes on: `exit(3)` in a handler ends that request with status 255 (probe `s9.3/q13.php`).
+11. **A child scope handler that throws leaves the scope's own handler uncalled**, written as one
+    choice of handler (S9.3, `scope/063`). TrueAsync calls the own handler with the child handler's
+    exception pending, which `zend_call_function` refuses without a call: the same outcome (probe
+    `s9.3/q8.php`).
+
+The probes of S9.3 are `/mnt/project-files/s9/probes/s9.3/q1.php`-`q16.php`; on the reference and
+on ours they print the same but for items 9 and 10 and for S3's report of an unobserved exception of
+a held coroutine at the end, which TrueAsync drops (`q11.php`, `q12.php`, `scope/060`).
+
 Kept as TrueAsync and recorded for Edmond, not changed here: a zombie keeps the request running
 (section 5); the array `SpawnStrategy::beforeCoroutineEnqueue()` returns is released unread
 (`spawnWith/007`-`009` return `[]`). What the global scope does with an unhandled error is
@@ -357,7 +383,9 @@ that directory.
 - S9.2: the O(1) removal under 100 000 members (members leave out of order, the scope ends empty);
   the core's `get_coroutine_count` with zombies, through `TrueAsync\Test\coroutine_count()`
   (`src/test_hooks.c:1243`);
-- S9.3: `p5.php`, `p6.php` and `p7.php` (`p4.php` reads `runtime_stats()`, which no list has);
+- S9.3: `p5.php`, `p6.php` and `p7.php` as `scope/059`-`061` (`p4.php` reads `runtime_stats()`,
+  which no list has); `scope/062`-`075` for the handlers' calls, release and departures (section 9,
+  items 9-11) and the Critic's findings;
 - S9.4: the collector's edges of section 6 (a member of a scope whose object only a parked
   coroutine holds is found; a member of a live scope is not); a bailout while parked in
   `awaitCompletion()`;

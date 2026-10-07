@@ -6,10 +6,13 @@ use function Async\await;
 use function Async\spawn;
 use function Async\suspend;
 
-$failed = spawn(function () { throw new RuntimeException("shared"); });
+// The waiters park before the coroutine fails: an unawaited error of the global scope cancels
+// the coroutines that have not started (dev/plans/S9-scope.md 4).
+$failed = spawn(function () { suspend(); throw new RuntimeException("shared"); });
 // The held waiter keeps the exception to the end; the unheld one makes it the exit exception.
 $held = [spawn(fn() => await($failed))];
 spawn(fn() => await($failed));
+suspend();
 suspend();
 suspend();
 echo "not reached\n";

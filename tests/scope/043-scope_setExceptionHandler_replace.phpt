@@ -1,7 +1,5 @@
 --TEST--
 Scope: setExceptionHandler() and setChildScopeExceptionHandler() replace existing handler
---XFAIL--
-Not implemented yet: S9.3 of dev/PLAN.md
 --FILE--
 <?php
 
