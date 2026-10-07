@@ -1,5 +1,5 @@
 --TEST--
-A child after fork() that submits nothing gets EPERM from the parent's queue at the scheduler loop's first poll and rebuilds: the parent's waiter is named in the child's deadlock report
+A child after fork() that submits nothing rebuilds at the scheduler loop's first poll: the parent's waiter is named in the child's deadlock report
 --EXTENSIONS--
 pcntl
 --INI--
@@ -11,7 +11,11 @@ use function Async\await;
 use TrueAsync\Test;
 
 $left = spawn(fn() => Test\reactor_wait(60000));
-Async\suspend();
+
+while (Test\reactor_state()['waits'] === 0) {
+    Async\suspend();
+}
+
 $pid = pcntl_fork();
 
 if ($pid === 0) {

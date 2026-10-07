@@ -57,8 +57,8 @@ zend_object *async_timeout_exception(const async_timeout_event_t *timeout);
 
 /* Counts a holder that waits for the Timeout, with a reference to the event, and arms the timer at 0
  * to 1. False when the Timeout has completed, the submit's own fire included, and false with an Error
- * when the submit or a fork rebuild failed: nothing is counted then. It allocates and may throw, so a
- * wait subscribes after its reservations and right before its first link. */
+ * when the submit failed: nothing is counted then. It allocates and may throw, so a wait subscribes
+ * after its reservations and right before its first link. */
 bool async_timeout_subscribe(async_timeout_event_t *timeout);
 
 /* Counts down, disarms at 1 to 0 and drops the subscription's reference. Allocates nothing, runs no

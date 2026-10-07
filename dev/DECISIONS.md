@@ -11,7 +11,8 @@ someone will propose again.
   orphans and drains reach a provider only through the queue (review M3). Rejected: libuv
   (embedding spun the loop). P1.2.
 - 2026-10-01 Deadlock from the scheduler's own count of parked waits, not `EDEADLK`. Why: the
-  queue's pending count is wrong both ways (review M5).
+  queue's pending count is wrong both ways (review M5). Replaced by the 2026-10-05 entry on the
+  reactor's lists and the 2026-10-06 S4.6 entry on `EDEADLK`.
 - 2026-10-01 Every wait is a wait-graph edge from S3; the collector (S7) walks it. Why: Edmond.
 - 2026-10-01 Fork with coroutines parked on IO: tests not ported. Why: Poll context unusable after
   fork. P2.1.
@@ -639,12 +640,15 @@ stack options were shown with the code).
   `EPERM`, and the parent's waits end in the child's deadlock report instead of being resubmitted
   (S4.md 3.1). Why: the RFC core has no fork hook to refuse the fork as TrueAsync does; a wait must
   not run twice, and the core's answer for a child is that nothing of the parent completes (the Sage).
+  The `NotifyHandle` part replaced by the 2026-10-06 S4.5 entries: own descriptors, trigger waiters
+  cancelled, `own` resubmitted.
 - 2026-10-05 With `EG(vm_interrupt)` set and nothing runnable, the idle wait starts one internal
   coroutine that runs the VM's interrupt (S4.md 3.3). Why: the queue returns `EINTR` and no opcode
   would run the interrupt (review M5); a pcntl handler may then wait.
 - 2026-10-05 Cross-thread wakeup uses the core's `Io\Poll\NotifyHandle`, its class found by name,
   one per thread (S4.md 3.6). Why: the core has no wakeup op; its class entry is static; a C
-  constructor is the RFC request of S4.5 (the Critic).
+  constructor is the RFC request of S4.5 (the Critic). Replaced by the 2026-10-06 entry on the
+  reactor's own descriptor pair.
 - 2026-10-05 `delay()` with a negative value throws `ValueError` (S4.md 1). Why: TrueAsync casts it to
   an unsigned value, about 49 days; no test relies on it.
 - 2026-10-05 `edge_cases/016` and `017` stay in `S3.excluded` until S4.4 builds the core with zlib.
@@ -1103,3 +1107,33 @@ stack options were shown with the code).
   `scheduler/056-small_fiber_stack_size_throws.phpt` takes 32 KiB instead of 16 KiB, above that
   minimum on ASAN builds. Why: the room our stacks add for the first VM page hid the core's refusal,
   and a coroutine on 4 KiB crashed (`scheduler/106`; the Critic on S5.5 for the ASAN factor).
+- 2026-10-06 The reactor keeps its TIMER events in a heap of its own and passes the queue's wait the
+  nearest deadline, completing the due timers after the poll, as libuv does (S4.6, S4.md 3.5). Why: a
+  kernel timeout per Timer op made the Ring wake a burst of 10 000 `delay()`s 46-64 ms late, the Poll
+  queue 0.1 ms; with the heap the Ring is at 0.02-0.05 ms (BENCHMARKS). The backlog walk S4.4 blamed
+  took 0 steps when measured. Array heap, no tie sequence, a push during a run clamped past the
+  run's clock, the run stopped at a notify's exception (the Sage). Checked by `reactor/039`, `040`.
+- 2026-10-06 Departures that S4.3 and S4.4 built without a line here (S4.6, S4.md section 4): the
+  idle wait blocks only in the scheduler coroutine's loop (one blocking site; TrueAsync also blocks
+  in the suspending fiber's tick); `reactor_poll` takes one completion per wait call (a notify may
+  withdraw an op whose completion would sit in a batch); the queue's `EDEADLK` resolves a deadlock as
+  an empty `waits` does (the Poll queue's answer for waits with no descriptor and no deadline).
+- 2026-10-06 A fork rebuild's resubmit error goes to the exit exception (D16) or is dropped (the
+  wakeup, made again by the next trigger start), not to the submit that found the fork; the fork
+  check also runs at the tick's poll and the idle wait (S4.6). Why: the error belonged to another op,
+  and the Poll queue delivers its ready list before its own fork check (the Critic). So
+  `async_reactor_check_fork()` (S5.4) and `async_io_event_try_submit()` (S6.3) report no rebuild
+  error: the first returns nothing, the second no longer returns -1.
+- 2026-10-06 S4.6 changed own tests of S4.txt (`changed:2026-10-06`). Why, per test:
+  `reactor/002-waits_list_after_fire_and_cancel.phpt` and `reactor/016-cancelled_delay_orphans_op.phpt`
+  read the queue's pending count for a Timer op, which the timer heap keeps from the queue: they read
+  the heap's count. `reactor/011-fork_child_poll_rebuilds_queue.phpt` forked after one `suspend()`,
+  assuming its waiter had parked; fuzz seed 74 forked first and the parent's `waitpid()` hung: it
+  suspends until the reactor holds the wait, and its title no longer names the wait's `EPERM`, a case
+  the fork check before each poll made unreachable. `reactor/021-exit_deadline_in_forked_child.phpt` gains a
+  lower bound: a child unwound before the deadline passed it (the Critic).
+  `reactor/029-trigger_unstarted_keeps_nothing_alive.phpt` adds the free of a started trigger and
+  `reactor/033-trigger_wait_started_before_fork.phpt` a holder's callback beside the cancelled
+  waiter: two paths no test reached (coverage). `reactor/035-trigger_fire_before_fork_wakes_child.phpt`
+  links its child's waiter before any poll: with the fork check at the tick's poll, the walk at the
+  child's first poll drops a fire nobody waits for, as the parent's would.

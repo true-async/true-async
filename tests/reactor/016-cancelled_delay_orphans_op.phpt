@@ -1,5 +1,5 @@
 --TEST--
-delay(): a cancelled delay withdraws its Timer op from the queue and leaves the waits list
+delay(): a cancelled delay withdraws its Timer from the timer heap and leaves the waits list
 --FILE--
 <?php
 use function Async\{spawn, await, delay};
@@ -17,15 +17,15 @@ $sleeper = spawn(function () {
 
 Async\suspend();
 $state = Test\reactor_state();
-echo "parked: waits ", $state['waits'], ", pending ", $state['pending'], "\n";
+echo "parked: waits ", $state['waits'], ", timers ", $state['timers'], ", pending ", $state['pending'], "\n";
 
 $sleeper->cancel(new Async\AsyncCancellation("stop"));
 await($sleeper);
 
 $state = Test\reactor_state();
-echo "after the cancel: waits ", $state['waits'], ", pending ", $state['pending'], "\n";
+echo "after the cancel: waits ", $state['waits'], ", timers ", $state['timers'], ", pending ", $state['pending'], "\n";
 ?>
 --EXPECT--
-parked: waits 1, pending 1
+parked: waits 1, timers 1, pending 0
 cancelled: stop
-after the cancel: waits 0, pending 0
+after the cancel: waits 0, timers 0, pending 0

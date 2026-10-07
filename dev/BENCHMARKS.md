@@ -68,6 +68,40 @@ removing a waiter's record from the token's vector searches it (`async_callbacks
 case S3.md section 12 keeps a record index for. Left as is: under the
 limit and a third of the reference's cost.
 
+## 2026-10-06, S4.6: the Ring's lateness and the timer heap
+
+**Builds.** As in the S4.4 entry below (`pocs-dbg`, debug ZTS, 4 CPUs); wall clock. The machine was
+noisy this day: the same build read 46-64 ms and 85-290 ms medians on the S4.4 code in two series,
+so each comparison below alternates its sides in one series.
+
+**The cause S4.4 inferred is wrong.** The core instrumented with temporary counters (reverted), N =
+10 000 `delay(200)` on the Ring, three runs: the backlog and waiting walks of `php_io_ring_expire`
+took 0 steps in every run; `ready` held up to 330-5 500 completions, and `php_io_ring_deliver`'s
+memmove moved 1-16 M pointers per run. The reactor's wait batched (64 completions per call, a
+temporary patch) gave 53-81 ms against 46-64 ms unbatched. A C probe outside PHP, 10 000 absolute
+`IORING_OP_TIMEOUT`s 20 us apart with W us of busy work after each completion, two runs each, against
+the same deadlines in a sorted array with one `epoll_pwait2` until the nearest:
+
+| W | kernel timeouts: median / max | one wait until the nearest: median / max |
+|---|---|---|
+| 0 | 0.012-0.052 / 0.8-2.0 ms | 0.039-0.040 / 0.7-1.3 ms |
+| 10 us | 5.6-76.7 / 11.5-87.2 ms | 0.032-0.037 / 0.6-2.6 ms |
+| 15 us | 5.5-15.8 / 12.2-25.3 ms | 0.035-0.036 / 0.7-1.0 ms |
+
+Inferred, not isolated (the probe changes the wait, the timer source and the batch at once): each
+fired kernel timeout costs a busy process a few microseconds, and a burst falls behind.
+
+**After: the reactor's timer heap** (`dev/plans/S4.md` 3.5, as built in S4.6), N = 10 000, eight runs
+each, the sides alternated:
+
+| Queue | median | max |
+|---|---|---|
+| the Ring | 0.018-0.047 ms | 0.6-44.8 ms |
+| the Poll queue | 0.040-0.148 ms, one run 25.9 ms | 0.7-50.9 ms |
+
+The Ring went from 46-64 ms (the S4.4 code, the same day, four quiet runs) to the Poll queue's level.
+Not measured on a release build.
+
 ## 2026-10-06, S4.4: delay() and the S4 lanes
 
 **Builds.** The debug ZTS core of the lanes (`pocs-dbg`, the pinned core `9531d5b0b1f`, now with
@@ -104,12 +138,13 @@ run each, at N = 10 000 four on the Ring and two on the Poll queue (ranges):
 | 3 000 | 19.1 / 26.9 ms | 0.04 / 0.9 ms |
 | 10 000 | 38.7-65.8 / 62.8-90.0 ms | 0.09-0.13 / 2.7-12.3 ms |
 
-The Ring grows faster than N; the Poll queue, with its timer heap, stays flat. Inferred from the code,
-not profiled: Timer ops past the Ring's submission entries wait in its backlog, and every `wait()`
-walks the whole backlog and the waiting list for expired deadlines (`main/io/php_io_ring.c:1811-1843`),
-while the reactor calls `wait()` once per completion (S4.md 3.2). The immediate unlink (D26) has no
-variant to compare. Left for S4.6: a timer heap of the reactor's own with one Timer op for its nearest
-deadline, as libuv keeps (TrueAsync), or a core change to the Ring's backlog.
+The Ring grows faster than N; the Poll queue, with its timer heap, stays flat. Inferred from the
+code, not profiled, and wrong (the S4.6 entry above): Timer ops past the Ring's submission entries
+wait in its backlog, and every `wait()` walks the whole backlog and the waiting list for expired
+deadlines (`main/io/php_io_ring.c:1811-1843`), while the reactor calls `wait()` once per completion
+(S4.md 3.2). The immediate unlink (D26) has no variant to compare. Left for S4.6: a timer heap of
+the reactor's own with one Timer op for its nearest deadline, as libuv keeps (TrueAsync), or a core
+change to the Ring's backlog.
 
 ## 2026-10-06, S4.3: B1 with the reactor's check in the tick
 

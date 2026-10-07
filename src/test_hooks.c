@@ -1699,8 +1699,8 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_reactor_wait, 0, 1, IS_VOID, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, signal, IS_LONG, 0, "0")
 ZEND_END_ARG_INFO()
 
-/* Parks the current coroutine on a Timer op of the reactor's queue for `ms` milliseconds, as delay()
- * will (dev/plans/S4.md 3.5), or on one that never fires for a negative `ms`. A `signal` other than
+/* Parks the current coroutine on a Timer op of the reactor's heap for `ms` milliseconds, as delay()
+ * (dev/plans/S4.md 3.5), or on one that never fires for a negative `ms`. A `signal` other than
  * 0 is raised in this thread once the record is linked, before the park. */
 static ZEND_FUNCTION(reactor_wait)
 {
@@ -1731,18 +1731,6 @@ static ZEND_FUNCTION(reactor_wait)
 		RETURN_THROWS();
 	}
 
-	/* An op the queue completed at submit. */
-	if (UNEXPECTED(event->base.flags & ASYNC_EVENT_F_CLOSED)) {
-		const php_io_op_result result = event->result;
-		async_io_event_release(event);
-
-		if (UNEXPECTED(result.status != PHP_IO_DONE || result.error != 0)) {
-			zend_throw_error(NULL, "The timer ended with status %d: %s", (int) result.status, strerror(result.error));
-		}
-
-		return;
-	}
-
 	/* The record takes the caller's reference. */
 	async_wait_link(&waiter->waker.records[0], waiter, (async_awaitable_t *) event, &test_kind_io, test_io_record_wake);
 
@@ -1759,14 +1747,14 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_reactor_state, 0, 0, IS_ARRAY, 0
 ZEND_END_ARG_INFO()
 
 /* Whether the reactor has a queue, the lengths of its waits, own and triggers lists, the triggers
- * started, and the ops its queue still counts (count_pending(): a withdrawn op is not among them). */
+ * started, the ops its queue still counts (count_pending(): a withdrawn op is not among them), the
+ * timers in its heap and whether each slot knows its place and none is before its parent. */
 static ZEND_FUNCTION(reactor_state)
 {
 	ZEND_PARSE_PARAMETERS_NONE();
 
 	const async_reactor_t *reactor = &ASYNC_G(reactor);
 	zend_long waits = 0;
-
 	zend_long own = 0;
 
 	for (const async_reactor_link_t *link = reactor->waits.next; link != &reactor->waits; link = link->next) {
@@ -1792,6 +1780,20 @@ static ZEND_FUNCTION(reactor_state)
 	add_assoc_long(return_value,
 				   "pending",
 				   reactor->queue != NULL ? (zend_long) reactor->queue->ops->count_pending(reactor->queue) : 0);
+	add_assoc_long(return_value, "timers", (zend_long) reactor->timers_count);
+
+	bool timers_ordered = true;
+
+	for (uint32_t slot = 0; slot < reactor->timers_count; slot++) {
+		const async_io_event_t *timer = reactor->timers[slot];
+
+		if (timer->timer_index != slot + 1 ||
+			(slot > 0 && reactor->timers[(slot - 1) / 2]->op.deadline.hrtime > timer->op.deadline.hrtime)) {
+			timers_ordered = false;
+		}
+	}
+
+	add_assoc_bool(return_value, "timers_ordered", timers_ordered);
 }
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_stream_queue_registrations, 0, 1, IS_LONG, 0)

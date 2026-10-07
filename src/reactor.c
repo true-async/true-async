@@ -79,6 +79,20 @@ static zend_always_inline void list_add_tail(async_reactor_link_t *head, async_r
 	list_add(head->prev, link);
 }
 
+/* Moves every link of `from` to the tail of `head`, in order. */
+static zend_always_inline void list_splice_tail(async_reactor_link_t *head, async_reactor_link_t *from)
+{
+	if (list_is_empty(from)) {
+		return;
+	}
+
+	from->next->prev = head->prev;
+	head->prev->next = from->next;
+	from->prev->next = head;
+	head->prev = from->prev;
+	list_init(from);
+}
+
 static zend_always_inline async_io_event_t *io_event_from_link(async_reactor_link_t *link)
 {
 	return (async_io_event_t *) ((char *) link - offsetof(async_io_event_t, reactor_link));
@@ -87,6 +101,126 @@ static zend_always_inline async_io_event_t *io_event_from_link(async_reactor_lin
 static zend_always_inline async_trigger_t *trigger_from_link(async_reactor_link_t *link)
 {
 	return (async_trigger_t *) ((char *) link - offsetof(async_trigger_t, reactor_link));
+}
+
+///////////////////////////////////////////////////////////////////
+/// The timer heap
+///////////////////////////////////////////////////////////////////
+
+/* The TIMER events never reach the queue (S4.md 3.5): a min-heap on their deadline, whose top the
+ * queue's wait gets as its limit, as libuv keeps its timers. A kernel timeout per Timer op makes the
+ * Ring fall behind a burst of delays. Equal deadlines fire in either order. */
+
+static zend_always_inline zend_hrtime_t timer_deadline(const async_io_event_t *event)
+{
+	return event->op.deadline.hrtime;
+}
+
+static zend_always_inline void timers_place(async_reactor_t *reactor, async_io_event_t *event, const uint32_t slot)
+{
+	reactor->timers[slot] = event;
+	event->timer_index = slot + 1;
+}
+
+static void timers_sift_up(async_reactor_t *reactor, uint32_t slot)
+{
+	async_io_event_t *event = reactor->timers[slot];
+
+	while (slot > 0) {
+		const uint32_t parent = (slot - 1) / 2;
+
+		if (timer_deadline(reactor->timers[parent]) <= timer_deadline(event)) {
+			break;
+		}
+
+		timers_place(reactor, reactor->timers[parent], slot);
+		slot = parent;
+	}
+
+	timers_place(reactor, event, slot);
+}
+
+static void timers_sift_down(async_reactor_t *reactor, uint32_t slot)
+{
+	async_io_event_t *event = reactor->timers[slot];
+	const uint32_t count = reactor->timers_count;
+
+	for (;;) {
+		uint32_t child = slot * 2 + 1;
+
+		if (child >= count) {
+			break;
+		}
+
+		if (child + 1 < count && timer_deadline(reactor->timers[child + 1]) < timer_deadline(reactor->timers[child])) {
+			child++;
+		}
+
+		if (timer_deadline(event) <= timer_deadline(reactor->timers[child])) {
+			break;
+		}
+
+		timers_place(reactor, reactor->timers[child], slot);
+		slot = child;
+	}
+
+	timers_place(reactor, event, slot);
+}
+
+/* A push from a timer's notify cannot fire in the same run: its deadline is at least the run's clock
+ * + 1, so a notify that arms an expired deadline again cannot spin the run. */
+static void timers_push(async_reactor_t *reactor, async_io_event_t *event)
+{
+	if (UNEXPECTED(timer_deadline(event) <= reactor->timers_run_now)) {
+		event->op.deadline.hrtime = reactor->timers_run_now + 1;
+	}
+
+	if (UNEXPECTED(reactor->timers_count == reactor->timers_capacity)) {
+		reactor->timers_capacity = reactor->timers_capacity == 0 ? 16 : reactor->timers_capacity * 2;
+		reactor->timers = safe_erealloc(reactor->timers, reactor->timers_capacity, sizeof(*reactor->timers), 0);
+	}
+
+	timers_place(reactor, event, reactor->timers_count++);
+	timers_sift_up(reactor, reactor->timers_count - 1);
+}
+
+/* From any slot: the last timer takes it and moves down or up. */
+static void timers_remove(async_reactor_t *reactor, async_io_event_t *event)
+{
+	const uint32_t slot = event->timer_index - 1;
+	async_io_event_t *last = reactor->timers[--reactor->timers_count];
+
+	event->timer_index = 0;
+
+	if (slot == reactor->timers_count) {
+		return;
+	}
+
+	timers_place(reactor, last, slot);
+	timers_sift_down(reactor, slot);
+	timers_sift_up(reactor, last->timer_index - 1);
+}
+
+/* Every slot leaves, unrun: a fork rebuild. */
+static void timers_clear(async_reactor_t *reactor)
+{
+	for (uint32_t slot = 0; slot < reactor->timers_count; slot++) {
+		reactor->timers[slot]->timer_index = 0;
+	}
+
+	reactor->timers_count = 0;
+	/* A bailout in a timer's notify left the run's clock, and a shutdown function may fork. */
+	reactor->timers_run_now = 0;
+}
+
+/* The limit for the queue's wait: the nearest timer's deadline when it is nearer. */
+static zend_always_inline php_deadline timers_limit(const async_reactor_t *reactor, php_deadline deadline)
+{
+	if (reactor->timers_count != 0 && timer_deadline(reactor->timers[0]) < deadline.hrtime) {
+		deadline.hrtime = timer_deadline(reactor->timers[0]);
+	}
+
+	return deadline;
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -236,7 +370,8 @@ static php_io_queue *reactor_queue(async_reactor_t *reactor)
 	}
 #endif
 
-	if (UNEXPECTED(queue == NULL)) {
+	/* No hint: without ior this is always taken. */
+	if (queue == NULL) {
 		queue = php_io_queue_create_poll(PHP_POLL_BACKEND_AUTO);
 	}
 
@@ -297,6 +432,7 @@ static const async_wait_kind_t trigger_kind = {
 static void triggers_end_parent_waits(async_reactor_t *reactor)
 {
 	reactor->started_triggers = 0;
+	list_splice_tail(&reactor->triggers, &reactor->triggers_to_walk);
 
 	for (async_reactor_link_t *link = reactor->triggers.next; link != &reactor->triggers;) {
 		async_trigger_t *trigger = trigger_from_link(link);
@@ -353,16 +489,15 @@ static void wakeup_rebuild(async_reactor_t *reactor)
 
 	php_io_op_poll(&wakeup->op, NULL, pair->read_fd, PHP_POLL_READ, php_io_deadline_infinite());
 	list_add(&reactor->own, &wakeup->reactor_link);
-	wake_pair_raise(pair);
 }
 
 /* In a forked child (S4.md 3.1): the parent's queue goes, and its waits with it, unrun; their
  * coroutines end in the child's deadlock resolution, and those waiting for a trigger at once. The
  * destroy detaches every op still on the queue. The reactor's own ops go to a new queue at once,
- * oldest first (with none, the next submit creates it). An Error when one cannot: it and the ones
+ * oldest first (with none, the next submit creates it). One that cannot be submitted and the ones
  * after it stay on the list unsubmitted for the rest of the request, and D16 is unbounded in that
- * child (a retry would cost every submit a branch for a fork during the shutdown and a
- * queue the child cannot create). */
+ * child (a retry would cost every submit a branch for a fork during the shutdown and a queue the
+ * child cannot create). */
 static void reactor_rebuild(async_reactor_t *reactor)
 {
 	async_reactor_link_t *head = &reactor->waits;
@@ -374,6 +509,8 @@ static void reactor_rebuild(async_reactor_t *reactor)
 	reactor->queue->ops->destroy(reactor->queue);
 	reactor->queue = NULL;
 	async_io_provider_queue_destroyed();
+	/* Before `own` goes back: D16 is pushed again with it. */
+	timers_clear(reactor);
 
 	triggers_end_parent_waits(reactor);
 
@@ -395,6 +532,20 @@ static void reactor_rebuild(async_reactor_t *reactor)
 
 		if (UNEXPECTED(reactor_submit(reactor, event, &reactor->own) == FAILURE)) {
 			list_add(&reactor->own, &event->reactor_link);
+			zend_object *error = EG(exception);
+
+			/* Not the error of the call that found the fork: the wakeup is made again by the next
+			 * trigger creation or start, which throws to its own caller; D16 lives only in an exit's
+			 * drain, whose exception takes the error. */
+			GC_ADDREF(error);
+			zend_clear_exception();
+
+			if (event == reactor->wakeup) {
+				OBJ_RELEASE(error);
+			} else {
+				async_exit_exception_add(error);
+			}
+
 			break;
 		}
 	}
@@ -412,6 +563,13 @@ static void reactor_rebuild(async_reactor_t *reactor)
 		async_signal_rebuild();
 	}
 #endif
+
+	/* The walk of fires made before the fork: raised last, so the wakeup cannot complete inline in its
+	 * resubmit and run trigger callbacks inside the call that found the fork; the next poll delivers
+	 * it. */
+	if (reactor->wakeup != NULL) {
+		wake_pair_raise(&ASYNC_G(wake_pair));
+	}
 }
 
 void async_reactor_request_startup(void)
@@ -423,8 +581,13 @@ void async_reactor_request_startup(void)
 	list_init(&reactor->waits);
 	list_init(&reactor->own);
 	list_init(&reactor->triggers);
+	list_init(&reactor->triggers_to_walk);
 	reactor->started_triggers = 0;
 	reactor->wakeup = NULL;
+	reactor->timers = NULL;
+	reactor->timers_count = 0;
+	reactor->timers_capacity = 0;
+	reactor->timers_run_now = 0;
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	reactor->test_poll_queue = false;
 #endif
@@ -440,8 +603,10 @@ void async_reactor_request_shutdown(void)
 	}
 
 	/* A trigger may outlive the request (an object freed later in php_request_shutdown): it leaves the
-	 * list, which the next request starts again, and its stop does nothing. */
+	 * list, which the next request starts again, and its stop does nothing. A bailout in a walk's
+	 * notify left the rest on the walk's list. */
 	head = &reactor->triggers;
+	list_splice_tail(head, &reactor->triggers_to_walk);
 
 	while (!list_is_empty(head)) {
 		trigger_from_link(head->next)->start_count = 0;
@@ -457,6 +622,16 @@ void async_reactor_request_shutdown(void)
 	}
 
 	ZEND_ASSERT(list_is_empty(&reactor->own) && "the owners withdrew their ops");
+	ZEND_ASSERT(reactor->timers_count == 0);
+
+	if (reactor->timers != NULL) {
+		efree(reactor->timers);
+		reactor->timers = NULL;
+		reactor->timers_capacity = 0;
+	}
+
+	/* A bailout in a timer's notify left the run's clock. */
+	reactor->timers_run_now = 0;
 
 	if (EXPECTED(reactor->queue != NULL)) {
 		reactor->queue->ops->destroy(reactor->queue);
@@ -478,6 +653,7 @@ async_io_event_t *async_io_event_new_ex(size_t size)
 	memset(&event->op, 0, sizeof(event->op));
 	memset(&event->result, 0, sizeof(event->result));
 	event->complete = NULL;
+	event->timer_index = 0;
 	event->reactor_link.prev = NULL;
 	event->reactor_link.next = NULL;
 
@@ -490,20 +666,18 @@ void async_io_event_release(async_io_event_t *event)
 		return;
 	}
 
-	ZEND_ASSERT(event->op.queue == NULL && event->reactor_link.prev == NULL && "a submitted op is withdrawn first");
+	ZEND_ASSERT(event->op.queue == NULL && event->timer_index == 0 && event->reactor_link.prev == NULL &&
+				"a submitted op is withdrawn first");
 
 	async_callbacks_free((async_awaitable_t *) event, &event->base.callbacks);
 	efree(event);
 }
 
-/* A completion of the reactor's queue: the event fires once, in scheduler context (the notify sets
- * it), under a reference of its own, since the wake of its last waiter releases the record's. */
-static void reactor_dispatch(const php_io_queue_completion *completion)
+/* A completion of the reactor's queue or of a heap timer, `result` written: the event fires once, in
+ * scheduler context (the notify sets it), under a reference of its own, since the wake of its last
+ * waiter releases the record's. */
+static void event_complete(async_io_event_t *event)
 {
-	async_io_event_t *event = completion->data;
-
-	event->result = completion->result;
-
 	if (event->complete != NULL) {
 		event->complete(event);
 		return;
@@ -517,38 +691,93 @@ static void reactor_dispatch(const php_io_queue_completion *completion)
 	async_io_event_release(event);
 }
 
-/* At every entry that may create or count something in the reactor: a forked child rebuilds first
- * (S4.md 3.1). False with an Error the rebuild left. */
-static zend_always_inline bool reactor_check_fork(async_reactor_t *reactor)
+static void reactor_dispatch(const php_io_queue_completion *completion)
+{
+	async_io_event_t *event = completion->data;
+
+	event->result = completion->result;
+	event_complete(event);
+}
+
+/* Completes the timers due at the run's clock, nearest first, as a queue completion would: a notify
+ * that withdraws another due timer takes it off the heap. Stops at an exception a notify left, as
+ * reactor_poll does; the rest run at the next poll. */
+static void timers_run(async_reactor_t *reactor)
+{
+	if (reactor->timers_count == 0) {
+		return;
+	}
+
+	reactor->timers_run_now = zend_hrtime();
+
+	while (reactor->timers_count != 0 && timer_deadline(reactor->timers[0]) <= reactor->timers_run_now) {
+		async_io_event_t *event = reactor->timers[0];
+
+		timers_remove(reactor, event);
+		memset(&event->result, 0, sizeof(event->result));
+		event->result.status = PHP_IO_DONE;
+		event_complete(event);
+
+		if (UNEXPECTED(EG(exception) != NULL)) {
+			break;
+		}
+	}
+
+	reactor->timers_run_now = 0;
+}
+
+/* At every reactor entry: a forked child rebuilds first (S4.md 3.1). */
+static zend_always_inline void reactor_check_fork(async_reactor_t *reactor)
 {
 #ifndef PHP_WIN32
 	if (UNEXPECTED(reactor->queue != NULL && reactor->queue_pid != getpid())) {
 		reactor_rebuild(reactor);
-
-		if (UNEXPECTED(EG(exception) != NULL)) {
-			return false;
-		}
 	}
 #endif
-
-	return true;
 }
 
-/* The submit to an existing queue, without the dispatch of an inline completion, which it returns in
- * `completion` (`completed`). FAILURE with an Error. */
-static zend_result queue_submit(php_io_queue *queue,
+/* The submit to an existing queue, a TIMER's to the heap instead, without the dispatch of an inline
+ * completion, which it returns in `completion` (`completed`). 0, or the queue's errno. */
+static int queue_push(async_reactor_t *reactor,
+					  async_io_event_t *event,
+					  async_reactor_link_t *list,
+					  php_io_queue_completion *completion,
+					  bool *completed)
+{
+	php_io_queue *queue = reactor->queue;
+
+	if (event->op.type == PHP_IO_OP_TIMER) {
+		timers_push(reactor, event);
+		list_add(list, &event->reactor_link);
+		*completed = false;
+
+		return 0;
+	}
+
+	if (UNEXPECTED(queue->ops->submit(queue, &event->op, event) == FAILURE)) {
+		ZEND_ASSERT(errno != 0 && "a queue's failed submit sets errno");
+		return errno;
+	}
+
+	list_add(list, &event->reactor_link);
+	*completed = queue->ops->take_inline(queue, &event->op, completion);
+
+	return 0;
+}
+
+/* queue_push() with FAILURE and an Error. */
+static zend_result queue_submit(async_reactor_t *reactor,
 								async_io_event_t *event,
 								async_reactor_link_t *list,
 								php_io_queue_completion *completion,
 								bool *completed)
 {
-	if (UNEXPECTED(queue->ops->submit(queue, &event->op, event) == FAILURE)) {
-		zend_throw_error(NULL, "Cannot submit an IO operation: %s", strerror(errno));
+	const int error = queue_push(reactor, event, list, completion, completed);
+
+	if (UNEXPECTED(error != 0)) {
+		zend_throw_error(NULL, "Cannot submit an IO operation: %s", strerror(error));
 		return FAILURE;
 	}
-
-	list_add(list, &event->reactor_link);
-	*completed = queue->ops->take_inline(queue, &event->op, completion);
 
 	return SUCCESS;
 }
@@ -558,9 +787,7 @@ static zend_result reactor_submit(async_reactor_t *reactor, async_io_event_t *ev
 	php_io_queue_completion completion;
 	bool completed;
 
-	if (UNEXPECTED(!reactor_check_fork(reactor))) {
-		return FAILURE;
-	}
+	reactor_check_fork(reactor);
 
 	php_io_queue *queue = reactor_queue(reactor);
 
@@ -569,7 +796,7 @@ static zend_result reactor_submit(async_reactor_t *reactor, async_io_event_t *ev
 		return FAILURE;
 	}
 
-	if (UNEXPECTED(queue_submit(queue, event, list, &completion, &completed) == FAILURE)) {
+	if (UNEXPECTED(queue_submit(reactor, event, list, &completion, &completed) == FAILURE)) {
 		return FAILURE;
 	}
 
@@ -584,34 +811,30 @@ static zend_result reactor_submit(async_reactor_t *reactor, async_io_event_t *ev
 static int reactor_try_submit(async_reactor_t *reactor, async_io_event_t *event, async_reactor_link_t *list)
 {
 	php_io_queue_completion completion;
+	bool completed;
 
-	if (UNEXPECTED(!reactor_check_fork(reactor))) {
-		return -1;
-	}
+	reactor_check_fork(reactor);
 
-	php_io_queue *queue = reactor_queue(reactor);
-
-	if (UNEXPECTED(queue == NULL)) {
+	if (UNEXPECTED(reactor_queue(reactor) == NULL)) {
 		return ENOSYS;
 	}
 
-	if (UNEXPECTED(queue->ops->submit(queue, &event->op, event) == FAILURE)) {
-		ZEND_ASSERT(errno != 0 && "a queue's failed submit sets errno");
-		return errno;
+	const int error = queue_push(reactor, event, list, &completion, &completed);
+
+	if (UNEXPECTED(error != 0)) {
+		return error;
 	}
 
-	list_add(list, &event->reactor_link);
-
-	if (UNEXPECTED(queue->ops->take_inline(queue, &event->op, &completion))) {
+	if (UNEXPECTED(completed)) {
 		reactor_dispatch(&completion);
 	}
 
 	return 0;
 }
 
-bool async_reactor_check_fork(void)
+void async_reactor_check_fork(void)
 {
-	return reactor_check_fork(&ASYNC_G(reactor));
+	reactor_check_fork(&ASYNC_G(reactor));
 }
 
 zend_result async_io_event_submit(async_io_event_t *event)
@@ -652,7 +875,9 @@ void async_io_event_orphan(async_io_event_t *event)
 {
 	php_io_queue *queue = event->op.queue;
 
-	if (EXPECTED(queue != NULL)) {
+	if (event->timer_index != 0) {
+		timers_remove(&ASYNC_G(reactor), event);
+	} else if (EXPECTED(queue != NULL)) {
 		queue->ops->orphan(queue, &event->op);
 	}
 
@@ -665,7 +890,8 @@ void async_io_record_unlink(async_coroutine_event_callback_t *record)
 
 	async_wait_record_remove(record);
 
-	if (EXPECTED(event->base.callbacks.length == 0 && !(event->base.flags & ASYNC_EVENT_F_CLOSED))) {
+	/* Usually the fire unlinks: the event is CLOSED then. */
+	if (UNEXPECTED(event->base.callbacks.length == 0 && !(event->base.flags & ASYNC_EVENT_F_CLOSED))) {
 		async_io_event_orphan(event);
 	}
 
@@ -719,8 +945,8 @@ bool async_reactor_delay(async_coroutine_t *waiter, const zend_long ms)
 
 	php_deadline deadline = php_io_deadline_from_ms(ms);
 
-	/* The core saturates a deadline past the clock's range to an infinite one, which the Ring refuses
-	 * for a Timer (Rg:890-895): the latest finite one instead, as TrueAsync saturates the timer
+	/* The core saturates a deadline past the clock's range to an infinite one, which the queue's wait
+	 * would take for a deadlock: the latest finite one instead, as TrueAsync saturates the timer
 	 * (libuv_reactor.c:1161-1178). */
 	if (UNEXPECTED(php_deadline_is_infinite(&deadline))) {
 		deadline.hrtime = ZEND_HRTIME_T_MAX - 1;
@@ -733,24 +959,6 @@ bool async_reactor_delay(async_coroutine_t *waiter, const zend_long ms)
 	if (UNEXPECTED(async_io_event_submit(event) == FAILURE)) {
 		async_io_event_release(event);
 		return false;
-	}
-
-	/* The queue completed it at the submit, its deadline passed meanwhile: still a yield, as TrueAsync's
-	 * delay() always parks, so the coroutines queued before it run first. */
-	if (UNEXPECTED(event->base.flags & ASYNC_EVENT_F_CLOSED)) {
-		zend_object *error = timer_result_error(&event->result);
-		async_io_event_release(event);
-
-		if (UNEXPECTED(error != NULL)) {
-			zend_throw_exception_internal(error);
-			return false;
-		}
-
-		if (UNEXPECTED(!async_scheduler_enqueue(&waiter->coroutine, NULL, false))) {
-			return false;
-		}
-
-		return ZEND_ASYNC_SUSPEND();
 	}
 
 	async_wait_link(&waiter->waker.records[0], waiter, (async_awaitable_t *) event, &timer_kind, timer_record_wake);
@@ -773,16 +981,12 @@ static void triggers_walk(async_reactor_t *reactor, const async_wake_pair_t *pai
 	}
 
 	const zend_object *exception_at_entry = EG(exception);
-	async_reactor_link_t pending;
+	async_reactor_link_t *pending = &reactor->triggers_to_walk;
 
-	pending.next = reactor->triggers.next;
-	pending.prev = reactor->triggers.prev;
-	pending.next->prev = &pending;
-	pending.prev->next = &pending;
-	list_init(&reactor->triggers);
+	list_splice_tail(pending, &reactor->triggers);
 
-	while (!list_is_empty(&pending)) {
-		async_trigger_t *trigger = trigger_from_link(pending.next);
+	while (!list_is_empty(pending)) {
+		async_trigger_t *trigger = trigger_from_link(pending->next);
 
 		list_remove(&trigger->reactor_link);
 		list_add_tail(&reactor->triggers, &trigger->reactor_link);
@@ -796,13 +1000,7 @@ static void triggers_walk(async_reactor_t *reactor, const async_wake_pair_t *pai
 		async_trigger_release(trigger);
 
 		if (UNEXPECTED(EG(exception) != exception_at_entry)) {
-			while (!list_is_empty(&pending)) {
-				async_reactor_link_t *link = pending.next;
-
-				list_remove(link);
-				list_add_tail(&reactor->triggers, link);
-			}
-
+			list_splice_tail(&reactor->triggers, pending);
 			wake_pair_raise(pair);
 			return;
 		}
@@ -843,7 +1041,7 @@ static void wakeup_complete(async_io_event_t *event)
 
 		wake_pair_drain(pair);
 
-		if (UNEXPECTED(queue_submit(reactor->queue, event, &reactor->own, &completion, &completed) == FAILURE)) {
+		if (UNEXPECTED(queue_submit(reactor, event, &reactor->own, &completion, &completed) == FAILURE)) {
 			reactor->wakeup = NULL;
 			async_io_event_release(event);
 			return;
@@ -895,6 +1093,12 @@ static bool wakeup_arm(async_reactor_t *reactor)
 		return false;
 	}
 
+	/* Triggers listed with no wakeup: a child whose rebuild could not resubmit it, so a fire made
+	 * before the fork waits unwalked; one walk at the next poll finds it, and costs nothing else. */
+	if (UNEXPECTED(!list_is_empty(&reactor->triggers))) {
+		wake_pair_raise(pair);
+	}
+
 	return true;
 }
 
@@ -902,7 +1106,9 @@ async_trigger_t *async_trigger_new(void)
 {
 	async_reactor_t *reactor = &ASYNC_G(reactor);
 
-	if (UNEXPECTED(!reactor_check_fork(reactor) || !wakeup_arm(reactor))) {
+	reactor_check_fork(reactor);
+
+	if (UNEXPECTED(!wakeup_arm(reactor))) {
 		return NULL;
 	}
 
@@ -947,7 +1153,9 @@ bool async_trigger_start(async_trigger_t *trigger)
 {
 	async_reactor_t *reactor = &ASYNC_G(reactor);
 
-	if (UNEXPECTED(!reactor_check_fork(reactor) || !wakeup_arm(reactor))) {
+	reactor_check_fork(reactor);
+
+	if (UNEXPECTED(!wakeup_arm(reactor))) {
 		return false;
 	}
 
@@ -1013,19 +1221,7 @@ static bool reactor_poll(async_reactor_t *reactor, php_deadline deadline)
 					return true;
 				case EDEADLK:
 					return false;
-#ifndef PHP_WIN32
-				case EPERM:
-					/* The parent's queue in a forked child; anything else is a hard error. */
-					if (EXPECTED(reactor->queue_pid != getpid())) {
-						reactor_rebuild(reactor);
-						return true;
-					}
-
-					ZEND_FALLTHROUGH;
-#endif
 				default:
-					/* D16's Timer rides this queue and does not fire here: each tick cancels every
-					 * coroutine again instead. */
 					async_scheduler_exit_with(
 							async_new_exception(zend_ce_error, "The IO queue's wait failed: %s", strerror(errno)));
 					return true;
@@ -1070,11 +1266,21 @@ void async_reactor_poll_due(async_reactor_t *reactor, const uint64_t interval)
 	}
 
 	reactor->last_poll = now;
+	/* The Poll queue delivers its ready list before it checks for a fork (P:634-636). */
+	reactor_check_fork(reactor);
+
+	if (UNEXPECTED(reactor->queue == NULL)) {
+		return;
+	}
 
 	php_deadline deadline;
 	php_deadline_init_nonblock(&deadline);
 
 	reactor_poll(reactor, deadline);
+
+	if (EXPECTED(EG(exception) == NULL)) {
+		timers_run(reactor);
+	}
 }
 
 bool async_reactor_wait_idle(void)
@@ -1082,6 +1288,7 @@ bool async_reactor_wait_idle(void)
 	async_reactor_t *reactor = &ASYNC_G(reactor);
 
 	ZEND_ASSERT(async_reactor_has_waits(reactor));
+	reactor_check_fork(reactor);
 
 	/* Started triggers in a child whose rebuild could not make a queue: nothing can wake them. */
 	if (UNEXPECTED(reactor->queue == NULL)) {
@@ -1091,5 +1298,13 @@ bool async_reactor_wait_idle(void)
 	php_deadline deadline;
 	php_deadline_init_infinite(&deadline);
 
-	return reactor_poll(reactor, deadline);
+	if (UNEXPECTED(!reactor_poll(reactor, timers_limit(reactor, deadline)))) {
+		return false;
+	}
+
+	if (EXPECTED(EG(exception) == NULL)) {
+		timers_run(reactor);
+	}
+
+	return true;
 }

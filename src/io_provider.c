@@ -81,8 +81,8 @@ static async_io_event_t *io_wait_new(const php_io_op *op)
 		event->op.u.poll.events = PHP_POLL_READ;
 	}
 
-	/* The Ring refuses an infinite Timer (a sleep() past the clock's range): the latest finite
-	 * deadline instead, as delay() does. */
+	/* An infinite Timer (a sleep() past the clock's range) leaves the idle wait without a limit, which
+	 * the queue answers as a deadlock: the latest finite deadline instead, as delay() does. */
 	if (UNEXPECTED(op->type == PHP_IO_OP_TIMER && php_deadline_is_infinite(&event->op.deadline))) {
 		event->op.deadline.hrtime = ZEND_HRTIME_T_MAX - 1;
 	}
@@ -171,10 +171,10 @@ io_wait_wake(async_awaitable_t *target, async_event_callback_t *callback, void *
 
 /* A submit the queue refused (S6.md 3.3, step 3). ENOTSUP/EOPNOTSUPP (no form for the op) and ENOSYS
  * (no queue) leave the result Unsupported: the core runs the op itself. Any other error is reported
- * as the syscall would. -1 leaves the Error of a fork rebuild pending. */
+ * as the syscall would. */
 static void io_submit_failed(php_io_op_result *result, const int error)
 {
-	if (UNEXPECTED(error == -1 || error == ENOTSUP || error == EOPNOTSUPP || error == ENOSYS)) {
+	if (UNEXPECTED(error == ENOTSUP || error == EOPNOTSUPP || error == ENOSYS)) {
 		return;
 	}
 
@@ -185,7 +185,7 @@ static void io_submit_failed(php_io_op_result *result, const int error)
 
 /* Submits the copy and takes a completion the queue made at submit. False when the op is in flight:
  * the caller links its record or withdraws it. True when the result is written (or left
- * Unsupported) and `event` is released, with an exception pending when a fork rebuild failed. */
+ * Unsupported) and `event` is released. */
 static bool io_wait_submit(async_io_event_t *event, php_io_op *op, php_io_op_result *result)
 {
 	const int error = async_io_event_try_submit(event);

@@ -1,5 +1,5 @@
 --TEST--
-After fork(), a coroutine the parent left waiting on a trigger is cancelled in the child, while the child's own wait on the trigger is woken by a thread the child starts; the parent's waiter is woken in the parent
+After fork(), a coroutine the parent left waiting on a trigger is cancelled in the child (a holder's callback beside it stays), while the child's own wait on the trigger is woken by a thread the child starts; the parent's waiter is woken in the parent
 --EXTENSIONS--
 pcntl
 --FILE--
@@ -19,6 +19,8 @@ $left = spawn(function () {
 });
 
 $parent = getmypid();
+$relayed = new Test\Event();
+Test\trigger_relay($relayed);
 Async\suspend();
 $pid = pcntl_fork();
 

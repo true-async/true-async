@@ -275,7 +275,7 @@ Done when: S3 + S4 lists pass; `delay(1000)` costs under 50 ms of user CPU; a te
 function wakes the loop from another pthread (through wake descriptors of the reactor's own until
 the core exports the pair behind `NotifyHandle`, `RFC-CHANGES.md` 1).
 Tier: T2. Roles: Critic on S4.1, Critic after S4.2 and after S4.3.
-Active: S4.6
+Active: S4.7
 
 - [x] S4.1 Design note `dev/plans/S4.md`: completion dispatch for scheduler-owned ops and provider
       ops; idle wait in `queue->wait()` with its `EDEADLK` and `EINTR` answers; deadlock decided
@@ -351,10 +351,22 @@ Active: S4.6
         ruled on; each tested behaviour caught by a test when reverted. All 837 listed tests:
         `pocs-dbg` 620 PASS, 8 SKIP, 209 XFAIL; `pocs-asan` 605 PASS, 25 SKIP, 207 XFAIL;
         `pocs-win` left to CI.
-- [ ] S4.6 Stage review: Critic after S4.2-S4.5, coverage of the reactor code, Mull on the stage
+- [x] S4.6 Stage review: Critic after S4.2-S4.5, coverage of the reactor code, Mull on the stage
       diff, fuzz over 100 seeds; the Ring's lateness with many Timer ops (`dev/BENCHMARKS.md`,
       S4.4: a timer heap of the reactor's own, as libuv's, or a core change to the Ring's backlog).
       done: Done when of S4 holds on the day; survivors killed or explained
+      handoff: done 2026-10-07: a timer heap in `src/reactor.c` (Timer ops never reach the queue;
+        the wait gets the nearest deadline): the Ring's lateness was a kernel timeout per op, not
+        the backlog walk; 10 000 delays wake 0.02-0.05 ms late on it instead of 46-64 ms
+        (`dev/BENCHMARKS.md`). The Critic's stage round (4 major, 7 minor) and the merge round with
+        S5.4 and S6.3 fixed or recorded (`dev/plans/S4.md` "As built (S4.6)"); the fork check is
+        void and runs at the poll too. Fuzz 100 seeds: `reactor/011` fixed, 16 order artifacts
+        read. Mull over `src/reactor.c`: 82 mutants, 20 survived, one gap closed by `reactor/041`,
+        19 explained. Coverage: `src/` 92.8 %, the reactor's 73 uncovered lines explained. Done
+        when on core `8f89755d2b1`, 2026-10-07: all lists on top of S5.5 `pocs-dbg` 948 PASS, 9 SKIP, 12
+        XFAIL; `pocs-asan` 932 PASS, 26 SKIP, 11 XFAIL; `delay(1000)` 18-22 ms of user CPU with the
+        process's start (an empty script 11-19 ms); `reactor/026`, `027` wake the loop from another
+        pthread; `pocs-win` left to CI.
 - [ ] S4.7 Security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item; findings fixed with a test or recorded
 

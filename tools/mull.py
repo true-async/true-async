@@ -2,9 +2,9 @@
 """Mutation testing with Mull 0.34 for clang 18 on the pocs-dbg-mull lane (dev/plans/S2.md, section 6).
 
     mull.py --known-answer             check the tool itself on the planted functions
-    mull.py --diff-ref REF [--stage N] [--build-ref B]
+    mull.py --diff-ref REF [--stage N] [--build-ref B] [TEST...]
                                        mutants of the src/ lines changed since REF (and since B),
-                                       against the lists
+                                       against the lists, or only the listed TESTs among them
 
 Mull compiles its mutants into the module, each behind an environment variable named after it;
 mull-runner runs php with run-tests.php once per mutant. --known-answer exits 0 only when every
@@ -162,7 +162,7 @@ def changed_lines(ref):
     return changed
 
 
-def diff(ref, stage, build_ref=None):
+def diff(ref, stage, build_ref=None, selected=()):
     """Mutants on the src/ lines changed since `ref`, run against the stage lists.
 
     Mull's own gitDiffRef is not used: Mull 0.34.1 makes no mutant in a file the diff adds whole
@@ -174,7 +174,7 @@ def diff(ref, stage, build_ref=None):
     # The planted functions belong to --known-answer and would survive every stage's lists.
     lane = lane_for([f"^{re.escape(str(ROOT / 'src'))}/"], [f'^{re.escape(str(KNOWN_ANSWER_SOURCE))}$'],
                     build_ref)
-    entries, _ = test.compose(lane, stage, [])
+    entries, _ = test.compose(lane, stage, list(selected))
     timeouts = lane.build / TIMEOUTS
     timeouts.unlink(missing_ok=True)
 
@@ -239,12 +239,13 @@ def main():
     mode.add_argument('--diff-ref')
     parser.add_argument('--stage', type=int)
     parser.add_argument('--build-ref', help='with --diff-ref: build only the mutants changed since this commit')
+    parser.add_argument('tests', nargs='*', help='with --diff-ref: run only these listed tests')
     args = parser.parse_args()
 
     if args.known_answer:
         return known_answer()
 
-    return diff(args.diff_ref, args.stage, args.build_ref)
+    return diff(args.diff_ref, args.stage, args.build_ref, args.tests)
 
 
 if __name__ == '__main__':

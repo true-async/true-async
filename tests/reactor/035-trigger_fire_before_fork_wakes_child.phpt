@@ -12,19 +12,16 @@ Test\trigger_fire();
 $pid = pcntl_fork();
 
 if ($pid === 0) {
-    $waiter = spawn(function () {
-        Test\trigger_wait();
-        echo "child: woken by the fire before fork()\n";
-    });
-
-    spawn(function () use ($waiter) {
+    /* The wait links before the child's first poll: a walk with no waiter drops the fire. */
+    $guard = spawn(function () {
         delay(1000);
-
-        if (!$waiter->isCompleted()) {
-            echo "child: not woken\n";
-            $waiter->cancel();
-        }
+        echo "child: not woken\n";
+        Test\trigger_fire();
     });
+
+    Test\trigger_wait();
+    echo "child: woken by the fire before fork()\n";
+    $guard->cancel();
 
     return;
 }

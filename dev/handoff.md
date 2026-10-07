@@ -128,15 +128,17 @@ Written 2026-10-06. S3 closed: S3.24 re-ran its Done when on the final core; S4,
 
 ## S4
 
-S4.5 done 2026-10-06: triggers another thread fires (`async_trigger_*` in `src/reactor.c`, the
-TRIGGER kind, test hooks `TrueAsync\Test\trigger_*()`), woken by a POLL op on wake descriptors the
-reactor keeps per thread in the module globals (no `NotifyHandle`; `dev/plans/S4.md` 3.6 "As built
-(S4.5)", `RFC-CHANGES.md` 1). The deadlock counts a trigger between its start and stop; a fork
-rebuild cancels the parent's trigger waiters and makes the child's descriptors. S4.4 before it:
-`delay()` and D16 (S4.md 3.7). Next is S4.6, the stage review: Critic over S4.2-S4.5, coverage,
-Mull, fuzz over 100 seeds, and the Ring's lateness with many Timer ops (`dev/BENCHMARKS.md`, S4.4).
-The S6 thread edits `src/reactor.c` for S6.3 (S6.md section 13) and changes `reactor/021`'s parent
-line (its waitpid now parks). Open for Edmond: a pcntl handler that waits (`PLAN.md` "Open
+S4.6 done 2026-10-07, the stage review: the reactor keeps Timer ops in a heap of its own and
+passes the queue's wait the nearest deadline (`dev/plans/S4.md` "As built (S4.6): the timer heap"):
+the Ring woke 10 000 delays 46-64 ms late from a kernel timeout per op, not the backlog walk S4.4
+blamed; now 0.02-0.05 ms (`dev/BENCHMARKS.md`). The provider's `sleep()` uses the heap too
+(`queue_push()` under both submits). The Critic's stage findings are fixed ("As built (S4.6): the
+stage review"): the fork rebuild reports no error to its caller (`async_reactor_check_fork()` is
+void), raises the child's wake pair last, and the wait's `EPERM` case is gone. Fuzz, Mull and
+coverage results and the recorded limits are in that section; `reactor/037`-`041` are new, seven
+earlier tests changed (`changed:2026-10-06`, DECISIONS). Next is S4.7, the security pass. S4.1-S4.5:
+wait records, the queue and idle wait, `delay()` and D16, triggers (S4.md 2-3).
+Open for Edmond: a pcntl handler that waits (`PLAN.md` "Open
 questions"). `gc/020`, `023` stay XFAIL for the core's awaited collection (S8). A test that needs
 spawned coroutines parked before main goes on yields with `suspend()`: a short `delay()` may wake in
 main's own tick (U2). Full local runs need `mysql-server-core-8.0`; the B1 count needs a release core
@@ -197,7 +199,6 @@ build/PHP-Parser-5.6.1` in the core checkout first. Run `tools/format.sh` before
   2026-10-05). TrueAsync runs them on there.
 - Two coroutines that catch the deadlock's cancellation and await each other again loop, each
   round adding a `DeadlockError`; TrueAsync does the same (Critic, minor).
-- D16's 5 s deadline after `exit()` needs a clock and a reactor timeout (S4).
 - S5: a wait for several targets needs more than the one record in the waker (TrueAsync: two
   inline callbacks and a heap array). A multi-shot record (S4+) needs its own teardown rule.
 - Spec gaps the test author named (S3.7): `await()` with `null`, an array or a second argument;

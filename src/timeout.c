@@ -204,9 +204,7 @@ bool async_timeout_subscribe(async_timeout_event_t *timeout)
 	/* A forked child's rebuild drops the parent's op from the reactor's lists; it runs lazily, so it
 	 * goes first. */
 	if (timeout->timer != NULL) {
-		if (UNEXPECTED(!async_reactor_check_fork())) {
-			return false;
-		}
+		async_reactor_check_fork();
 
 		/* The rebuild's cancels may unsubscribe the last holder, which disarms. */
 		if (timeout->timer != NULL && UNEXPECTED(timeout->timer->reactor_link.prev == NULL)) {

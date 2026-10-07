@@ -1022,6 +1022,8 @@ static ZEND_STACK_ALIGNED void scheduler_fiber_entry(zend_fiber_transfer *transf
 
 	if (UNEXPECTED(is_bailout)) {
 		scheduler_bailout_all();
+		/* The drain ends here too: a shutdown function's wait after the bailout is not part of it. */
+		exit_deadline_withdraw();
 	}
 
 	fiber_pool_teardown();

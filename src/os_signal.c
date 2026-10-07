@@ -771,9 +771,7 @@ ZEND_FUNCTION(Async_signal)
 	}
 
 	/* A forked child rebuilds the reactor, and the watches with it, before it touches them or submits. */
-	if (UNEXPECTED(!async_reactor_check_fork())) {
-		RETURN_THROWS();
-	}
+	async_reactor_check_fork();
 
 	async_signal_watch_t *watch = signal_watch_get(signo, signal_case);
 

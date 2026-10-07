@@ -1,5 +1,5 @@
 --TEST--
-A Timer op is on the reactor's waits list while its waiter waits, and leaves it when it fires and when the waiter is cancelled, whose op is withdrawn from the queue (the Poll queue, which frees a withdrawn op at once)
+A Timer op is on the reactor's waits list and in its timer heap while its waiter waits, and leaves both when it fires and when the waiter is cancelled; the queue never holds it
 --FILE--
 <?php
 use function Async\spawn;
@@ -12,7 +12,7 @@ function state(): string
 {
     $state = Test\reactor_state();
 
-    return "waits {$state['waits']}, pending {$state['pending']}";
+    return "waits {$state['waits']}, timers {$state['timers']}, pending {$state['pending']}";
 }
 
 $fired = spawn(fn() => Test\reactor_wait(10));
@@ -33,7 +33,7 @@ await($cancelled);
 echo "after the cancel: ", state(), "\n";
 ?>
 --EXPECT--
-while both wait: waits 2, pending 2
-after the fire: waits 1, pending 1
+while both wait: waits 2, timers 2, pending 0
+after the fire: waits 1, timers 1, pending 0
 cancelled
-after the cancel: waits 0, pending 0
+after the cancel: waits 0, timers 0, pending 0

@@ -42,6 +42,7 @@ struct _async_io_event_s
 	/* Runs instead of the default completion (CLOSED, off the list, notify) with `result` written;
 	 * NULL for the default. */
 	void (*complete)(async_io_event_t *event);
+	uint32_t timer_index;              /* a TIMER's slot in the reactor's heap + 1; 0 outside it */
 	async_reactor_link_t reactor_link; /* on one of the reactor's lists while the op is submitted */
 };
 
@@ -83,8 +84,16 @@ typedef struct
 	 * none from a deadlock; a fork rebuild submits them again on the child's queue. */
 	async_reactor_link_t own;
 	async_reactor_link_t triggers; /* every live trigger of the request, walked by the wakeup */
-	uint32_t started_triggers;     /* the triggers started: each may wake a coroutine (S4.md 3.4) */
-	async_io_event_t *wakeup;      /* the POLL op on the wake pair, armed from the first trigger on */
+	/* The triggers a running walk has not reached: in the reactor, not on the walk's stack, which a
+	 * bailout in a notify may unmap before RSHUTDOWN takes them back. */
+	async_reactor_link_t triggers_to_walk;
+	uint32_t started_triggers; /* the triggers started: each may wake a coroutine (S4.md 3.4) */
+	async_io_event_t *wakeup;  /* the POLL op on the wake pair, armed from the first trigger on */
+	/* The submitted TIMER events, a min-heap on their deadline: the queue never sees them (S4.md 3.5). */
+	async_io_event_t **timers;
+	uint32_t timers_count;
+	uint32_t timers_capacity;
+	zend_hrtime_t timers_run_now; /* the clock of the running timers' completion, 0 outside it */
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	bool test_poll_queue; /* TrueAsync\Test\reactor_use_poll_queue(): the Poll queue where the Ring exists */
 #endif
@@ -107,9 +116,11 @@ static zend_always_inline async_io_event_t *async_io_event_new(void)
 
 void async_io_event_release(async_io_event_t *event);
 
-/* Submits the event's op to the thread's queue, creating the queue on first use, and puts the event
- * on the waits list; an op the queue completed at once is dispatched before the return (the event is
- * CLOSED then). FAILURE with an Error. */
+/* Submits the event's op to the thread's queue, creating the queue on first use, a TIMER's to the
+ * reactor's heap, and puts the event on the waits list; an op the queue completed at once is
+ * dispatched before the return (the event is CLOSED then). An infinite TIMER deadline stays
+ * infinite: the queue's wait answers EDEADLK on it, so a submitter that means "very long" saturates
+ * it first, as delay() does. FAILURE with an Error. */
 zend_result async_io_event_submit(async_io_event_t *event);
 
 /* Submits one of the reactor's own ops, on the `own` list instead (S4.md 3.5): its owner holds the
@@ -117,7 +128,7 @@ zend_result async_io_event_submit(async_io_event_t *event);
 zend_result async_reactor_submit_own(async_io_event_t *event);
 
 /* async_io_event_submit() for a caller that reports the error itself: 0, the submit's errno, ENOSYS
- * when no queue can be created, or -1 with the Error of a fork rebuild. */
+ * when no queue can be created. */
 int async_io_event_try_submit(async_io_event_t *event);
 
 /* Withdraws a submitted op that has not completed: no completion comes for it. */
@@ -155,8 +166,8 @@ bool async_trigger_link(async_coroutine_event_callback_t *record, async_coroutin
 php_io_queue *async_reactor_live_queue(void);
 
 /* Rebuilds the reactor in a forked child before its first submit, which does it otherwise: for a holder
- * that reads an IO event's place on the lists (a Timeout's timer). False with the rebuild's Error. */
-bool async_reactor_check_fork(void);
+ * that reads an IO event's place on the lists (a Timeout's timer). */
+void async_reactor_check_fork(void);
 
 /* Parks `waiter`, the running coroutine, on a Timer op for `ms` > 0 milliseconds: delay() (S4.md
  * 3.5). False with the exception that ended the wait (a cancellation). */
@@ -169,8 +180,8 @@ static zend_always_inline bool async_reactor_has_waits(const async_reactor_t *re
 }
 
 /* The idle wait (S4.md 3.3), for a reactor that has waits: blocks until the queue completes
- * something, in scheduler context. False when the queue answers EDEADLK: nothing it holds can wake a
- * coroutine. */
+ * something or the nearest timer is due, in scheduler context. False when the queue answers EDEADLK: nothing it holds
+ * can wake a coroutine. */
 bool async_reactor_wait_idle(void);
 
 /* How long a coroutine that suspends with others queued goes without a poll at most, in ns of the

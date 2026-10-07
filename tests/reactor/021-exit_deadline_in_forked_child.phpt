@@ -21,7 +21,7 @@ spawn(function () {
                 delay(60000);
             } finally {
                 $elapsed = (hrtime(true) - $forked) / 1e6;
-                echo "child: ", $elapsed < 4000 ? "unwound at the deadline" : "unwound after $elapsed ms", "\n";
+                echo "child: ", $elapsed >= 200 && $elapsed < 4000 ? "unwound at the deadline" : "unwound after $elapsed ms", "\n";
             }
 
             return;
