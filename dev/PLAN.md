@@ -547,8 +547,8 @@ Active: S6.8
         pass with `php-src-fixes`; the seven core-tree tests read `$TRUE_ASYNC_CORE_SRC`; a DNS
         lookup yields before its submit (`dns/003`). By design: `io/096`, `098`, `exec/025`
         `core:12`, `io/081`, `084` `core:11`; `RFC-CHANGES.md` 7-12 filed. Own tests
-        `io_provider/016`-`018`; the `ts_suspend` NULL case has no path (the Sage). The
-        `async-core` commit waits for Edmond's word before it goes to php/php-src#22561.
+        `io_provider/016`-`018`; the `ts_suspend` NULL case has no path (the Sage). Edmond
+        approved the `async-core` commit for php/php-src#22561 the same day.
 - [ ] S6.8 Stage review: Critic over S6.3-S6.7, coverage, Mull, IO chaos over 100 seeds.
       done: findings fixed or answered; chaos clean over 100 seeds
 - [ ] S6.9 Security pass by `dev/SECURITY.md`.

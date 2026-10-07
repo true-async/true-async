@@ -71,7 +71,7 @@ The other branches there belong to the TrueAsync fork's earlier work and are not
 | Part | Revision | In `async-core-io-2026-10-07` `8f89755d2b1` |
 |---|---|---|
 | php-src master | `d7f966e073b` | merged |
-| Scheduler PoC (`async-core`, php/php-src#22561) | `ae85ef88d00` | merged; `ae85ef88d00` waits for Edmond before it goes to `async-core` |
+| Scheduler PoC (`async-core`, php/php-src#22561) | `ae85ef88d00` | merged; the `async-core` head `bea718cf966` adds only the removal of a comment |
 | IO hooks PoC (php/php-src#23997) | `608927ebe09` | merged |
 | Our fixes to the IO hooks PoC (`io-hooks-fixes`) | `c43e1d5797a` | merged; `dev/RFC-CHANGES.md` 2 |
 | Our fixes to php-src (`php-src-fixes`) | `6e9d801dcc5` | merged |

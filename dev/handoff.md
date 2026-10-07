@@ -267,9 +267,8 @@ waiting for a Windows agent (S1.5).
 - The core is `async-core-io-2026-10-07` (`8f89755d2b1`): `php-src-fixes` `6e9d801dcc5`,
   `io-hooks-fixes` `c43e1d5797a`, `async-core` `ae85ef88d00` (the scheduler for `php -r`, `-B`,
   `-R`, `-E`). The seven tests that include a php-src helper need `TRUE_ASYNC_CORE_SRC` (the core's
-  checkout); `tools/test.py` stops without it, so a Mull `--diff-ref` run needs it too. The
-  `async-core` commit `ae85ef88d00` is pushed only inside the core branch until Edmond agrees to
-  update php/php-src#22561 with it.
+  checkout); `tools/test.py` stops without it, so a Mull `--diff-ref` run needs it too.
+  `async-core` (php/php-src#22561) carries `ae85ef88d00` since Edmond's approval of 2026-10-07.
 - S6.10 takes the Windows lane's socket expectations: load `sockets` and `openssl` in `pocs-win`,
   then settle the `xfail-on:pocs-win(S6.10)` tags and `stream/001`, `002`, `046-…_win`, `exec/001`,
   `003`. The `skip-on:pocs-win(...-until-S6.4)` and `(...-until-S6.5)` tags are frozen text; they
