@@ -197,4 +197,7 @@ bool async_reactor_wait_idle(void);
  * loop (scheduler.c:1880-1910). */
 void async_reactor_poll_due(async_reactor_t *reactor, uint64_t interval);
 
+/* The tick's poll at once: what the queue completed and the timers already due are dispatched. */
+void async_reactor_poll_now(async_reactor_t *reactor);
+
 #endif /* TRUE_ASYNC_REACTOR_H */

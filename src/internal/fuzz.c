@@ -28,6 +28,7 @@ void async_fuzz_init(async_fuzz_state_t *state)
 	const char *scheduler_mode = getenv("TRUE_ASYNC_SCHED");
 
 	state->mode = ASYNC_FUZZ_MODE_FIFO;
+	state->io_chaos = false;
 	state->rng_state = 0;
 
 	if (scheduler_mode == NULL || strncmp(scheduler_mode, "random", sizeof("random") - 1) != 0) {
@@ -36,8 +37,10 @@ void async_fuzz_init(async_fuzz_state_t *state)
 
 	const char *colon = strchr(scheduler_mode, ':');
 	const uint64_t seed = colon != NULL ? parse_seed(colon + 1) : 0;
+	const char *layer = colon != NULL ? strchr(colon + 1, ':') : NULL;
 
 	state->mode = ASYNC_FUZZ_MODE_RANDOM;
+	state->io_chaos = layer != NULL && strcmp(layer, ":io") == 0;
 	/* TrueAsync's mix: a seed gives the same random stream in both extensions. */
 	state->rng_state = seed ^ 0xA5A5A5A5DEADBEEFULL;
 }

@@ -863,6 +863,8 @@ static bool scheduler_interrupt_start(void)
  * coroutine came back with a bailout. Runs in scheduler context, cleared only around the switch. */
 static bool scheduler_loop(void)
 {
+	bool shutdown_polled = false;
+
 	for (;;) {
 		scheduler_tick(0);
 
@@ -879,7 +881,18 @@ static bool scheduler_loop(void)
 			}
 
 			if (async_reactor_has_waits(&ASYNC_G(reactor))) {
-				if (async_collector_idle() || async_reactor_wait_idle()) {
+				/* In a graceful shutdown with no coroutine left, what still waits belongs to no coroutine,
+				 * as a held signal() Future: one poll that does not block delivers what already arrived,
+				 * then the loop ends and the request's shutdown closes the watches. A script that ends by
+				 * itself waits on, as TrueAsync (Edmond, 2026-10-07). After a coroutine runs the poll is
+				 * due again: what it started may have let more arrive. */
+				if (UNEXPECTED(ASYNC_G(graceful_shutdown) && zend_hash_num_elements(&ASYNC_G(coroutines)) == 0)) {
+					if (!shutdown_polled) {
+						shutdown_polled = true;
+						async_reactor_poll_now(&ASYNC_G(reactor));
+						continue;
+					}
+				} else if (async_collector_idle() || async_reactor_wait_idle()) {
 					continue;
 				}
 			}
@@ -895,6 +908,8 @@ static bool scheduler_loop(void)
 			scheduler_resolve_deadlock(waiting);
 			continue;
 		}
+
+		shutdown_polled = false;
 
 		if (next_coroutine->fiber_context == NULL) {
 			next_coroutine->fiber_context = fiber_context_take();
@@ -1337,11 +1352,10 @@ static zend_coroutine_t *scheduler_new_coroutine(void)
 }
 
 /* The core's own coroutines (the collector's, the shutdown destructors') join the engine's scope, which
- * no user scope's cancel reaches (S9-scope.md section 3). */
+ * no user scope's cancel reaches (S9-scope.md section 3), and install no IO provider: a script that
+ * only collects cycles keeps the core's blocking IO (dev/plans/S6.md section 2). */
 static zend_coroutine_t *scheduler_gc_new_coroutine(void)
 {
-	ASYNC_IO_PROVIDER_INSTALL_ONCE();
-
 	async_coroutine_t *coroutine = async_coroutine_new();
 
 	async_scope_add_coroutine(ASYNC_G(engine_scope), coroutine);

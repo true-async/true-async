@@ -1261,3 +1261,44 @@ stack options were shown with the code).
   coroutine waiting for one run (`zend_gc.c:727-730`, 90 020 001 after one run of 12 000
   coroutines, TrueAsync 20 001), and on ASAN each growth of the root buffer copies it; reported for
   a core fix, the INI line goes with it.
+- 2026-10-07 The coroutines of the `gc_new_coroutine` slot install no IO provider (S6.8; S9.2 filled
+  the slot the same day for the engine's scope). Supersedes the 2026-10-05 entry "the
+  `gc_new_coroutine` slot stays NULL". Why: taken like `new_coroutine`'s, they install the provider,
+  so a script's first `gc_collect_cycles()` turned its IO asynchronous (the Critic; `io_provider/019`).
+- 2026-10-07 Under a cancellation, a Done of a POLL or an ANY answers FAILURE, as a Ready does
+  (`dev/plans/S6.md` 3.3 step 5). Why: `php_io_run_cancelled()` lets a Done POLL through, so a pipe
+  `fwrite()` wrote its bytes while it threw (the Critic; `io_provider/020`); the core side is
+  `RFC-CHANGES.md` 14.
+- 2026-10-07 After its park, `run()` drains a copy the queue still keeps in flight (the queue's
+  `drain()`, as `php_stream_free()` does) and reports it settled: a cancelled op, or one whose early
+  Timeout the Ring delivered first (the Sage). Why: the Ring keeps a cancelled
+  RECV until its cancel completes, the stream stayed frozen, and the next read of the coroutine that
+  caught the cancellation threw "Concurrent access to a stream" (the Critic; `io_provider/023`).
+  TrueAsync stops its read at the cancel (libuv's `uv_read_stop()`), so the stream is usable at once.
+- 2026-10-07 IO chaos (`dev/plans/S6.md` section 16): three fault points C1-C3 in `run()`, armed
+  by `TRUE_ASYNC_SCHED=random:<seed>:io` (`tools/test.py --seeds N --io-chaos`), drawing from the
+  scheduler's own fuzz state; the drafted C4 (resubmit) dropped. Why: the Sage: one state per seed
+  replays a seed; C4 reached no path the cancellation tests miss.
+- 2026-10-07 `signal_forward()` runs the Zend handler with the other signals deferred
+  (`ZEND_SIGNAL_BLOCK_INTERRUPTIONS()`), as Zend calls a handler with every signal masked. TrueAsync calls it unblocked: a
+  departure (P1.4), better because pcntl queues a delivery without a lock and a signal arriving
+  during the call would re-enter it (the Critic).
+- 2026-10-07 A graceful shutdown (`exit()`, an uncaught exception, `Async\graceful_shutdown()`)
+  with no coroutine left polls the reactor once without blocking (again after any coroutine ran,
+  the Sage), then ends without waiting for what still waits; the request's shutdown closes the
+  watches of `signal()` Futures no coroutine awaits. A script that ends by itself waits for such a
+  signal, as TrueAsync does. Why: Edmond, 2026-10-07 ("нет это баг ... обязан погасить все сигналы
+  что открыты"; "если сам то да ждёт"): a held Future kept the script alive for good after `exit()`
+  (S6.8, found from Mull's survivors; `signal/027`, `028`, `030`). The one poll delivers a signal
+  that already arrived, which the watch's free would otherwise raise again with its default action
+  (the Critic, `signal/029`). TrueAsync breaks its loop there only in a debug build
+  (`scheduler.c:1989-2017`, `#ifdef PHP_DEBUG`): a departure on Edmond's word.
+- 2026-10-07 `tests/curl/010-multi_select_async.phpt` waits for the other coroutine through the
+  server (S6.8): both handles ask `common/barrier_router.php`'s `/hold`, which answers once the
+  other coroutine has touched `released`. Why: the test expects the other coroutine to print while
+  the curl one waits, but a coroutine whose socket is ready when its suspend tick polls (every
+  100 ms) runs on with no switch, ahead of a queued coroutine, as TrueAsync's fast return path
+  (`scheduler.c:1578-1584`); under load every select can land so, and it failed on the coverage
+  lane and in S9.2's dbg run. A slower reply only made that rarer (the Critic); with the barrier
+  the curl coroutine cannot finish before the other runs, and a select that blocked the thread
+  ends in curl's 5 s timeout (checked: run without the other coroutine, both replies are empty).

@@ -203,3 +203,34 @@ API, contention handed to the provider as a wait op, and `fclose()` completing e
 the stream as closed, with the descriptor's `close()` and the free at the last unpin.
 
 Waits for it: `io/096`, `098`, `exec/025` (`core:12` in `tests/lists/S6.txt`).
+
+## 13. IO hooks: an except set on the Ring
+
+State: drafted 2026-10-07 (S6.8), not sent. PR: none.
+
+Need: `stream_select()` and `socket_select()` give the members of the except set `PHP_POLL_PRI`
+(`ext/standard/streamsfuncs.c:789, 808`, `ext/sockets/sockets.c:1405`). The Ring refuses PRI and
+completes that member Unsupported, and the core then runs the whole ANY on its own Poll queue on the
+thread (`php_io_any_member_unsupported()`, `main/io/php_io_hooks.c:917-936, 1001-1007`): the select
+blocks every coroutine of the thread for its whole timeout.
+
+Request: a PRI form on the Ring, or an Unsupported member answered by the core alone while the
+provider waits for the others.
+
+Waits for it: `io_provider/024` (`core:13` in `tests/lists/S6.txt`).
+
+## 14. IO hooks: a readiness under a cancellation runs no syscall
+
+State: drafted 2026-10-07 (S6.8), not sent. PR: none.
+
+Need: `php_io_run_cancelled()` (`main/io/php_io_hooks.c:1094-1113`) lets a Done POLL through under a
+pending exception, so a provider that returns SUCCESS for it sends the caller on to its syscall: a
+pipe `fwrite()` writes its bytes while it throws (`php_io_file_op`, `:1642-1660`), and
+`php_socket_wait_retry()` retries `send()` (`ext/sockets/sockets.c:677-682`). A Ready under the same
+exception stops there. Our provider answers such a Done with FAILURE (S6.8); another provider would
+not know to.
+
+Request: `php_io_run_cancelled()` treats a Done POLL as cancelled, as its comment says ("nothing
+more runs").
+
+Waits for it: nothing listed; `io_provider/020` checks our provider's answer.

@@ -43,6 +43,15 @@ true-async/
 
 Waiting for Edmond's call; nothing here is being worked on.
 
+- A `signal()` Future no coroutine awaits, when the script ends by itself (S6.8): the script waits
+  for the signal, as TrueAsync; after `exit()` or an uncaught exception it ends. Edmond 2026-10-07:
+  the async collector should close such a watch; to be thought over in another task.
+- A coroutine woken in its own suspend tick runs on ahead of queued coroutines (S6.8, the Critic on
+  `curl/010`): its suspend polls the reactor every 100 ms, and a ready socket lets it continue with
+  no switch, as TrueAsync's fast return path (`scheduler.c:1578-1584`). A coroutine that spends
+  over 100 ms between its IO ops on a socket that is always ready keeps the others queued until it
+  ends. The other option: run on only when the queue is empty, else go to its back (one switch per
+  such wake, only when someone waits). Edmond's call (a departure from TrueAsync).
 - `call_on_main_stack` and callbacks into PHP (S3.23, Critic and Sage): the slot moves only the
   stack pointer, as TrueAsync, so fn must not re-enter PHP. A JNI call whose Java code calls back
   into PHP would run PHP on the OS stack with the coroutine still current: a suspend there, a
@@ -467,7 +476,7 @@ Done when: S3–S6 lists (from `sleep`, `io`, `stream`, `socket_ext`, `dns`, `cu
 over 100 seeds; tests that fail because of the hooks design are listed against the review item;
 `dns` counted only on the Ring configuration (the Poll queue answers Unsupported for lookups).
 Tier: T2. Roles: Critic on S6.2, Critic after S6.7 (S6.8).
-Active: S6.8
+Active: S6.9
 
 - [x] S6.1 Fixtures: MySQL with two connections and an HTTP server with
       `PHP_CLI_SERVER_WORKERS`, started by `tools/test.py` locally and by the CI lanes.
@@ -557,8 +566,22 @@ Active: S6.8
         `core:12`, `io/081`, `084` `core:11`; `RFC-CHANGES.md` 7-12 filed. Own tests
         `io_provider/016`-`018`; the `ts_suspend` NULL case has no path (the Sage). Edmond
         approved the `async-core` commit for php/php-src#22561 the same day.
-- [ ] S6.8 Stage review: Critic over S6.3-S6.7, coverage, Mull, IO chaos over 100 seeds.
+- [x] S6.8 Stage review: Critic over S6.3-S6.7, coverage, Mull, IO chaos over 100 seeds.
       done: findings fixed or answered; chaos clean over 100 seeds
+      handoff: done 2026-10-07 on core `8f89755d2b1` (unchanged), on top of S9.2: `pocs-dbg` 1028 PASS,
+        9 SKIP, 67 XFAIL; `pocs-asan` 1011 PASS, 30 SKIP, 63 XFAIL; 7 left out by `core:` tags; nothing
+        unexpected; `src/` coverage 94.2 % (5799 of 6157). The Critic's findings fixed with tests
+        (`io_provider/019`-`025`, `signal/024`-`026`): the `gc_new_coroutine` slot, a Done POLL or ANY
+        under a cancellation answers FAILURE, a Ring op kept in flight is drained after every park,
+        `signal_forward()` defers signals as Zend does; `stream_select()` with an except set is
+        `RFC-CHANGES.md` 13 (`core:13`). Mull: 87 mutants, 35 survived, each answered (S6.md 17).
+        A held `signal()` Future no longer keeps the script alive after `exit()` or an uncaught
+        exception (Edmond's ruling, `signal/027`-`030`); a script ending by itself waits, as
+        TrueAsync (Open questions). IO chaos (`random:<seed>:io`, C1-C3) fails its known answers
+        armed and passes them unarmed; 100 seeds over 340 tests: no crash, leak or new diagnostic,
+        23 seeds flag only `io/100` (XFAIL) passing under their order. `curl/010` waits for the
+        other coroutine through the server: its order depended on load (DECISIONS). The bridge was not rerun:
+        the core did not change.
 - [ ] S6.9 Security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item; findings fixed with a test or recorded
 - [ ] S6.10 Windows (once S1.5 gives a Windows agent): the `proc_open()` pipe core commit

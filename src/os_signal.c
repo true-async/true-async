@@ -64,16 +64,15 @@ static zend_object *signal_future_cancelled(zend_object *token_error)
 
 struct _async_signal_watch_s
 {
-	async_event_t base;                 /* callbacks: the waits' on_signal; ref_count: the registry's, a delivery's */
-	int signo;                          /* the platform's number */
-	zend_object *signal_case;           /* what the Futures complete with; an enum case lives with its class */
-	zend_object *handle;                /* Io\Poll\SignalHandle of `signo`, in the registry's context */
-	async_io_event_t *op;               /* the SIGWAIT op while submitted; one reference */
-	async_event_callback_t op_callback; /* in `op`'s vector */
+	async_event_t base;        /* callbacks: the waits' on_signal; ref_count: the registry's, a delivery's */
+	int signo;                 /* the platform's number */
+	zend_object *signal_case;  /* what the Futures complete with; an enum case lives with its class */
+	zend_object *handle;       /* Io\Poll\SignalHandle of `signo`, in the registry's context */
+	async_io_event_t *sigwait; /* the event of the SIGWAIT op while submitted; one reference */
+	async_event_callback_t sigwait_callback; /* in `sigwait`'s vector */
 	php_sigset_t set;
 	php_siginfo_t info; /* the delivery, written by the Ring or taken from the source */
-	sigset_t native_set;
-	int fd; /* the signal source the Poll queue waits on; -1 without one */
+	int fd;             /* the signal source the Poll queue waits on; -1 without one */
 };
 
 /* One Future of Async\signal(), freed when its event completes or goes. */
@@ -220,11 +219,18 @@ static void signal_forward(const int signo, siginfo_t *info)
 		return;
 	}
 
+	/* Zend calls a handler with every signal masked (sa_mask is global_sigmask, Zend/zend_signal.c);
+	 * here a signal arriving during the call would re-enter pcntl's handler, which queues its delivery
+	 * without a lock. The depth makes zend_signal_handler_defer() keep it until the unblock. */
+	ZEND_SIGNAL_BLOCK_INTERRUPTIONS();
+
 	if (entry.flags & SA_SIGINFO) {
 		((void (*)(int, siginfo_t *, void *)) entry.handler)(signo, info, NULL);
 	} else {
 		((void (*)(int)) entry.handler)(signo);
 	}
+
+	ZEND_SIGNAL_UNBLOCK_INTERRUPTIONS();
 #else
 	(void) signo;
 	(void) info;
@@ -251,16 +257,16 @@ static void signal_watch_fail(async_signal_watch_t *watch)
 
 static void signal_watch_disarm(async_signal_watch_t *watch)
 {
-	async_io_event_t *op = watch->op;
+	async_io_event_t *sigwait = watch->sigwait;
 
-	if (op == NULL) {
+	if (sigwait == NULL) {
 		return;
 	}
 
-	watch->op = NULL;
-	async_io_event_orphan(op);
-	async_callbacks_remove(&op->base.callbacks, &watch->op_callback);
-	async_io_event_release(op);
+	watch->sigwait = NULL;
+	async_io_event_orphan(sigwait);
+	async_callbacks_remove(&sigwait->base.callbacks, &watch->sigwait_callback);
+	async_io_event_release(sigwait);
 }
 
 /* With its last wait: the number leaves the context, which unblocks it and records what arrived
@@ -301,32 +307,32 @@ signal_op_wake(async_awaitable_t *target, async_event_callback_t *callback, void
 /* timeout_arm()'s steps: an op the submit completes at once delivers before the return. */
 static bool signal_watch_arm(async_signal_watch_t *watch)
 {
-	async_io_event_t *op = async_io_event_new();
+	async_io_event_t *sigwait = async_io_event_new();
 
-	php_io_op_sigwait(&op->op, watch->handle, &watch->set, &watch->info, php_io_deadline_infinite());
+	php_io_op_sigwait(&sigwait->op, watch->handle, &watch->set, &watch->info, php_io_deadline_infinite());
 
 	if (watch->fd >= 0) {
-		op->op.fd = watch->fd;
+		sigwait->op.fd = watch->fd;
 	}
 
-	async_callbacks_reserve(&op->base.callbacks, 1);
-	watch->op_callback.flags = 0;
-	watch->op_callback.callback = signal_op_wake;
-	watch->op_callback.dispose = NULL;
-	async_callbacks_push_reserved(&op->base.callbacks, &watch->op_callback);
+	async_callbacks_reserve(&sigwait->base.callbacks, 1);
+	watch->sigwait_callback.flags = 0;
+	watch->sigwait_callback.callback = signal_op_wake;
+	watch->sigwait_callback.dispose = NULL;
+	async_callbacks_push_reserved(&sigwait->base.callbacks, &watch->sigwait_callback);
 
-	watch->op = op;
-	op->base.ref_count++;
+	watch->sigwait = sigwait;
+	sigwait->base.ref_count++;
 
-	const zend_result submitted = async_io_event_submit(op);
+	const zend_result submitted = async_io_event_submit(sigwait);
 
 	if (UNEXPECTED(submitted == FAILURE)) {
-		watch->op = NULL;
-		async_callbacks_remove(&op->base.callbacks, &watch->op_callback);
-		async_io_event_release(op);
+		watch->sigwait = NULL;
+		async_callbacks_remove(&sigwait->base.callbacks, &watch->sigwait_callback);
+		async_io_event_release(sigwait);
 	}
 
-	async_io_event_release(op);
+	async_io_event_release(sigwait);
 
 	return submitted == SUCCESS;
 }
@@ -344,7 +350,7 @@ static void signal_watch_settle(async_signal_watch_t *watch)
 		return;
 	}
 
-	if (watch->op != NULL || EXPECTED(signal_watch_arm(watch))) {
+	if (watch->sigwait != NULL || EXPECTED(signal_watch_arm(watch))) {
 		return;
 	}
 
@@ -363,13 +369,13 @@ signal_op_wake(async_awaitable_t *target, async_event_callback_t *callback, void
 	(void) exception;
 
 	async_signal_watch_t *watch =
-			(async_signal_watch_t *) ((char *) callback - offsetof(async_signal_watch_t, op_callback));
+			(async_signal_watch_t *) ((char *) callback - offsetof(async_signal_watch_t, sigwait_callback));
 	const php_io_op_result *op_result = result;
 	int signo = 0;
 	int error = 0;
 
 	if (op_result->status == PHP_IO_READY) {
-		signo = php_poll_signal_source_take(watch->fd, &watch->native_set, &watch->info);
+		signo = php_poll_signal_source_take(watch->fd, &watch->set, &watch->info);
 	} else if (op_result->status == PHP_IO_DONE && op_result->error == 0) {
 		signo = (int) op_result->res;
 	} else if (op_result->status != PHP_IO_INTERRUPTED &&
@@ -379,11 +385,11 @@ signal_op_wake(async_awaitable_t *target, async_event_callback_t *callback, void
 
 	/* The dispatch holds the op across this notify, and frees its vector after it: the callback
 	 * leaves it, as the watch may go below. */
-	async_io_event_t *op = watch->op;
+	async_io_event_t *sigwait = watch->sigwait;
 
-	watch->op = NULL;
-	async_callbacks_remove(&op->base.callbacks, &watch->op_callback);
-	async_io_event_release(op);
+	watch->sigwait = NULL;
+	async_callbacks_remove(&sigwait->base.callbacks, &watch->sigwait_callback);
+	async_io_event_release(sigwait);
 
 	if (signo > 0) {
 		zval signal_case;
@@ -456,13 +462,11 @@ static async_signal_watch_t *signal_watch_get(const int signo, zend_object *sign
 	watch->signo = signo;
 	watch->signal_case = signal_case;
 	watch->handle = handle;
-	watch->op = NULL;
+	watch->sigwait = NULL;
 	php_sigemptyset(&watch->set);
 	php_sigaddset(&watch->set, signo);
 	memset(&watch->info, 0, sizeof(watch->info));
-	sigemptyset(&watch->native_set);
-	sigaddset(&watch->native_set, signo);
-	watch->fd = php_poll_signal_source_open(&watch->native_set);
+	watch->fd = php_poll_signal_source_open(&watch->set);
 
 	registry->watches[signo] = watch;
 	registry->count++;
@@ -490,7 +494,7 @@ static bool signal_watch_renew(async_signal_watch_t *watch, zend_object *context
 	}
 #endif
 
-	watch->fd = php_poll_signal_source_open(&watch->native_set);
+	watch->fd = php_poll_signal_source_open(&watch->set);
 
 	return true;
 }
@@ -796,7 +800,7 @@ ZEND_FUNCTION(Async_signal)
 
 	zend_object *future = signal_wait_new(watch, token);
 
-	if (watch->op == NULL && UNEXPECTED(!signal_watch_arm(watch))) {
+	if (watch->sigwait == NULL && UNEXPECTED(!signal_watch_arm(watch))) {
 		async_future_event_from_object(future)->base.flags |= ASYNC_FUTURE_F_IGNORED;
 		OBJ_RELEASE(future);
 		RETURN_THROWS();

@@ -99,7 +99,8 @@ Written 2026-10-06. S3 closed: S3.24 re-ran its Done when on the final core; S4,
   back, one revert per removing commit (P1.5, Edmond 2026-10-05); the API version is a counter.
   The bridge `true-async/ext-scheduler-hook` builds again and passes its 22 tests on dbg and ASAN
   (`92e14e7`, it fills `version`). Our scheduler fills `coroutine_from_object` and ignores
-  `is_safely` until S9; `gc_new_coroutine` stays NULL.
+  `is_safely` until S9; `gc_new_coroutine` stayed NULL until S9.2 and S6.8 (the engine's scope,
+  no IO provider).
 - S3.22 (core, API version 2, 22 slots): the core launches only in a READY request; the bridge
   registers its C slots once per process and PHP calls `register()` in every request (bridge
   `a0fc2fd`, 23 tests); `extra_size`, `ZEND_ASYNC_NEW_COROUTINE_EX`, `active_coroutine_count` and
@@ -248,9 +249,17 @@ of `src/`; S7.5 scoped it to the collector tests with a scratch script (DECISION
 
 ## S6
 
-Written 2026-10-07. S6.7 (core update, shutdown windows, every list run) done; S6.8 (stage review:
-Critic over S6.3-S6.7, coverage, Mull, IO chaos over 100 seeds) next; the Windows part is S6.10,
-waiting for a Windows agent (S1.5).
+Written 2026-10-07. S6.8 (stage review) done, results in S6.md section 17; S6.9 (security pass by
+`dev/SECURITY.md`) next; the Windows part is S6.10, waiting for a Windows agent (S1.5).
+
+- IO chaos: `TRUE_ASYNC_SCHED=random:<seed>:io` on a fuzz build arms C1-C3 (S6.md 16);
+  `tools/test.py --seeds N --io-chaos`. Under any seed about 40 tests of `S6.txt` change only their
+  output's order and `io/100` (XFAIL) may pass: the scheduler's fuzz does that without `:io` too.
+  Read a flagged seed's diffs before calling it a defect.
+- A graceful shutdown with no coroutine left polls the reactor once without blocking, then ends;
+  what still waits (a held `signal()` Future) is closed by the request's shutdown. A script ending
+  by itself still waits. The async collector closing such a watch is PLAN "Open questions".
+- `run()` drains a Ring op kept in flight after every park, completions included (S6.md 3.3).
 
 - `run()` parks on a heap copy of the op and keeps its own reference to the event; the result and
   `in_flight` are read after the suspend (note 3.2-3.3). A non-running coroutine is answered

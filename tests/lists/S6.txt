@@ -209,7 +209,7 @@ curl/006-timeout_handling.phpt  ref:a23fa9cd6c28882fda46f4fc458e9413caf6db8e2a0e
 curl/007-large_response.phpt  ref:6432e547b3a9bc2d7545bb46aee8375add07e329b6044324e112fc0084c7d618  skip-on:pocs-win(curl-not-loaded-until-S6.6)
 curl/008-mixed_sync_async.phpt  ref:d9634f910bea828767c46a96fe345b2b101a866bd1e8c9ac2030bf9a0e7892d0  skip-on:pocs-win(curl-not-loaded-until-S6.6)
 curl/009-curl_with_coroutines.phpt  ref:0f43df5ba3d2e51190b0daf77e05464399f0da7373fa0305a4b8302fa1f7c27c  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/010-multi_select_async.phpt  ref:166e643dc81b445f1b72df4feac1f5133cb27885eb1bc98f9b9078601fa82a35  skip-on:pocs-win(curl-not-loaded-until-S6.6)
+curl/010-multi_select_async.phpt  ref:166e643dc81b445f1b72df4feac1f5133cb27885eb1bc98f9b9078601fa82a35  changed:2026-10-07:67420f95922ae4d833665a73aa060f5f9225f7dde71571ed4daefeb66c77c451  skip-on:pocs-win(curl-not-loaded-until-S6.6)
 curl/011-curl_file_upload.phpt  ref:99492cfd38971d20f0d2c8f44b1577faf32a1d793ba17218264236fb58fb85b7  skip-on:pocs-win(curl-not-loaded-until-S6.6)
 curl/012-write_file_basic.phpt  ref:339751f5fda6f2c0a06e588cfada73fb6e5948b0432a88e4b3c01f77dd39fcbc  skip-on:pocs-win(curl-not-loaded-until-S6.6)
 curl/013-write_file_large.phpt  ref:b0b91042f15b41eefc64d9c2bc8714842e4362eca6066ce47bfb4e9279dea008  skip-on:pocs-win(curl-not-loaded-until-S6.6)
@@ -378,3 +378,19 @@ io_provider/018-destructor_io_after_exit_in_shutdown_function.phpt  own:05fc492e
 io/101-phar_entries_decompressed_at_once.phpt  ref:abd6f8d63750c74c58cda66abd9fa13df0a2c35d24eedaad446a2e2088d1c0ea
 io/081-flock_non_blocking_event_loop.phpt  ref:d2fb03a5194f60232b812427d3e19fbc16919f8fdbc7b1c7b3f9015237f8dcbc  core:11
 io/084-flock_waiters_exceed_threadpool.phpt  ref:bc6223cf287673984bc8b137c4da8e653ce4b6d1fbcf0d559ae84c231e218756  core:11
+
+# S6.8: the stage review (dev/plans/S6.md, sections 16 and 17).
+io_provider/019-gc_run_installs_no_provider.phpt  own:5fe022b9ae3d74b598bc48e1733312203ec7f4a76a98ff21d68f800d147b4107
+io_provider/020-cancelled_fifo_write_after_readiness.phpt  own:8b2569a71d7c83deba621a5cb0fd69d44ad43c067ae47a8ddce0a52760d832ce  skip-on:*-win(Unix-only)
+io_provider/021-nanosleep_forever_cancelled.phpt  own:78f58a5dbea123d3a3b95b83a82a743df624b54eac048820bb7d165b2db59598
+io_provider/022-fiber_installs_the_provider.phpt  own:6d960d8946f17de8ce78ccdd0351222c956bd4a05d5e2963fe779b4665ef9315
+io_provider/023-cancelled_socket_read_reads_again.phpt  own:08754be3a4fea07b9f391db16ed23ec4df0cb38afd0da2cc2f47a22230dd2a6b  skip-on:*-win(Unix-only)
+io_provider/024-stream_select_with_except_set.phpt  own:64562947358bf55facfaad5953849f19e3240835987a17459261528738e517ce  core:13  skip-on:*-win(Unix-only)
+io_provider/025-poll_queue_sockets.phpt  own:a1fa0a915175ddfb4dd7222072cb55434849fb0801b6bd3360fb585b8fc904d6  skip-on:*-win(Unix-only)
+signal/024-watch_in_static_outlives_shutdown.phpt  own:e2f00202a4a2e224653698dacffb9153d8fbfb9fbbf6a29b27cf70e171c13839  skip-on:*-win(Unix-only)
+signal/025-fork_rebuilds_two_watches_poll_queue.phpt  own:682436e47cc7a3f41e21bc9635745ba7c06f889ed17ebe344489b8d76df11780  skip-on:*-win(Unix-only)
+signal/026-watch_closes_its_source.phpt  own:7f631142c949dc52fbd833c1233a70f14e49076cea8ece1283298596995708a4  skip-on:*-win(Unix-only)
+signal/027-exit_leaves_held_future.phpt  own:97a31e9a58b8b6c3c0d71fdffeb745f1124935b01ed53e384b90a5f1d3b4db95  skip-on:*-win(Unix-only)
+signal/028-uncaught_exception_leaves_held_future.phpt  own:08ec2d88e91dcfaf994cad257cdbf3f89e881f66c45aa6f14c1e870a428a3cb2  skip-on:*-win(Unix-only)
+signal/029-exit_delivers_arrived_signal.phpt  own:04a2e46d46ff8cb6277f649a3e6cfb45c39a75ddf3eeba9e14b1b61ad6182c63  skip-on:*-win(Unix-only)
+signal/030-script_end_waits_for_held_watch.phpt  own:283d0a78274d23a88bb13920efdac3be4ac294340cc36bee0091925d8cc3b6e6  skip-on:*-win(Unix-only)

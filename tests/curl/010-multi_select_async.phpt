@@ -9,7 +9,7 @@ require_once __DIR__ . '/../common/http_server.php';
 use function Async\spawn;
 use function Async\await;
 
-$server = async_test_server_start();
+$server = async_test_server_start(__DIR__ . '/../common/barrier_router.php');
 
 function test_curl_multi($server) {
     echo "coroutine start\n";
@@ -18,14 +18,14 @@ function test_curl_multi($server) {
 
     // First cURL handle
     $ch1 = curl_init();
-    curl_setopt($ch1, CURLOPT_URL, "http://localhost:{$server->port}/");
+    curl_setopt($ch1, CURLOPT_URL, "http://localhost:{$server->port}/hold");
     curl_setopt($ch1, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch1, CURLOPT_TIMEOUT, 5);
     curl_multi_add_handle($mh, $ch1);
 
     // Second cURL handle
     $ch2 = curl_init();
-    curl_setopt($ch2, CURLOPT_URL, "http://localhost:{$server->port}/json");
+    curl_setopt($ch2, CURLOPT_URL, "http://localhost:{$server->port}/hold");
     curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch2, CURLOPT_TIMEOUT, 5);
     curl_multi_add_handle($mh, $ch2);
@@ -58,14 +58,16 @@ function test_curl_multi($server) {
     echo "coroutine end\n";
 }
 
-function test_simple() {
+function test_simple($server) {
     echo "coroutine 2\n";
+    // The server answers /hold after this touch, so coroutine 1 must have let this one run.
+    touch("{$server->docRoot}/released");
 }
 
 echo "start\n";
 
 $coroutine1 = spawn(fn() => test_curl_multi($server));
-$coroutine2 = spawn(fn() => test_simple());
+$coroutine2 = spawn(fn() => test_simple($server));
 
 await($coroutine1);
 await($coroutine2);
@@ -78,7 +80,7 @@ async_test_server_stop($server);
 start
 coroutine start
 coroutine 2
-Response 1: Hello World
-Response 2: {"message":"Hello JSON","status":"ok"}
+Response 1: released
+Response 2: released
 coroutine end
 end

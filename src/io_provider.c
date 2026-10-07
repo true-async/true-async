@@ -118,6 +118,16 @@ static void io_wait_copy_in_flight(const async_io_event_t *event, php_io_op *op)
 	}
 }
 
+static void io_wait_drain(php_io_op *op)
+{
+	php_io_queue *queue = async_reactor_live_queue();
+
+	if (EXPECTED(queue != NULL && queue->ops->drain != NULL)) {
+		queue->ops->drain(queue, op->stream != NULL ? (const void *) op->stream : (const void *) op->handle);
+		op->in_flight = false;
+	}
+}
+
 static void io_wait_deliver(const async_io_event_t *event, php_io_op *op, php_io_op_result *result)
 {
 	*result = event->result;
@@ -164,6 +174,36 @@ io_wait_wake(async_awaitable_t *target, async_event_callback_t *callback, void *
 
 	async_scheduler_enqueue(&((async_coroutine_event_callback_t *) callback)->coroutine->coroutine, NULL, false);
 }
+
+///////////////////////////////////////////////////////////////////
+/// IO chaos (S6.md section 16)
+///////////////////////////////////////////////////////////////////
+
+#ifdef TRUE_ASYNC_FUZZ
+#define IO_CHAOS(one_in) async_fuzz_io_coin(&ASYNC_G(fuzz), (one_in))
+
+/* C3: the caller has just drained the descriptor and runs the syscall again on a readiness, so a
+ * readiness another reader took first is a legal answer. CONNECT carries the flag too, but reads
+ * SO_ERROR after it. */
+static bool io_chaos_spurious_readiness(const php_io_op *op, php_io_op_result *result)
+{
+	const bool readiness_retried = op->type == PHP_IO_OP_RECV || op->type == PHP_IO_OP_SEND ||
+			op->type == PHP_IO_OP_ACCEPT || op->type == PHP_IO_OP_POLL;
+
+	if (EXPECTED(!(op->flags & PHP_IO_OP_F_AFTER_DRAIN) || !readiness_retried || !IO_CHAOS(4))) {
+		return false;
+	}
+
+	/* A POLL answers in the queues' form, the requested events */
+	result->status = op->type == PHP_IO_OP_POLL ? PHP_IO_DONE : PHP_IO_READY;
+	result->res = op->type == PHP_IO_OP_POLL ? op->u.poll.events : 0;
+	result->error = 0;
+
+	return true;
+}
+#else
+#define IO_CHAOS(one_in) false
+#endif
 
 ///////////////////////////////////////////////////////////////////
 /// The hooks
@@ -231,10 +271,16 @@ static zend_result io_provider_run(php_io_hooks *hooks, php_io_op *op, php_io_op
 
 	async_coroutine_t *coroutine = (async_coroutine_t *) current;
 
+#ifdef TRUE_ASYNC_FUZZ
+	if (UNEXPECTED(io_chaos_spurious_readiness(op, result))) {
+		return SUCCESS;
+	}
+#endif
+
 	/* A lookup lets the queued coroutines run first: TrueAsync's lookups always complete in a later
 	 * pass of its loop (libuv's thread pool), and the Ring may complete one within this coroutine's own
-	 * tick, which resumes it with no switch. */
-	if (UNEXPECTED(op->type == PHP_IO_OP_GETADDRINFO || op->type == PHP_IO_OP_GETNAMEINFO)) {
+	 * tick, which resumes it with no switch. IO chaos (C1) yields before any op. */
+	if (UNEXPECTED(op->type == PHP_IO_OP_GETADDRINFO || op->type == PHP_IO_OP_GETNAMEINFO || IO_CHAOS(4))) {
 		if (UNEXPECTED(!async_scheduler_enqueue(current, NULL, false) || !ZEND_ASYNC_SUSPEND())) {
 			return FAILURE;
 		}
@@ -245,7 +291,7 @@ static zend_result io_provider_run(php_io_hooks *hooks, php_io_op *op, php_io_op
 	async_io_event_t *event = io_wait_new(op);
 	async_callbacks_reserve(&event->base.callbacks, 1);
 
-	if (io_wait_submit(event, op, result)) {
+	if (UNEXPECTED(io_wait_submit(event, op, result))) {
 		return EG(exception) == NULL ? SUCCESS : FAILURE;
 	}
 
@@ -254,11 +300,13 @@ static zend_result io_provider_run(php_io_hooks *hooks, php_io_op *op, php_io_op
 	event->base.ref_count++;
 	async_wait_link(&coroutine->waker.records[0], coroutine, (async_awaitable_t *) event, &io_wait_kind, io_wait_wake);
 
-	const bool resumed = ZEND_ASYNC_SUSPEND();
+	bool resumed = ZEND_ASYNC_SUSPEND();
 
 	ZEND_ASSERT(coroutine->waker.records[0].event == NULL && "the wake or the cancellation unlinked the wait");
 
-	if (EXPECTED(event->base.flags & ASYNC_EVENT_F_CLOSED)) {
+	const bool completed = event->base.flags & ASYNC_EVENT_F_CLOSED;
+
+	if (EXPECTED(completed)) {
 		io_wait_deliver(event, op, result);
 	} else {
 		io_wait_copy_in_flight(event, op);
@@ -272,16 +320,31 @@ static zend_result io_provider_run(php_io_hooks *hooks, php_io_op *op, php_io_op
 		}
 	}
 
+	/* The Ring keeps a cancelled data op until its cancel completes, writing into the stream buffer
+	 * meanwhile, and may deliver an early Timeout before that; the core keeps the stream frozen until
+	 * then, and the next read would throw. The settle is waited for here, as php_stream_free()'s
+	 * php_io_stream_drain() does, so the stream is usable at once, as TrueAsync's after its read stop. */
+	if (UNEXPECTED(op->in_flight && op->type != PHP_IO_OP_ANY)) {
+		io_wait_drain(op);
+	}
+
 	async_io_event_release(event);
+
+	/* IO chaos (C2): the completion's wake waits one more pass, where a cancellation may land. The
+	 * result is already in the caller's frame, so a bailout in that pass leaves nothing behind. */
+	if (UNEXPECTED(resumed && completed && IO_CHAOS(2))) {
+		resumed = async_scheduler_enqueue(current, NULL, false) && ZEND_ASYNC_SUSPEND();
+	}
 
 	if (EXPECTED(resumed)) {
 		return SUCCESS;
 	}
 
-	/* A cancellation after the op was Done: the delivered result (an address list, a
-	 * reaped status) belongs to the caller now, so it is returned with the exception pending
-	 * (S6.md 3.3, step 5). */
-	if (UNEXPECTED(result->status == PHP_IO_DONE && result->error == 0)) {
+	/* A cancellation after the op was Done: the delivered result (bytes transferred, an address list, a
+	 * child's exit status) belongs to the caller, so it is returned with the exception pending
+	 * (S6.md 3.3, step 5). A readiness belongs to nobody, and its caller would run the syscall. */
+	if (UNEXPECTED(result->status == PHP_IO_DONE && result->error == 0 && op->type != PHP_IO_OP_POLL &&
+				   op->type != PHP_IO_OP_ANY)) {
 		return SUCCESS;
 	}
 

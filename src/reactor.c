@@ -1296,6 +1296,11 @@ void async_reactor_poll_due(async_reactor_t *reactor, const uint64_t interval)
 	}
 
 	reactor->last_poll = now;
+	async_reactor_poll_now(reactor);
+}
+
+void async_reactor_poll_now(async_reactor_t *reactor)
+{
 	/* The Poll queue delivers its ready list before it checks for a fork (P:634-636). */
 	reactor_check_fork(reactor);
 

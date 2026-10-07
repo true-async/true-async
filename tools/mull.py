@@ -2,9 +2,10 @@
 """Mutation testing with Mull 0.34 for clang 18 on the pocs-dbg-mull lane (dev/plans/S2.md, section 6).
 
     mull.py --known-answer             check the tool itself on the planted functions
-    mull.py --diff-ref REF [--stage N] [--build-ref B] [TEST...]
+    mull.py --diff-ref REF [--stage N] [--build-ref B] [--source FILE]... [TEST...]
                                        mutants of the src/ lines changed since REF (and since B),
-                                       against the lists, or only the listed TESTs among them
+                                       against the lists; --source mutates only FILE, TEST narrows
+                                       the lists to those tests
 
 Mull compiles its mutants into the module, each behind an environment variable named after it;
 mull-runner runs php with run-tests.php once per mutant. --known-answer exits 0 only when every
@@ -162,17 +163,19 @@ def changed_lines(ref):
     return changed
 
 
-def diff(ref, stage, build_ref=None, selected=()):
+def diff(ref, stage, build_ref=None, sources=(), selected=()):
     """Mutants on the src/ lines changed since `ref`, run against the stage lists.
 
     Mull's own gitDiffRef is not used: Mull 0.34.1 makes no mutant in a file the diff adds whole
     (checked 2026-10-01), and a stage adds most of its code that way. Every src/ mutant is built
     and run; the report keeps the changed lines. `build_ref`, for a re-run after a full one, builds
     only the mutants on lines changed since it (Mull's gitDiffRef: it needs no file added whole since
-    that commit).
+    that commit). `sources` builds the mutants of those files alone: mull-runner runs every mutant it
+    finds, and a stage's run over all of src/ does not finish in two hours.
     """
+    include = [f'^{re.escape(str(Path(source).resolve()))}$' for source in sources]
     # The planted functions belong to --known-answer and would survive every stage's lists.
-    lane = lane_for([f"^{re.escape(str(ROOT / 'src'))}/"], [f'^{re.escape(str(KNOWN_ANSWER_SOURCE))}$'],
+    lane = lane_for(include or [f"^{re.escape(str(ROOT / 'src'))}/"], [f'^{re.escape(str(KNOWN_ANSWER_SOURCE))}$'],
                     build_ref)
     entries, _ = test.compose(lane, stage, list(selected))
     timeouts = lane.build / TIMEOUTS
@@ -200,6 +203,14 @@ def diff(ref, stage, build_ref=None, selected=()):
     return 0
 
 
+def run_artifacts(directory, names):
+    """copytree's filter: what run-tests left next to a test, not a helper such as stream_helper.php."""
+    tests = {name[:-len('.phpt')] for name in names if name.endswith('.phpt')}
+
+    return {name for name in names for suffix in test.ARTIFACTS
+            if name.endswith(suffix) and name[:-len(suffix)] in tests}
+
+
 def isolated_run(list_file, run_tests):
     """mull-runner's test program for a list: run-tests on a copy of tests/ under the list's
     directory, as run-tests writes its artifacts next to each test. The list names tests/<path>,
@@ -209,8 +220,7 @@ def isolated_run(list_file, run_tests):
     copy = Path(tempfile.mkdtemp(dir=build, prefix='run-'))
 
     try:
-        shutil.copytree(test.TESTS, copy / 'tests',
-                        ignore=shutil.ignore_patterns(*(f'*{suffix}' for suffix in test.ARTIFACTS)))
+        shutil.copytree(test.TESTS, copy / 'tests', ignore=run_artifacts)
         # In its own session and killed whole: a mutant that loops would outlive a killed run-tests.
         process = subprocess.Popen([*run_tests, '-r', list_file], cwd=copy, start_new_session=True)
 
@@ -239,13 +249,14 @@ def main():
     mode.add_argument('--diff-ref')
     parser.add_argument('--stage', type=int)
     parser.add_argument('--build-ref', help='with --diff-ref: build only the mutants changed since this commit')
+    parser.add_argument('--source', action='append', default=[], help='with --diff-ref: mutate only this file')
     parser.add_argument('tests', nargs='*', help='with --diff-ref: run only these listed tests')
     args = parser.parse_args()
 
     if args.known_answer:
         return known_answer()
 
-    return diff(args.diff_ref, args.stage, args.build_ref, args.tests)
+    return diff(args.diff_ref, args.stage, args.build_ref, args.source, args.tests)
 
 
 if __name__ == '__main__':

@@ -17,8 +17,10 @@
  * each pop the run queue's head may swap places with another queued coroutine, so one test run with
  * many seeds goes through many interleavings. TRUE_ASYNC_SCHED picks the mode at request start:
  * "fifo" (unset or unknown: the order of a normal build) or "random:<seed>", decimal or 0x hex; the
- * same seed gives the same order. */
+ * same seed gives the same order. "random:<seed>:io" also arms the IO provider's fault points
+ * (dev/plans/S6.md section 16), which draw from the same generator. */
 
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef enum
@@ -30,6 +32,7 @@ typedef enum
 typedef struct
 {
 	async_fuzz_mode_t mode;
+	bool io_chaos;
 	uint64_t rng_state;
 } async_fuzz_state_t;
 
@@ -60,6 +63,12 @@ static inline uint32_t async_fuzz_scheduler_pick(async_fuzz_state_t *state, cons
 	}
 
 	return (uint32_t) (async_fuzz_next_u64(state) % count);
+}
+
+/* A fault point of the IO chaos fires: 1 in `one_in` when armed, never otherwise. */
+static inline bool async_fuzz_io_coin(async_fuzz_state_t *state, const uint32_t one_in)
+{
+	return state->io_chaos && async_fuzz_next_u64(state) % one_in == 0;
 }
 
 #endif /* TRUE_ASYNC_FUZZ_H */

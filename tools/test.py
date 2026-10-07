@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the extension for a lane and run the listed tests on it (dev/plans/S2.md, section 2).
 
-    test.py --lane pocs-dbg [--stage N] [--jobs N] [--seeds N] [TEST...]
+    test.py --lane pocs-dbg [--stage N] [--jobs N] [--seeds N [--io-chaos]] [TEST...]
 
 A lane is <core>-<tree>[-cov|-mull]; the core is installed in $TRUE_ASYNC_PREFIXES/<core>-<tree>
 (default ~/ta-prefix). TEST narrows the run to listed tests. ASAN lanes need $TRUE_ASYNC_CORE_SRC,
@@ -21,7 +21,8 @@ coroutines that can never wake running at every idle point, so its oracle checks
 (dev/plans/S7.md, section 11). A seed fails a test only by a crash, an assertion, a sanitizer
 report, a leak or a timeout; any other change of the output passes, since a random order changes
 what order-dependent tests print. A diagnostic (a fatal error, a warning, a notice) the expected
-output lacks is listed for reading.
+output lacks is listed for reading. --io-chaos also arms the IO provider's fault points
+(TRUE_ASYNC_SCHED=random:<seed>:io, dev/plans/S6.md section 16); the verdict is the same.
 """
 import argparse
 import contextlib
@@ -604,14 +605,14 @@ def seed_verdict(entries, output, seed, findings):
     return failed, changed
 
 
-def run_seeds(lane, entries, jobs, seeds):
+def run_seeds(lane, entries, jobs, seeds, io_chaos=False):
     """Run the entries once per seed; returns the number of seeds that failed a test."""
     failed_seeds = 0
     changed = 0
     findings = {}
 
     for seed in range(1, seeds + 1):
-        output = run_tests(lane, entries, jobs, f'random:{seed}')
+        output = run_tests(lane, entries, jobs, f'random:{seed}:io' if io_chaos else f'random:{seed}')
         seed_failed, seed_changed = seed_verdict(entries, output, seed, findings)
         failed_seeds += 1 if seed_failed else 0
         changed += seed_changed
@@ -640,6 +641,7 @@ def main():
     parser.add_argument('--stage', type=int, help='last stage list to take (default: all)')
     parser.add_argument('--jobs', type=int, default=os.cpu_count())
     parser.add_argument('--seeds', type=int, help='run the tests once per seed 1..N with the fuzz hook')
+    parser.add_argument('--io-chaos', action='store_true', help="with --seeds: arm the IO provider's fault points")
     parser.add_argument('tests', nargs='*')
     args = parser.parse_args()
     # A run stopped by SIGTERM (a timeout) unwinds, so the MySQL fixture stops its mysqld.
@@ -649,6 +651,9 @@ def main():
 
     if lane.variant == 'mull':
         sys.exit(f'{lane.name}: run it with tools/mull.py')
+
+    if args.io_chaos and args.seeds is None:
+        sys.exit('--io-chaos runs with --seeds')
 
     entries, left_out = compose(lane, args.stage, args.tests)
 
@@ -660,7 +665,7 @@ def main():
         build(lane)
 
         with mysql_server(lane, entries):
-            return 1 if run_seeds(lane, entries, args.jobs, args.seeds) else 0
+            return 1 if run_seeds(lane, entries, args.jobs, args.seeds, args.io_chaos) else 0
 
     if lane.tree != 'win':
         build(lane)
