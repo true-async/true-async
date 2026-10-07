@@ -140,17 +140,20 @@ static PHP_MINIT_FUNCTION(true_async)
 	async_ce_completable = register_class_Async_Completable(async_ce_awaitable);
 	async_register_exceptions_ce();
 	async_register_coroutine_ce(async_ce_completable);
-	async_register_future_ce(async_ce_completable);
-	async_register_timeout_ce(async_ce_completable);
 	async_ce_signal = register_class_Async_Signal();
 
 	scheduler_registered = async_scheduler_register();
 
 	/* Registered here, not in the module entry, so an extension that is disabled, or whose scheduler
-	 * the core refused, has no Async\ functions. */
+	 * the core refused, has no Async\ functions. Futures and timeouts are left out with them: user
+	 * code can create a Future without a function, and its callbacks run in coroutines that need
+	 * this scheduler. */
 	if (UNEXPECTED(!scheduler_registered)) {
 		return SUCCESS;
 	}
+
+	async_register_future_ce(async_ce_completable);
+	async_register_timeout_ce(async_ce_completable);
 
 	if (UNEXPECTED(zend_register_functions(NULL, ext_functions, NULL, type) == FAILURE)) {
 		return FAILURE;
@@ -324,6 +327,12 @@ ZEND_FUNCTION(Async_await)
 		RETURN_THROWS();
 	}
 
+	/* A Future is marked observed on entry, before its token is read, as in TrueAsync (async.c:319-320;
+	 * dev/plans/S5.md, section 4). */
+	if (awaitable->ce == async_ce_future) {
+		((async_event_t *) target_awaitable)->flags |= ASYNC_EVENT_F_RESULT_USED | ASYNC_EVENT_F_EXC_CAUGHT;
+	}
+
 	async_awaitable_t *token = NULL;
 
 	if (cancellation != NULL) {
@@ -347,12 +356,8 @@ ZEND_FUNCTION(Async_await)
 
 	bool coroutine_finished = false;
 
-	/* A Future is marked observed on entry, as in TrueAsync (async.c:318-320; dev/plans/S5.md, section 4). */
 	if (awaitable->ce == async_ce_future) {
-		async_future_event_t *future = (async_future_event_t *) target_awaitable;
-
-		future->base.flags |= ASYNC_EVENT_F_RESULT_USED | ASYNC_EVENT_F_EXC_CAUGHT;
-		async_future_await(future, return_value, token);
+		async_future_await((async_future_event_t *) target_awaitable, return_value, token);
 	} else {
 		ZEND_ASSERT(awaitable->ce == async_ce_coroutine);
 		coroutine_finished = async_await_coroutine((async_coroutine_t *) target_awaitable, token);

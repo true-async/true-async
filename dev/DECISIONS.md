@@ -1086,3 +1086,20 @@ stack options were shown with the code).
   occurs only inside the scheduler's own work, which `ZEND_ASYNC_IN_SCHEDULER_CONTEXT` answers first
   (the Sage); the check stays as a guard. A `run()` for a coroutine that is not running is
   `io_provider/011` (main left behind by a caught bailout). Why: PLAN S6.7.
+- 2026-10-06 `await_*` marks every trigger it takes observed on entry, coroutines included, as
+  TrueAsync's `async_await_futures` (`async_API.c:1007-1008`); `await()` keeps S3's mark of a
+  coroutine when its waiter reads the outcome. So `await_any_or_fail([$a, $b])` reports no later
+  error of `$b`. Why: P1.4; S5.md section 2 said otherwise while the code followed TrueAsync (the
+  Critic on S5.5), and marking only the read outcomes would need a mark at every wake path.
+- 2026-10-06 A scheduler the core refused leaves out `Future`, `FutureState` and `Timeout` with the
+  `Async\` functions; `Coroutine` and the exceptions stay. Why: a `Future` needs no function to be
+  made, and its callbacks crashed on the coroutines of a scheduler that never started
+  (`module/005`; the Critic on S5.5).
+- 2026-10-06 `await_*` keeps its context and record chunk on the heap at every N, with no inline
+  records past the waker's two. Why: it costs fewer instructions and allocations than TrueAsync from
+  N = 1 (`dev/BENCHMARKS.md`, S5.5).
+- 2026-10-07 A coroutine refuses a `fiber.stack_size` below the core's minimum for a Fiber (a page
+  and the guard pages, the guard six times under ASAN) with the core's text;
+  `scheduler/056-small_fiber_stack_size_throws.phpt` takes 32 KiB instead of 16 KiB, above that
+  minimum on ASAN builds. Why: the room our stacks add for the first VM page hid the core's refusal,
+  and a coroutine on 4 KiB crashed (`scheduler/106`; the Critic on S5.5 for the ASAN factor).

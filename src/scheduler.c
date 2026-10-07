@@ -114,8 +114,22 @@ static async_fiber_context_t *fiber_context_take(void)
 
 	/* fiber_entry keeps the first VM stack page on the stack (context_vm_stack_start): it gets its
 	 * own room, so fiber.stack_size stays the C budget the core's stack limit measures, as for a Fiber;
-	 * without it a small size overran into the guard page. */
-	fiber_context = fiber_context_create(fiber_entry, EG(fiber_stack_size) + ZEND_FIBER_VM_STACK_SIZE);
+	 * without it a small size overran into the guard page. The room would also hide the core's
+	 * refusal of a small stack, so it is made here with the core's formula (zend_fiber_stack_allocate). */
+	const size_t page_size = zend_get_page_size();
+	const size_t minimum_stack_size = page_size +
+			ZEND_FIBER_GUARD_PAGES * page_size
+#ifdef __SANITIZE_ADDRESS__
+					* 6
+#endif
+			;
+
+	if (UNEXPECTED(EG(fiber_stack_size) < minimum_stack_size)) {
+		zend_throw_exception_ex(
+				NULL, 0, "Fiber stack size is too small, it needs to be at least %zu bytes", minimum_stack_size);
+	} else {
+		fiber_context = fiber_context_create(fiber_entry, EG(fiber_stack_size) + ZEND_FIBER_VM_STACK_SIZE);
+	}
 
 	/* The report runs PHP code (the exception's __toString, a release that fills the GC buffer) on a
 	 * stack in the middle of a switch: in scheduler context, so a GC defers and a wait refuses. */

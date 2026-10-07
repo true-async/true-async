@@ -1296,6 +1296,14 @@ ZEND_METHOD(Async_Future, await)
 		RETURN_THROWS();
 	}
 
+	/* Marked before the token is read, as TrueAsync's (future.c:1329): a refused token leaves no
+	 * warning for the future. */
+	future->base.flags |= ASYNC_EVENT_F_RESULT_USED;
+
+	if ((future->base.flags & ASYNC_EVENT_F_CLOSED) && future->exception != NULL) {
+		future->base.flags |= ASYNC_EVENT_F_EXC_CAUGHT;
+	}
+
 	async_awaitable_t *token = NULL;
 
 	if (cancellation != NULL) {
@@ -1309,12 +1317,6 @@ ZEND_METHOD(Async_Future, await)
 		if (token == (const async_awaitable_t *) future) {
 			token = NULL;
 		}
-	}
-
-	future->base.flags |= ASYNC_EVENT_F_RESULT_USED;
-
-	if ((future->base.flags & ASYNC_EVENT_F_CLOSED) && future->exception != NULL) {
-		future->base.flags |= ASYNC_EVENT_F_EXC_CAUGHT;
 	}
 
 	if (token == NULL) {

@@ -434,9 +434,8 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 		GC_ADDREF(exception);
 	}
 
-	/* Nothing sets ASYNC_COROUTINE_F_EXCEPTION_HANDLED in S3: the await record marks nothing
-	 * (scheduler.c, await_record_wake). The callbacks of a wait for several targets set it from S5, as
-	 * TrueAsync's (async_API.c:390, 487). */
+	/* Set by the records of await_* (await.c, await_mark_handled), as TrueAsync's callbacks
+	 * (async_API.c:390, 487); the record of await() marks nothing (scheduler.c, await_record_wake). */
 	zend_coroutine->flags &= ~ASYNC_COROUTINE_F_EXCEPTION_HANDLED;
 	async_callbacks_notify((async_awaitable_t *) coroutine, &coroutine->callbacks, &zend_coroutine->result, exception);
 

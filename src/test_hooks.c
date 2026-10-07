@@ -44,6 +44,7 @@
 #include "coroutine.h"
 #include "scheduler.h"
 #include "exceptions.h"
+#include "timeout.h"
 #include "src/internal/circular_buffer.h"
 
 #include <signal.h>
@@ -995,6 +996,39 @@ static ZEND_FUNCTION(add_throwing_finish_handler)
 								  bailout ? test_bailout_finish_handler : test_throwing_finish_handler,
 								  NULL,
 								  NULL);
+}
+
+static void test_throwing_subscriber_fire(async_awaitable_t *target,
+										  async_event_callback_t *callback,
+										  void *result,
+										  zend_object *exception)
+{
+	zend_throw_exception(NULL, "subscriber", 0);
+}
+
+static void test_throwing_subscriber_dispose(async_event_callback_t *callback, async_awaitable_t *target)
+{
+	efree(callback);
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_add_throwing_subscriber, 0, 1, IS_VOID, 0)
+	ZEND_ARG_OBJ_INFO(0, timeout, Async\\Timeout, 0)
+ZEND_END_ARG_INFO()
+
+/* A heap subscriber of a Timeout that throws when it completes, as another extension may add through
+ * the core API: the notify stops there, before the records linked after it. */
+static ZEND_FUNCTION(add_throwing_subscriber)
+{
+	zend_object *timeout;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_OBJ_OF_CLASS(timeout, async_ce_timeout)
+	ZEND_PARSE_PARAMETERS_END();
+
+	async_event_callback_t *callback = ecalloc(1, sizeof(*callback));
+	callback->callback = test_throwing_subscriber_fire;
+	callback->dispose = test_throwing_subscriber_dispose;
+	test_callbacks_add(async_awaitable_callbacks(async_awaitable_from_object(timeout)), callback);
 }
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_enqueue_with_error, 0, 2, _IS_BOOL, 0)
@@ -2123,6 +2157,7 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\defer", ZEND_FN(defer), arginfo_defer, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_throwing_finish_handler", ZEND_FN(add_throwing_finish_handler), arginfo_add_throwing_finish_handler, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\enqueue_with_error", ZEND_FN(enqueue_with_error), arginfo_enqueue_with_error, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_throwing_subscriber", ZEND_FN(add_throwing_subscriber), arginfo_add_throwing_subscriber, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\fail_at", ZEND_FN(fail_at), arginfo_fail_at, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_printing_switch_handler", ZEND_FN(add_printing_switch_handler), arginfo_add_printing_switch_handler, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_clearing_finish_handler", ZEND_FN(add_clearing_finish_handler), arginfo_add_clearing_finish_handler, 0, NULL, NULL)

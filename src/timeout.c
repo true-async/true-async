@@ -112,6 +112,8 @@ static void timeout_fire(async_timeout_event_t *timeout, zend_object *exception)
 	timeout->exception = exception;
 	timeout->base.flags |= ASYNC_EVENT_F_CLOSED;
 	async_callbacks_notify((async_awaitable_t *) timeout, &timeout->base.callbacks, NULL, exception);
+	/* A completed Timeout takes no record, and one that a throwing subscriber left behind wakes here. */
+	async_callbacks_free((async_awaitable_t *) timeout, &timeout->base.callbacks);
 	async_timeout_release(timeout);
 }
 
@@ -283,7 +285,7 @@ static void timeout_object_free(zend_object *object)
 	zend_object_std_dtor(object);
 }
 
-/* The cancel() argument, reported by the event's sole holder as S5.2's events are. */
+/* The cancel() argument, reported by the event's sole holder, as a future event's outcome is. */
 static HashTable *timeout_object_gc(zend_object *object, zval **table, int *count)
 {
 	const async_timeout_event_t *timeout = TIMEOUT_EVENT(object);

@@ -23,6 +23,50 @@ and the spread each walk it, about 240 ns and 80 B per node in all. Without a
 candidate the call stops after the registry scan. The automatic run pays the same walk at the idle
 point, at most once per `true_async.partial_deadlock_interval` (backing off to 64 times it while it
 finds nothing new; an interval of 0 walks at every idle point).
+## 2026-10-07, S5.5: await_*, map chains and waiters of one token against the reference
+
+**Builds.** Release, ZTS, `-O2`, gcc 13.3, configured as in S3.11, run with `-n`, no opcache; one
+count per side, the child pinned to CPU 3 of 4.
+
+- `ref`: the fork core `863f6dd90cf` with `ext/async` `1fdacf8` (`tests/lists/REFERENCE`) built in.
+- `ours`: the pinned core `1ee473ff67b` (`async-core-io-2026-10-06`) and our extension as a
+  `phpize` module at S5.4 (`1be2667`) with the S5.5 tests, the test hooks off.
+
+**Known answers** (S3.11's check of the tools): B1 counts 2,701.8 instructions and 1.020 allocations
+per spawn on `ours`, `B1-known` (B1 with one known allocation per spawn) 3,071.8 and 2.020: the
+counter sees that allocation exactly.
+
+**Benchmarks** (`bench/b9.php`-`b11.php`, the runner's `B9`-`B11`): B9-N awaits `await_all` over N
+pending Futures that a spawned coroutine completes; B10 is a `map` chain of depth 1 000 or of fan-out
+1 000 on one source; B11-N parks N coroutines each on `await(new Future($state), $token)` with one
+shared token Future and wakes each by its own state (S5.md section 9).
+
+| Bench | per | ref: instr / allocs | ours: instr / allocs | ours / ref |
+|---|---|---|---|---|
+| B9-1 | wait | 8,772.1 / 20 | 8,652.0 / 19 | 0.99 |
+| B9-2 | wait | 12,001.4 / 25 | 11,501.0 / 22 | 0.96 |
+| B9-8 | wait | 32,049.9 / 61 | 28,612.0 / 40 | 0.89 |
+| B9-100 | wait | 342,250.6 / 613 | 299,466.0 / 316 | 0.87 |
+| B9-10000 | wait | 34,609,909.6 / 60,013 | 30,791,554.0 / 30,016 | 0.89 |
+| B10-depth | link | 3,080.3 / 6.02 | 1,954.4 / 3.018 | 0.63 |
+| B10-fanout | link | 3,644.7 / 5.02 | 2,912.3 / 2.019 | 0.80 |
+| B11-1000 | waiter | 13,888.9 / 9.008 | 7,955.5 / 5.004 | 0.57 |
+| B11-10000 | waiter | 65,673.0 / 9.001 | 21,974.9 / 6.0 | 0.33 |
+
+Page faults and system calls per operation are equal on both sides (B11: 2.5 faults and 0.5 system
+calls at N = 10 000, the run's heap growth). Wall times were not taken.
+
+**K and the heap threshold** (S3.md section 12): `await_*` keeps its context and record chunk on the
+heap at every N, with no inline records past the waker's two, and costs fewer instructions and
+allocations than the reference from N = 1; an inline K would save at most the two allocations of a
+wait for one or two items. Not done.
+
+**Fan-in to one token** (B11): from N = 1 000 to 10 000 the cost per waiter grows 2.76 times on
+`ours` and 4.73 times on `ref`, under S3.md's threefold limit for "O(N^2) to fix", but with a linear
+part of about 1.56 instructions per waiter already parked. Inferred from the code, not profiled:
+removing a waiter's record from the token's vector searches it (`async_callbacks_remove`), the
+case S3.md section 12 keeps a record index for. Left as is: under the
+limit and a third of the reference's cost.
 
 ## 2026-10-06, S4.4: delay() and the S4 lanes
 

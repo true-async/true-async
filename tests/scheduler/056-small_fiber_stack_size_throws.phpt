@@ -2,7 +2,8 @@
 A coroutine on a fiber.stack_size too small for PHP code ends with the core's stack-limit Error, as a Fiber of that size does, not a crash
 --FILE--
 <?php
-ini_set('fiber.stack_size', '16K');
+/* Above the core's minimum, which ASAN builds raise to 28 KiB. */
+ini_set('fiber.stack_size', '32K');
 
 try {
     var_dump(Async\await(Async\spawn(fn() => 1)));
