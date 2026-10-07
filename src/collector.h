@@ -51,6 +51,13 @@ void async_collector_report_event_target(async_collector_t *collector,
 										 async_event_t *target,
 										 async_collector_event_references_t references,
 										 bool owned);
+/* For a kind's collector_target whose record waits for any of many sources (a scope's coroutines): the
+ * record's target is the reach node found or added by `key`, which the caller makes live with
+ * async_collector_report_reach_source() when `*added`. COLLECTOR_NONE and no `*added` outside the
+ * wake-edge pass, which alone reads them. */
+uint32_t async_collector_report_reach_target(async_collector_t *collector, const void *key, bool *added);
+/* A live `source` makes the reach node `to` live; the source owns no reference to it. */
+void async_collector_report_reach_source(async_collector_t *collector, zend_object *source, uint32_t to);
 /* For a kind's collector_target whose record waits for an outside source this time (a Timeout): its
  * waiter is live. */
 void async_collector_report_outside(async_collector_t *collector);
@@ -72,7 +79,7 @@ void async_collector_report_event(async_collector_t *collector,
  * live once a node with an edge to it is, or once an object reported as its holder is held from
  * outside the walk; an edge makes `to` live with `from`. COLLECTOR_NONE (a failed run) passes
  * through. */
-uint32_t async_collector_reach_node(async_collector_t *collector, void *key, bool *added);
+uint32_t async_collector_reach_node(async_collector_t *collector, const void *key, bool *added);
 void async_collector_report_reach(async_collector_t *collector, uint32_t from, uint32_t to);
 void async_collector_report_holder(async_collector_t *collector, zend_object *holder, uint32_t node);
 
@@ -96,11 +103,12 @@ void async_collector_request_startup(void);
  * waiter or the target was handed out to PHP code, which may cancel through the registry. */
 void async_collector_check_wake(async_coroutine_t *waiter, const async_coroutine_t *target);
 
-/* The oracle for a wake by an event (a future, a token): `waiter` is woken because the running code
- * completed the event. Only a completer in the bailout is excused. One handed out was live at the
- * run, so the targets it reaches were too, and whatever cancels the found coroutines (the registry's
- * walks, get_deadlocked_coroutines()) hands out the waiter itself; an outside source completes in
- * scheduler context, and what it holds the walk counts live. */
+/* The oracle for a wake by an event (a future, a token, a scope's cancel): `waiter` is woken because
+ * the running code completed the event. Only a completer in the bailout is excused: what wakes found
+ * coroutines (the registry's walks, get_deadlocked_coroutines(), the `cancel` policy) hands out what
+ * it wakes, and the policy main too, which it does not cancel, so the waiters they wake are handed
+ * out already. The route's and a SpawnStrategy's hand-out covers a subtree only (S9-scope.md 6). An
+ * outside source completes in scheduler context, and what it holds the walk counts live. */
 void async_collector_check_event_wake(async_coroutine_t *waiter);
 
 /* The same oracle for a cancel: a coroutine the collector found is cancelled only through the

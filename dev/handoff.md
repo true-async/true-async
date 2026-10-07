@@ -351,8 +351,8 @@ scopes (`scope_handler_keep_back`). A handler runs in the finished coroutine and
 item 9; the Sage), `exit()` in it ends the request (item 10). Probes `s9.3/q1.php`-`q16.php`.
 `scope/075` waits for php/php-src#24177 in the pinned core (the leak of a previous already in the
 chain). Open for Edmond: handlers that park (TrueAsync's parked handler cannot be cancelled, `q15`,
-`q16`). Next is S9.4; S7.7 brings the collector's non-owning edge, agreed with the S7 thread: the scope
-reporter also reports the handlers' object and closure as owned references.
+`q16`). Next is S9.4; S7.7 brought the reach of a held Scope object, and a Scope object reports
+nothing to the walk, so what its handlers capture counts as held from outside.
 
 S9.4 done 2026-10-07: `Scope::awaitCompletion()` with the SCOPE wait kind (`async_wait_kind_scope`,
 records[0] on the scope's event, the token in records[1]); `scope_notify_completion` at a member's
@@ -363,3 +363,12 @@ safe disposal the cascade's zombie mark wakes a waiter as completed before the e
 `083`); a second `cancel()` closes a scope whose members still run (probe `s9.4/w3.php`). The SCOPE
 kind has no `collector_target` until S9.9 (the edges wait for S7.7, which Edmond questioned). Next
 is S9.5; `awaitAfterCancellation()` is woken by the removal's notify (`with_zombies` true).
+
+S9.9 done 2026-10-07: the SCOPE kind's `collector_target` reports a completion node per awaited
+scope (a reach node keyed by `&scope->event`), live once a coroutine of its subtree is; new collector
+reporters `async_collector_report_reach_target()` and `async_collector_report_reach_source()`. Two
+cancels without an object: the route's `scope_hand_out_found()` also hands out found waiters, and the
+`await_*` iterator coroutine is its scope's holder (`iterator_coroutine`). The oracle moved from the
+record's wake to the notify sites, since a notify runs its callbacks in scheduler context. Own tests
+`scope/084`-`091`. Next is S9.5: `awaitAfterCancellation()` is a second SCOPE-kind user, and the
+`disposeAfterTimeout()` timer cancels without an object, so it must hold one or be reported.

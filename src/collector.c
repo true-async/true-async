@@ -377,7 +377,7 @@ static void collector_wake_edge_add(async_collector_t *collector, const uint32_t
 	collector_edge_add(collector, node, collector->waiter);
 }
 
-uint32_t async_collector_reach_node(async_collector_t *collector, void *key, bool *added)
+uint32_t async_collector_reach_node(async_collector_t *collector, const void *key, bool *added)
 {
 	*added = false;
 
@@ -391,7 +391,8 @@ uint32_t async_collector_reach_node(async_collector_t *collector, void *key, boo
 		return (uint32_t) Z_LVAL_P(position);
 	}
 
-	const uint32_t node = collector_node_add(collector, key, COLLECTOR_NODE_REACH);
+	/* Only a key: nothing reads through it. */
+	const uint32_t node = collector_node_add(collector, (void *) key, COLLECTOR_NODE_REACH);
 	ZVAL_LONG(position, node);
 	*added = true;
 
@@ -434,6 +435,29 @@ void async_collector_report_target(async_collector_t *collector, zend_object *ta
 	}
 
 	collector_wake_edge_add(collector, collector_node_of(collector, (zend_refcounted *) target));
+}
+
+uint32_t async_collector_report_reach_target(async_collector_t *collector, const void *key, bool *added)
+{
+	if (EXPECTED(collector->pass != COLLECTOR_PASS_WAKE_EDGES)) {
+		*added = false;
+		return COLLECTOR_NONE;
+	}
+
+	const uint32_t node = async_collector_reach_node(collector, key, added);
+
+	collector_wake_edge_add(collector, node);
+
+	return node;
+}
+
+void async_collector_report_reach_source(async_collector_t *collector, zend_object *source, const uint32_t to)
+{
+	if (UNEXPECTED(to == COLLECTOR_NONE)) {
+		return;
+	}
+
+	collector_edge_add(collector, collector_node_of(collector, (zend_refcounted *) source), to);
 }
 
 void async_collector_report_live_event(async_collector_t *collector,
@@ -1007,6 +1031,7 @@ static bool collector_report(async_coroutine_t **found, const uint32_t count)
 static bool collector_cancel(async_coroutine_t **found, const uint32_t count, bool *first)
 {
 	bool cancelled = false;
+	zend_coroutine_t *found_main = NULL;
 
 	for (uint32_t i = 0; i < count; i++) {
 		async_coroutine_t *coroutine = found[i];
@@ -1014,7 +1039,12 @@ static bool collector_cancel(async_coroutine_t **found, const uint32_t count, bo
 
 		/* Main's uncaught cancellation would end the script silently with status 0; parked, main
 		 * meets the global deadlock and its DeadlockError once the rest of the request ends. */
-		if (UNEXPECTED(ZEND_COROUTINE_IS_MAIN(zend_coroutine) || !collector_still_parked(coroutine))) {
+		if (UNEXPECTED(ZEND_COROUTINE_IS_MAIN(zend_coroutine))) {
+			found_main = zend_coroutine;
+			continue;
+		}
+
+		if (UNEXPECTED(!collector_still_parked(coroutine))) {
 			continue;
 		}
 
@@ -1031,6 +1061,15 @@ static bool collector_cancel(async_coroutine_t **found, const uint32_t count, bo
 		async_coroutine_cancel(coroutine, async_new_exception(async_ce_cancellation, "Deadlock detected"), true, false);
 		cancelled = true;
 	}
+
+#ifdef TRUE_ASYNC_TEST_HOOKS
+	/* The coroutines cancelled here run their cleanup, which may wake main. */
+	if (UNEXPECTED(found_main != NULL && cancelled)) {
+		found_main->flags |= ASYNC_COROUTINE_F_HANDED_OUT;
+	}
+#else
+	(void) found_main;
+#endif
 
 	return cancelled;
 }

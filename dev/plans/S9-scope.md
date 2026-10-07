@@ -226,25 +226,49 @@ helpers in `src/await.c` (`async_awaitable_release`, `await_outcome`, `token_rec
 scope is never an `await()` target or an `await_*` item (TrueAsync accepts neither), so none of
 them changes, and the SCOPE kind is used only by the two methods.
 
-**The collector** (S7.md 3.4, `dev/DECISIONS.md` 2026-10-06): a scope may cancel coroutines it does
-not hold through PHP values, so it reports them as live through non-owning wake edges. The
-membership vector holds bare pointers, as TrueAsync's (`scope.c:47`); `async_collector_report_object`
-means one owned reference (`collector.h:60-61`) and would make a run report nothing, and counted
-references fail on the global scope (unreported, every coroutine is held from outside; reported,
-main reaches every member). The edges:
+**The collector** (S7.md 3.4 and 10, `dev/DECISIONS.md` 2026-10-06 and 2026-10-07): a scope may
+cancel coroutines it does not hold through PHP values. The membership vector holds bare pointers, as
+TrueAsync's (`scope.c:47`), and a scope belongs to no one (Edmond, 2026-10-07), so the walk never
+follows a scope's members as references. Of the three edges this note first planned:
 
-1. a scope object reaches every member of its subtree, since `cancel()` cascades into child scopes
-   (`scope.c:1020-1044`), whatever the safe flag;
-2. a member reaches the members of its scope's subtree and of every ancestor's when its own scope
-   has no DISPOSE_SAFELY, since the route carries that flag up (section 4); from a safe origin it
-   reaches no parked coroutine, as a safe cancel never wakes a started one;
-3. the SCOPE kind's `collector_target` reports the members of the awaited subtree as wake targets,
-   so a waiter in `awaitCompletion()` is live while a live member may still finish.
+1. a held Scope object reaches every member of its subtree, since `cancel()` cascades into child
+   scopes (`scope.c:1020-1044`), whatever the safe flag: S7.7's reach nodes
+   (`async_scope_collector_reach()`, S7.md 10);
+2. a member reaching the members of its scope's subtree and of every ancestor's through the route
+   is left out by design (S7.md 10, DECISIONS 2026-10-07): any live coroutine could make an unsafe
+   origin later, so a tree would be all or nothing; the oracle excuses the route's wakes and cancels
+   (`scope_hand_out_found()`);
+3. S9.9: the SCOPE kind's `collector_target` reports the awaited scope's completion node, a reach
+   node keyed by the scope's event (`async_collector_report_reach_target()`), live once a coroutine
+   of the subtree is, zombies included (`async_collector_report_reach_source()` per member, and a
+   child scope's node per child), and owning no reference. The waiter wakes when the last active
+   member finishes or is marked a zombie, when a member's error passes the scope on its route, or on
+   a cancel of the scope or an ancestor. A member that is no candidate is live already, a candidate
+   is live through a live holder by edge 1, and a waiter is parked only while the subtree has an
+   active member; so the waiter is live once any member is, and is found only when every member is.
+   Any member suffices because one can throw into the route even when another never finishes; a miss
+   is possible there, a false finding is not. One node per scope and run, so a run adds edges in the
+   members plus the waiters, not their product (the Critic: an edge per member per waiter makes 10
+   million for 10 000 members and 1 000 waiters; with one node per scope a run over them took 42 ms
+   on the debug build, 2026-10-07).
 
-This needs a reporter of an edge that owns no reference, an S7 change asked through the
-coordinator and recorded in S7.md and DECISIONS. The oracle's `check_cancel` (`collector.h:83-94`)
-excuses a scope's cancel only when the canceller was live at the run. The Critic checks the edges
-against S7.md 3.4 before the code. (The Critic and the Sage, 2026-10-07.)
+Two cancels hold no Scope object:
+
+- the route's, at every level, left out as in edge 2: `scope_hand_out_found()` also hands out the
+  found waiters of each scope it visits, since the level's cancels wake them wherever they run, so
+  the oracle excuses them (`scope/090`);
+- the `await_*` iterator's (section 8), which cancels its scope when the walk throws: the iterator
+  coroutine is reported as a holder of that scope's reach node (`iterator_coroutine`, cleared when the
+  walk finishes), so the walk counts it: while it can still throw, the subtree's members and their
+  waiters are not found (`scope/091`; S7.7 found them).
+
+The oracle runs at the notify sites, before the wake, since the notify runs its callbacks in
+scheduler context: `scope_notify_completion()` checks the scope's waiters against the member that
+finished or became a zombie (`async_collector_check_wake()`, which excuses one handed out or in the
+bailout), and `async_scope_cancel()` against the running code (`async_collector_check_event_wake()`).
+The `cancel` policy hands out main too, which it does not cancel and the coroutines it cancels may
+wake (`scope/093`). The route's own notify needs none: the hand-out ran first. (The Critic and the Sage, 2026-10-07;
+S9.9's Critic, 2026-10-07.)
 
 ## 7. Finally handlers (D21)
 
@@ -354,6 +378,10 @@ Traversable's exception; `await/062` loses its `--XFAIL--` in that step.
 13. **`awaitCompletion()` in a finished coroutine throws** "awaitCompletion() requires a running
     coroutine" (S9.4, `scope/079`), as `await()` does there; TrueAsync parks it, as item 9 says
     for any wait in a handler.
+14. **A `provideScope()` declared to return by reference works** (S9.9, `spawnWith/017`): the
+    reference is unwrapped; TrueAsync's `async_provide_scope()` (`async_API.c:32-58`) reads the
+    reference's type and throws "Scope provider must return an instance of Async\Scope" for a valid
+    null or Scope (the S7 thread's Critic).
 
 The probes of S9.3 are `/mnt/project-files/s9/probes/s9.3/q1.php`-`q16.php`; on the reference and
 on ours they print the same but for items 9 and 10 and for S3's report of an unobserved exception of
@@ -398,8 +426,11 @@ that directory.
 - S9.4: a bailout while parked in `awaitCompletion()`; `scope/076`-`083` for the wake by
   `cancel()` and by the route, the deadlock report, the refusal in a handler, the `await_*`
   iterator's scope, and safe disposal's early wake (section 4, step 2);
-- S9.9: the collector's edges of section 6 (a member of a scope whose object only a parked
-  coroutine holds is found; a member of a live scope is not);
+- S9.9: the collector's edges of section 6, `scope/084`-`093`: a waiter in `awaitCompletion()` found
+  with its scope's stuck members, not found while a member may finish or the scope is held, a member
+  of a child scope, a found waiter woken by a handed-out member's end and error, the `cancel` policy,
+  the route's excuse, the `await_*` iterator as its scope's holder, a fatal error after a run, and
+  main found and woken by a coroutine the policy cancelled;
 - S9.5: `p3.php` (a zombie keeps the request running).
 
 **Core dependencies**: none. `is_safely` and `get_coroutine_count` are in the pinned core
@@ -424,9 +455,8 @@ same code before S9.2, and against the reference, at 1, 1 000 and 100 000 corout
   of section 9 and step 2's cascade of fresh cancellations; no waiters yet.
 - S9.4 Waiting (section 6), the route's wake of the scope's waiters with the error (section 4,
   step 2) and the `await_*` child scope (section 8).
-- S9.9 The collector's edges of section 6, split from S9.4: they wait for S7.7, which Edmond
-  questioned on 2026-10-07; until then the SCOPE kind has no `collector_target`, so its waiter is
-  never reported.
+- S9.9 The collector's edges of section 6, split from S9.4 to wait for S7.7: the SCOPE kind's
+  completion node, the route's hand-out of waiters, the `await_*` iterator as its scope's holder.
 - S9.5 Disposal (section 5): `dispose*`, `awaitAfterCancellation`, the object's destruction.
 - S9.6 The iterator core and both `finally` methods (section 7), the bailout trace first.
 - S9.7 Stage review: the Critic over S9.2-S9.6, coverage of `src/scope.c` and the iterator, Mull on

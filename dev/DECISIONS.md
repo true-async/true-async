@@ -1443,3 +1443,35 @@ stack options were shown with the code).
   unexpected; the fuzz lane, 3 to 5 seeds over `gc/024`, `gc/025`, `scope/058`, `scheduler/062`,
   `107`, finds nothing new. Probe `s9.4/gcmaps.php`: 10250 maps at 40 000 coroutines, 28251 at
   100 000 (TrueAsync 16053, 40054; before, 25254 and "Fiber stack protect failed").
+- 2026-10-07 A waiter in `Scope::awaitCompletion()` is live once any coroutine of the awaited
+  subtree is, zombies included, through one completion node per awaited scope and run (S9.9,
+  S9-scope.md 6, `src/scope.c` `scope_record_collector_target`). Why: any member can wake it, by
+  finishing or by an error whose route passes the scope; an edge per member per waiter, the first
+  design, makes the run's edges the product of the two (the Critic: 10 million for 10 000 members and
+  1 000 waiters), and a run that hits the memory ceiling finds nothing. Two reporters added to S7's
+  `src/collector.h` for it: `async_collector_report_reach_target()` and
+  `async_collector_report_reach_source()`; the S7 track is closed, S7.md 10 updated.
+- 2026-10-07 Two cancels that hold no Scope object, found by S9.9's Critic: the route's
+  `scope_hand_out_found()` also hands out the found waiters of every scope it visits, as the route
+  is left out (`scope/090`, an abort of the oracle before); the `await_*` iterator coroutine is the
+  holder of its scope's reach node until it finishes (`async_scope_t.iterator_coroutine`), since it
+  cancels that scope when the walk throws (`scope/091`: S7.7 found the subtree's members, a false
+  finding).
+- 2026-10-07 The oracle for a scope's waiters runs at the notify sites, against the member that
+  finished or became a zombie, or against the running code for a cancel (S9.9). Why: the notify runs
+  its callbacks in scheduler context, so a record's wake cannot tell who woke it, and the bailout's
+  excuse never applied there (the Critic). The FUTURE record's `async_collector_check_event_wake()`
+  (`src/future.c`) runs inside a notify too, so its bailout excuse never applies there either; a
+  probe of a fatal error after a run found a Future's waiter (`s9/probes/s9.9/fb.php`) did not abort,
+  so it is left as is and named for S9.7's fuzz pass. The `cancel` policy now hands out main too,
+  which it leaves uncancelled, when it cancelled another: a coroutine it cancels can wake main, found in `awaitCompletion()`,
+  from its cleanup (`scope/093`, an abort before; S9.9's second Critic). Rejected: excusing every
+  handed-out completer, since `get_coroutines()` hands out the caller too and would switch the
+  oracle off for it (the third Critic). Left for S9.7: a coroutine the route's subtree hand-out
+  woke may wake a found waiter outside that subtree.
+- 2026-10-07 A `provideScope()` declared to return by reference works: `scope_provide()` unwraps the
+  reference (S9.9, `spawnWith/017`, S9-scope.md 9 item 14). TrueAsync rejects a valid null or Scope
+  there. Found by the S7 thread's Critic.
+- 2026-10-07 `tools/check-gates.py`'s ban on "the event embedded in a coroutine" (`->event.`) no
+  longer matches a scope's own event (`scope->event.`, `..._scope)->event.`), which `src/scope.h`
+  embeds; the gate failed on main since S9.2 for that alone (S9.9).

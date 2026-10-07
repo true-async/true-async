@@ -1215,6 +1215,8 @@ static bool await_iterator_finished(zend_coroutine_t *coroutine, zend_coroutine_
 
 	async_scope_t *scope = ((async_coroutine_t *) coroutine)->scope;
 
+	scope->iterator_coroutine = NULL;
+
 	if (EXPECTED(coroutine->exception == NULL) || UNEXPECTED(is_bailout) ||
 		(scope->event.flags & ASYNC_SCOPE_F_CANCELLED)) {
 		return false;
@@ -1244,7 +1246,10 @@ static void await_traversable(await_context_t *context, zend_object_iterator *it
 	iterator_coroutine->coroutine.flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
 	/* What the Traversable spawns joins a child scope of the waiter's (TrueAsync's async_API.c:1072-1092,
 	 * S9-scope.md 8). */
-	async_scope_add_coroutine(async_scope_new(async_scope_current()), iterator_coroutine);
+	async_scope_t *iterator_scope = async_scope_new(async_scope_current());
+
+	iterator_scope->iterator_coroutine = iterator_coroutine;
+	async_scope_add_coroutine(iterator_scope, iterator_coroutine);
 	async_finish_handler_add(&iterator_coroutine->coroutine, await_iterator_finished, NULL, NULL);
 
 	if (UNEXPECTED(!async_scheduler_enqueue(&iterator_coroutine->coroutine, NULL, false))) {

@@ -786,12 +786,18 @@ Active: S9.5
         both, on the core with CORE_REF 8159f7baa5c. Of the Critic's 3 findings two are
         TrueAsync's behaviour and stay (the Sage: safe disposal's early wake, a second `cancel()`
         closing a running scope), one comment fixed. The collector's edges moved to S9.9.
-- [ ] S9.9 The collector's edges for scopes (note section 6), split from S9.4: an S7.7 reporter of
+- [x] S9.9 The collector's edges for scopes (note section 6), split from S9.4: an S7.7 reporter of
       an edge that owns no reference; Edmond questioned S7.7 on 2026-10-07, so it waits for his
       word in the S7 thread.
       done: the note's S9.9 own tests pass on debug and ASAN; the SCOPE kind reports its target;
         the S3-S7 lists pass as before
       tier: T2 · role: Critic
+      handoff: done 2026-10-07: one completion node per awaited scope; the route hands out found
+        waiters, the `await_*` iterator holds its scope's reach node, the oracle checks at the
+        notify sites and the `cancel` policy hands out main; a by-reference `provideScope()` works.
+        Own tests `scope/084`-`093`, `spawnWith/017`. Debug 1094 PASS, 48 XFAIL; ASAN 1075 PASS,
+        44 XFAIL; 0 unexpected on both, on CORE_REF 3af71f889e6; 10 fuzz seeds over scope,
+        collector and spawnWith, 0 failed. Four Critic passes: 4 false findings or aborts fixed.
 - [ ] S9.5 `dispose()`, `disposeSafely()`, `disposeAfterTimeout()`, `awaitAfterCancellation()`, the
       object's destruction (note section 5).
       done: S9.txt's S9.5 tests and `p3` of the note as an own test pass on debug and ASAN; the

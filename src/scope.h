@@ -62,6 +62,9 @@ struct _async_scope_s
 	zend_fcall_info_cache child_exception_handler;
 	zend_string *filename; /* where the scope was made; NULL outside PHP code */
 	uint32_t lineno;
+	/* The await_* walk whose exception cancels this scope (await.c); NULL for any other scope, and once
+	 * the walk has finished. */
+	async_coroutine_t *iterator_coroutine;
 };
 
 /* Async\Scope. A stand-in is the object a SpawnStrategy's hooks get for a scope without one; it stays
@@ -124,8 +127,9 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 bool async_scope_catch(async_coroutine_t *coroutine, zend_object *error);
 
 /* For the collector (S7.md 10): a candidate `coroutine` at `node` is reached from its scope's reach node,
- * each scope's from its parent's, and a scope's node is live while its object is held from outside. A
- * cancel goes down the tree: an object reaches its scope's coroutines and those of its child scopes. */
+ * each scope's from its parent's, and a scope's node is live while its object, or the await_* walk
+ * that cancels it, is live. A cancel goes down the tree: an object reaches its scope's coroutines and
+ * those of its child scopes. */
 void async_scope_collector_reach(async_collector_t *collector, async_coroutine_t *coroutine, uint32_t node);
 
 /* Starts the callable in a new coroutine of `scope`, the body of spawn(), Scope::spawn() and

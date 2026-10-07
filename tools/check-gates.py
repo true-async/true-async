@@ -35,7 +35,8 @@ CORE_TYPES = {
 
 # (what is forbidden, pattern) over src/ and php_true_async.h.
 FORBIDDEN = [
-    ('the event embedded in a coroutine', r'->event\.'),
+    # A scope's own event (src/scope.h) is not one.
+    ('the event embedded in a coroutine', r'(?<!scope)(?<!scope\))->event\.'),
     ('a fork event macro', r'\bZEND_ASYNC_EVENT_\w+'),
     ('the fork object-to-event cast', r'\bZEND_ASYNC_OBJECT_TO_EVENT\b'),
     ('the fork waker status', r'waker->status|\bZEND_ASYNC_WAKER_(?:NO_STATUS|WAITING|QUEUED|IGNORED|RESULT)\b'),

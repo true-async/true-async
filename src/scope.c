@@ -103,7 +103,7 @@ static void scope_detach_coroutine(async_coroutine_t *coroutine)
 	}
 }
 
-static void scope_notify_completion(async_scope_t *scope, bool with_zombies);
+static void scope_notify_completion(async_scope_t *scope, bool with_zombies, const async_coroutine_t *member);
 
 void async_scope_mark_zombie(async_coroutine_t *coroutine)
 {
@@ -119,7 +119,7 @@ void async_scope_mark_zombie(async_coroutine_t *coroutine)
 	if (EXPECTED(scope != NULL)) {
 		scope->active_coroutines_count--;
 		scope->zombie_coroutines_count++;
-		scope_notify_completion(scope, false);
+		scope_notify_completion(scope, false, coroutine);
 	}
 }
 
@@ -189,11 +189,43 @@ static void scope_set_cancelled(async_scope_t *scope)
 	}
 }
 
-/* Wakes the waiters of the scope, then of each parent, while each has completed in turn (TrueAsync's
- * scope_check_completion_and_notify, scope.c:1575-1592). A wake only enqueues. */
-static void scope_notify_completion(async_scope_t *scope, const bool with_zombies)
+#ifdef TRUE_ASYNC_TEST_HOOKS
+/* The collector's oracle for the waiters a notify of the scope is about to wake (S9-scope.md 6): by
+ * `member`'s finish or zombie mark, or, with no member, by the running code's cancel. The notify itself
+ * runs its callbacks in scheduler context, where the running code is not known. */
+static void scope_check_waiters_wake(async_scope_t *scope, const async_coroutine_t *member)
 {
+	async_event_callback_t **slots = async_callbacks_slots(&scope->event.callbacks);
+
+	for (uint32_t i = 0; i < scope->event.callbacks.length; i++) {
+		if (UNEXPECTED(!(slots[i]->flags & ASYNC_CALLBACK_F_RECORD))) {
+			continue;
+		}
+
+		async_coroutine_t *waiter = ((async_coroutine_event_callback_t *) slots[i])->coroutine;
+
+		if (member != NULL) {
+			async_collector_check_wake(waiter, member);
+		} else {
+			async_collector_check_event_wake(waiter);
+		}
+	}
+}
+#endif
+
+/* Wakes the waiters of the scope, then of each parent, while each has completed in turn (TrueAsync's
+ * scope_check_completion_and_notify, scope.c:1575-1592), because `member` finished or became a zombie.
+ * A wake only enqueues. */
+static void scope_notify_completion(async_scope_t *scope, const bool with_zombies, const async_coroutine_t *member)
+{
+#ifndef TRUE_ASYNC_TEST_HOOKS
+	(void) member;
+#endif
+
 	while (scope != NULL && scope_is_completed(scope, with_zombies)) {
+#ifdef TRUE_ASYNC_TEST_HOOKS
+		scope_check_waiters_wake(scope, member);
+#endif
 		async_callbacks_notify((async_awaitable_t *) &scope->event, &scope->event.callbacks, NULL, NULL);
 		scope = scope->parent_scope;
 	}
@@ -300,7 +332,7 @@ void async_scope_remove_coroutine(async_coroutine_t *coroutine)
 	async_scope_t *scope = coroutine->scope;
 
 	scope_detach_coroutine(coroutine);
-	scope_notify_completion(scope, true);
+	scope_notify_completion(scope, true, coroutine);
 
 	if (UNEXPECTED(scope_can_be_disposed(scope))) {
 		zend_array *released_handlers = NULL;
@@ -349,6 +381,9 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 		async_coroutine_cancel(scope->coroutines.data[i], error, false, is_safely);
 	}
 
+#ifdef TRUE_ASYNC_TEST_HOOKS
+	scope_check_waiters_wake(scope, NULL);
+#endif
 	async_callbacks_notify((async_awaitable_t *) &scope->event, &scope->event.callbacks, NULL, error);
 
 	if (transfer_error) {
@@ -459,13 +494,26 @@ static bool scope_handle_error(async_scope_t *scope,
  * is handed out, as registry_cancel() hands out what it cancels, so the oracle excuses them. Once is
  * enough: while the hooks run, the reference spawn_with_strategy() holds is one the count never sees,
  * and a handler cannot park. */
-static void scope_hand_out_found(const async_scope_t *scope)
+static void scope_hand_out_found(async_scope_t *scope)
 {
 	for (uint32_t i = 0; i < scope->coroutines.length; i++) {
 		zend_coroutine_t *member = &scope->coroutines.data[i]->coroutine;
 
 		if (UNEXPECTED(member->flags & ASYNC_COROUTINE_F_DEADLOCK_FOUND)) {
 			member->flags |= ASYNC_COROUTINE_F_HANDED_OUT;
+		}
+	}
+
+	/* The waiters in awaitCompletion(), wherever they run: the cancels that follow wake them. */
+	async_event_callback_t **slots = async_callbacks_slots(&scope->event.callbacks);
+
+	for (uint32_t i = 0; i < scope->event.callbacks.length; i++) {
+		if (EXPECTED(slots[i]->flags & ASYNC_CALLBACK_F_RECORD)) {
+			zend_coroutine_t *waiter = &((async_coroutine_event_callback_t *) slots[i])->coroutine->coroutine;
+
+			if (UNEXPECTED(waiter->flags & ASYNC_COROUTINE_F_DEADLOCK_FOUND)) {
+				waiter->flags |= ASYNC_COROUTINE_F_HANDED_OUT;
+			}
 		}
 	}
 
@@ -559,6 +607,11 @@ void async_scope_collector_reach(async_collector_t *collector, async_coroutine_t
 
 		if (EXPECTED(scope->scope_object != NULL)) {
 			async_collector_report_holder(collector, scope->scope_object, scope_node);
+		}
+
+		/* It cancels the scope when it throws, holding no object. */
+		if (UNEXPECTED(scope->iterator_coroutine != NULL)) {
+			async_collector_report_holder(collector, &scope->iterator_coroutine->std, scope_node);
 		}
 
 		reached = scope_node;
@@ -1062,9 +1115,43 @@ static zend_string *scope_record_info(const async_coroutine_event_callback_t *re
 	return zend_strpprintf(0, "await: scope created at %s:%" PRIu32, ZSTR_VAL(scope->filename), scope->lineno);
 }
 
-/* No collector target yet: the waiter is never reported (S9-scope.md 6, the edges wait for S7.7). */
+/* The scope's completion node, live once a coroutine of its subtree is, zombies included: any of them
+ * may wake a waiter, by finishing or by an error whose route passes the scope (S9-scope.md 6). One per
+ * scope and run, so the edges grow with the members and the waiters, not their product. */
+static void
+scope_report_completion_sources(const async_scope_t *scope, async_collector_t *collector, const uint32_t node)
+{
+	for (uint32_t i = 0; i < scope->coroutines.length; i++) {
+		async_collector_report_reach_source(collector, &scope->coroutines.data[i]->std, node);
+	}
+
+	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
+		const async_scope_t *child_scope = scope->child_scopes.data[i];
+		bool added;
+		const uint32_t child_node = async_collector_reach_node(collector, &child_scope->event, &added);
+
+		async_collector_report_reach(collector, child_node, node);
+
+		if (added) {
+			scope_report_completion_sources(child_scope, collector, child_node);
+		}
+	}
+}
+
+static void scope_record_collector_target(const async_coroutine_event_callback_t *record, async_collector_t *collector)
+{
+	const async_scope_t *scope = (const async_scope_t *) record->event;
+	bool added;
+	const uint32_t node = async_collector_report_reach_target(collector, &scope->event, &added);
+
+	if (added) {
+		scope_report_completion_sources(scope, collector, node);
+	}
+}
+
 static const async_wait_kind_t async_wait_kind_scope = {
 	.info = scope_record_info,
+	.collector_target = scope_record_collector_target,
 };
 
 /* TrueAsync's awaitCompletion (scope.c:299-372): until no coroutine of the scope or of its child scopes
@@ -1227,6 +1314,11 @@ static async_scope_t *scope_provide(zend_object *provider, zval *scope_value)
 
 	if (UNEXPECTED(EG(exception) != NULL)) {
 		return NULL;
+	}
+
+	/* A provideScope() declared to return by reference returns a reference, which TrueAsync rejects. */
+	if (UNEXPECTED(Z_ISREF_P(scope_value))) {
+		zend_unwrap_reference(scope_value);
 	}
 
 	if (Z_TYPE_P(scope_value) == IS_NULL) {
