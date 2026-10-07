@@ -253,8 +253,9 @@ Known miss: generator frames are not walked (`zend_generator_frame_gc` has no `Z
 
 ## S6
 
-Written 2026-10-07. S6.6 (curl, mysqli, pdo_mysql) done; S6.7 (shutdown windows, every list run)
-next; the Windows part is S6.10, waiting for a Windows agent (S1.5).
+Written 2026-10-07. S6.7 (core update, shutdown windows, every list run) done; S6.8 (stage review:
+Critic over S6.3-S6.7, coverage, Mull, IO chaos over 100 seeds) next; the Windows part is S6.10,
+waiting for a Windows agent (S1.5).
 
 - `run()` parks on a heap copy of the op and keeps its own reference to the event; the result and
   `in_flight` are read after the suspend (note 3.2-3.3). A non-running coroutine is answered
@@ -263,8 +264,12 @@ next; the Windows part is S6.10, waiting for a Windows agent (S1.5).
   the copy of an ACCEPT op into a POLL (note section 4). The Ring's multishot accept hid pending
   connections from `stream_select()`; that Ring bug goes to bukka (a pull request is being
   prepared in the S6.4 thread, `dev/WORKFLOW.md` "Ownership").
-- The core is `async-core-io-2026-10-06`. Edmond's branch for php-src bugs outside the RFCs is
-  `php-src-fixes` (`dev/WORKFLOW.md`); its `io/094` fix is not in the pinned core yet.
+- The core is `async-core-io-2026-10-07` (`8f89755d2b1`): `php-src-fixes` `6e9d801dcc5`,
+  `io-hooks-fixes` `c43e1d5797a`, `async-core` `ae85ef88d00` (the scheduler for `php -r`, `-B`,
+  `-R`, `-E`). The seven tests that include a php-src helper need `TRUE_ASYNC_CORE_SRC` (the core's
+  checkout); `tools/test.py` stops without it, so a Mull `--diff-ref` run needs it too. The
+  `async-core` commit `ae85ef88d00` is pushed only inside the core branch until Edmond agrees to
+  update php/php-src#22561 with it.
 - S6.10 takes the Windows lane's socket expectations: load `sockets` and `openssl` in `pocs-win`,
   then settle the `xfail-on:pocs-win(S6.10)` tags and `stream/001`, `002`, `046-…_win`, `exec/001`,
   `003`. The `skip-on:pocs-win(...-until-S6.4)` and `(...-until-S6.5)` tags are frozen text; they
@@ -274,19 +279,17 @@ next; the Windows part is S6.10, waiting for a Windows agent (S1.5).
   handles and sources in `async_signal_rebuild()` and leaves no exception (S4.6's rule). The
   collector (S7.3) still has to treat a pending `signal()` Future as completable from outside:
   `ASYNC_G(signals)->watches[n]` holds its waits (`signal_wait_t`) with their Futures.
-- `dns/003` fails about 4 in 60 runs under load: the Ring completes the lookup during the submit's
-  flush, so the provider returns without suspending and the other coroutine prints second
-  (`io_wait_submit()`, `src/io_provider.c`). TrueAsync always yields for DNS. Not fixed; S6.7's
-  "every list run" decides (yield after an inline DNS completion, or a by-design tag).
+- A DNS lookup yields before its submit (`io_provider_run()`): the Ring could complete it inside the
+  coroutine's own suspend tick, so `dns/003` saw the other coroutine print second.
 - S6.6 changed no code: `curl/006` times out on `/very-slow` (1 s budget for the other request, so a
   loaded ASAN run may need its retry), `curl/025`, `054` expect the core's two send warnings,
   `curl/043` is by design, `pdo_mysql/029` waits for `RFC-CHANGES.md` 6 (it passes when no cancel
   lands mid-connect, so a run may see it pass on one attempt). Coverage lanes skip Windows-only tests.
 - php-src bugs found on 2026-10-07 while answering devnexen on php/php-src#24168: `pclose()` from a
   filter and `zlib.inflate`'s notice, both on `php-src-fixes` with PR branches (WORKFLOW); the
-  per-filter check for #24168 is `stream-filter-remove-per-filter`, waiting for Edmond. Open in the
-  same family: `fclose()` from an error handler during an internal filter, `proc_close()` from a
-  filter, and `NO_FCLOSE` saved and restored per callback (overlapping Fibers clear it early).
+  per-filter check for #24168 is in that PR and in `php-src-fixes`. Open in the same family:
+  `fclose()` from an error handler during an internal filter, `proc_close()` from a filter, and
+  `NO_FCLOSE` saved and restored per callback (overlapping Fibers clear it early).
 - `stream/030` (UDP receive timeout) is `RFC-CHANGES.md` 4; the pipe timeout is 3; `F_FILES` off.
 - MySQL: `tools/test.py` starts a private `mysqld` when `MYSQL_TEST_HOST` is unset; a container
   needs `apt-get install mysql-server-core-8.0` (WORKFLOW "Test fixtures").

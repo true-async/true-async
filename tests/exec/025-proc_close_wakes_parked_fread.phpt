@@ -1,7 +1,5 @@
 --TEST--
 proc_close wakes parked fread on child stdout pipe (regression: #144)
---XFAIL--
-By design: proc_close() closes a pipe a coroutine is parked on (B1, "Concurrent access to a stream", dev/plans/S6.md section 12); the reader gets the end of the stream ('') where TrueAsync's fork gives false. S6.7 tags it core:
 --SKIPIF--
 <?php
 if (!function_exists("proc_open")) echo "skip proc_open() is not available";

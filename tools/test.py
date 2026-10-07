@@ -5,7 +5,8 @@
 
 A lane is <core>-<tree>[-cov|-mull]; the core is installed in $TRUE_ASYNC_PREFIXES/<core>-<tree>
 (default ~/ta-prefix). TEST narrows the run to listed tests. ASAN lanes need $TRUE_ASYNC_CORE_SRC,
-the php-src checkout of the core, for its LeakSanitizer suppressions.
+the php-src checkout of the core, for its LeakSanitizer suppressions, and so does every run of a test
+that includes a php-src test helper from it.
 
 The Windows lane pocs-win builds nothing: php-src's own scripts build the core with the extension
 copied into ext/true_async, and $TRUE_ASYNC_WIN_BUILD names the directory with php.exe and
@@ -64,9 +65,14 @@ MULL_PLUGIN = '/usr/lib/mull-ir-frontend-18'
 MULL_CONFIGURE = ['CC=clang-18', f'CFLAGS=-g -O0 -grecord-command-line -fpass-plugin={MULL_PLUGIN}', 'LDFLAGS=',
                   '--enable-true-async-known-answer']
 
+# The php-src checkout of the core: the LeakSanitizer suppressions, and the php-src test helpers seven
+# ported tests include (dev/DECISIONS.md, 2026-10-07).
+CORE_SRC = 'TRUE_ASYNC_CORE_SRC'
+
 # The only variables run-tests gets: it writes its environment into a .sh next to every failed
 # test, and results/ is uploaded, so a secret under any name would reach the artifact. Each name is
-# read by run-tests.php, a test (USE_ZEND_ALLOC), the sanitizers, ior or Windows itself.
+# read by run-tests.php, a test (USE_ZEND_ALLOC, TRUE_ASYNC_CORE_SRC), the sanitizers, ior or Windows
+# itself.
 TEST_ENV_NAMES = {
     'PATH', 'TMPDIR', 'TMP', 'TEMP',
     'SYSTEMROOT', 'SYSTEMDRIVE', 'WINDIR', 'COMSPEC', 'PATHEXT', 'NUMBER_OF_PROCESSORS',
@@ -75,7 +81,7 @@ TEST_ENV_NAMES = {
     'USE_ZEND_ALLOC', 'USE_TRACKED_ALLOC', 'ZEND_DONT_UNLOAD_MODULES',
     'ASAN_OPTIONS', 'UBSAN_OPTIONS', 'LSAN_OPTIONS', 'MSAN_OPTIONS', 'ASAN_SYMBOLIZER_PATH',
     'LLVM_SYMBOLIZER_PATH',
-    'IOR_BACKEND', 'TRUE_ASYNC_SCHED',
+    'IOR_BACKEND', 'TRUE_ASYNC_SCHED', CORE_SRC,
 }
 
 # run-tests' own switches: TEST_PHP_ARGS, TEST_PHP_JUNIT, ..., SKIP_SLOW_TESTS, ...; the MySQL
@@ -259,6 +265,15 @@ def compose(lane, stage, selected):
     needs_rfc = [e for e in entries if e.core and lane.name.startswith('pocs-')]
     left_out = [(e, f'core:{e.core}') for e in needs_rfc]
     run_now = [e for e in entries if e not in needs_rfc]
+
+    core_src = os.environ.get(CORE_SRC)
+
+    if not core_src or not (Path(core_src) / 'sapi/cli/tests/php_cli_server.inc').is_file():
+        needs_src = [e.path for e in run_now if CORE_SRC.encode() in (TESTS / e.path).read_bytes()]
+
+        if needs_src:
+            sys.exit(f'${CORE_SRC} does not name the php-src checkout of the core that '
+                     f'{", ".join(needs_src)} include from')
 
     if not run_now:
         # run-tests given no test scans the whole working tree.
@@ -461,7 +476,7 @@ def keep_artifacts(entries, out_dir):
 
 def lsan_suppressions():
     """php-src's suppressions; run-tests --asan looks for them next to itself, not in a prefix."""
-    src = os.environ.get('TRUE_ASYNC_CORE_SRC')
+    src = os.environ.get(CORE_SRC)
     path = Path(src or '.') / '.github' / 'lsan-suppressions.txt'
 
     if not src or not path.is_file():

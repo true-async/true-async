@@ -113,3 +113,93 @@ throwing, which would cover every extension. Edmond's call which.
 
 Waits for it: `tests/pdo_mysql/029-cancel_during_connect.phpt` (`core:6` in `tests/lists/S6.txt`).
 
+## 7. IO hooks: a failed run() frees what the provider delivered
+
+State: drafted 2026-10-07 (S6.7), not sent. PR: none.
+
+Need: a cancellation that lands after the queue completed an op (an accepted descriptor, an address
+list, a reaped status, a taken signal) leaves the result with the provider. When `run()` returns
+FAILURE, `php_io_run_ex()` overwrites the result with Cancelled (`main/io/php_io_hooks.c:995-1000`)
+and frees nothing: the descriptor and the list leak. So the provider returns SUCCESS with the result
+and the cancellation pending (`dev/plans/S6.md` 3.3, step 5), and the caller sees its call succeed
+before the exception.
+
+Request: on FAILURE after a delivered Done, `php_io_run_ex()` releases the result by op type (close
+the accepted descriptor, `freeaddrinfo()` the list), as TrueAsync's wrapper does (F
+`main/network_async.c:1572-1580`); then a provider can return FAILURE for every cancelled wait.
+
+Waits for it: the Done branch at the end of `io_provider_run()` (`src/io_provider.c`),
+`io_provider/009`.
+
+## 8. IO hooks: unfreeze the streams of a bailed-out coroutine
+
+State: drafted 2026-10-07 (S6.7), not sent. PR: none.
+
+Need: a coroutine parked in `run()` when a fatal error unwinds the request leaves its stream frozen
+(`PHP_STREAM_FLAG_IN_USE`) and `FG(io_ops_in_flight)` raised until RSHUTDOWN
+(`main/io/php_io_hooks.c:472-498`), since its `php_io_frame_end()` never runs. Shutdown functions
+then get "Concurrent access to a stream" on that stream, and `pcntl_fork()` refuses.
+
+Request: a `PHPAPI` the scheduler calls after it has unwound every coroutine of a bailout: reset
+`FG(io_ops_in_flight)` and unfreeze the streams whose op is not in `FG(io_orphans)` (a Ring op still
+writing into a stream buffer keeps its stream frozen).
+
+Waits for it: `io_provider/007` records today's behaviour (the shutdown function's read throws).
+
+## 9. pcntl: block signals around the queue only, not around the handlers
+
+State: drafted 2026-10-07 (S6.7), not sent. PR: none.
+
+Need: `pcntl_signal_dispatch()` blocks every signal of the thread and the fiber switch while its PHP
+handlers run (`ext/pcntl/pcntl.c:1411-1420`). A handler that suspends lets other coroutines run with
+signals blocked; and pcntl's restore of the old mask unblocks a number a `SignalHandle` blocked
+meanwhile (5 is the same family).
+
+Request: pcntl blocks signals only while it takes entries off its queue, and runs the handlers with
+the mask it found. The open question "A pcntl handler that waits" of `dev/PLAN.md` decides whether
+this or a refusal of the suspend is wanted.
+
+Waits for it: the open question in `dev/PLAN.md`; `async_signal_reblock()` (`src/os_signal.c`).
+
+## 10. IO hooks: exec() and friends close through a WaitPid op
+
+State: drafted 2026-10-07 (S6.7), not sent. PR: none.
+
+Need: `exec()`, `system()`, `passthru()` and `shell_exec()` open the child with libc `popen()`
+(`ext/standard/exec.c:123-125, 514-516`); their reads park through `php_io_read()`, but the stream
+has no `child_pid`, so its close is `pclose()`, which blocks the thread in `waitpid()` (review M9,
+11.2.7). TrueAsync waits for that child with a process event.
+
+Request: open these children with `php_stream_popen()` (or record the pid), so the close is the
+WaitPid op a provider parks on, as `proc_close()` already is.
+
+Waits for it: nothing listed fails; a coroutine that `exec()`s a slow child stalls the thread at the
+close.
+
+## 11. IO hooks: a Flock op
+
+State: drafted 2026-10-07 (S6.7), not sent. PR: none.
+
+Need: `flock()` without `LOCK_NB` blocks the thread (review M10). Under a scheduler that is a
+deadlock: the holder parks on a timer and never runs again to unlock. `ext/session/mod_files.c`
+does the same for two coroutines with one session id.
+
+Request: a Flock op: a work op on the Ring, and `LOCK_NB` with a Timer backoff through
+`php_io_sleep()` as the fallback for a readiness-only queue (review M10).
+
+Waits for it: `io/081`, `084` (`core:11` in `tests/lists/S6.txt`).
+
+## 12. IO hooks: per-direction exclusion and close as cancel
+
+State: drafted 2026-10-07 (S6.7), not sent. PR: none.
+
+Need: a coroutine parked on a stream freezes the whole stream (review B1), so a second user throws
+"Concurrent access to a stream": a writer beside a parked reader (full duplex), `fclose()` or
+`proc_close()` of a stream another coroutine waits on, several acceptors on one listener. TrueAsync
+allows all three.
+
+Request: the three parts of review B1: a read side and a write side held separately at the stream
+API, contention handed to the provider as a wait op, and `fclose()` completing every op pinned on
+the stream as closed, with the descriptor's `close()` and the free at the last unpin.
+
+Waits for it: `io/096`, `098`, `exec/025` (`core:12` in `tests/lists/S6.txt`).

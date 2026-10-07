@@ -231,6 +231,15 @@ static zend_result io_provider_run(php_io_hooks *hooks, php_io_op *op, php_io_op
 
 	async_coroutine_t *coroutine = (async_coroutine_t *) current;
 
+	/* A lookup lets the queued coroutines run first: TrueAsync's lookups always complete in a later
+	 * pass of its loop (libuv's thread pool), and the Ring may complete one within this coroutine's own
+	 * tick, which resumes it with no switch. */
+	if (UNEXPECTED(op->type == PHP_IO_OP_GETADDRINFO || op->type == PHP_IO_OP_GETNAMEINFO)) {
+		if (UNEXPECTED(!async_scheduler_enqueue(current, NULL, false) || !ZEND_ASYNC_SUSPEND())) {
+			return FAILURE;
+		}
+	}
+
 	ZEND_ASSERT(async_wait_is_empty(coroutine) && "a running coroutine has no linked wait");
 
 	async_io_event_t *event = io_wait_new(op);

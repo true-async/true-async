@@ -1025,3 +1025,64 @@ stack options were shown with the code).
 - 2026-10-07 The Windows part of S6.6 (curl in `pocs-win`) goes to S6.10 with the rest; the frozen
   `skip-on:pocs-win(curl-not-loaded-until-S6.6)` texts mean S6.10. The Windows-only tests skip on the
   coverage lane too (`skip-on:*-cov`), which counted them as unexpected skips (S5's report).
+- 2026-10-07 Core `async-core-io-2026-10-07` (`8f89755d2b1`): `php-src-fixes` `6e9d801dcc5` (the
+  php-src streams fixes, the per-filter check of php/php-src#24168 among them), `io-hooks-fixes`
+  `c43e1d5797a` and `async-core` `ae85ef88d00` merged onto `async-core-io-2026-10-07`, branched from
+  `async-core-io-2026-10-06`; ior unchanged. The per-filter check counts a user filter's calls in `Z_EXTRA(filter->abstract)`, so
+  `PHP_STREAM_FLAG_USER_FILTER_RUNNING` (`0x800`, which clashed with the hooks' `IN_USE`) is gone.
+  Merge conflicts with master, which `php-src-fixes` (on 8.4's merge base) does not carry:
+  `pclose()` checks `NO_FCLOSE` before master's context code; `userfilter_filter()` undoes its call
+  count when master's `userfilter_assign_stream()` fails; `_php_stream_copy_to_stream_ex()` sets
+  `NO_FCLOSE` on both streams around master's body, now `php_stream_copy_to_stream_impl()`; the two
+  php-src tests expect master's message. Master's `userfilter_seek()` does not count its call (a gap
+  of master, not of the merge). Why: PLAN S6.7; one core update at a time.
+- 2026-10-07 The scheduler launches for command line code (`async-core` `ae85ef88d00`,
+  `sapi/cli/php_cli.c`): `-r` code runs as `php_execute_script_ex()` runs a file, between
+  `ZEND_ASYNC_SCHEDULER_LAUNCH()` and `ZEND_ASYNC_RUN_SCHEDULER_AFTER_MAIN()`, and an exception it
+  leaves belongs to the main coroutine; `-B`, every `-R` line and `-E` share one main coroutine and
+  the scheduler runs once, after `-E`, so a coroutine `-B` spawns runs while the lines are read (the
+  Critic: a drain per segment never read stdin past an endless `-B` coroutine). `-B`, `-R` and `-E`
+  keep PHP's reporting of an uncaught exception per segment; `-F` still runs each line through
+  `php_execute_script()`, which drains per line, as before. Test
+  `ext/test_scheduler/tests/091_command_line_code.phpt`. Why: the scheduler RFC launches the
+  scheduler before the script's first line with no lazy start, and `io/035`-`037` spawn coroutines
+  in a `php -r` child; TrueAsync builds `ext/async` into the binary and starts its scheduler lazily.
+- 2026-10-07 `io/035-stdin_read_in_coroutine.phpt`, `io/036-tty_stderr_write_async.phpt` and
+  `io/037-tty_concurrent_stdout_stderr_async.phpt` start the child with
+  `TEST_PHP_EXECUTABLE_ESCAPED` and `TEST_PHP_EXTRA_ARGS`, and pass the child code through a file
+  next to the test (`-r require '<file>';`). Why: the extension is a shared module, loaded through
+  run-tests' `-d` settings, which a bare `TEST_PHP_EXECUTABLE` does not get; on Windows
+  `escapeshellarg()` drops the `"` of the code.
+- 2026-10-07 The seven tests that include a php-src test helper take it from the core checkout named
+  by `$TRUE_ASYNC_CORE_SRC`: `io/082-http_negative_timeout_poll_leak.phpt`,
+  `stream/003-file_get_contents_http.phpt`, `curl/063-readdata_no_callback.phpt`,
+  `curl/064-stderr_file_reuse.phpt`, `curl/070-read_takes_only_its_completion.phpt`,
+  `curl/071-upload_stream_closed_mid_read.phpt`, `curl/072-fnmatch_exception.phpt`;
+  `stream/003-file_get_contents_http.phpt` loses its SKIPIF, which tested a function the include
+  defines and so always skipped. `tools/test.py` passes the variable to tests and stops a run that
+  includes one of them when it does not name a checkout with the helpers; CI's coverage job checks
+  out the core's sources. Why: the reference reaches the helpers by `__DIR__ . '/../../../../'`, the
+  layout of `ext/async` inside the core tree (`dev/plans/S2.md` section 1). `curl/071` skips while
+  libcurl is below 8.11.1 (8.5.0 here and on CI's Ubuntu 24.04).
+- 2026-10-07 A DNS lookup (GETADDRINFO, GETNAMEINFO) yields to the queued coroutines before its op
+  is submitted. Why: `dns/003` failed in about 4 of 60 runs under load (S6.6); TrueAsync's lookups
+  always complete in a later pass of its loop (libuv's thread pool), while the Ring can complete one
+  inside the coroutine's own suspend tick, which resumes it without a switch. A yield after an
+  inline completion did not help (11 of 80 runs misordered); with the yield first, 120 of 120 runs
+  are in order.
+- 2026-10-07 The by-design failures of review B1 are tagged `core:12` (`dev/RFC-CHANGES.md` 12) and
+  leave the `pocs` lanes: `io/096`, `io/098`, `exec/025`. `io/081` and `084` (no Flock op, M10) move
+  from `S6.excluded` to the list as `core:11`; `io/101` joins it, the core having zlib since S4.4.
+  Why: PLAN S6.7; a `core:` tag names the request that makes the test pass.
+- 2026-10-07 Shutdown windows (S6.md section 10): own tests `io_provider/016` (a session handler's
+  write at the request's end: the session module's RSHUTDOWN runs after ours, which removed the
+  provider, so the write is synchronous and no coroutine starts), `017` (a fatal error raised in the
+  tick of a coroutine parked in `fread()`: no wait stays linked, the stream stays frozen as
+  `RFC-CHANGES.md` 8 describes) and `018` (a destructor's IO after `exit()` in a shutdown function
+  parks through the queue). A destructor's IO after a bailout caught in a shutdown function cannot
+  happen: a fatal error marks every object destructed (`zend_objects_store_mark_destructed()`), so
+  `018` uses `exit()`. The plan's `ts_suspend` NULL case, `run()` with no current coroutine while
+  async is active, has no path: the launch installs main before the first line, and a NULL current
+  occurs only inside the scheduler's own work, which `ZEND_ASYNC_IN_SCHEDULER_CONTEXT` answers first
+  (the Sage); the check stays as a guard. A `run()` for a coroutine that is not running is
+  `io_provider/011` (main left behind by a caught bailout). Why: PLAN S6.7.

@@ -59,7 +59,6 @@ How work is done in this repository and in the core branch it builds on.
 | `io-hooks-fixes` | bukka's `io_hooks_poc` head | our fixes to bukka's IO hooks PoC, sent to him as PRs |
 | `php-src-fixes` | `PHP-8.4` and master's merge base | our fixes to php-src bugs outside both RFCs, merged into the core |
 | `stream-chunk-size-read-filter`, `stream-filter-remove-in-callback`, `stream-copy-close-in-callback`, `stream-pclose-in-filter`, `zlib-inflate-error-handler` | `php-src-fixes`' base | one fix each from `php-src-fixes`, the branch of its PR to php/php-src |
-| `stream-filter-remove-per-filter` | `stream-filter-remove-in-callback` | the per-filter check devnexen asked for in php/php-src#24168, waiting for Edmond's word to go into that PR and `php-src-fixes` |
 | `async-core-io-<date>` | the previous one | the core this repository builds on: merges of the four above and bukka's head; the pinned one is in "Pinned core" |
 | `async-core-io` | php/php-src master | the first core branch, kept as it was |
 | `fiber-callable-object-8.4`, `fiber-callable-object` | `PHP-8.4`, master | the Fiber `$this` use-after-free fix, php/php-src#24134 |
@@ -69,12 +68,13 @@ The other branches there belong to the TrueAsync fork's earlier work and are not
 
 ## Pinned core
 
-| Part | Revision | In `async-core-io-2026-10-06` `1ee473ff67b` |
+| Part | Revision | In `async-core-io-2026-10-07` `8f89755d2b1` |
 |---|---|---|
 | php-src master | `d7f966e073b` | merged |
-| Scheduler PoC (`async-core`, php/php-src#22561) | `63d4869bff4` | merged |
+| Scheduler PoC (`async-core`, php/php-src#22561) | `ae85ef88d00` | merged; `ae85ef88d00` waits for Edmond before it goes to `async-core` |
 | IO hooks PoC (php/php-src#23997) | `608927ebe09` | merged |
-| Our fixes to the IO hooks PoC (`io-hooks-fixes`) | `189b408d583` | merged; `dev/RFC-CHANGES.md` 2 |
+| Our fixes to the IO hooks PoC (`io-hooks-fixes`) | `c43e1d5797a` | merged; `dev/RFC-CHANGES.md` 2 |
+| Our fixes to php-src (`php-src-fixes`) | `6e9d801dcc5` | merged |
 | ior | `2bfd2319896` | built per tree, "Building the core" |
 | `ext/async` (reference tests, true-async/php-async) | `1fdacf8575b` | `tests/lists/REFERENCE` |
 
@@ -156,6 +156,11 @@ the section is removed in that step's commit. `check-lists.py` hashes a test wit
   four forked workers accept beside the server's own process and concurrent requests are served
   concurrently. Windows has no fork: the Windows
   lane skips the worker test, and the MySQL test, having no server.
+- php-src helpers: seven tests include a helper of the core's own tests (`php_cli_server.inc`,
+  `ext/curl/tests/server.inc`) from the checkout named by `$TRUE_ASYNC_CORE_SRC`, which
+  `tools/test.py` requires when one of them runs. The helpers write their router and document
+  files into that checkout and remove them at the end, so a crashed run leaves files there; point
+  it at a build tree or CI's throwaway checkout, not a working clone.
 
 ## Building the core
 

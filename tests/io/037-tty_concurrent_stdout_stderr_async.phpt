@@ -1,7 +1,5 @@
 --TEST--
 Concurrent coroutines writing to STDOUT and STDERR
---XFAIL--
-Not implemented yet: S6.7 of dev/PLAN.md (the child runs php -r, where the core launches no scheduler)
 --SKIPIF--
 <?php
 if (!function_exists("proc_open")) echo "skip proc_open() is not available";
@@ -39,8 +37,14 @@ $w2 = spawn(function() {
 echo "Results: " . implode(",", $results) . "\n";
 CHILD;
 
+/* The extension is a shared module: the child takes run-tests' -d settings too. The code goes
+ * through a file: escapeshellarg() drops " % ! on Windows. */
+$child = __DIR__ . '/037-tty_concurrent_stdout_stderr_async.child.php';
+file_put_contents($child, "<?php\n" . $code);
+
 $process = proc_open(
-    [$php, "-r", $code],
+    getenv('TEST_PHP_EXECUTABLE_ESCAPED') . ' ' . getenv('TEST_PHP_EXTRA_ARGS') . ' -r '
+        . escapeshellarg('require ' . var_export($child, true) . ';'),
     [
         0 => ["pipe", "r"],
         1 => ["pipe", "w"],
@@ -74,6 +78,10 @@ echo "STDERR:\n";
 foreach ($stderr_lines as $line) echo "$line\n";
 echo "Exit: $exit\n";
 
+?>
+--CLEAN--
+<?php
+@unlink(__DIR__ . '/037-tty_concurrent_stdout_stderr_async.child.php');
 ?>
 --EXPECT--
 STDOUT:

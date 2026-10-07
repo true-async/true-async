@@ -68,9 +68,9 @@ io/031-rewind_async.phpt  ref:ae3022216cafac3f4571f1ab9ebe1c5daa835c40dc4614c225
 io/032-tmpfile_async.phpt  ref:fefcec9c792150584b326c90623d520568bdc4d91eb5c63907cbed9ce67d7667
 io/033-fscanf_async.phpt  ref:8046dbea886fbe995dabfb488cefb619651c5e2daee62e6b119fc60bbaaf8d13
 io/034-pipe_large_bidirectional.phpt  ref:c20c95e313a38b036ad963822d90302fb2483f001395d49ec8ea96b2f5a541b3
-io/035-stdin_read_in_coroutine.phpt  ref:c3f4b6b17440a057c22b93812c88b107359af1d8cf9da350c1a6e6a0f01e7d07
-io/036-tty_stderr_write_async.phpt  ref:4a860a2be907586dccc9969803161735adfed1a0b23180918cc5c1ae66d9082d
-io/037-tty_concurrent_stdout_stderr_async.phpt  ref:49919c29323f8f50fbdeb32f3754fa24cc2017bdf6e2abfbde35ebbc6cc3d66e
+io/035-stdin_read_in_coroutine.phpt  ref:c3f4b6b17440a057c22b93812c88b107359af1d8cf9da350c1a6e6a0f01e7d07  changed:2026-10-07:139272a577e3fea69865425497bbfb89e540ea915a310bc723036f6410c75299  xfail-on:pocs-win(S6.10)
+io/036-tty_stderr_write_async.phpt  ref:4a860a2be907586dccc9969803161735adfed1a0b23180918cc5c1ae66d9082d  changed:2026-10-07:33e6daa7170a9edaa4043a4dc5278d9bf5aeddc05775f611fe98469a919dca85  xfail-on:pocs-win(S6.10)
+io/037-tty_concurrent_stdout_stderr_async.phpt  ref:49919c29323f8f50fbdeb32f3754fa24cc2017bdf6e2abfbde35ebbc6cc3d66e  changed:2026-10-07:b6c9d77aa28fc027b69519a9adcc5eb5f23496cba95a55ef2b6a97f7e1cdb016  xfail-on:pocs-win(S6.10)
 io/038-tty_devnull_not_misclassified.phpt  ref:7b95b11a4fa9223d68078a3074c50cb5675c8105cf6b82444904064401923913  skip-on:*-win(Unix-only)
 io/039-pipe_read_timeout.phpt  ref:4c2d0a646b56ef79f25115f68876492c7f5eba0e6e0bf2b74c7f1d29fa5ef606
 io/040-pipe_read_timeout_then_success.phpt  ref:e7b005d28a0860483af63fb0d9fb368afe0b1ed27d0d3facb9857c96bd5b34a6
@@ -127,9 +127,9 @@ io/092-filter_remove_during_write.phpt  ref:3d150869a49a11989796ad59e089774fc888
 io/093-filter_append_during_close.phpt  ref:5111bc1d53955122800440adca919f0a4bb0e2236eaf2ad04e5d68de1f1b69ec
 io/094-chunk_size_during_read.phpt  ref:cd1ae3f1fee9c16a6bf0ecb52782682a22319b9acf30dc1c2c68453d03bc7637
 io/095-filter_removed_twice.phpt  ref:5b9dfbbcf99c21f6f1d74f9f86ac0bd9e14fb25018485258384c7811c759b91e
-io/096-socket_read_and_write.phpt  ref:db65f7a4aa90a2f7dbc2eaefaff0a5b91b1a266005f45748bfea378d56b7bb86
+io/096-socket_read_and_write.phpt  ref:db65f7a4aa90a2f7dbc2eaefaff0a5b91b1a266005f45748bfea378d56b7bb86  core:12
 io/097-crossed_copies.phpt  ref:c744ad26237d3280e97b898801f6173648538c2c21e99f74d956076c4e6a40d7
-io/098-fifo_read_and_write.phpt  ref:5c3c27bc5067d7aeb19b3fb48905b94f45a6243b4e194fe530ffcbb5e734b03a  skip-on:*-win(Unix-only)
+io/098-fifo_read_and_write.phpt  ref:5c3c27bc5067d7aeb19b3fb48905b94f45a6243b4e194fe530ffcbb5e734b03a  core:12  skip-on:*-win(Unix-only)
 io/099-cancel_during_io.phpt  ref:34e71eca375db1537d8bddb2b3b7638956dfca7f883feda5445f9971004b559e
 io/100-cancel_keeps_the_position.phpt  ref:c372483b9fba1128cbe3d6a4c635746a18e7078ba27a38fdda5f4a3a8347e1d1
 
@@ -294,7 +294,7 @@ exec/021-shell_exec_chdir_cwd.phpt  ref:531cd61f63f80f12848cbe0f6471d5b1471567b7
 exec/022-exec_chdir_cwd.phpt  ref:fda11dc6c8668ffc839555e0adbdc853fff91f35e029e16748569cb270a2567a
 exec/023-system_chdir_cwd.phpt  ref:0260ac4abc58b9f983fec3e82a7668606a25199c732cf61d61d1ed7c0812ba90
 exec/024-passthru_chdir_cwd.phpt  ref:3e14fe813897fe7f3ac005a566513369587bdac8501da2396503c9833eb09e2b
-exec/025-proc_close_wakes_parked_fread.phpt  ref:4254be119588f174b316532404a0c090782b8315a3177a71b282c514d5dce919
+exec/025-proc_close_wakes_parked_fread.phpt  ref:4254be119588f174b316532404a0c090782b8315a3177a71b282c514d5dce919  core:12
 
 # mysqli
 mysqli/001-mysqli_connect_async.phpt  ref:90fdea0131f30875867d5a2fb8278332395e8e7990eba3b4765865fa1175a641  skip-on:*-win(no-MySQL-server)
@@ -362,3 +362,19 @@ io_provider/012-cancel_parked_stream_select.phpt  own:aae6a829a811826f25a6548b3d
 io_provider/013-cancel_parked_socket_select.phpt  own:7a1488fced6b64b2e7eddd69ff11a5a4616e9542e7f75e37e11772f72e70d365  skip-on:pocs-win(sockets-not-loaded-until-S6.5)
 io_provider/014-registration_before_the_queue.phpt  own:7b851a3989d35a366036d602d8702a269d18b54f389a89f652cd5464710c7313
 io_provider/015-select_sees_pending_connections.phpt  own:5f74c81f2c02d13ffc6e78406c00158d9a09986d104b84419b13401c351b02df
+
+# S6.7: the seven tests that include a php-src test helper, from the core checkout the runner names
+# ($TRUE_ASYNC_CORE_SRC, dev/DECISIONS.md 2026-10-07), and the shutdown windows (dev/plans/S6.md section 10).
+io/082-http_negative_timeout_poll_leak.phpt  ref:c2e6c65f51c804e137b4c969dcd60140ca02e05dd0c68d6c52e5cf7115b5d4de  changed:2026-10-07:ed09254c80951dc03768be1277fdb727b2ce0817a9fe2af4dcbbeafb13bb71ea
+stream/003-file_get_contents_http.phpt  ref:a4f6939bc208b1e1a6732c9cc43095b77bf01f416b6cd2599dc71351d7466e45  changed:2026-10-07:e3962358beedc06f56b506e91777c1ae164947742c5277459c8441be5ae4a6ed
+curl/063-readdata_no_callback.phpt  ref:8a689d5b17a5e13c6516445a35ea61f0fe8b45be200ec4de13896f3318b9cf21  changed:2026-10-07:6c39263361c5a878bb6be3fe93c24ce85dee7432e71f1ba9530559e262e0da1b  skip-on:pocs-win(curl-not-loaded-until-S6.10)
+curl/064-stderr_file_reuse.phpt  ref:af668fe01c50245c12c2f9293917f71319516c42e4cf28a135ea66c0a10ed3a4  changed:2026-10-07:b1f8faf2ad335d67ca84b246048e5779c40d627a5e5f458692a4f3de4c66e3c7  skip-on:pocs-win(curl-not-loaded-until-S6.10)
+curl/070-read_takes_only_its_completion.phpt  ref:15d803801effb470d78a392e16ff9f5ff198fcfdf2d9d337f70a4ff3e27a39c1  changed:2026-10-07:22f495aa679a4c58602472a16ba7cdc5aef2c4e1ab16cecc1e30909fcc129406  skip-on:pocs-win(curl-not-loaded-until-S6.10)
+curl/071-upload_stream_closed_mid_read.phpt  ref:98799f2c09fa5426733bb80b033f17cd4a988a35c98a2d96adca9fd29d89de4e  changed:2026-10-07:e372cf7a7d639180f0e4a8c74d395565670446fbb88635a3f6fd63ed9c1cb41d  skip-on:*(libcurl-8.11.1-needed)
+curl/072-fnmatch_exception.phpt  ref:eeb85553db6aed5e01e60d93ece2ec11c62294dfe16157ae3f8ac0da6e1dce3f  changed:2026-10-07:e8f2b4e55aa829c2072060493847f334b26a54ce59767fd1795551002520e1b5  skip-on:*-win(no-fork)
+io_provider/016-session_write_in_rshutdown.phpt  own:000d577e28a46a826e6a6c3cf8f7120a373463187cb7977dc6c6e6d5c630b30f
+io_provider/017-bailout_in_tick_of_parked_read.phpt  own:71208bc36be8d760ff476468ca739c8097348e87ffae4d55e8b80073f4c6af94  skip-on:*-win(Unix-only)
+io_provider/018-destructor_io_after_exit_in_shutdown_function.phpt  own:05fc492e40907adf8cf0db7ba8dcc0fc50089e57f6999b76ee7dc500895500ea
+io/101-phar_entries_decompressed_at_once.phpt  ref:abd6f8d63750c74c58cda66abd9fa13df0a2c35d24eedaad446a2e2088d1c0ea
+io/081-flock_non_blocking_event_loop.phpt  ref:d2fb03a5194f60232b812427d3e19fbc16919f8fdbc7b1c7b3f9015237f8dcbc  core:11
+io/084-flock_waiters_exceed_threadpool.phpt  ref:bc6223cf287673984bc8b137c4da8e653ce4b6d1fbcf0d559ae84c231e218756  core:11

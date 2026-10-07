@@ -428,7 +428,7 @@ Done when: S3–S6 lists (from `sleep`, `io`, `stream`, `socket_ext`, `dns`, `cu
 over 100 seeds; tests that fail because of the hooks design are listed against the review item;
 `dns` counted only on the Ring configuration (the Poll queue answers Unsupported for lookups).
 Tier: T2. Roles: Critic on S6.2, Critic after S6.7 (S6.8).
-Active: S6.7
+Active: S6.8
 
 - [x] S6.1 Fixtures: MySQL with two connections and an HTTP server with
       `PHP_CLI_SERVER_WORKERS`, started by `tools/test.py` locally and by the CI lanes.
@@ -502,12 +502,22 @@ Active: S6.7
         what the core's curl gives (two send warnings; no error on a multi handle before
         `curl_multi_info_read()`); `pdo_mysql/029` waits for `RFC-CHANGES.md` 6 (the cancellation
         under a driver error). Windows curl moved to S6.10; coverage lanes skip Windows-only tests.
-- [ ] S6.7 IO shutdown windows (the `ts_suspend` NULL case), the seven core-tree tests,
+- [x] S6.7 IO shutdown windows (the `ts_suspend` NULL case), the seven core-tree tests,
       `io/035`-`037` (Async in a `php -r` child), `io/094`, `095` (streams fixes), the `run()`
       bailout tests S6.3 moved here (`dev/plans/S6.md` section 12), every list
       run, the by-design failures tagged `core:` against their review items, the RFC requests of
       the note's section 14 in `RFC-CHANGES.md`.
       done: Done when of S6 holds except the review
+      handoff: done 2026-10-07 on core `8f89755d2b1` (`async-core-io-2026-10-07`: `php-src-fixes`
+        `6e9d801dcc5`, `io-hooks-fixes` `c43e1d5797a`, `async-core` `ae85ef88d00`), with S7.4: `pocs-dbg`
+        921 PASS, 9 SKIP, 12 XFAIL; `pocs-asan` 905 PASS, 26 SKIP, 11 XFAIL; 6 left out by `core:` tags;
+        nothing unexpected; the bridge 23 of 23 on both. The core launches the scheduler for
+        `php -r`, `-B`, `-R`, `-E` (one main coroutine for `-B` to `-E`, the Critic); `io/094`, `095`
+        pass with `php-src-fixes`; the seven core-tree tests read `$TRUE_ASYNC_CORE_SRC`; a DNS
+        lookup yields before its submit (`dns/003`). By design: `io/096`, `098`, `exec/025`
+        `core:12`, `io/081`, `084` `core:11`; `RFC-CHANGES.md` 7-12 filed. Own tests
+        `io_provider/016`-`018`; the `ts_suspend` NULL case has no path (the Sage). The
+        `async-core` commit waits for Edmond's word before it goes to php/php-src#22561.
 - [ ] S6.8 Stage review: Critic over S6.3-S6.7, coverage, Mull, IO chaos over 100 seeds.
       done: findings fixed or answered; chaos clean over 100 seeds
 - [ ] S6.9 Security pass by `dev/SECURITY.md`.

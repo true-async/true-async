@@ -3,14 +3,7 @@
 # sleep
 sleep/007-delay_after_cpu_burn.phpt  component:S9 (Scope)
 
-# io
-io/081-flock_non_blocking_event_loop.phpt  needs-core:review M10 (no Flock op: a contended flock() blocks the thread, dev/reviews/io-hooks-design-review.md)
-io/082-http_negative_timeout_poll_leak.phpt  fixture:core-tree (includes a php-src test helper by a relative path; S6.7 ports it, dev/plans/S2.md section 1)
-io/084-flock_waiters_exceed_threadpool.phpt  needs-core:review M10 (no Flock op: a contended flock() blocks the thread, dev/reviews/io-hooks-design-review.md)
-io/101-phar_entries_decompressed_at_once.phpt  fixture:zlib (the core build gains --with-zlib in S4.4)
-
 # stream
-stream/003-file_get_contents_http.phpt  fixture:core-tree (includes a php-src test helper by a relative path; S6.7 ports it, dev/plans/S2.md section 1)
 stream/038-feof_live_socket.phpt  component:S9 (Channel)
 stream/039-feof_after_connect.phpt  component:S9 (Channel)
 stream/040-feof_after_send.phpt  component:S9 (Channel)
@@ -22,11 +15,6 @@ stream/045-accept_cancel_uaf.phpt  component:S9 (Scope)
 
 # curl
 curl/061-read_callback_socket_source.phpt  fixture:none (its SKIPIF always skips in the reference)
-curl/063-readdata_no_callback.phpt  fixture:core-tree (includes a php-src test helper by a relative path; S6.7 ports it, dev/plans/S2.md section 1)
-curl/064-stderr_file_reuse.phpt  fixture:core-tree (includes a php-src test helper by a relative path; S6.7 ports it, dev/plans/S2.md section 1)
-curl/070-read_takes_only_its_completion.phpt  fixture:core-tree (includes a php-src test helper by a relative path; S6.7 ports it, dev/plans/S2.md section 1)
-curl/071-upload_stream_closed_mid_read.phpt  fixture:core-tree (includes a php-src test helper by a relative path; S6.7 ports it, dev/plans/S2.md section 1)
-curl/072-fnmatch_exception.phpt  fixture:core-tree (includes a php-src test helper by a relative path; S6.7 ports it, dev/plans/S2.md section 1)
 
 # pdo_mysql
 pdo_mysql/014-pdo_pool_error_leak_cross_coroutine.phpt  component:S10 (PDO pool)
