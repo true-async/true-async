@@ -55,6 +55,10 @@ cmd /c configure.bat %CONFIG_ARGS% ^
 	--disable-test-ini
 if %errorlevel% neq 0 exit /b 5
 
+rem An object depends on its .c file only (win32\build\confutils.js), so after a change to a header
+rem nmake would link this repository's objects built against the old one.
+rem Only the objects go: configure made the directories, and nmake does not make them again.
+if exist "%BUILD_DIR%\ext\true_async" del /s /q "%BUILD_DIR%\ext\true_async\*.obj" > nul
 nmake /NOLOGO
 if %errorlevel% neq 0 exit /b 6
 

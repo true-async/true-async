@@ -35,9 +35,13 @@ The same with `Release` and a Release prefix of ior builds Release_TS as CI does
 (`--enable-snapshot-build`, which also builds every other extension directory in the checkout;
 `set ADD_CONF=--disable-<name>` leaves one out).
 
-`build-core.bat` links the repository into `ext\true_async` as a junction, so a change here needs
-only `nmake` in `%PHP_SRC%` from the php-sdk shell to rebuild the extension. An `ext\true_async`
-that already exists (a copy, or a junction to another checkout) is built as it is.
+`build-core.bat` links the repository into `ext\true_async` as a junction and compiles the
+extension anew on each run. The Makefile makes an object depend on its `.c` file only
+(`win32\build\confutils.js`), so `nmake` alone in `%PHP_SRC%` rebuilds after a change to a `.c`
+file but links stale objects after a change to a header: delete the `.obj` files under
+`%OBJ_DIR%\<CONFIG>_TS\ext\true_async` first (not the directories, which nmake does not make
+again). For the same reason a new `CORE_REF` needs an empty `OBJ_DIR`. An `ext\true_async` that
+already exists (a copy, or a junction to another checkout) is built as it is.
 
 ## Pitfalls
 
