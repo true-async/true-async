@@ -287,9 +287,10 @@ Written 2026-10-07. S6.8 (stage review) done, results in S6.md section 17; S6.9 
   the copy of an ACCEPT op into a POLL (note section 4). The Ring's multishot accept hid pending
   connections from `stream_select()`; that Ring bug goes to bukka (a pull request is being
   prepared in the S6.4 thread, `dev/WORKFLOW.md` "Ownership").
-- The core is `async-core-io-2026-10-07-4` (`a6fbd0776e9`): `async-core-io-2026-10-07-2` with the
-  connect fix of `io-hooks-connect-started` picked (bukka/php-src#4, DECISIONS 2026-10-07);
-  `php-src-fixes` `cfa0923ac31`, `io-hooks-fixes` `c43e1d5797a`, `async-core` `6e43d6074e0`. The
+- The core is `async-core-io-2026-10-07-5` (`3af71f889e6`): `async-core-io-2026-10-07-4` (the connect
+  fix of `io-hooks-connect-started`, bukka/php-src#4) with `async-core` `50cd33b0eec` merged (the
+  GC run first in the queue, API version 3, DECISIONS 2026-10-07); `php-src-fixes` `cfa0923ac31`,
+  `io-hooks-fixes` `c43e1d5797a`. The
   seven tests that include a php-src helper need `TRUE_ASYNC_CORE_SRC` (the core's checkout);
   `tools/test.py` stops without it, so a Mull `--diff-ref` run needs it too.
 - S6.10 takes the Windows lane's socket expectations: load `sockets` and `openssl` in `pocs-win`,
@@ -336,8 +337,7 @@ hooks, which may suspend, and gives an objectless scope a stand-in object that s
 anything holds it (`is_stand_in`: its destruction does not cancel).
 Zombies: `ASYNC_COROUTINE_F_ZOMBIE`, `ASYNC_G(zombie_coroutines_count)`, the scope's two counts; a
 zombie leaves both in finalize. `scope/053` (S9.5's) passes already. Own tests `internal/064`,
-`065`, `scope/058` (with `zend.enable_gc=0`: a full root buffer parks every coroutine that adds a
-root until the GC coroutine runs, an S8 candidate; the threshold bug is fixed in the core, DECISIONS
+`065`, `scope/058` (GC off for the fuzz lane; `gc/025` runs the same load with GC on, DECISIONS
 2026-10-07), `spawnWith/013`-`016`. Next is S9.3. S9.4 needs a non-owning edge reporter from S7
 (note section 6); the S7 thread takes it after S7.6 and sends the signatures for review. Known, left
 for S9.7: the collector's `cancel` mode does not reset its back-off for a parked zombie (its

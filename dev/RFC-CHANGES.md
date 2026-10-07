@@ -234,3 +234,23 @@ Request: `php_io_run_cancelled()` treats a Done POLL as cancelled, as its commen
 more runs").
 
 Waits for it: nothing listed; `io_provider/020` checks our provider's answer.
+
+## 15. Scheduler API: the gc_new_coroutine slot takes a priority
+
+State: done in `async-core` `6f30767dd7c` and `50cd33b0eec` (2026-10-07, Edmond agreed in the GC
+thread); the RFC text is not changed yet. PR: none.
+
+Need: a coroutine that fills the root buffer awaits the collector's run with its stack parked in the
+middle of an opcode (`zend_gc_collect_cycles()`, `Zend/zend_gc.c`), and so does every coroutine that
+finds the buffer full before the run starts. The slot also creates the destructor iterators of the
+run and of the shutdown passes, which must keep their place in the queue, so the scheduler could not
+tell the run apart and queued it at the tail: 100 000 coroutines passed `vm.max_map_count`.
+
+Request: `zend_async_gc_new_coroutine_t` takes a `zend_coroutine_priority` (TrueAsync's enum,
+`ZEND_COROUTINE_NORMAL`, `ZEND_COROUTINE_HI_PRIORITY`): HI for the run, NORMAL for the iterators; the
+slot's comment asks a scheduler to run HI first. `ZEND_ASYNC_API_VERSION` 3. With it: the await
+slot's caller holds a reference to the awaited coroutine and the slot takes none, and an internal
+entry may set the coroutine's result (the GC run's count, which each waiter reads from the run it
+awaited).
+
+Waits for it: nothing; the pinned core carries it (`gc/025`).

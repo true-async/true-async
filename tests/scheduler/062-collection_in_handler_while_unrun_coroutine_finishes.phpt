@@ -1,5 +1,5 @@
 --TEST--
-Main parked by a collection that starts inside an opcode handler pops a cancelled, never run coroutine: its finalize on main's stack leaves main's frame where it was
+A collection that starts inside an opcode handler parks main while a cancelled, never run coroutine finishes: main's frame stays where it was
 --FILE--
 <?php
 use function Async\spawn;
@@ -10,7 +10,7 @@ $coroutine = spawn(function () {
 $coroutine->cancel();
 
 /* The assignment that passes the GC threshold starts the collection inside its handler; main waits
- * for it, and the cancelled coroutine finishes first. */
+ * for it while the cancelled coroutine finishes. */
 $status = gc_status();
 $keep = [];
 $object = null;

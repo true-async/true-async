@@ -1353,12 +1353,18 @@ static zend_coroutine_t *scheduler_new_coroutine(void)
 
 /* The core's own coroutines (the collector's, the shutdown destructors') join the engine's scope, which
  * no user scope's cancel reaches (S9-scope.md section 3), and install no IO provider: a script that
- * only collects cycles keeps the core's blocking IO (dev/plans/S6.md section 2). */
-static zend_coroutine_t *scheduler_gc_new_coroutine(void)
+ * only collects cycles keeps the core's blocking IO (dev/plans/S6.md section 2). A HI_PRIORITY
+ * request, the collector's run, goes to the front of the queue on its first enqueue: its caller and
+ * every coroutine that fills the root buffer before it runs wait for it with a parked stack. */
+static zend_coroutine_t *scheduler_gc_new_coroutine(const zend_coroutine_priority priority)
 {
 	async_coroutine_t *coroutine = async_coroutine_new();
 
 	async_scope_add_coroutine(ASYNC_G(engine_scope), coroutine);
+
+	if (priority == ZEND_COROUTINE_HI_PRIORITY) {
+		coroutine->coroutine.flags |= ASYNC_COROUTINE_F_HI_PRIORITY;
+	}
 
 	return &coroutine->coroutine;
 }
@@ -1370,7 +1376,7 @@ static zend_coroutine_t *scheduler_launch(void)
 
 static zend_always_inline void run_queue_push(async_coroutine_t *coroutine)
 {
-	/* The front once after asHiPriority() (D20, D35). */
+	/* The front once after asHiPriority() or the core's HI_PRIORITY request (D20, D35). */
 	if (UNEXPECTED(coroutine->coroutine.flags & ASYNC_COROUTINE_F_HI_PRIORITY)) {
 		coroutine->coroutine.flags &= ~ASYNC_COROUTINE_F_HI_PRIORITY;
 		circular_buffer_push_front(&ASYNC_G(run_queue), coroutine);
@@ -1971,7 +1977,8 @@ static zend_string *await_record_info(const async_coroutine_event_callback_t *re
 	return zend_strpprintf(0, "await: coroutine #%u", ((const async_coroutine_t *) record->event)->std.handle);
 }
 
-/* The waiter's frame holds the target: await()'s argument, or scheduler_await's reference. */
+/* The waiter's frame holds the target: await()'s argument, or the reference the core's caller of the await
+ * slot holds. */
 static void await_record_collector_target(const async_coroutine_event_callback_t *record, async_collector_t *collector)
 {
 	async_collector_report_target(collector, &((async_coroutine_t *) record->event)->std, false);
@@ -2060,8 +2067,8 @@ bool async_await_coroutine(async_coroutine_t *target, async_awaitable_t *token)
 }
 
 /* The core's wait for a coroutine (the GC's, zend_gc.c). The scheduler's own work cannot wait:
- * false without an exception there, and the GC collects later. The wait holds a reference, as the
- * core's test_scheduler.c does: the target may lose its last other one while the waiter is parked. */
+ * false without an exception there, and the GC collects later. The caller holds a reference to the
+ * target for the whole wait, as the slot asks. */
 static bool scheduler_await(zend_coroutine_t *zend_coroutine)
 {
 	const async_coroutine_t *waiter = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
@@ -2078,13 +2085,7 @@ static bool scheduler_await(zend_coroutine_t *zend_coroutine)
 		return false;
 	}
 
-	async_coroutine_t *target = (async_coroutine_t *) zend_coroutine;
-
-	GC_ADDREF(&target->std);
-	const bool finished = async_await_coroutine(target, NULL);
-	OBJ_RELEASE(&target->std);
-
-	return finished;
+	return async_await_coroutine((async_coroutine_t *) zend_coroutine, NULL);
 }
 
 static uint32_t

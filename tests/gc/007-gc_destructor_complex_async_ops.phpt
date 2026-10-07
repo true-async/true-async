@@ -92,8 +92,8 @@ Spawned coroutine end
 Spawned result: spawned-result
 Destructor end: complex-object
 After unset
-Background coroutine complete
 After GC
 Final result: spawned-result
+Background coroutine complete
 Final result: background-result
 Test complete

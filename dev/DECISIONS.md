@@ -1360,16 +1360,12 @@ stack options were shown with the code).
   fixes the GC threshold: every coroutine that found the root buffer full awaited the same GC
   coroutine run and then raised the threshold by a step (12000 coroutines, threshold 90020001); now
   the GC coroutine takes one step after its run, as TrueAsync's core does (`c8acbdccc14`, core tests
-  `ext/test_scheduler/tests/092`-`094`). `php-src-fixes` brings php/php-src#24168's explicit
-  `running_calls` field in place of `Z_EXTRA(filter->abstract)` and #24177 (`scope/075` passes, its
-  `--XFAIL--` removed); the `user_filters.c` conflict keeps master's `userfilter_assign_stream()`
-  with `running_calls`. `scope/058` keeps `zend.enable_gc=0` for another reason: a full buffer parks
-  every coroutine that adds a root until the GC coroutine, queued behind them, runs, and tens of
-  thousands of parked fibers pass `vm.max_map_count` ("Fiber stack protect failed"); TrueAsync's
-  core returns without waiting, an S8 change-request candidate (S4.md section 5). Compared on main
-  `73a8469`: `pocs-dbg` 1049 PASS, 9 SKIP, 62 XFAIL and `scope/058` passing alone after its comment
-  change, `pocs-asan` 1032 PASS, 31 SKIP, 58 XFAIL, nothing unexpected. Why: the threshold bug grew
-  the root buffer to about 720 MB and made `scope/058` quadratic on ASAN.
+  `ext/test_scheduler/tests/092`-`094`). `php-src-fixes` brings php/php-src#24168's `running_calls`
+  field and #24177 (`scope/075` loses its `--XFAIL--`). `scope/058` kept `zend.enable_gc=0` for the
+  coroutines parked on a full buffer (the GC priority entry below). Compared on main `73a8469`:
+  `pocs-dbg` 1049 PASS, 9 SKIP, 62 XFAIL, `pocs-asan` 1032 PASS, 31 SKIP, 58 XFAIL, nothing
+  unexpected. Why: the threshold bug grew the root buffer to about 720 MB and made `scope/058`
+  quadratic on ASAN.
 - 2026-10-07 `awaitCompletion()` finds a waiter that belongs to the scope by walking up from the
   waiter's scope (S9.4, `scope/045`, `051`). Why: membership is the parent chain, so the answer is
   TrueAsync's, in the depth of the waiter's scope instead of the subtree's size, with no depth limit
@@ -1411,3 +1407,39 @@ stack options were shown with the code).
   passes. `pocs-dbg` 1080 PASS, 0 unexpected; `pocs-asan` 1058 PASS, `io/046` failing under the
   full lane's load only (passes alone and with `io`, `exec`; its child gets 500 ms); `pocs-win`
   986 PASS, 0 unexpected from the fix. Why: the BUKKA rule, our core fixed while the PR waits.
+- 2026-10-07 The collector's run goes to the front of the run queue (Edmond's idea, the Sage's
+  form): the core's `gc_new_coroutine` slot takes `zend_coroutine_priority` (`async-core`
+  `6f30767dd7c`, API version 3, RFC-CHANGES 15), HI for the run and NORMAL for the destructor
+  iterators of the run and of the shutdown passes; `scheduler_gc_new_coroutine()` turns HI into
+  `ASYNC_COROUTINE_F_HI_PRIORITY`. TrueAsync gives HI the other way round, to its destructor
+  coroutines (`gc_ta.c:2137`): its callers never wait for the run, ours do. The waiter wakes at the
+  tail, and a run that resumes after its destructor phase too, as in TrueAsync. Supersedes
+  EDMOND-DECISIONS 20 for the GC coroutine. `gc/025` runs 100 000 coroutines with GC on, skipped
+  on the fuzz lane, whose random pick ignores the priority; `scope/058` keeps GC off for that lane.
+  Rejected: the waiter at the front as well (it breaks the FIFO of the shutdown passes and
+  `scheduler/062`); TrueAsync's caller that does not wait (a synchronous loop of 3 000 000 cycles
+  exhausts 128M). Why: 100 000 coroutines parked on a full buffer passed `vm.max_map_count`.
+- 2026-10-07 Tests for the run at the front: `gc/007-gc_destructor_complex_async_ops.phpt` matches
+  the reference again; `gc/002-gc_destructor_spawn_coroutine.phpt` (`changed:`) prints "After GC"
+  between the two runs of the coroutine spawned in the destructor, because main wakes at the tail
+  behind it (the reference prints it before both). Supersedes the 2026-10-02 entry's "a coroutine
+  queued before the GC coroutine runs first"; `gc/011`, `gc/012` collect with nothing else queued
+  and keep their order. `scheduler/062-collection_in_handler_while_unrun_coroutine_finishes.phpt`
+  (`changed:`, title and comment): the cancelled coroutine is popped after the run, on the fiber
+  that ran it, not on main's stack. `scheduler/107` pops one on main's stack from an `await()` in a
+  destructor, with the call's internal frame current; the pop under main's own user frame in the
+  middle of an opline is reachable only through the fuzz lane's random pick (the Critic).
+- 2026-10-07 A waiter of the GC run returns that run's count (`async-core` `50cd33b0eec`,
+  `gc/024`): the run stores it in its coroutine's result, and the waiter holds a reference to the
+  run, released under `gc_active` (released outside it, the root it added to a full buffer started
+  a run per release: `scheduler/058`, `061` crashed). The await slot's caller holds the reference
+  and the slot takes none (`scheduler_await()`, test_scheduler's `ts_await()`), so no release on
+  the waiter's return starts a run. Why: with the run at the front, a coroutine queued before the
+  woken waiter can finish a second run first, and the global count gave the waiter its 0 (the
+  Critic).
+- 2026-10-07 Core `async-core-io-2026-10-07-5` (`3af71f889e6`): `async-core-io-2026-10-07-4` with
+  `async-core` `50cd33b0eec` merged (the two GC entries above; API version 3, so each track rebuilds
+  its core). `pocs-dbg` 1082 PASS, 9 SKIP, 48 XFAIL; `pocs-asan` 1063 PASS, 32 SKIP, 44 XFAIL; nothing
+  unexpected; the fuzz lane, 3 to 5 seeds over `gc/024`, `gc/025`, `scope/058`, `scheduler/062`,
+  `107`, finds nothing new. Probe `s9.4/gcmaps.php`: 10250 maps at 40 000 coroutines, 28251 at
+  100 000 (TrueAsync 16053, 40054; before, 25254 and "Fiber stack protect failed").

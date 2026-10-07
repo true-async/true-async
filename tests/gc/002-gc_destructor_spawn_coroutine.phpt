@@ -60,6 +60,6 @@ Coroutine spawned in destructor: test-object
 Destructor end: test-object
 After unset
 Spawned coroutine running
-Spawned coroutine complete
 After GC
+Spawned coroutine complete
 Test complete

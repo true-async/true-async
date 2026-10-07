@@ -9,8 +9,9 @@ use Async\Scope;
 use function Async\suspend;
 use function TrueAsync\Test\coroutine_count;
 
-// GC is off: a full root buffer parks every coroutine that adds a root until the GC coroutine,
-// queued behind them, runs, and tens of thousands of parked fibers pass vm.max_map_count.
+// GC is off: the fuzz lane's random pick takes the GC run off the front of the queue, and the
+// coroutines that fill the root buffer meanwhile park until tens of thousands of fibers pass
+// vm.max_map_count. gc/025 checks the run at the front.
 $scope = new Scope();
 $count = 100000;
 $survivors = [];
