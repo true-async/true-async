@@ -1,7 +1,5 @@
 --TEST--
 Coroutine: GC handler with waker and scope structures  
---XFAIL--
-Not implemented yet: S9.2 of dev/PLAN.md
 --FILE--
 <?php
 

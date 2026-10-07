@@ -1,7 +1,5 @@
 --TEST--
 Scope: allowZombies() - basic usage and default flag inversion
---XFAIL--
-Not implemented yet: S9.2 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -1,7 +1,5 @@
 --TEST--
 Basic scope hierarchy cancellation propagation + asNotSafely()
---XFAIL--
-Not implemented yet: S9.2 of dev/PLAN.md
 --FILE--
 <?php
 

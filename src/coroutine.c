@@ -20,6 +20,7 @@
 #include "coroutine.h"
 #include "exceptions.h"
 #include "scheduler.h"
+#include "scope.h"
 #include "coroutine_arginfo.h"
 
 zend_class_entry *async_ce_coroutine = NULL;
@@ -28,7 +29,7 @@ static zend_object_handlers coroutine_handlers;
 
 static zend_object *coroutine_object_create(zend_class_entry *class_entry)
 {
-	/* 456 B: a class without properties takes the inline properties slot off the size. */
+	/* 464 B: a class without properties takes the inline properties slot off the size. */
 	async_coroutine_t *coroutine = zend_object_alloc(sizeof(async_coroutine_t), class_entry);
 
 	ZVAL_UNDEF(&coroutine->coroutine.result);
@@ -412,6 +413,12 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 	 * deletes it after its catch (coroutine.c:747-767). */
 	zend_hash_index_del(&ASYNC_G(coroutines), coroutine->std.handle);
 
+	/* Only a started coroutine becomes a zombie; the other places that drop a registry entry drop
+	 * coroutines that never ran. */
+	if (UNEXPECTED(zend_coroutine->flags & ASYNC_COROUTINE_F_ZOMBIE)) {
+		ASYNC_G(zombie_coroutines_count)--;
+	}
+
 	/* exit() ends the request gracefully, as in TrueAsync (D16): the other coroutines are cancelled,
 	 * this one no longer, being finished. */
 	if (UNEXPECTED(is_exit)) {
@@ -446,6 +453,11 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 	}
 
 	async_callbacks_free((async_awaitable_t *) coroutine, &coroutine->callbacks);
+
+	/* After its waiters, as TrueAsync's (coroutine.c:727-731): the scope may be disposed with it. */
+	if (EXPECTED(coroutine->scope != NULL)) {
+		async_scope_remove_coroutine(coroutine);
+	}
 
 	/* Nobody can observe the exception when only the scheduler's reference and this function's are
 	 * left, or for main and a fiber, which nobody awaits through the object: it ends the request. A
@@ -716,7 +728,7 @@ ZEND_METHOD(Async_Coroutine, cancel)
 		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_cancellation)
 	ZEND_PARSE_PARAMETERS_END();
 
-	async_coroutine_cancel(THIS_COROUTINE, cancellation, false);
+	async_coroutine_cancel(THIS_COROUTINE, cancellation, false, false);
 }
 
 void async_register_coroutine_ce(zend_class_entry *completable_interface)

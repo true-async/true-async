@@ -1,7 +1,5 @@
 --TEST--
 Async\spawnWith: SpawnStrategy with exception in coroutine
---XFAIL--
-Not implemented yet: S9.2 of dev/PLAN.md
 --FILE--
 <?php
 

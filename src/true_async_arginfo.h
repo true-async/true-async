@@ -1,9 +1,15 @@
 /* This is a generated file, edit true_async.stub.php instead.
- * Stub hash: 79731f4105faa7aa1d4011132bd16406dfbb30fa */
+ * Stub hash: b78f476a6a731637d29da200fb8f7663fda6e6b6 */
 
 #include "zend_enum.h"
 
 ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_Async_spawn, 0, 1, Async\\Coroutine, 0)
+	ZEND_ARG_TYPE_INFO(0, task, IS_CALLABLE, 0)
+	ZEND_ARG_VARIADIC_TYPE_INFO(0, args, IS_MIXED, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_Async_spawn_with, 0, 2, Async\\Coroutine, 0)
+	ZEND_ARG_OBJ_INFO(0, provider, Async\\ScopeProvider, 0)
 	ZEND_ARG_TYPE_INFO(0, task, IS_CALLABLE, 0)
 	ZEND_ARG_VARIADIC_TYPE_INFO(0, args, IS_MIXED, 0)
 ZEND_END_ARG_INFO()
@@ -90,6 +96,7 @@ ZEND_END_ARG_INFO()
 #define arginfo_class_Async_Completable_isCancelled arginfo_class_Async_Completable_isCompleted
 
 ZEND_FUNCTION(Async_spawn);
+ZEND_FUNCTION(Async_spawn_with);
 ZEND_FUNCTION(Async_await);
 ZEND_FUNCTION(Async_await_any_or_fail);
 ZEND_FUNCTION(Async_await_first_success);
@@ -109,6 +116,7 @@ ZEND_FUNCTION(Async_graceful_shutdown);
 
 static const zend_function_entry ext_functions[] = {
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "spawn"), zif_Async_spawn, arginfo_Async_spawn, 0, NULL, NULL)
+	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "spawn_with"), zif_Async_spawn_with, arginfo_Async_spawn_with, 0, NULL, NULL)
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "await"), zif_Async_await, arginfo_Async_await, 0, NULL, NULL)
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "await_any_or_fail"), zif_Async_await_any_or_fail, arginfo_Async_await_any_or_fail, 0, NULL, NULL)
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "await_first_success"), zif_Async_await_first_success, arginfo_Async_await_first_success, 0, NULL, NULL)

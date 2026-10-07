@@ -57,9 +57,11 @@ bool async_scheduler_enqueue(zend_coroutine_t *coroutine, zend_object *error, bo
  * coroutine.c:871-1004). `error`, or a new AsyncCancellation("Coroutine cancelled") when it is NULL,
  * is thrown inside the coroutine's suspend() when it next runs; one that never ran finishes without
  * running its body. Inside protect() the first request waits for protect() to return. The running
- * coroutine is not interrupted: the error becomes its outcome. A finished coroutine ignores it. A
- * transferred `error` is the callee's. False with an exception when the coroutine cannot be queued. */
-bool async_coroutine_cancel(async_coroutine_t *coroutine, zend_object *error, bool transfer_error);
+ * coroutine is not interrupted: the error becomes its outcome. With `is_safely` a coroutine that
+ * started and is not running becomes a zombie instead and runs on (S9-scope.md section 5). A
+ * finished coroutine ignores it. A transferred `error` is the callee's. False with an exception when
+ * the coroutine cannot be queued. */
+bool async_coroutine_cancel(async_coroutine_t *coroutine, zend_object *error, bool transfer_error, bool is_safely);
 
 /* Starts the graceful shutdown (S3.md section 6, TrueAsync's start_graceful_shutdown_with,
  * scheduler.c:1005-1030): every unfinished coroutine is cancelled with `cancellation` (borrowed), or

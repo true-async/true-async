@@ -1239,7 +1239,7 @@ static void await_traversable(await_context_t *context, zend_object_iterator *it
 			context->finished = true;
 			waiter->waker.block = NULL;
 			await_context_release(context);
-			async_coroutine_cancel(iterator_coroutine, NULL, false);
+			async_coroutine_cancel(iterator_coroutine, NULL, false, false);
 			OBJ_RELEASE(&iterator_coroutine->std);
 			return;
 		}
@@ -1259,7 +1259,7 @@ static void await_traversable(await_context_t *context, zend_object_iterator *it
 	/* A Traversable that suspends may still be running: it stops at its next step either way, and the
 	 * cancellation stops it inside the step. */
 	if (!ZEND_COROUTINE_IS_FINISHED(&iterator_coroutine->coroutine)) {
-		async_coroutine_cancel(iterator_coroutine, NULL, false);
+		async_coroutine_cancel(iterator_coroutine, NULL, false, false);
 	}
 
 	OBJ_RELEASE(&iterator_coroutine->std);

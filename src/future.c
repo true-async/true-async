@@ -23,6 +23,7 @@
 #include "exceptions.h"
 #include "future.h"
 #include "scheduler.h"
+#include "scope.h"
 #include "future_arginfo.h"
 
 zend_class_entry *async_ce_future_state = NULL;
@@ -540,8 +541,11 @@ static bool future_drain_spawn(future_drain_t *drain)
 	coroutine->coroutine.extended_data = drain;
 	coroutine->coroutine.extended_dispose = future_drain_coroutine_dispose;
 	ZEND_ASYNC_MICROTASK_ADDREF(&drain->microtask);
+	/* A drain serves the chains of every scope (S9-scope.md section 3). */
+	async_scope_add_coroutine(ASYNC_G(global_scope), coroutine);
 
 	if (UNEXPECTED(!async_scheduler_enqueue(&coroutine->coroutine, NULL, false))) {
+		async_scope_remove_coroutine(coroutine);
 		zend_hash_index_del(&ASYNC_G(coroutines), coroutine->std.handle);
 		OBJ_RELEASE(&coroutine->std);
 		return false;

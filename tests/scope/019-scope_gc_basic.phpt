@@ -1,7 +1,5 @@
 --TEST--
 Scope: GC handler basic functionality
---XFAIL--
-Not implemented yet: S9.2 of dev/PLAN.md
 --FILE--
 <?php
 

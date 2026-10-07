@@ -1,7 +1,5 @@
 --TEST--
 Scope: destroying scope object while coroutines are still active cancels them
---XFAIL--
-Not implemented yet: S9.5 of dev/PLAN.md
 --FILE--
 <?php
 

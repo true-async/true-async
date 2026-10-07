@@ -471,7 +471,8 @@ static void triggers_end_parent_waits(async_reactor_t *reactor)
 					waiter,
 					async_new_exception(async_ce_cancellation,
 										"The wait was started before fork() and cannot end in the child"),
-					true);
+					true,
+					false);
 
 			if (UNEXPECTED(record->event != NULL)) {
 				i++;

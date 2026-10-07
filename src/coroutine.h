@@ -16,10 +16,8 @@
 #include "php.h"
 #include "true_async_API.h"
 
-/* Defined elsewhere: the fiber context in scheduler.h, the switch handlers in true_async_API.h, the
- * scope by S9. */
+/* Defined elsewhere: the fiber context in scheduler.h, the switch handlers in true_async_API.h. */
 typedef struct _async_fiber_context_s async_fiber_context_t;
-typedef struct _async_scope_s async_scope_t;
 typedef struct _async_coroutine_switch_handlers_vector_s async_coroutine_switch_handlers_vector_t;
 
 /* The coroutine and its PHP object in one allocation (dev/plans/S3.md, section 3.1). */
@@ -31,7 +29,8 @@ struct _async_coroutine_s
 	async_fiber_context_t *fiber_context;
 	async_callbacks_vector_t callbacks; /* waiters' records and finish handlers */
 	async_waker_t waker;
-	async_scope_t *scope;                                      /* always NULL: no scopes (S9) */
+	async_scope_t *scope; /* NULL out of a scope (scope.h) */
+	uint32_t scope_index;
 	zend_object *deferred_cancellation;                        /* the cancel that arrived inside protect() */
 	async_coroutine_switch_handlers_vector_t *switch_handlers; /* lazy */
 	/* The callable and arguments of spawn(), which coroutine.fcall points to: one allocation less per
@@ -43,10 +42,10 @@ struct _async_coroutine_s
 };
 
 /* The sizes of dev/plans/S3.md 3.1 with the waker of dev/plans/S4.md 2.2, checked at compile time on
- * 64-bit targets: 472 B, allocated as 456 in the 512 B bin. */
+ * 64-bit targets: 480 B with the scope's index (S9), allocated as 464 in the 512 B bin. */
 #if SIZEOF_SIZE_T == 8
-typedef char async_coroutine_size_check[sizeof(async_coroutine_t) == 472 ? 1 : -1];
-typedef char async_coroutine_std_offset_check[offsetof(async_coroutine_t, std) == 416 ? 1 : -1];
+typedef char async_coroutine_size_check[sizeof(async_coroutine_t) == 480 ? 1 : -1];
+typedef char async_coroutine_std_offset_check[offsetof(async_coroutine_t, std) == 424 ? 1 : -1];
 #endif
 
 extern zend_class_entry *async_ce_coroutine;

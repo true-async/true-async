@@ -914,7 +914,7 @@ static bool collector_cancel(async_coroutine_t **found, const uint32_t count, bo
 #ifdef TRUE_ASYNC_TEST_HOOKS
 		zend_coroutine->flags |= ASYNC_COROUTINE_F_HANDED_OUT;
 #endif
-		async_coroutine_cancel(coroutine, async_new_exception(async_ce_cancellation, "Deadlock detected"), true);
+		async_coroutine_cancel(coroutine, async_new_exception(async_ce_cancellation, "Deadlock detected"), true, false);
 		cancelled = true;
 	}
 

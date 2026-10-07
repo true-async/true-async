@@ -21,6 +21,12 @@ interface Completable extends Awaitable
 function spawn(callable $task, mixed ...$args): Coroutine {}
 
 /**
+ * Starts `$task` in a new coroutine of the scope `$provider` names (the current coroutine's scope
+ * when it names none); a SpawnStrategy sees the coroutine before and after its enqueue.
+ */
+function spawn_with(ScopeProvider $provider, callable $task, mixed ...$args): Coroutine {}
+
+/**
  * Waits until `$awaitable` completes: returns its result, or throws the exception it ended with.
  * A `$cancellation` that completes first throws OperationCanceledException.
  */

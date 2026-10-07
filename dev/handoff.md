@@ -291,12 +291,25 @@ waiting for a Windows agent (S1.5).
 ## S9
 
 S9.1 done 2026-10-07: `dev/plans/S9-scope.md` (layer 1, Scope) and `tests/lists/S9.txt` (91 tests with
-`--XFAIL--` naming S9.2-S9.6; `scope/052` waits for Context in `S9.excluded`). Next is S9.2. Edmond
-chose TrueAsync's behaviour for an unhandled error that reaches the global scope (note section 12).
+`--XFAIL--` naming S9.2-S9.6; `scope/052` waits for Context in `S9.excluded`). Edmond chose
+TrueAsync's behaviour for an unhandled error that reaches the global scope (note section 12).
 The note cites the reference by `file:line` and the probes `p1.php`-`p9.php`
 (`/mnt/project-files/s9/probes/`). A debug build of the reference to compare against: a worktree of
 true-async/php-src branch `true-async` (`863f6dd9`) with `ext/async` copied from the `REFERENCE`
 checkout, `./configure --disable-all --enable-debug --enable-async --enable-cli` (needs `libuv1-dev`,
-`re2c`), about 3 minutes on 4 cores. S9.4 needs a non-owning edge reporter from S7 (note section 6),
-asked through the coordinator. A reference bug for Edmond: a `SpawnStrategy` resolving to the global
-scope crashes TrueAsync (note section 9 item 8, `p9.php`); ours passes a stand-in `Scope`.
+`re2c`), about 3 minutes on 4 cores. A reference bug for Edmond: a `SpawnStrategy` resolving to the
+global scope crashes TrueAsync (note section 9 item 8, `p9.php`); ours passes a stand-in `Scope`.
+
+S9.2 done 2026-10-07: `src/scope.c`/`scope.h`/`scope.stub.php`. The global and the engine's scope
+are made at RINIT and freed at RSHUTDOWN (`async_scope_request_shutdown`, before the registry's
+release). `async_scope_spawn` is the body of `spawn()`, `Scope::spawn()` and `spawn_with()` and
+returns an owned reference; the strategy path (`spawn_with_strategy`) holds the coroutine across the
+hooks, which may suspend, and gives an objectless scope a stand-in object that stays attached while
+anything holds it (`is_stand_in`: its destruction does not cancel).
+Zombies: `ASYNC_COROUTINE_F_ZOMBIE`, `ASYNC_G(zombie_coroutines_count)`, the scope's two counts;
+a zombie leaves both in finalize. `scope/053` (S9.5's) passes already. Own tests `internal/064`,
+`065`, `scope/058` (with `zend.enable_gc=0`: a core GC bug, the threshold raised once per waiter of
+one run, reported to the coordinator for a core fix), `spawnWith/013`-`016`. Next is S9.3. S9.4
+needs a non-owning edge reporter from S7 (note section 6); the S7 thread takes it after S7.6 and
+sends the signatures for review. Known, left for S9.7: the collector's `cancel` mode does not reset
+its back-off for a parked zombie (its cancelled bit was set without a wake).

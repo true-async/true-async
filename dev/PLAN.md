@@ -699,7 +699,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md
-Active: S9.2
+Active: S9.3
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -713,13 +713,19 @@ Active: S9.2
         moved `cancel()` whole into S9.2, the scope waiters' error wake into S9.4, re-pinned 4
         tests and gave each step its own tests (note 10). Edmond: the global scope cancels with
         the error's origin flag, as TrueAsync (section 12, option 1).
-- [ ] S9.2 The scope and the global scope, spawn into a scope, `Scope` without waiting, `cancel()`
+- [x] S9.2 The scope and the global scope, spawn into a scope, `Scope` without waiting, `cancel()`
       with its cascade and the close of a scope it leaves empty (note section 5), `spawn_with` with
       `ScopeProvider` and `SpawnStrategy`, the core's and our own coroutines placed (note
       section 3), zombies in the cancel slot and `get_coroutine_count`.
       done: S9.txt's S9.2 tests and the note's S9.2 own tests (section 10) pass on debug and ASAN;
         the S3-S7 lists pass as before
       tier: T2 · role: Critic
+      handoff: done 2026-10-07: `src/scope.c`; the 35 tests and `scope/053` (S9.5's, passes on
+        disposal by the object's destruction) lose `--XFAIL--`; own tests `internal/064`, `065`,
+        `scope/058`, `spawnWith/013`-`016`. Debug 1010 PASS, 67 XFAIL; ASAN 994 PASS, 63 XFAIL;
+        0 unexpected on both. The Critic's 2 high findings (hooks that suspend, a fatal error in a
+        hook) and the stand-in shared by concurrent hooks fixed with tests; a core GC bug it exposed
+        (the threshold raised once per waiter of a run) reported for a core fix.
 - [ ] S9.3 The error route with both exception handlers and its cascade of fresh cancellations
       (note section 4).
       done: S9.txt's S9.3 tests and `p5`-`p7` of the note as own tests pass on debug and ASAN;

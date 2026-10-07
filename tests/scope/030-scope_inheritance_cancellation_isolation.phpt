@@ -1,7 +1,5 @@
 --TEST--
 Scope inheritance cancellation isolation (child cancellation should not affect parent)
---XFAIL--
-Not implemented yet: S9.2 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -1,7 +1,5 @@
 --TEST--
 Scope: Coroutine cancelling its own scope
---XFAIL--
-Not implemented yet: S9.2 of dev/PLAN.md
 --FILE--
 <?php
 

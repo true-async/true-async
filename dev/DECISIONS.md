@@ -1235,3 +1235,29 @@ stack options were shown with the code).
 - 2026-10-07 The reactor's poll ends its loop after the wakeup's completion (S4.7). Why: the wakeup
   arms itself again inside its completion, so a thread that fires without pause kept the loop going
   for as long as it won a race; libuv's poll takes one batch (the Critic on S4.7).
+- 2026-10-07 An exception from a `SpawnStrategy` hook is thrown by `spawn_with()`, and the coroutine
+  is cancelled, so one that has not run finishes unrun (`spawnWith/014`). Why: TrueAsync never sees
+  the exception (`zend_call_method` returns the retval, `async_API.c:132-141, 179-183`) and leaves
+  the coroutine with an ignored waker; a finish takes it out of its scope and the registry the usual
+  way, and its holders see it end.
+- 2026-10-07 The stand-in `Scope` of item 8 is the scope's object while anything holds it, the
+  hooks of every spawn_with() running at once included; its methods act on the scope
+  (`asNotSafely()` on the global scope's stand-in clears the global scope's safe disposal), and its
+  destruction never cancels the scope. Why: the scope's disposal and the request's end detach it as
+  any object, so a hook that suspends or ends in a fatal error leaves no pointer to a freed scope,
+  and one hook's return cannot detach it under another (the Critic, S9.2; `spawnWith/013`, `015`,
+  `016`).
+- 2026-10-07 A hook may suspend: `spawn_with()` holds the coroutine across the hooks and returns it
+  even when it finished meanwhile; a coroutine finished in `beforeCoroutineEnqueue()` is not queued.
+  `spawn_with()` also holds the `Scope` the provider returned until the spawn is done, so a provider
+  may return a temporary `new Scope()`. Why: hooks are PHP code (the Critic, S9.2).
+- 2026-10-07 A `Scope` object freed without its destructor (after a bailout) cancels its scope only
+  while async is active; afterwards it only detaches. Why: no scheduler is left to run the cancel.
+- 2026-10-07 The future drain's coroutines and the interrupt coroutine (S4's pcntl handlers) join the
+  global scope, so a handler's spawn lands there; a safe cancel of the global scope makes the
+  interrupt coroutine a zombie, which runs its handler to its end. Why: neither belongs to a user
+  scope, and the engine's scope is for the core's coroutines (S9-scope.md 3).
+- 2026-10-07 `scope/058` runs with `zend.enable_gc=0`. Why: the core raises the GC threshold once per
+  coroutine waiting for one run (`zend_gc.c:727-730`, 90 020 001 after one run of 12 000
+  coroutines, TrueAsync 20 001), and on ASAN each growth of the root buffer copies it; reported for
+  a core fix, the INI line goes with it.

@@ -42,6 +42,9 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	async_io_provider_t io_provider;        /* registered from the first trigger to RSHUTDOWN */
 	async_signal_registry_t *signals;       /* Async\signal()'s watches; NULL while there is none */
 	async_coroutine_t *interrupt_coroutine; /* runs the VM interrupt for an idle scheduler; NULL when none is alive */
+	async_scope_t *global_scope;            /* where spawn() puts a coroutine at the top level (scope.h) */
+	async_scope_t *engine_scope;            /* the coroutines of the core's gc_new_coroutine slot */
+	uint32_t zombie_coroutines_count;       /* in the registry, left out of get_coroutine_count() */
 	async_io_event_t *exit_deadline;        /* D16's Timer while armed, once per drain; the scheduler's reference */
 	uint32_t last_handler_id;               /* the id of the newest finish or switch handler; 0 is never handed out */
 	bool graceful_shutdown;                 /* the graceful shutdown started: once per request */

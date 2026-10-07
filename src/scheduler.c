@@ -49,6 +49,7 @@
 #include "coroutine.h"
 #include "collector.h"
 #include "exceptions.h"
+#include "scope.h"
 #include "Zend/zend_smart_str.h"
 #include "internal/circular_buffer.h"
 #include "test_hooks.h"
@@ -725,7 +726,7 @@ static void registry_cancel(async_coroutine_t *coroutine, zend_object *error, co
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	coroutine->coroutine.flags |= ASYNC_COROUTINE_F_HANDED_OUT;
 #endif
-	async_coroutine_cancel(coroutine, error, transfer_error);
+	async_coroutine_cancel(coroutine, error, transfer_error, false);
 }
 
 /* A fiber parked in Fiber::suspend(): it handed control back to whoever resumed it, and only that
@@ -1081,6 +1082,7 @@ static async_coroutine_t *main_coroutine_adopt(void)
 
 	coroutine->coroutine.flags |= ZEND_COROUTINE_F_MAIN | ZEND_COROUTINE_F_STARTED;
 	ZEND_COROUTINE_SET_STATUS(&coroutine->coroutine, ZEND_COROUTINE_STATUS_RUNNING);
+	async_scope_add_coroutine(ASYNC_G(global_scope), coroutine);
 
 	return coroutine;
 }
@@ -1334,6 +1336,19 @@ static zend_coroutine_t *scheduler_new_coroutine(void)
 	return &async_coroutine_new()->coroutine;
 }
 
+/* The core's own coroutines (the collector's, the shutdown destructors') join the engine's scope, which
+ * no user scope's cancel reaches (S9-scope.md section 3). */
+static zend_coroutine_t *scheduler_gc_new_coroutine(void)
+{
+	ASYNC_IO_PROVIDER_INSTALL_ONCE();
+
+	async_coroutine_t *coroutine = async_coroutine_new();
+
+	async_scope_add_coroutine(ASYNC_G(engine_scope), coroutine);
+
+	return &coroutine->coroutine;
+}
+
 static zend_coroutine_t *scheduler_launch(void)
 {
 	return &main_coroutine_adopt()->coroutine;
@@ -1415,6 +1430,12 @@ bool async_scheduler_enqueue(zend_coroutine_t *zend_coroutine, zend_object *erro
 
 	switch (ZEND_COROUTINE_STATUS(zend_coroutine)) {
 		case ZEND_COROUTINE_STATUS_CREATED:
+			/* D11's point: a coroutine its creator placed in no scope joins the one spawn() would take; a
+			 * Fiber's stays out, as in TrueAsync's fork (S9-scope.md section 3). */
+			if (EXPECTED(coroutine->scope == NULL && !ZEND_COROUTINE_IS_FIBER(zend_coroutine))) {
+				async_scope_add_coroutine(async_scope_current(), coroutine);
+			}
+
 			run_queue_push(coroutine);
 			return true;
 		case ZEND_COROUTINE_STATUS_SUSPENDED:
@@ -1441,7 +1462,10 @@ bool async_scheduler_enqueue(zend_coroutine_t *zend_coroutine, zend_object *erro
 	}
 }
 
-bool async_coroutine_cancel(async_coroutine_t *coroutine, zend_object *error, const bool transfer_error)
+bool async_coroutine_cancel(async_coroutine_t *coroutine,
+							zend_object *error,
+							const bool transfer_error,
+							const bool is_safely)
 {
 	zend_coroutine_t *zend_coroutine = &coroutine->coroutine;
 
@@ -1502,7 +1526,16 @@ bool async_coroutine_cancel(async_coroutine_t *coroutine, zend_object *error, co
 		return true;
 	}
 
+	/* Cancelled, as TrueAsync marks a zombie (coroutine.c:956-974), so isCancellationRequested() says
+	 * so while it runs on. */
 	ZEND_COROUTINE_SET_CANCELLED(zend_coroutine);
+
+	if (UNEXPECTED(is_safely && ZEND_COROUTINE_IS_STARTED(zend_coroutine))) {
+		async_scope_mark_zombie(coroutine);
+		OBJ_RELEASE(error);
+		return true;
+	}
+
 	waker_apply_error(coroutine, error, true);
 
 	/* A coroutine that never ran is already queued (its spawn) and finishes unrun where it is popped;
@@ -1840,12 +1873,9 @@ static bool scheduler_suspend(const bool from_main, const bool is_bailout)
 	return *exception_ptr == NULL;
 }
 
-/* is_safely is ignored: there is no zombie state (S9). */
 static bool scheduler_cancel(zend_coroutine_t *coroutine, zend_object *error, bool transfer_error, const bool is_safely)
 {
-	(void) is_safely;
-
-	return async_coroutine_cancel((async_coroutine_t *) coroutine, error, error != NULL && transfer_error);
+	return async_coroutine_cancel((async_coroutine_t *) coroutine, error, error != NULL && transfer_error, is_safely);
 }
 
 /* Called by the core when exit() ends a fiber's body (zend_fiber_coroutine_entry() in
@@ -2084,10 +2114,11 @@ static zend_array *scheduler_get_awaiting_info(zend_coroutine_t *zend_coroutine)
 	return info;
 }
 
-/* A coroutine leaves the registry when it finishes; the scheduler's own coroutine is never in it. */
+/* A coroutine leaves the registry when it finishes; the scheduler's own coroutine is never in it, and
+ * a zombie is not counted (the slot's contract, zend_async_API.h). */
 static uint32_t scheduler_get_coroutine_count(void)
 {
-	return zend_hash_num_elements(&ASYNC_G(coroutines));
+	return zend_hash_num_elements(&ASYNC_G(coroutines)) - ASYNC_G(zombie_coroutines_count);
 }
 
 static zend_class_entry *scheduler_get_class_ce(const zend_async_class type)
@@ -2201,6 +2232,7 @@ static const zend_async_scheduler_api_t scheduler_api = {
 	.size = sizeof(zend_async_scheduler_api_t),
 	.version = ZEND_ASYNC_API_VERSION,
 	.new_coroutine = scheduler_new_coroutine,
+	.gc_new_coroutine = scheduler_gc_new_coroutine,
 	.enqueue_coroutine = async_scheduler_enqueue,
 	.suspend = scheduler_suspend,
 	.cancel = scheduler_cancel,
@@ -2296,6 +2328,9 @@ void async_scheduler_request_shutdown(void)
 		ZEND_COROUTINE_SET_STATUS(&coroutine->coroutine, ZEND_COROUTINE_STATUS_FINISHED);
 	}
 	ZEND_HASH_FOREACH_END();
+
+	/* Out of their scopes first: a coroutine is freed out of any scope. */
+	async_scope_request_shutdown();
 
 	/* Released once every wait is unlinked: a target freed with a waiter linked would wake it, which
 	 * creates a scheduler. */

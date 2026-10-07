@@ -25,6 +25,7 @@
 #include "await.h"
 #include "future.h"
 #include "scheduler.h"
+#include "scope.h"
 #include "timeout.h"
 #include "true_async_arginfo.h"
 
@@ -166,6 +167,7 @@ static PHP_MINIT_FUNCTION(true_async)
 
 	async_register_future_ce(async_ce_completable);
 	async_register_timeout_ce(async_ce_completable);
+	async_register_scope_ce();
 
 	if (UNEXPECTED(zend_register_functions(NULL, ext_functions, NULL, type) == FAILURE)) {
 		return FAILURE;
@@ -192,6 +194,7 @@ static PHP_RINIT_FUNCTION(true_async)
 
 	if (scheduler_registered) {
 		async_scheduler_request_startup();
+		async_scope_request_startup();
 		async_reactor_request_startup();
 		async_io_provider_request_startup();
 		ASYNC_G(signals) = NULL;
@@ -265,51 +268,14 @@ ZEND_FUNCTION(Async_spawn)
 		Z_PARAM_VARIADIC_WITH_NAMED(args, args_count, named_args)
 	ZEND_PARSE_PARAMETERS_END();
 
-	ASYNC_IO_PROVIDER_INSTALL_ONCE();
+	async_coroutine_t *coroutine =
+			async_scope_spawn(async_scope_current(), NULL, &fci, &fcc, args, args_count, named_args);
 
-	async_coroutine_t *coroutine = async_coroutine_new();
-
-	/* ZEND_ASYNC_FCALL_DEFINE into the coroutine's own block. */
-	zend_fcall_t *fcall = &coroutine->spawn_fcall;
-	fcall->fci = fci;
-	fcall->fci_cache = fcc;
-
-	if (args_count != 0) {
-		fcall->fci.param_count = args_count;
-		fcall->fci.params = safe_emalloc(args_count, sizeof(zval), 0);
-
-		for (uint32_t i = 0; i < args_count; i++) {
-			ZVAL_COPY(&fcall->fci.params[i], &args[i]);
-		}
-	}
-
-	if (UNEXPECTED(named_args != NULL)) {
-		fcall->fci.named_params = named_args;
-		GC_ADDREF(named_args);
-	}
-
-	Z_TRY_ADDREF(fcall->fci.function_name);
-
-	/* The call comes after this frame, and the callable's name alone may not resolve again: the cache
-	 * keeps the object a class-string callable resolved to ($this of the spawning method) and a __call
-	 * trampoline, which the call consumes. */
-	zend_fcc_addref(&fcall->fci_cache);
-	coroutine->coroutine.fcall = fcall;
-
-	zend_string *filename = zend_get_executed_filename_ex();
-
-	coroutine->coroutine.filename = filename != NULL ? zend_string_copy(filename) : NULL;
-	coroutine->coroutine.lineno = zend_get_executed_lineno();
-
-	/* A CREATED coroutine is refused only when the scheduler coroutine cannot get a stack: the
-	 * coroutine then never existed. */
-	if (UNEXPECTED(!async_scheduler_enqueue(&coroutine->coroutine, NULL, false))) {
-		zend_hash_index_del(&ASYNC_G(coroutines), coroutine->std.handle);
-		OBJ_RELEASE(&coroutine->std);
+	if (UNEXPECTED(coroutine == NULL)) {
 		RETURN_THROWS();
 	}
 
-	RETURN_OBJ_COPY(&coroutine->std);
+	RETURN_OBJ(&coroutine->std);
 }
 
 /* Waits for a coroutine (S3.md 4.1 and 4.8) or a Future (S5.md section 4): the result and the

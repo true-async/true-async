@@ -27,6 +27,7 @@
 #include "Zend/zend_exceptions.h"
 
 typedef struct _async_coroutine_s async_coroutine_t;
+typedef struct _async_scope_s async_scope_t; /* scope.h */
 
 ///////////////////////////////////////////////////////////////////
 /// Awaitables: the type bit
@@ -49,6 +50,9 @@ typedef struct _async_awaitable_s
 #define ASYNC_COROUTINE_F_EXCEPTION_HANDLED (1u << 17)
 #define ASYNC_COROUTINE_F_EXC_CAUGHT (1u << 18)
 #define ASYNC_COROUTINE_F_BAILOUT (1u << 19)
+/* A cancel with is_safely found it started: it runs on, outside its scope's active count and the
+ * core's coroutine count (scope.h). Never cleared. */
+#define ASYNC_COROUTINE_F_ZOMBIE (1u << 20)
 #define ASYNC_COROUTINE_F_HI_PRIORITY (1u << 21)
 /* The collector warned that the coroutine can never wake (collector.h); never cleared. */
 #define ASYNC_COROUTINE_F_DEADLOCK_REPORTED (1u << 22)
