@@ -24,6 +24,7 @@
 #include "exceptions.h"
 #include "future.h"
 #include "scheduler.h"
+#include "scope.h"
 #include "timeout.h"
 
 ///////////////////////////////////////////////////////////////////
@@ -1203,6 +1204,30 @@ static void await_iterator_dispose(zend_coroutine_t *coroutine)
 	await_context_release(context);
 }
 
+/* The Traversable's exception, or the iterator coroutine's cancellation, cancels the scope of what its
+ * walk spawned, with that scope's safe disposal (TrueAsync's async_iterator_apply_exception,
+ * iterator.c:601-613). The coroutine has finished and is still in that scope, so the cancel passes it
+ * by. */
+static bool await_iterator_finished(zend_coroutine_t *coroutine, zend_coroutine_t *waiter, void *data, bool is_bailout)
+{
+	(void) waiter;
+	(void) data;
+
+	async_scope_t *scope = ((async_coroutine_t *) coroutine)->scope;
+
+	if (EXPECTED(coroutine->exception == NULL) || UNEXPECTED(is_bailout) ||
+		(scope->event.flags & ASYNC_SCOPE_F_CANCELLED)) {
+		return false;
+	}
+
+	async_scope_cancel(scope,
+					   async_new_exception(async_ce_cancellation, "Cancellation of the iterator due to an exception"),
+					   true,
+					   (scope->event.flags & ASYNC_SCOPE_F_DISPOSE_SAFELY) != 0);
+
+	return false;
+}
+
 /* Takes `iterator`. */
 static void await_traversable(await_context_t *context, zend_object_iterator *iterator)
 {
@@ -1217,8 +1242,13 @@ static void await_traversable(await_context_t *context, zend_object_iterator *it
 	iterator_coroutine->coroutine.extended_dispose = await_iterator_dispose;
 	/* Its exception goes to the waiter, or nowhere once the waiter has left. */
 	iterator_coroutine->coroutine.flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
+	/* What the Traversable spawns joins a child scope of the waiter's (TrueAsync's async_API.c:1072-1092,
+	 * S9-scope.md 8). */
+	async_scope_add_coroutine(async_scope_new(async_scope_current()), iterator_coroutine);
+	async_finish_handler_add(&iterator_coroutine->coroutine, await_iterator_finished, NULL, NULL);
 
 	if (UNEXPECTED(!async_scheduler_enqueue(&iterator_coroutine->coroutine, NULL, false))) {
+		async_scope_remove_coroutine(iterator_coroutine);
 		zend_hash_index_del(&ASYNC_G(coroutines), iterator_coroutine->std.handle);
 		OBJ_RELEASE(&iterator_coroutine->std);
 		return;

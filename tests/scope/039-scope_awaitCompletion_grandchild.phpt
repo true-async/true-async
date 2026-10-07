@@ -1,7 +1,5 @@
 --TEST--
 Scope: awaitCompletion() waits for grandchild scopes (cascading completion)
---XFAIL--
-Not implemented yet: S9.4 of dev/PLAN.md
 --FILE--
 <?php
 

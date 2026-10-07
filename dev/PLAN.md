@@ -730,7 +730,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md
-Active: S9.4
+Active: S9.5
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -770,10 +770,20 @@ Active: S9.4
         findings (a handler's release freeing the parent under `scope_dispose`, a fatal error in a
         handler) fixed with `scope/072`, `073`; the Sage kept the handler that cannot park (note
         9, item 9), a question for Edmond.
-- [ ] S9.4 `awaitCompletion()`, the SCOPE wait kind, the route's wake of the scope's waiters with
-      the error (note section 4, step 2), the collector's edges (an S7 reporter asked through the
-      coordinator) and the `await_*` child scope (note sections 6, 8).
+- [x] S9.4 `awaitCompletion()`, the SCOPE wait kind, the route's wake of the scope's waiters with
+      the error (note section 4, step 2) and the `await_*` child scope (note sections 6, 8).
       done: S9.txt's S9.4 tests, `await/062` and the note's S9.4 own tests pass on debug and ASAN;
+        the S3-S7 lists pass as before
+      tier: T2 · role: Critic
+      handoff: done 2026-10-07: the 13 tests and `await/062` lose `--XFAIL--`; own tests
+        `scope/076`-`083`. Debug 1072 PASS, 48 XFAIL; ASAN 1053 PASS, 44 XFAIL; 0 unexpected on
+        both, on the core with CORE_REF 8159f7baa5c. Of the Critic's 3 findings two are
+        TrueAsync's behaviour and stay (the Sage: safe disposal's early wake, a second `cancel()`
+        closing a running scope), one comment fixed. The collector's edges moved to S9.9.
+- [ ] S9.9 The collector's edges for scopes (note section 6), split from S9.4: an S7.7 reporter of
+      an edge that owns no reference; Edmond questioned S7.7 on 2026-10-07, so it waits for his
+      word in the S7 thread.
+      done: the note's S9.9 own tests pass on debug and ASAN; the SCOPE kind reports its target;
         the S3-S7 lists pass as before
       tier: T2 · role: Critic
 - [ ] S9.5 `dispose()`, `disposeSafely()`, `disposeAfterTimeout()`, `awaitAfterCancellation()`, the

@@ -21,6 +21,8 @@
 #include "scope.h"
 #include "exceptions.h"
 #include "scheduler.h"
+#include "await.h"
+#include "future.h"
 #include "scope_arginfo.h"
 
 zend_class_entry *async_ce_scope = NULL;
@@ -100,6 +102,8 @@ static void scope_detach_coroutine(async_coroutine_t *coroutine)
 	}
 }
 
+static void scope_notify_completion(async_scope_t *scope, bool with_zombies);
+
 void async_scope_mark_zombie(async_coroutine_t *coroutine)
 {
 	if (UNEXPECTED(coroutine->coroutine.flags & ASYNC_COROUTINE_F_ZOMBIE)) {
@@ -114,6 +118,7 @@ void async_scope_mark_zombie(async_coroutine_t *coroutine)
 	if (EXPECTED(scope != NULL)) {
 		scope->active_coroutines_count--;
 		scope->zombie_coroutines_count++;
+		scope_notify_completion(scope, false);
 	}
 }
 
@@ -180,6 +185,16 @@ static void scope_set_cancelled(async_scope_t *scope)
 
 	if (scope->scope_object != NULL) {
 		async_scope_object_from_object(scope->scope_object)->is_cancelled = true;
+	}
+}
+
+/* Wakes the waiters of the scope, then of each parent, while each has completed in turn (TrueAsync's
+ * scope_check_completion_and_notify, scope.c:1575-1592). A wake only enqueues. */
+static void scope_notify_completion(async_scope_t *scope, const bool with_zombies)
+{
+	while (scope != NULL && scope_is_completed(scope, with_zombies)) {
+		async_callbacks_notify((async_awaitable_t *) &scope->event, &scope->event.callbacks, NULL, NULL);
+		scope = scope->parent_scope;
 	}
 }
 
@@ -255,6 +270,10 @@ static void scope_free(async_scope_t *scope, zend_array **released_handlers)
 	scope_handler_keep_back(&scope->exception_handler, released_handlers);
 	scope_handler_keep_back(&scope->child_exception_handler, released_handlers);
 
+	if (scope->filename != NULL) {
+		zend_string_release_ex(scope->filename, false);
+	}
+
 	efree(scope);
 }
 
@@ -280,6 +299,7 @@ void async_scope_remove_coroutine(async_coroutine_t *coroutine)
 	async_scope_t *scope = coroutine->scope;
 
 	scope_detach_coroutine(coroutine);
+	scope_notify_completion(scope, true);
 
 	if (UNEXPECTED(scope_can_be_disposed(scope))) {
 		zend_array *released_handlers = NULL;
@@ -327,6 +347,8 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 	for (uint32_t i = 0; i < scope->coroutines.length; i++) {
 		async_coroutine_cancel(scope->coroutines.data[i], error, false, is_safely);
 	}
+
+	async_callbacks_notify((async_awaitable_t *) &scope->event, &scope->event.callbacks, NULL, error);
 
 	if (transfer_error) {
 		OBJ_RELEASE(error);
@@ -475,6 +497,13 @@ bool async_scope_catch(async_coroutine_t *coroutine, zend_object *error)
 
 		for (uint32_t i = 0; i < scope->coroutines.length; i++) {
 			async_coroutine_cancel(scope->coroutines.data[i], NULL, false, is_safely);
+		}
+
+		/* A waiter in awaitCompletion() takes the error (TrueAsync's resolve callback marks the scope's
+		 * event handled, scope.c:1046-1062). */
+		if (async_callbacks_notify((async_awaitable_t *) &scope->event, &scope->event.callbacks, NULL, error)) {
+			is_handled = true;
+			break;
 		}
 
 		is_from_child_scope = true;
@@ -663,8 +692,11 @@ async_coroutine_t *async_scope_spawn(async_scope_t *scope,
 static async_scope_t *scope_new(async_scope_t *parent_scope)
 {
 	async_scope_t *scope = ecalloc(1, sizeof(async_scope_t));
+	zend_string *filename = zend_get_executed_filename_ex();
 
 	async_event_init(&scope->event, 0);
+	scope->filename = filename != NULL ? zend_string_copy(filename) : NULL;
+	scope->lineno = zend_get_executed_lineno();
 
 	if (parent_scope != NULL) {
 		scope->event.flags |= parent_scope->event.flags & ASYNC_SCOPE_F_DISPOSE_SAFELY;
@@ -672,6 +704,11 @@ static async_scope_t *scope_new(async_scope_t *parent_scope)
 	}
 
 	return scope;
+}
+
+async_scope_t *async_scope_new(async_scope_t *parent_scope)
+{
+	return scope_new(parent_scope);
 }
 
 static zend_object *scope_object_new(zend_class_entry *class_entry, async_scope_t *parent_scope)
@@ -945,6 +982,132 @@ ZEND_METHOD(Async_Scope, setChildScopeExceptionHandler)
 	}
 
 	scope_handler_replace(&scope->child_exception_handler, &fcc);
+}
+
+/* The record's wake: the scope completed, was cancelled or took an error on its route, or its teardown
+ * fires a record left there. The enqueue unlinks the wait (D26). */
+static void
+scope_record_wake(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
+{
+	(void) target;
+	(void) result;
+
+	const async_coroutine_event_callback_t *record = (async_coroutine_event_callback_t *) callback;
+
+	if (exception != NULL) {
+		GC_ADDREF(exception);
+	}
+
+	async_scheduler_enqueue(&record->coroutine->coroutine, exception, true);
+}
+
+static zend_string *scope_record_info(const async_coroutine_event_callback_t *record)
+{
+	const async_scope_t *scope = (const async_scope_t *) record->event;
+
+	if (scope->filename == NULL) {
+		return zend_string_init(ZEND_STRL("await: scope"), 0);
+	}
+
+	return zend_strpprintf(0, "await: scope created at %s:%" PRIu32, ZSTR_VAL(scope->filename), scope->lineno);
+}
+
+/* No collector target yet: the waiter is never reported (S9-scope.md 6, the edges wait for S7.7). */
+static const async_wait_kind_t async_wait_kind_scope = {
+	.info = scope_record_info,
+};
+
+/* TrueAsync's awaitCompletion (scope.c:299-372): until no coroutine of the scope or of its child scopes
+ * runs, zombies aside. */
+ZEND_METHOD(Async_Scope, awaitCompletion)
+{
+	zend_object *cancellation;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_OBJ_OF_CLASS(cancellation, async_ce_awaitable)
+	ZEND_PARSE_PARAMETERS_END();
+
+	async_awaitable_t *token = async_await_awaitable_of(cancellation);
+
+	if (UNEXPECTED(token == NULL)) {
+		RETURN_THROWS();
+	}
+
+	/* Observed before any return, as TrueAsync (scope.c:308-311); a coroutine token's outcome only
+	 * when it is read, as for await(). */
+	if (cancellation->ce == async_ce_future) {
+		((async_event_t *) token)->flags |= ASYNC_EVENT_F_RESULT_USED | ASYNC_EVENT_F_EXC_CAUGHT;
+	}
+
+	async_coroutine_t *waiter = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
+	const async_scope_object_t *scope_object = THIS_SCOPE_OBJECT;
+	async_scope_t *scope = scope_object->scope;
+
+	if (UNEXPECTED(waiter == NULL || scope == NULL || (scope->event.flags & ASYNC_SCOPE_F_CLOSED))) {
+		return;
+	}
+
+	if (UNEXPECTED(scope->event.flags & ASYNC_SCOPE_F_CANCELLED)) {
+		zend_throw_exception(async_ce_cancellation, "The scope has been cancelled", 0);
+		RETURN_THROWS();
+	}
+
+	/* The waiter's own scopes, walked up where TrueAsync walks the scope's subtree down
+	 * (scope.c:866-894). */
+	for (const async_scope_t *waiter_scope = waiter->scope; waiter_scope != NULL;
+		 waiter_scope = waiter_scope->parent_scope) {
+		if (UNEXPECTED(waiter_scope == scope)) {
+			zend_throw_exception(async_ce_async_exception,
+								 "Cannot await completion of scope from a coroutine that belongs to the same scope or "
+								 "its children",
+								 0);
+			RETURN_THROWS();
+		}
+	}
+
+	if (scope_is_completed(scope, false)) {
+		return;
+	}
+
+	/* A finished coroutine is still current while finalize releases what it held (a destructor, a
+	 * scope's exception handler). */
+	if (UNEXPECTED(ZEND_COROUTINE_IS_FINISHED(&waiter->coroutine) || ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) {
+		zend_throw_error(NULL, "awaitCompletion() requires a running coroutine");
+		RETURN_THROWS();
+	}
+
+	/* The wait's own reference, as await()'s. */
+	async_awaitable_addref(token);
+	async_wait_end(waiter);
+
+	/* Another enqueue than the scope's wakes the waiter early: it waits again. */
+	do {
+		if (UNEXPECTED(!async_await_token_check(token))) {
+			break;
+		}
+
+		async_callbacks_reserve(&scope->event.callbacks, 1);
+		async_callbacks_reserve(async_awaitable_callbacks(token), 1);
+
+		if (UNEXPECTED(!async_await_token_arm(token))) {
+			break;
+		}
+
+		async_wait_link(&waiter->waker.records[0],
+						waiter,
+						(async_awaitable_t *) &scope->event,
+						&async_wait_kind_scope,
+						scope_record_wake);
+		async_await_token_link(&waiter->waker.records[1], waiter, token);
+
+		if (UNEXPECTED(!ZEND_ASYNC_SUSPEND())) {
+			break;
+		}
+
+		scope = scope_object->scope;
+	} while (scope != NULL && !scope_is_completed(scope, false));
+
+	async_awaitable_release(token);
 }
 
 ZEND_METHOD(Async_Scope, isFinished)

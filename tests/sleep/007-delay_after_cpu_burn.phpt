@@ -1,7 +1,5 @@
 --TEST--
 Async\delay() after synchronous CPU work still waits (#185, stale libuv loop time)
---XFAIL--
-Not implemented yet: S9.4 of dev/PLAN.md
 --FILE--
 <?php
 

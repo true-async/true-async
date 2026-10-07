@@ -1,7 +1,5 @@
 --TEST--
 Scope: awaitCompletion() waits for coroutines spawned inside scope's coroutines
---XFAIL--
-Not implemented yet: S9.4 of dev/PLAN.md
 --FILE--
 <?php
 

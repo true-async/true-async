@@ -1,7 +1,5 @@
 --TEST--
 Scope: awaitCompletion() - must complete before timeout when coroutines finish quickly
---XFAIL--
-Not implemented yet: S9.4 of dev/PLAN.md
 --FILE--
 <?php
 

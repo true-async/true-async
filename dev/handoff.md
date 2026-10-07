@@ -352,3 +352,13 @@ item 9; the Sage), `exit()` in it ends the request (item 10). Probes `s9.3/q1.ph
 chain). Open for Edmond: handlers that park (TrueAsync's parked handler cannot be cancelled, `q15`,
 `q16`). Next is S9.4; S7.7 brings the collector's non-owning edge, agreed with the S7 thread: the scope
 reporter also reports the handlers' object and closure as owned references.
+
+S9.4 done 2026-10-07: `Scope::awaitCompletion()` with the SCOPE wait kind (`async_wait_kind_scope`,
+records[0] on the scope's event, the token in records[1]); `scope_notify_completion` at a member's
+removal and zombie mark, `async_scope_cancel` and the route notify the waiters with the error. The
+`await_*` iterator coroutine joins a child scope of the caller's (`async_scope_new`), which a finish
+handler cancels when the iterator ends with an exception. Kept as TrueAsync on the Sage's word: with
+safe disposal the cascade's zombie mark wakes a waiter as completed before the error (`scope/082`,
+`083`); a second `cancel()` closes a scope whose members still run (probe `s9.4/w3.php`). The SCOPE
+kind has no `collector_target` until S9.9 (the edges wait for S7.7, which Edmond questioned). Next
+is S9.5; `awaitAfterCancellation()` is woken by the removal's notify (`with_zombies` true).

@@ -1,7 +1,5 @@
 --TEST--
 Scope: awaitCompletion() - timeout handling
---XFAIL--
-Not implemented yet: S9.4 of dev/PLAN.md
 --FILE--
 <?php
 

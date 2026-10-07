@@ -1,5 +1,5 @@
 /* This is a generated file, edit scope.stub.php instead.
- * Stub hash: 3043ac985b347778831bdb74bf9b73d19b75b7a1 */
+ * Stub hash: c1ecfab366dad8b86b0aea49f76a073f134ed447 */
 
 #include "zend_attributes.h"
 
@@ -39,6 +39,10 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_Scope_cancel, 0, 0, 
 	ZEND_ARG_OBJ_INFO_WITH_DEFAULT_VALUE(0, cancellationError, Async\\AsyncCancellation, 1, "null")
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_Scope_awaitCompletion, 0, 1, IS_VOID, 0)
+	ZEND_ARG_OBJ_INFO(0, cancellation, Async\\Awaitable, 0)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_Scope_isFinished, 0, 0, _IS_BOOL, 0)
 ZEND_END_ARG_INFO()
 
@@ -62,6 +66,7 @@ ZEND_METHOD(Async_Scope, asNotSafely);
 ZEND_METHOD(Async_Scope, allowZombies);
 ZEND_METHOD(Async_Scope, spawn);
 ZEND_METHOD(Async_Scope, cancel);
+ZEND_METHOD(Async_Scope, awaitCompletion);
 ZEND_METHOD(Async_Scope, isFinished);
 ZEND_METHOD(Async_Scope, isClosed);
 ZEND_METHOD(Async_Scope, isCancelled);
@@ -88,6 +93,7 @@ static const zend_function_entry class_Async_Scope_methods[] = {
 	ZEND_ME(Async_Scope, allowZombies, arginfo_class_Async_Scope_allowZombies, ZEND_ACC_PUBLIC)
 	ZEND_ME(Async_Scope, spawn, arginfo_class_Async_Scope_spawn, ZEND_ACC_PUBLIC)
 	ZEND_ME(Async_Scope, cancel, arginfo_class_Async_Scope_cancel, ZEND_ACC_PUBLIC)
+	ZEND_ME(Async_Scope, awaitCompletion, arginfo_class_Async_Scope_awaitCompletion, ZEND_ACC_PUBLIC)
 	ZEND_ME(Async_Scope, isFinished, arginfo_class_Async_Scope_isFinished, ZEND_ACC_PUBLIC)
 	ZEND_ME(Async_Scope, isClosed, arginfo_class_Async_Scope_isClosed, ZEND_ACC_PUBLIC)
 	ZEND_ME(Async_Scope, isCancelled, arginfo_class_Async_Scope_isCancelled, ZEND_ACC_PUBLIC)

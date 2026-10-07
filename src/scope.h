@@ -59,6 +59,8 @@ struct _async_scope_s
 	/* setExceptionHandler() and setChildScopeExceptionHandler(); not initialized while unset. */
 	zend_fcall_info_cache exception_handler;
 	zend_fcall_info_cache child_exception_handler;
+	zend_string *filename; /* where the scope was made; NULL outside PHP code */
+	uint32_t lineno;
 };
 
 /* Async\Scope. A stand-in is the object a SpawnStrategy's hooks get for a scope without one; it stays
@@ -89,6 +91,10 @@ void async_scope_request_shutdown(void);
 /* The scope spawn() uses: the current coroutine's, or the global scope when no coroutine runs or the
  * current one has no scope (a Fiber's, the scheduler's). */
 async_scope_t *async_scope_current(void);
+
+/* A scope with no object below `parent_scope`, whose safe disposal it takes; it goes with its last
+ * coroutine. */
+async_scope_t *async_scope_new(async_scope_t *parent_scope);
 
 /* Adds `coroutine`, which belongs to no scope, to `scope`. */
 void async_scope_add_coroutine(async_scope_t *scope, async_coroutine_t *coroutine);

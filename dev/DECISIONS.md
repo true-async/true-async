@@ -1370,3 +1370,23 @@ stack options were shown with the code).
   `73a8469`: `pocs-dbg` 1049 PASS, 9 SKIP, 62 XFAIL and `scope/058` passing alone after its comment
   change, `pocs-asan` 1032 PASS, 31 SKIP, 58 XFAIL, nothing unexpected. Why: the threshold bug grew
   the root buffer to about 720 MB and made `scope/058` quadratic on ASAN.
+- 2026-10-07 `awaitCompletion()` finds a waiter that belongs to the scope by walking up from the
+  waiter's scope (S9.4, `scope/045`, `051`). Why: membership is the parent chain, so the answer is
+  TrueAsync's, in the depth of the waiter's scope instead of the subtree's size, with no depth limit
+  to refuse (S9-scope.md 9 item 12). `awaitCompletion()` in a finished coroutine throws, as
+  `await()` does there (item 13).
+- 2026-10-07 The `await_*` iterator coroutine's scope is cancelled from a finish handler when the
+  coroutine ends with an exception (S9.4, `await/062`). Why: a cancel from inside the running
+  coroutine makes the cancellation its outcome, and the Traversable's exception would carry it as
+  its previous; TrueAsync's waiter sees no previous.
+- 2026-10-07 Kept as TrueAsync (the Sage, S9.4): with safe disposal the cascade's first zombie
+  mark wakes a waiter in `awaitCompletion()` as completed, before the cancellation's or the error's
+  wake, so the waiter returns and the error goes on to the parent (`scope/082`, `083`); a second
+  `cancel()` closes a scope whose coroutines still run, and `awaitCompletion()` then returns at
+  once (probe `s9.4/w3.php`). Rejected: skipping the completion wake of a cancelled scope (the
+  Critic), which never wakes S9.5's `awaitAfterCancellation()` (`scope/024`); closing on the counts
+  only, which cancels the members again inside their cleanup. Edmond may want the safe case to
+  throw as the unsafe one does.
+- 2026-10-07 The collector's edges for scopes move from S9.4 to a step of their own, S9.9. Why:
+  they need S7.7, which Edmond questioned on 2026-10-07; the SCOPE kind has no `collector_target`
+  meanwhile, so its waiter is never reported, never wrongly.

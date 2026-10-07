@@ -60,6 +60,15 @@ final class Scope implements ScopeProvider
      */
     public function cancel(?AsyncCancellation $cancellationError = null): void {}
 
+    /**
+     * Waits until no coroutine of the scope or of its child scopes runs, zombies aside; returns at once
+     * for a closed or gone scope. Throws AsyncCancellation for a cancelled scope, and the error a
+     * coroutine's unhandled exception or cancel() brings while it waits, unless safe disposal has
+     * made the coroutines zombies first; OperationCanceledException when `$cancellation` completes
+     * first. Refused from a coroutine of the scope or of its children.
+     */
+    public function awaitCompletion(Awaitable $cancellation): void {}
+
     /** True once the scope is cancelled, closed or gone, or no coroutine of it or of its children runs. */
     public function isFinished(): bool {}
 

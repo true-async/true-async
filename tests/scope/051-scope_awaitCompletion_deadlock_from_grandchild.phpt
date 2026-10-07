@@ -1,7 +1,5 @@
 --TEST--
 Scope: awaitCompletion() called on grandparent from a grandchild-scope coroutine throws
---XFAIL--
-Not implemented yet: S9.4 of dev/PLAN.md
 --FILE--
 <?php
 

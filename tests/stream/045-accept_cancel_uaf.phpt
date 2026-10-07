@@ -1,7 +1,5 @@
 --TEST--
 Stream: stream_socket_accept() cancellation does not cause use-after-free
---XFAIL--
-Not implemented yet: S9.4 of dev/PLAN.md
 --DESCRIPTION--
 When a coroutine blocked in stream_socket_accept() is cancelled during graceful
 shutdown, the error_string from network_async_accept_incoming must properly

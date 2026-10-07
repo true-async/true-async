@@ -56,6 +56,8 @@ can see goes here; tests, tools and CI are in the git history.
   `Scope::cancel()` cancels the scope's coroutines and child scopes, and with safe disposal
   (`allowZombies()`, or inherited from the global scope) a started coroutine runs on to its end
   instead ([S9](dev/plans/S9-scope.md)).
+- `Scope::awaitCompletion()` waits until no coroutine of the scope or of its child scopes runs
+  ([S9](dev/plans/S9-scope.md)).
 - `Scope::setExceptionHandler()` and `Scope::setChildScopeExceptionHandler()`: an error of a
   coroutine nobody awaits goes to its scope's handler, then up through the parent scopes; a scope
   without a handler that takes it is cancelled with its child scopes and coroutines on the way, so

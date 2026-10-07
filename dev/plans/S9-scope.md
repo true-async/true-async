@@ -140,7 +140,10 @@ every child scope, coroutine and parent the route reaches (`scope.c:1029-1031, 1
 2. otherwise the scope is marked CANCELLED, its child scopes and coroutines are cancelled (each
    with a fresh cancellation, not the error), and the scope's waiters are woken with the error; a
    waiter that takes it marks the scope's event handled and the route ends there
-   (`scope.c:1004-1062`). A child scope the cancellation leaves empty is closed (section 5), so
+   (`scope.c:1004-1062`). With safe disposal the cascade's first zombie mark wakes the waiters as
+   completed (no active coroutine is left), before the error's wake: the waiter returns, and the
+   error goes on to the parent, on the reference as on ours (probes `s9.4/w1.php`, `w2.php`;
+   `scope/082`, `083`). A child scope the cancellation leaves empty is closed (section 5), so
    after an unhandled error of the global scope its empty child scopes refuse a spawn while the
    global scope still spawns, on the reference as on ours (probe `s9.3/q14.php`, `scope/074`);
 3. the route then continues in the parent scope, up to the global one (`scope.c:1064-1069`).
@@ -206,13 +209,12 @@ error is the question of section 12.
 
 ## 6. Waiting on a scope
 
-`awaitCompletion(Awaitable $cancellation)` waits until the scope and its child scopes have no
-active member; `awaitAfterCancellation(?callable $errorHandler, ?Awaitable $cancellation)` waits for
-zombies too, only on a cancelled scope, and passes each error to the handler as
-`fn(Throwable $e, Scope $scope)` (`scope.c:301-483, 810-864`). Both refuse a waiter that is a member
-of the scope or of a child scope (`scope.c:866-894`, the depth limit 64 kept), mark the token used,
-return at once on a closed or finished scope, and throw "The scope has been cancelled" on a
-cancelled one.
+`awaitCompletion(Awaitable $cancellation)` waits until the scope and its child scopes have no active
+member; `awaitAfterCancellation(?callable $errorHandler, ?Awaitable $cancellation)` waits for
+zombies too, only on a cancelled scope, and passes each error to the handler as `fn(Throwable $e,
+Scope $scope)` (`scope.c:301-483, 810-864`). Both refuse a waiter that is a member of the scope or
+of a child scope (`scope.c:866-894`; ours walks up, section 9, item 12), mark the token used, return
+at once on a closed or finished scope, and throw "The scope has been cancelled" on a cancelled one.
 
 The scope is an event of S4's wait-record layer: a new kind SCOPE (`async_wait_kind_t`) with its
 `info` (`await: scope created at <file>:<line>`, after TrueAsync's `scope_info`, `scope.c:1166-1182`),
@@ -345,6 +347,13 @@ Traversable's exception; `await/062` loses its `--XFAIL--` in that step.
     choice of handler (S9.3, `scope/063`). TrueAsync calls the own handler with the child handler's
     exception pending, which `zend_call_function` refuses without a call: the same outcome (probe
     `s9.3/q8.php`).
+12. **`awaitCompletion()` finds a waiter of the scope by walking up from the waiter's scope**
+    (S9.4, `scope/045`, `051`), where TrueAsync walks the awaited scope's subtree down, refusing past
+    a depth of 64 (`scope.c:866-894`). Same answer for every tree, in the depth of the waiter's scope
+    instead of the subtree's size, and no depth limit is left to refuse a deep tree.
+13. **`awaitCompletion()` in a finished coroutine throws** "awaitCompletion() requires a running
+    coroutine" (S9.4, `scope/079`), as `await()` does there; TrueAsync parks it, as item 9 says
+    for any wait in a handler.
 
 The probes of S9.3 are `/mnt/project-files/s9/probes/s9.3/q1.php`-`q16.php`; on the reference and
 on ours they print the same but for items 9 and 10 and for S3's report of an unobserved exception of
@@ -386,9 +395,11 @@ that directory.
 - S9.3: `p5.php`, `p6.php` and `p7.php` as `scope/059`-`061` (`p4.php` reads `runtime_stats()`,
   which no list has); `scope/062`-`075` for the handlers' calls, release and departures (section 9,
   items 9-11) and the Critic's findings;
-- S9.4: the collector's edges of section 6 (a member of a scope whose object only a parked
-  coroutine holds is found; a member of a live scope is not); a bailout while parked in
-  `awaitCompletion()`;
+- S9.4: a bailout while parked in `awaitCompletion()`; `scope/076`-`083` for the wake by
+  `cancel()` and by the route, the deadlock report, the refusal in a handler, the `await_*`
+  iterator's scope, and safe disposal's early wake (section 4, step 2);
+- S9.9: the collector's edges of section 6 (a member of a scope whose object only a parked
+  coroutine holds is found; a member of a live scope is not);
 - S9.5: `p3.php` (a zombie keeps the request running).
 
 **Core dependencies**: none. `is_safely` and `get_coroutine_count` are in the pinned core
@@ -412,7 +423,10 @@ same code before S9.2, and against the reference, at 1, 1 000 and 100 000 corout
 - S9.3 The error route of section 4 (CATCH mode) with both handlers, the notify's return of item 6
   of section 9 and step 2's cascade of fresh cancellations; no waiters yet.
 - S9.4 Waiting (section 6), the route's wake of the scope's waiters with the error (section 4,
-  step 2), the collector's edges and the `await_*` child scope (section 8).
+  step 2) and the `await_*` child scope (section 8).
+- S9.9 The collector's edges of section 6, split from S9.4: they wait for S7.7, which Edmond
+  questioned on 2026-10-07; until then the SCOPE kind has no `collector_target`, so its waiter is
+  never reported.
 - S9.5 Disposal (section 5): `dispose*`, `awaitAfterCancellation`, the object's destruction.
 - S9.6 The iterator core and both `finally` methods (section 7), the bailout trace first.
 - S9.7 Stage review: the Critic over S9.2-S9.6, coverage of `src/scope.c` and the iterator, Mull on
