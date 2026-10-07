@@ -1173,3 +1173,44 @@ stack options were shown with the code).
   the waiter. Why: an item that holds that coroutine, directly, as a result or as a Future's value,
   made a cycle through an edge the GC does not see; refusing the current coroutine as an item caught
   only the direct case and broke a program that worked (`await/140`; the Critic on S5.6).
+- 2026-10-07 S9 layer 1 (Scope) follows TrueAsync's `scope.c` (`dev/plans/S9-scope.md`); Scope lives
+  in the extension whole, since the scheduler RFC defines none. Why: the RFC leaves the user-facing
+  API to the scheduler (`scheduler_rfc.md:42-61`); its only trace is the cancel slot's `is_safely`.
+- 2026-10-07 An unhandled error of a coroutine with no waiter parked at its finish (held and awaited
+  later counts as none) climbs its scopes; a scope with no parent (`new Scope()`) keeps it. Reaching
+  the global scope, it cancels with the flag of the scope where the error started: from a safe
+  origin the started coroutines become zombies and the unstarted are cancelled, from an
+  `asNotSafely()` descendant of the global scope every coroutine of the request is cancelled. Why: Edmond, "сделай как в TrueAsync", over cancelling with
+  the global scope's own flag (no reference test tells the two apart) and over leaving the global
+  scope out (18 reference tests fail, `scope/017`, `018` among them) (S9-scope.md 12).
+- 2026-10-07 The route of an unhandled error is skipped when the coroutine's notify woke a waiter
+  record, not by a mark the waiter's wake sets. Why: TrueAsync's resolve callback marks the coroutine
+  handled, which in ours means observed and would drop an exception the woken waiter never read
+  (the Sage, S9-scope.md 9 item 6).
+- 2026-10-07 A scope reports the coroutines it may cancel to the collector through non-owning wake
+  edges, an S7 reporter to add; the membership vector keeps bare pointers. Why: counted references
+  make every member of the global scope live, and an owned report of a bare pointer makes the run
+  report nothing (the Critic and the Sage, S9-scope.md 6).
+- 2026-10-07 The coroutines of the core's `gc_new_coroutine` slot join one private root scope of the
+  request, and `spawn()` from a coroutine with no scope (a Fiber's) uses the global scope. Why: the
+  fork keeps the GC's coroutines out of user scopes (`zend_gc.c:2243`), and the RFC core passes one
+  slot for the GC and the shutdown destructors (the Sage, S9-scope.md 3).
+- 2026-10-07 `Scope::inherit()` at the top level always makes a child of the global scope, so an
+  unawaited error in `Scope::inherit()->asNotSafely()` made before any spawn cancels the whole
+  request; TrueAsync's scope there has no parent and keeps it. Why: our global scope exists from the
+  script's first opcode, the fork's only after the scheduler's launch (S9-scope.md 3, 9 item 7).
+- 2026-10-07 Waits on a scope are S4 wait records, and the scope struct holds no function pointers.
+  Why: TrueAsync's parks without `zend_try` leave a waiter in the vector after a bailout (reference
+  bug 14), and S4 made every wait a record (S9-scope.md 9 items 2, 4).
+- 2026-10-07 A zombie keeps the request running, following TrueAsync's code over its documentation
+  (`zombie-coroutines.md` says the opposite). Why: probed (`p3.php`); the layer ports the code.
+- 2026-10-07 A `SpawnStrategy` whose scope has no object (the global scope) gets a stand-in `Scope`
+  in both hooks, as the route's handler call builds one. Why: TrueAsync passes `ZVAL_OBJ(NULL)`
+  (`async_API.c:130, 189`) and crashes (probe `p9.php`, S9-scope.md 9 item 8).
+- 2026-10-07 Kept as TrueAsync: the array `SpawnStrategy::beforeCoroutineEnqueue()` returns is
+  released unread. Why: no reference test reads it (`spawnWith/007`-`009` return `[]`).
+- 2026-10-07 A member leaves its scope in O(1) through its index in the scope's vector. Why: the
+  reference's linear search made its 100 000-coroutine run 88 % scope bookkeeping (S3.md 12).
+- 2026-10-07 `edge_cases/010-deadlock-after-cancel-with-zombie.phpt` sets `true_async.debug_deadlock`
+  instead of `async.debug_deadlock`, as `edge_cases/001`-`003` did on 2026-10-02. Why: INI names take
+  the module prefix (2026-10-01).

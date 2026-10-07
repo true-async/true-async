@@ -1,0 +1,35 @@
+--TEST--
+Coroutine: finally() - basic usage with callback execution
+--XFAIL--
+Not implemented yet: S9.6 of dev/PLAN.md
+--FILE--
+<?php
+
+use function Async\spawn;
+use function Async\await;
+use function Async\suspend;
+
+$called = false;
+
+$coroutine = spawn(function() {
+    return "test result";
+});
+
+$coroutine->finally(function() use (&$called) {
+    $called = true;
+    echo "Finally callback executed\n";
+});
+
+await($coroutine);
+
+// Give finally handler time to execute
+suspend();
+
+echo "Result: " . $coroutine->getResult() . "\n";
+echo "Finally called: " . ($called ? "yes" : "no") . "\n";
+
+?>
+--EXPECT--
+Finally callback executed
+Result: test result
+Finally called: yes

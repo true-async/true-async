@@ -668,9 +668,64 @@ Done when: B1, B2, B3, M1, M4, M10, M12, M13 each have an outcome (reproduced, n
 not expressible with why); `RFC-CHANGES.md` complete; the review updated.
 Tier: T1.
 
-## S9 — Higher layers, one at a time  [ ]
+## S9 — Higher layers, one at a time  [in progress]
 
 Scope, context, channels, task groups, pools, iterators: each its own plan, agreed with Edmond.
+Layer 1, Scope: `Async\Scope`, `ScopeProvider`, `SpawnStrategy`, `spawn_with()`, the global scope,
+zombies, the error route through scopes, both `finally` methods on TrueAsync's iterator core.
+Done when: S9.txt's layer 1 block and `await/062` pass on debug and ASAN; the S3-S7 lists pass as before.
+Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
+Tests: interleaved
+Base: be20b82
+Notes: dev/plans/S9-scope.md
+Active: S9.2
+
+- [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
+      done: the note and the list pushed; every Critic finding fixed or answered in the note;
+        Edmond's answer to section 12 recorded
+      tier: T2 · role: Critic → Sage
+      handoff: done 2026-10-07: 91 reference tests with `--XFAIL--` naming S9.2-S9.6 (35, 5, 13, 14,
+        24); 21 lines leave `S3.excluded`, 2 leave `S6.excluded`, `scope/052` waits for Context in
+        `S9.excluded`. On a debug build of the reference fork with `ext/async` at `REFERENCE` the
+        candidate tests pass (161 with their groups). The Critic's 4 high findings and the Sage's 5
+        rulings are in the note (sections 4, 6, 9, 11, 12); the Critic's 9 findings on the commit
+        moved `cancel()` whole into S9.2, the scope waiters' error wake into S9.4, re-pinned 4
+        tests and gave each step its own tests (note 10). Edmond: the global scope cancels with
+        the error's origin flag, as TrueAsync (section 12, option 1).
+- [ ] S9.2 The scope and the global scope, spawn into a scope, `Scope` without waiting, `cancel()`
+      with its cascade and the close of a scope it leaves empty (note section 5), `spawn_with` with
+      `ScopeProvider` and `SpawnStrategy`, the core's and our own coroutines placed (note
+      section 3), zombies in the cancel slot and `get_coroutine_count`.
+      done: S9.txt's S9.2 tests and the note's S9.2 own tests (section 10) pass on debug and ASAN;
+        the S3-S7 lists pass as before
+      tier: T2 · role: Critic
+- [ ] S9.3 The error route with both exception handlers and its cascade of fresh cancellations
+      (note section 4).
+      done: S9.txt's S9.3 tests and `p5`-`p7` of the note as own tests pass on debug and ASAN;
+        the S3-S7 lists pass as before
+      tier: T2 · role: Critic
+- [ ] S9.4 `awaitCompletion()`, the SCOPE wait kind, the route's wake of the scope's waiters with
+      the error (note section 4, step 2), the collector's edges (an S7 reporter asked through the
+      coordinator) and the `await_*` child scope (note sections 6, 8).
+      done: S9.txt's S9.4 tests, `await/062` and the note's S9.4 own tests pass on debug and ASAN;
+        the S3-S7 lists pass as before
+      tier: T2 · role: Critic
+- [ ] S9.5 `dispose()`, `disposeSafely()`, `disposeAfterTimeout()`, `awaitAfterCancellation()`, the
+      object's destruction (note section 5).
+      done: S9.txt's S9.5 tests and `p3` of the note as an own test pass on debug and ASAN; the
+        S3-S7 lists pass as before
+      tier: T2 · role: Critic
+- [ ] S9.6 TrueAsync's iterator core, `Scope::finally()` and `Coroutine::finally()` (note section 7),
+      the bailout trace of `bailout/013`-`015` first.
+      done: S9.txt's S9.6 tests pass on debug and ASAN; the S3-S7 lists pass as before
+      tier: T2 · role: Critic
+- [ ] S9.7 Layer review: Critic after S9.2-S9.6, coverage of `src/scope.c` and the iterator, Mull on
+      the layer's diff, the fuzz oracle over 100 seeds, the measurements of note section 10.
+      done: the layer's Done when holds on the day; survivors killed or explained
+      tier: T2 · role: Critic
+- [ ] S9.8 Security pass by `dev/SECURITY.md`.
+      done: a journal entry per checklist item; findings fixed with a test or recorded
+      tier: T2 · role: —
 
 ## S10 — Beyond the RFCs  [ ]
 

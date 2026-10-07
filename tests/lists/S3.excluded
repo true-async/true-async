@@ -2,39 +2,12 @@
 
 # coroutine
 coroutine/012-coroutine_getContext.phpt  component:S9 (Context)
-coroutine/014-coroutine_finally_basic.phpt  component:S9 (Coroutine::finally(), D21)
-coroutine/015-coroutine_finally_finished.phpt  component:S9 (Coroutine::finally(), D21)
-coroutine/016-coroutine_finally_multiple.phpt  component:S9 (Coroutine::finally(), D21)
-coroutine/017-coroutine_finally_single_exception.phpt  component:S9 (Scope and Coroutine::finally())
-coroutine/018-coroutine_finally_multiple_exceptions.phpt  component:S9 (Scope and Coroutine::finally())
-coroutine/020-coroutine_gc_with_finally.phpt  component:S9 (Coroutine::finally(), D21)
 coroutine/021-coroutine_gc_with_context.phpt  component:S9 (Context)
-coroutine/024-coroutine_gc_multiple_zvals.phpt  component:S9 (Coroutine::finally(), D21)
-coroutine/025-coroutine_gc_waker_scope.phpt  component:S9 (Scope)
-coroutine/032-coroutine_composite_exception.phpt  component:S9 (Scope and Coroutine::finally())
-coroutine/033-coroutine_finally_invalid_callback.phpt  component:S9 (Coroutine::finally(), D21)
-coroutine/036-coroutine_gc_circular_finally.phpt  component:S9 (Coroutine::finally(), D21)
-
-# spawn
-spawn/016-spawn_invalid_scope_provider.phpt  component:S9 (spawn_with, ScopeProvider)
-spawn/017-spawn_closed_scope_error.phpt  component:S9 (Scope)
-spawn/018-spawn_scope_provider_exception.phpt  component:S9 (spawn_with, ScopeProvider)
-spawn/019-spawn_scope_provider_null.phpt  component:S9 (spawn_with, ScopeProvider)
-
-# await
-
-# bailout
-bailout/013-memory-exhaustion-with-finally.phpt  component:S9 (Scope::finally())
-bailout/014-stack-overflow-with-finally.phpt  component:S9 (Scope::finally())
-bailout/015-memory-exhaustion-finally-exception.phpt  component:S9 (Scope::finally())
 
 # gc
 gc/018-gc_threshold_stable_without_coroutine.phpt  component:S6 (stream read switches the reference GC to async; see report)
 
 # edge_cases
-edge_cases/004-scope_provider_exceptions.phpt  component:S9 (spawn_with, ScopeProvider)
-edge_cases/010-deadlock-after-cancel-with-zombie.phpt  component:S9 (Scope::allowZombies)
-edge_cases/012-awaitCompletion_on_cancelled_scope.phpt  component:S9 (Scope::awaitCompletion; timeout() is S5)
 edge_cases/015-deadlock-caught-still-terminates.phpt  component:S9 (Channel)
 
 # include

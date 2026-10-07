@@ -32,6 +32,8 @@ Where to look in this repository and around it. Pointers only.
   the op, results under a cancellation), signals, Windows pipes, the S6 test list, core requests.
 - `dev/plans/S7.md`: S7 notes: the collector of coroutines that can never wake (trial deletion over
   the parked coroutines' references, Go's rule for parked stacks), when it runs, its policy, its API.
+- `dev/plans/S9-scope.md`: S9 layer 1 notes: `Async\Scope` and the global scope, the route of an
+  unhandled error, zombies, waiting on a scope, both `finally` methods on TrueAsync's iterator core.
 - `dev/plans/S3.7-spec.md`: the PHP-visible behaviour of S3.7 (`await()`, the GC's wait,
   `getAwaitingInfo()`), the specification the S3.7 tests were written from.
 - `dev/plans/S1-lsan-fork.md`: S1's LeakSanitizer report after `fork()` with ior's thread backend.

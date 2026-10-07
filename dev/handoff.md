@@ -293,3 +293,16 @@ waiting for a Windows agent (S1.5).
 - `stream/030` (UDP receive timeout) is `RFC-CHANGES.md` 4; the pipe timeout is 3; `F_FILES` off.
 - MySQL: `tools/test.py` starts a private `mysqld` when `MYSQL_TEST_HOST` is unset; a container
   needs `apt-get install mysql-server-core-8.0` (WORKFLOW "Test fixtures").
+
+## S9
+
+S9.1 done 2026-10-07: `dev/plans/S9-scope.md` (layer 1, Scope) and `tests/lists/S9.txt` (91 tests with
+`--XFAIL--` naming S9.2-S9.6; `scope/052` waits for Context in `S9.excluded`). Next is S9.2. Edmond
+chose TrueAsync's behaviour for an unhandled error that reaches the global scope (note section 12).
+The note cites the reference by `file:line` and the probes `p1.php`-`p9.php`
+(`/mnt/project-files/s9/probes/`). A debug build of the reference to compare against: a worktree of
+true-async/php-src branch `true-async` (`863f6dd9`) with `ext/async` copied from the `REFERENCE`
+checkout, `./configure --disable-all --enable-debug --enable-async --enable-cli` (needs `libuv1-dev`,
+`re2c`), about 3 minutes on 4 cores. S9.4 needs a non-owning edge reporter from S7 (note section 6),
+asked through the coordinator. A reference bug for Edmond: a `SpawnStrategy` resolving to the global
+scope crashes TrueAsync (note section 9 item 8, `p9.php`); ours passes a stand-in `Scope`.
