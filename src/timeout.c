@@ -42,18 +42,14 @@ static zend_always_inline timeout_object_t *timeout_object_from_object(zend_obje
 /// The event
 ///////////////////////////////////////////////////////////////////
 
-/* The core saturates a deadline past the clock's range to an infinite one, which the Ring refuses for
- * a Timer: the latest finite one instead, as async_reactor_delay() takes it. */
+/* Until timeout() sets one: the latest finite deadline, as async_reactor_deadline_from_ms() saturates;
+ * the Ring refuses an infinite one for a Timer. */
 #define TIMEOUT_LATEST_DEADLINE (ZEND_HRTIME_T_MAX - 1)
 
 static void timeout_set_deadline(async_timeout_event_t *timeout, const zend_long ms)
 {
 	timeout->ms = ms;
-	timeout->deadline = php_io_deadline_from_ms(ms);
-
-	if (UNEXPECTED(php_deadline_is_infinite(&timeout->deadline))) {
-		timeout->deadline.hrtime = TIMEOUT_LATEST_DEADLINE;
-	}
+	timeout->deadline = async_reactor_deadline_from_ms(ms);
 }
 
 static async_timeout_event_t *timeout_event_new(void)

@@ -128,40 +128,30 @@ Written 2026-10-06. S3 closed: S3.24 re-ran its Done when on the final core; S4,
 
 ## S4
 
-S4.6 done 2026-10-07, the stage review: the reactor keeps Timer ops in a heap of its own and
-passes the queue's wait the nearest deadline (`dev/plans/S4.md` "As built (S4.6): the timer heap"):
-the Ring woke 10 000 delays 46-64 ms late from a kernel timeout per op, not the backlog walk S4.4
-blamed; now 0.02-0.05 ms (`dev/BENCHMARKS.md`). The provider's `sleep()` uses the heap too
-(`queue_push()` under both submits). The Critic's stage findings are fixed ("As built (S4.6): the
-stage review"): the fork rebuild reports no error to its caller (`async_reactor_check_fork()` is
-void), raises the child's wake pair last, and the wait's `EPERM` case is gone. Fuzz, Mull and
-coverage results and the recorded limits are in that section; `reactor/037`-`041` are new, seven
-earlier tests changed (`changed:2026-10-06`, DECISIONS). Next is S4.7, the security pass. S4.1-S4.5:
-wait records, the queue and idle wait, `delay()` and D16, triggers (S4.md 2-3).
-Open for Edmond: a pcntl handler that waits (`PLAN.md` "Open
-questions"). `gc/020`, `023` stay XFAIL for the core's awaited collection (S8). A test that needs
-spawned coroutines parked before main goes on yields with `suspend()`: a short `delay()` may wake in
-main's own tick (U2). Full local runs need `mysql-server-core-8.0`; the B1 count needs a release core
-and `bench/alloc_count.so`.
+Stage closed 2026-10-07 with S4.7, the security pass (`dev/SECURITY.md`, the S4.7 entries; DECISIONS
+of the day): D16's graceful exit reaching a coroutine woken in its own tick is thrown by its
+`suspend()` (`reactor/043`), `delay()` and `timeout()` count their deadline in nanoseconds
+(`async_reactor_deadline_from_ms()`, `reactor/042`), the poll's loop ends after the wakeup's
+completion, and the wake pair is close-on-exec with `pipe2()` and not inheritable on Windows. As
+built: `dev/plans/S4.md` 2-3 and its "As built (S4.6)" parts, with the recorded limits. Open for
+Edmond: a pcntl handler that waits (`PLAN.md` "Open questions"); php-src's `socketpair_win32()`
+binding `INADDR_ANY` (SECURITY, the php-src entry). `gc/020`, `023` stay XFAIL for the core's
+awaited collection (S8). A test that needs spawned coroutines parked before main goes on yields with
+`suspend()`: a short `delay()` may wake in main's own tick (U2). Full local runs need
+`mysql-server-core-8.0`; the B1 count needs a release core and `bench/alloc_count.so`.
 
 ## S5
 
-S5.6 done 2026-10-07: the security pass (`dev/SECURITY.md`, the S5.6 entries; DECISIONS of the day).
-Every S5 step is done; the stage closes after S4 (PLAN, Parallel tracks), so nothing is left for
-this track but the stage's close. Mull runs one S5 file at a time: `tools/mull.py` over the stage
-diff of all `src/` does not fit, so the S5.5 run narrowed its lane to one file and the S5 list (the
-script is not kept; `tools/mull.py`'s `lane_for`, `run_mull` and `changed_lines` do the work).
-Benchmarks need release builds of both sides (BENCHMARKS, S3.11's configure line; the reference
-built inside the fork core's tree). Known, not fixed (low): `await_*` refused for its token, or a
-Traversable whose `key()` throws, warns "never used" for the Futures it was given; a Timer op that
-completes with an error fires the `Timeout` as a deadline; a bailout while parked in
-`async_future_await()` or an `await_*` wait leaks the wait's references until the request ends. A
-change S5 needs in the layer goes through the coordinator. In a fresh container: build both cores
-with `tools/ci/build-core.sh` (`RUNNER_TEMP=/root` for ASAN, then
-`TRUE_ASYNC_CORE_SRC=/root/core-asan/php-src`), `git fetch --unshallow` before `check-lists.py`, the
-reference clone at `REFERENCE` for `--reference`. `gen_stub.php` cannot download PHP-Parser through
-the proxy: `git clone --depth 1 --branch v5.6.1 https://github.com/nikic/PHP-Parser
-build/PHP-Parser-5.6.1` in the core checkout first. Run `tools/format.sh` before a commit.
+Stage closed 2026-10-07 after S4 (PLAN, Parallel tracks); its last step was S5.6, the security
+pass. Known, not fixed (low): `await_*` refused for its token, or a Traversable whose `key()`
+throws, warns "never used" for the Futures it was given; a Timer op that completes with an error
+fires the `Timeout` as a deadline; a bailout while parked in `async_future_await()` or an `await_*`
+wait leaks the wait's references until the request ends. Mull runs one S5 file at a time
+(`tools/mull.py`'s `lane_for`, `run_mull` and `changed_lines`). In a fresh container: build both
+cores with `tools/ci/build-core.sh` (`TRUE_ASYNC_CORE_SRC=/tmp/core-<tree>/php-src` then), `git
+fetch --unshallow` and a clone of true-async/php-async at `REFERENCE` for `check-lists.py
+--reference`; `gen_stub.php` needs `git clone --depth 1 --branch v5.6.1
+https://github.com/nikic/PHP-Parser build/PHP-Parser-5.6.1` in the core checkout first.
 
 ## Later steps
 

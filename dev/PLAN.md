@@ -266,7 +266,7 @@ needed (`dev/plans/S2.md`, section 5), and S3 needs none (scheduler RFC changes 
         SKIPs `internal/051` (Linux only) untagged, now tagged; the cancelled ASAN and lists jobs
         say "The job was not acquired by Runner of type hosted even after multiple attempts".
 
-## S4 — Reactor on Poll, Poll additions and Ring  [ ]
+## S4 — Reactor on Poll, Poll additions and Ring  [x]
 
 Goal: the scheduler's idle wait and timers on one per-thread `php_io_queue` (the Ring when built
 with ior, the Poll queue otherwise), coded only against `php_io_queue_ops`; the S6 provider
@@ -275,7 +275,6 @@ Done when: S3 + S4 lists pass; `delay(1000)` costs under 50 ms of user CPU; a te
 function wakes the loop from another pthread (through wake descriptors of the reactor's own until
 the core exports the pair behind `NotifyHandle`, `RFC-CHANGES.md` 1).
 Tier: T2. Roles: Critic on S4.1, Critic after S4.2 and after S4.3.
-Active: S4.7
 
 - [x] S4.1 Design note `dev/plans/S4.md`: completion dispatch for scheduler-owned ops and provider
       ops; idle wait in `queue->wait()` with its `EDEADLK` and `EINTR` answers; deadlock decided
@@ -367,16 +366,25 @@ Active: S4.7
         XFAIL; `pocs-asan` 932 PASS, 26 SKIP, 11 XFAIL; `delay(1000)` 18-22 ms of user CPU with the
         process's start (an empty script 11-19 ms); `reactor/026`, `027` wake the loop from another
         pthread; `pocs-win` left to CI.
-- [ ] S4.7 Security pass by `dev/SECURITY.md`.
+- [x] S4.7 Security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item; findings fixed with a test or recorded
+      handoff: done 2026-10-07 (`dev/SECURITY.md`, the S4.7 entries): fixed with a test each, D16's
+        graceful exit became the outcome of a coroutine woken in its own tick, and `serialize()` of
+        that object crashed the process (`reactor/043`); `delay()` past 2^31 s wrapped on Windows,
+        whose `timeval` seconds are 32-bit (`reactor/042`). The wake pair is made close-on-exec
+        atomically with `pipe2()` where Linux's eventfd is absent, and not inheritable on Windows.
+        Recorded: a thread that fires without pause does not hold the poll (measured), a `finally`
+        that respawns keeps D16 refiring, the trigger's contract for a future remote holder, the
+        timer heap's 2^31 bound; php-src's `socketpair_win32()` binding `INADDR_ANY` went to Edmond.
+        On core `8f89755d2b1` after S7.6 and S9.1 `pocs-dbg` 972 PASS, 9 SKIP, 103 XFAIL, `pocs-asan`
+        955 PASS, 30 SKIP, 99 XFAIL, 6 left out by `core:` tags, 0 unexpected. Closes S4 and S5.
 
-## S5 — Futures, timeouts and combinators  [ ]
+## S5 — Futures, timeouts and combinators  [x]
 
 Goal: the API the ported tests use everywhere.
 Done when: S3–S5 lists pass, including the `await` group's combinator tests.
 Tier: T2. Roles: Critic on S5.1, Critic after S5.2.
 Notes: dev/plans/S5.md
-Active: none; every step is done, and the stage closes after S4 (Parallel tracks)
 
 - [x] S5.1 Design note `dev/plans/S5.md`: `Future` and `FutureState` as TrueAsync has them within one
       thread (the remote and cross-thread futures wait for S10's thread pool), `map`/`catch`/

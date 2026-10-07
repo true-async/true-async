@@ -274,13 +274,24 @@ static zend_result wake_pair_open(async_wake_pair_t *pair)
 	}
 
 	u_long nonblocking = 1;
-	ioctlsocket(sockets[0], FIONBIO, &nonblocking);
-	ioctlsocket(sockets[1], FIONBIO, &nonblocking);
+
+	for (int i = 0; i < 2; i++) {
+		ioctlsocket(sockets[i], FIONBIO, &nonblocking);
+		/* proc_open() creates its child with handle inheritance on. */
+		SetHandleInformation((HANDLE) sockets[i], HANDLE_FLAG_INHERIT, 0);
+	}
+
 	pair->read_fd = sockets[0];
 	pair->write_fd = sockets[1];
 #else
 	int fds[2];
 
+#ifdef HAVE_PIPE2
+	/* Atomic: between pipe() and fcntl() another thread's proc_open() would inherit the pair. */
+	if (UNEXPECTED(pipe2(fds, O_NONBLOCK | O_CLOEXEC) != 0)) {
+		return FAILURE;
+	}
+#else
 	if (UNEXPECTED(pipe(fds) != 0)) {
 		return FAILURE;
 	}
@@ -289,6 +300,7 @@ static zend_result wake_pair_open(async_wake_pair_t *pair)
 		fcntl(fds[i], F_SETFL, fcntl(fds[i], F_GETFL) | O_NONBLOCK);
 		fcntl(fds[i], F_SETFD, FD_CLOEXEC);
 	}
+#endif
 
 	pair->read_fd = fds[0];
 	pair->write_fd = fds[1];
@@ -936,14 +948,15 @@ static const async_wait_kind_t timer_kind = {
 	.unlink = async_io_record_unlink,
 };
 
-bool async_reactor_delay(async_coroutine_t *waiter, const zend_long ms)
+php_deadline async_reactor_deadline_from_ms(const zend_long ms)
 {
 	ZEND_ASSERT(ms > 0);
 
-	/* A bailout that a shutdown function's zend_try caught can leave main's wait linked. */
-	async_wait_end(waiter);
-
-	php_deadline deadline = php_io_deadline_from_ms(ms);
+	/* Not php_io_deadline_from_ms(): its timeval's tv_sec is 32-bit on Windows and wraps past 2^31 s. */
+	const zend_hrtime_t ns_in_ms = ZEND_NANO_IN_SEC / 1000;
+	const zend_hrtime_t ns =
+			(zend_ulong) ms < ZEND_HRTIME_T_MAX / ns_in_ms ? (zend_hrtime_t) ms * ns_in_ms : ZEND_HRTIME_T_MAX;
+	php_deadline deadline = php_io_deadline_from_ns(ns);
 
 	/* The core saturates a deadline past the clock's range to an infinite one, which the queue's wait
 	 * would take for a deadlock: the latest finite one instead, as TrueAsync saturates the timer
@@ -951,6 +964,18 @@ bool async_reactor_delay(async_coroutine_t *waiter, const zend_long ms)
 	if (UNEXPECTED(php_deadline_is_infinite(&deadline))) {
 		deadline.hrtime = ZEND_HRTIME_T_MAX - 1;
 	}
+
+	return deadline;
+}
+
+bool async_reactor_delay(async_coroutine_t *waiter, const zend_long ms)
+{
+	ZEND_ASSERT(ms > 0);
+
+	/* A bailout that a shutdown function's zend_try caught can leave main's wait linked. */
+	async_wait_end(waiter);
+
+	const php_deadline deadline = async_reactor_deadline_from_ms(ms);
 
 	async_io_event_t *event = async_io_event_new();
 	php_io_op_timer(&event->op, deadline);
@@ -1228,9 +1253,13 @@ static bool reactor_poll(async_reactor_t *reactor, php_deadline deadline)
 			}
 		}
 
+		/* The wakeup arms itself again in its completion, so a thread that fires without pause could keep
+		 * the loop going and the timers waiting: it ends the loop, as libuv's poll takes one batch. */
+		const bool is_wakeup = completion.data == reactor->wakeup;
+
 		reactor_dispatch(&completion);
 
-		if (UNEXPECTED(EG(exception) != NULL)) {
+		if (UNEXPECTED(EG(exception) != NULL) || is_wakeup) {
 			return true;
 		}
 

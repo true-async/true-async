@@ -169,6 +169,10 @@ php_io_queue *async_reactor_live_queue(void);
  * that reads an IO event's place on the lists (a Timeout's timer). */
 void async_reactor_check_fork(void);
 
+/* A Timer op's deadline `ms` > 0 milliseconds from now, the latest finite one past the clock's range:
+ * delay()'s and timeout()'s. */
+php_deadline async_reactor_deadline_from_ms(zend_long ms);
+
 /* Parks `waiter`, the running coroutine, on a Timer op for `ms` > 0 milliseconds: delay() (S4.md
  * 3.5). False with the exception that ended the wait (a cancellation). */
 bool async_reactor_delay(async_coroutine_t *waiter, zend_long ms);

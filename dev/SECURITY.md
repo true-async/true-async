@@ -179,6 +179,46 @@ finding left open gets an owner step in `PLAN.md`.
   end, so a run after an extension put `execute_ex` back mid-request was not tried; the extensions
   that replace it do so at module startup.
 
+- 2026-10-07 Security pass of stage S4 (S4.7) over the S4 commits `81dfeeb`, `b46918a`, `d2ff382`,
+  `e04f515`, `bbe516b` (`src/reactor.c`, the wait-record layer in `true_async_API.c`, the idle wait,
+  deadlock and D16 in `scheduler.c`), by checklist item, with scripts run on the debug and ASAN
+  builds. Lifetimes: one defect fixed: a coroutine woken in its own suspend's tick (U2) while D16
+  fired in the same poll took D16's graceful exit as its outcome and ran on, so `getException()`
+  and `await()` handed out the core's internal exit object, and `serialize()` of it crashed the
+  process in a default build; the exit is now thrown by that `suspend()` (`reactor/043`). Records
+  live in the waker, every bailout exit aborts and unlinks them; 20 000 delays with random cancels,
+  then `exit()`, a fatal error or `pcntl_fork()`, ran clean on ASAN. Refcounts on exception and
+  bailout paths: balanced (a failed submit, a cancelled delay, a notify that throws or bails out).
+  Engine state: the idle wait and its notifies run in scheduler context with the S3 save and
+  restore; `EINTR` returns only with an interrupt pending. Sizes: the timer heap is O(log N) a
+  timer (30 000 cancelled delays 0.5 s), deadlock resolution linear (20 000 parked 0.6 s);
+  `delay()` and `timeout()` took the core's `php_io_deadline_from_ms()`, whose `timeval` seconds
+  are 32-bit on Windows: past 2^31 s a debug build aborted on an assertion and a release one woke
+  early (a Windows Debug_TS build failed `reactor/022` and `await/122` on that assertion); both now
+  count nanoseconds (`reactor/042`). A thread that fires a trigger without pause
+  ended the poll's loop only when it lost a race (a test thread firing for 2 s: `delay(30)` took
+  30.1 ms, its waiter woke 1 134 times); the loop now ends after the wakeup's completion, one pass
+  as libuv's.
+  Descriptors: the eventfd is close-on-exec; off Linux the pipe takes `pipe2()` where the core
+  found it, which closes the window in which another thread's `proc_open()` inherited the pair; on
+  Windows the socket pair is made not inheritable. INI entries: none new. Test-only code: the
+  trigger hooks and their thread sit under `TRUE_ASYNC_TEST_HOOKS`, absent from a default build
+  (checked). CI: `--with-zlib` in the core build, no new download.
+- 2026-10-07 Accepted (S4.7): a coroutine whose `finally` spawns the next one that waits keeps D16
+  refiring every 100 ms, so such a chain never lets the graceful shutdown end; only
+  `max_execution_time` on a ZTS build (wall time) bounds it, as it bounds a shutdown function that
+  loops on `sleep()`, and TrueAsync's `finally_shutdown` has no bound either. A trigger is request
+  memory with a plain refcount: a future holder fired by other threads (S10's remote Future) must
+  stop and join them before its last release and before RSHUTDOWN. The timer heap's capacity
+  doubles in 32 bits and wraps at 2^31 timers, unreachable under `memory_limit` like the callbacks
+  vector's bound. macOS has no `pipe2()`, so its pipe keeps the window between `pipe()` and
+  `fcntl()`.
+- 2026-10-07 A php-src defect (S4.7): `socketpair_win32()` (`win32/sockets.c:25-90`) binds its
+  listener to `INADDR_ANY` and accepts the first connection without checking the peer, and makes
+  its sockets inheritable until the caller changes them; the reactor's Windows wake pair and
+  php-src's own `stream_socket_pair()` use it. Sent to Edmond for php-src's security policy; no
+  workaround here.
+
 ## Open findings
 
 None.

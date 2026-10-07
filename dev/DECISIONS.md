@@ -1147,17 +1147,14 @@ stack options were shown with the code).
   error: the first returns nothing, the second no longer returns -1.
 - 2026-10-06 S4.6 changed own tests of S4.txt (`changed:2026-10-06`). Why, per test:
   `reactor/002-waits_list_after_fire_and_cancel.phpt` and `reactor/016-cancelled_delay_orphans_op.phpt`
-  read the queue's pending count for a Timer op, which the timer heap keeps from the queue: they read
-  the heap's count. `reactor/011-fork_child_poll_rebuilds_queue.phpt` forked after one `suspend()`,
-  assuming its waiter had parked; fuzz seed 74 forked first and the parent's `waitpid()` hung: it
-  suspends until the reactor holds the wait, and its title no longer names the wait's `EPERM`, a case
-  the fork check before each poll made unreachable. `reactor/021-exit_deadline_in_forked_child.phpt` gains a
-  lower bound: a child unwound before the deadline passed it (the Critic).
-  `reactor/029-trigger_unstarted_keeps_nothing_alive.phpt` adds the free of a started trigger and
-  `reactor/033-trigger_wait_started_before_fork.phpt` a holder's callback beside the cancelled
-  waiter: two paths no test reached (coverage). `reactor/035-trigger_fire_before_fork_wakes_child.phpt`
-  links its child's waiter before any poll: with the fork check at the tick's poll, the walk at the
-  child's first poll drops a fire nobody waits for, as the parent's would.
+  read the heap's count of Timer ops, which no longer reach the queue;
+  `reactor/011-fork_child_poll_rebuilds_queue.phpt` forks once the reactor holds its wait (fuzz seed
+  74 forked first and hung the parent's `waitpid()`);
+  `reactor/021-exit_deadline_in_forked_child.phpt` gains a lower bound (the Critic);
+  `reactor/029-trigger_unstarted_keeps_nothing_alive.phpt` and
+  `reactor/033-trigger_wait_started_before_fork.phpt` reach two paths no test reached (coverage);
+  `reactor/035-trigger_fire_before_fork_wakes_child.phpt` links the child's waiter before any poll,
+  whose walk drops a fire nobody waits for, as the parent's would.
 - 2026-10-07 A callback keeps its index in the vector it is in (`slot`, in the padding after
   `flags`), set on push and on every move of a removal, so removing it searches nothing; only a
   callback marked `ASYNC_CALLBACK_F_SHARED` (the exit deadline's, one static for all threads) and
@@ -1227,3 +1224,14 @@ stack options were shown with the code).
   ceiling keeps spare at 16 384 candidates, and 10 000 parked coroutines already take over three
   minutes under ASAN, almost all of it system time (1.1 s of it to spawn them; 16 500 take 0.3 s on
   the debug build); `collector/063` runs the same check on ASAN.
+- 2026-10-07 `delay()` and `timeout()` count their deadline in nanoseconds
+  (`async_reactor_deadline_from_ms()`), not through the core's `php_io_deadline_from_ms()`. Why: its
+  `timeval` seconds are 32-bit on Windows, so past 2^31 s a debug build aborted and a release one
+  woke early (`reactor/042`); the core's own callers pass bounded values.
+- 2026-10-07 An exit object that cancels the running current coroutine goes to its waker, which its
+  `suspend()` throws, not into its outcome (S4.7). Why: D16 reaches such a coroutine only in its own
+  suspend's tick, woken there (U2); as the outcome it ran on, and `getException()` and `await()`
+  handed out the core's internal exit object, whose `serialize()` crashed (`reactor/043`).
+- 2026-10-07 The reactor's poll ends its loop after the wakeup's completion (S4.7). Why: the wakeup
+  arms itself again inside its completion, so a thread that fires without pause kept the loop going
+  for as long as it won a race; libuv's poll takes one batch (the Critic on S4.7).
