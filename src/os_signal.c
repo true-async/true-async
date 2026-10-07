@@ -147,6 +147,7 @@ static async_signal_registry_t *signal_registry(void)
 	registry = ecalloc(1, sizeof(async_signal_registry_t));
 	registry->context = Z_OBJ(context);
 	sigemptyset(&registry->watched);
+	sigemptyset(&registry->reblocked);
 	ASYNC_G(signals) = registry;
 
 	return registry;
@@ -165,7 +166,22 @@ static void signal_registry_release_if_empty(async_signal_registry_t *registry)
 
 void async_signal_reblock(void)
 {
-	SIGNAL_SIGMASK(SIG_BLOCK, &ASYNC_G(signals)->watched, NULL);
+	async_signal_registry_t *registry = ASYNC_G(signals);
+	sigset_t mask_before;
+
+	if (UNEXPECTED(SIGNAL_SIGMASK(SIG_BLOCK, &registry->watched, &mask_before) != 0)) {
+		return;
+	}
+
+	/* The handle's removal unblocks only a number it found unblocked at its add
+	 * (`php_io_poll_signals_blocked_by_handles`, ext/standard/io_poll.c): one the script had blocked
+	 * then and unblocked since would stay blocked here after its watch. The core's child mask does not
+	 * know this block either: a child of exec() started meanwhile inherits it (RFC-CHANGES.md 5). */
+	for (int signo = 1; signo < PHP_NSIG; signo++) {
+		if (UNEXPECTED(sigismember(&mask_before, signo) == 0 && sigismember(&registry->watched, signo) == 1)) {
+			sigaddset(&registry->reblocked, signo);
+		}
+	}
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -271,7 +287,8 @@ static void signal_watch_disarm(async_signal_watch_t *watch)
 
 /* With its last wait: the number leaves the context, which unblocks it and records what arrived
  * since the last delivery into the handle. Nothing waited for that, so it is raised again for the
- * process's own action, as without a watch. */
+ * process's own action, as without a watch. A number only async_signal_reblock() blocked is left
+ * blocked by the context and unblocked here; what is pending for it arrives at that unblock. */
 static void signal_watch_free(async_signal_watch_t *watch)
 {
 	async_signal_registry_t *registry = ASYNC_G(signals);
@@ -282,6 +299,15 @@ static void signal_watch_free(async_signal_watch_t *watch)
 	sigdelset(&registry->watched, watch->signo);
 
 	php_io_poll_handle_remove_from_all_contexts(watch->handle);
+
+	if (UNEXPECTED(sigismember(&registry->reblocked, watch->signo) == 1)) {
+		sigset_t to_unblock;
+
+		sigemptyset(&to_unblock);
+		sigaddset(&to_unblock, watch->signo);
+		sigdelset(&registry->reblocked, watch->signo);
+		SIGNAL_SIGMASK(SIG_UNBLOCK, &to_unblock, NULL);
+	}
 
 	php_siginfo_t info;
 

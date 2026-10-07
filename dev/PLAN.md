@@ -484,7 +484,7 @@ Done when: S3–S6 lists (from `sleep`, `io`, `stream`, `socket_ext`, `dns`, `cu
 over 100 seeds; tests that fail because of the hooks design are listed against the review item;
 `dns` counted only on the Ring configuration (the Poll queue answers Unsupported for lookups).
 Tier: T2. Roles: Critic on S6.2, Critic after S6.7 (S6.8).
-Active: S6.9
+Active: S6.10
 
 - [x] S6.1 Fixtures: MySQL with two connections and an HTTP server with
       `PHP_CLI_SERVER_WORKERS`, started by `tools/test.py` locally and by the CI lanes.
@@ -590,8 +590,23 @@ Active: S6.9
         23 seeds flag only `io/100` (XFAIL) passing under their order. `curl/010` waits for the
         other coroutine through the server: its order depended on load (DECISIONS). The bridge was not rerun:
         the core did not change.
-- [ ] S6.9 Security pass by `dev/SECURITY.md`.
+- [x] S6.9 Security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item; findings fixed with a test or recorded
+      handoff: done 2026-10-07 on core `3af71f889e6` (`async-core-io-2026-10-07-5`): `pocs-dbg` 927 PASS,
+        9 SKIP, 12 XFAIL; `pocs-asan` 911 PASS, 26 SKIP, 11 XFAIL; 7 left out by `core:` tags; nothing
+        unexpected.
+        Journal entries in `SECURITY.md`. Fixed with tests: a number the reactor blocked again before a
+        poll stayed blocked after its watch when the script had blocked it before `signal()`
+        (`signal/031`, the registry's `reblocked`); the drain after a park no longer waits for every
+        Ring record when an op has neither stream nor handle. A watch that goes inside a pcntl handler
+        is blocked again by `pcntl_signal_dispatch()`'s mask restore, a php-src bug: fixed on
+        `php-src-fixes` `74a581afc06` (branch `pcntl-dispatch-keeps-handler-mask`, its text in
+        `notes/` for Edmond), `signal/033` XFAIL until a core update merges it. Accepted, waiting for
+        `RFC-CHANGES.md` 5 (TrueAsync's `zend_async_sigaction_fn`): a delivery between `pcntl_signal()`
+        and the next poll goes to the handler alone (`signal/032`), a `proc_open()` child inherits the
+        reblock. CI's MySQL image pinned by digest. The Critic twice, the Sage on two disputes; Edmond
+        asked for the check against PHP's global signal handler: the forward reaches `SIGG(handlers)`,
+        FPM's included.
 - [ ] S6.10 Windows (once S1.5 gives a Windows agent): the `proc_open()` pipe core commit
       (`dev/plans/S6.md` section 9), the Windows lane's socket expectations from S6.4.
       done: `sockets` and `openssl` load in `pocs-win`; no `xfail-on` tag or `--XFAIL--` names

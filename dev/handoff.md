@@ -268,8 +268,18 @@ of `src/`; S7.5 scoped it to the collector tests with a scratch script (DECISION
 
 ## S6
 
-Written 2026-10-07. S6.8 (stage review) done, results in S6.md section 17; S6.9 (security pass by
-`dev/SECURITY.md`) next; the Windows part is S6.10, waiting for a Windows agent (S1.5).
+Written 2026-10-07. S6.9 (security pass) done, journal in `dev/SECURITY.md`; S6.10 (Windows) is
+the stage's last step.
+
+- Signal mask: `async_signal_reblock()` records in the registry's `reblocked` the watched numbers it
+  blocked itself, and `signal_watch_free()` unblocks them (`signal/031`). `pcntl_signal_dispatch()`
+  restores the whole mask it found, so a watch that goes inside a pcntl handler leaves its number
+  blocked: fixed in php-src on `php-src-fixes` `74a581afc06` (branch `pcntl-dispatch-keeps-handler-mask`,
+  PR text `notes/pcntl-dispatch-keeps-handler-mask-pr.md`, Edmond opens it). The next core update
+  merges it and removes `signal/033`'s `--XFAIL--`.
+- The drain after a park skips an op with neither stream nor handle (`io_wait_drain()`): bukka's
+  `php_io_ring_drain()` with a NULL owner matches every record, and `php_io_ring_deliver_one()` leaves
+  such an op `in_flight` after an early Timeout (read, not reproduced; told to Edmond).
 
 - IO chaos: `TRUE_ASYNC_SCHED=random:<seed>:io` on a fuzz build arms C1-C3 (S6.md 16);
   `tools/test.py --seeds N --io-chaos`. Under any seed about 40 tests of `S6.txt` change only their

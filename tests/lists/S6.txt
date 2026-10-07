@@ -394,3 +394,6 @@ signal/027-exit_leaves_held_future.phpt  own:97a31e9a58b8b6c3c0d71fdffeb745f1124
 signal/028-uncaught_exception_leaves_held_future.phpt  own:08ec2d88e91dcfaf994cad257cdbf3f89e881f66c45aa6f14c1e870a428a3cb2  skip-on:*-win(Unix-only)
 signal/029-exit_delivers_arrived_signal.phpt  own:04a2e46d46ff8cb6277f649a3e6cfb45c39a75ddf3eeba9e14b1b61ad6182c63  skip-on:*-win(Unix-only)
 signal/030-script_end_waits_for_held_watch.phpt  own:283d0a78274d23a88bb13920efdac3be4ac294340cc36bee0091925d8cc3b6e6  skip-on:*-win(Unix-only)
+signal/031-reblock_unblocks_with_its_watch.phpt  own:6dc0ef0d47f127baf98f3d36f722fd28301534c14faeca911fd22efdf63728a6  skip-on:*-win(Unix-only)
+signal/032-pcntl_signal_unblocks_until_the_next_poll.phpt  own:a32ad4459c8de426b0d8faddcbdd975db7dcca0b4729d585173be1abb2392328  skip-on:*-win(Unix-only)
+signal/033-watch_dropped_in_pcntl_handler_unblocks.phpt  own:a776cf685721ce6a5ec579ec0fbd84803bee8bae049cc7554f53ffcfd274a18c  skip-on:*-win(Unix-only)

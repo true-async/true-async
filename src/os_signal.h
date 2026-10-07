@@ -29,7 +29,8 @@ typedef struct
 	zend_object *context; /* never waited on: its add() blocks a number, its remove unblocks it */
 	uint32_t count;       /* the watches */
 #ifndef PHP_WIN32
-	sigset_t watched; /* their numbers */
+	sigset_t watched;   /* their numbers */
+	sigset_t reblocked; /* those async_signal_reblock() blocked itself, to unblock with their watch */
 #endif
 	async_signal_watch_t *watches[PHP_NSIG];
 } async_signal_registry_t;

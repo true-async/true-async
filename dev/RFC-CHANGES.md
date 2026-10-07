@@ -94,8 +94,20 @@ a `PHPAPI` to block and unblock a handle's set without an `Io\Poll\Context`
 (`php_io_poll_signal_handle_watch()` and `_unwatch()`, the `added`/`removed` ops of the handle), so a
 provider needs no Context it never waits on.
 
+The scheduler RFC's core has the hook in the first form: `zend_sigaction()` asks
+`zend_async_sigaction_fn` (`ZEND_ASYNC_SIGACTION`, `Zend/zend_signal.c` of true-async/php-src
+`true-async`) whether the reactor owns the number, and leaves its own handler out when it does;
+TrueAsync answers from `libuv_zend_sigaction()` (`libuv_reactor.c:1566`). The same hook over a
+`SignalHandle` would close this one. It would also fix the children: the block the extension takes
+again is in no record of the core's, so `php_io_poll_signal_child_mask()` leaves it to a
+`proc_open()` child started while the watch lives (seen 2026-10-07, S6.9); a `PHPAPI` that records
+such a block with the handle would do as well. The same record would let the extension leave a number
+blocked while another `SignalHandle` of the thread still watches it (a script's own `Context`); today
+its unblock at the watch's end cannot see the core's count of handles per number.
+
 Waits for it: `async_signal_reblock()` in `src/os_signal.c` and its call in `reactor_poll()`
-(`src/reactor.c`); the Context of `async_signal_registry_t`.
+(`src/reactor.c`); the Context of `async_signal_registry_t`; `signal/032` records the delivery lost
+to the handler before the next poll.
 
 ## 6. Async core: a driver error under a pending cancellation keeps the cancellation
 

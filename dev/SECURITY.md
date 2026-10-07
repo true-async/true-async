@@ -219,6 +219,65 @@ finding left open gets an owner step in `PLAN.md`.
   php-src's own `stream_socket_pair()` use it. Sent to Edmond for php-src's security policy; no
   workaround here.
 
+- 2026-10-07 Security pass of stage S6 (S6.9) over the S6 commits `8e94038`, `409aa2e`, `7b5a2aa`,
+  `f977fd6`, `06a5af4`, `b3ec701`, `7e4ba19`, `134e133` (`src/io_provider.c`, `src/os_signal.c`, the
+  IO event parts of `src/reactor.c`, `tools/test.py`, the CI workflow), by checklist item, with
+  scripts run on the debug and ASAN builds. Lifetimes: no use after free found (a stream closed by
+  another coroutine while one is parked reading it, which the core's freeze refuses with "Concurrent
+  access to a stream"; a cancelled read read again at once; `exit()` in another coroutine during a
+  park; `pcntl_fork()` while parked, which the core refuses with ops in flight; `stream_select()` over
+  400 streams cancelled mid-wait; held `signal()` Futures at `exit()`, an uncaught exception, a fatal
+  error and past the request's shutdown). The drain after a park no longer runs for an op with neither
+  a stream nor a handle: a NULL owner matches every record of the Ring (`php_io_ring_drain()`), which
+  would block the thread until all of them settle; the Ring answers such an op (a CONNECT of
+  `php_network_connect_socket()` without a stream, ext/ftp) with an early Timeout while its own
+  completion is pending (`php_io_ring_deliver_one()` leaves `in_flight` set), by reading; a run with
+  ext/ftp did not reach it. Refcounts on exception and bailout paths: balanced (a failed arm, a
+  Timeout that fires in its subscribe, the IGNORED release, the rebuild's held references). Engine
+  state: one defect fixed, the thread's signal mask. `async_signal_reblock()` blocks the watched
+  numbers again before every poll, since `zend_sigaction()` unblocks the number it installs a handler
+  for; the core's `SignalHandle` records only a block it took itself, so a number the script had
+  blocked when `Async\signal()` was called (with `pcntl_sigprocmask()`, or by calling it inside
+  `pcntl_signal_dispatch()`, which blocks every signal) and unblocked later stayed blocked in the
+  thread after its watch went: a `pcntl_signal()` handler for it never ran again. The registry now
+  records the numbers its own reblock blocked and unblocks them with their watch, before re-raising
+  what nobody took (`signal/031`). A watch that went inside a pcntl handler (its Future completed,
+  cancelled or dropped there) left its number blocked too, the block taken by the handle or by the
+  reblock alike: `pcntl_signal_dispatch()` blocks every signal around the handlers and then restores
+  the whole mask it found, which undoes the unblock at the watch's end. The cause is php-src's: a
+  handler's own `pcntl_sigprocmask()` is undone the same way without async. Fixed on `php-src-fixes`
+  `74a581afc06` with its tests (each handler runs under the thread's own mask, so a change it makes
+  stays, and a signal arriving meanwhile is queued, not lost), its pull request for Edmond to open;
+  `signal/033` is XFAIL until a core update merges it. The forward into the Zend handler table (`SIGG(handlers)`) was run with a pcntl
+  handler installed before and after the watch and after the watch went, and with the execution
+  timeout firing while a watch lives; FPM's own worker handlers are in that table during a request
+  (`zend_signal_init()` saves them, each request copies them), so the forward reaches them too.
+  `exec()`, `shell_exec()`, `popen()`, `proc_open()` and `pcntl_exec()` children start with the
+  handle's blocks lifted (`php_io_poll_signal_child_mask()`). Sizes: the copy of an ANY op is one
+  block whose member count the core allocated first (`safe_emalloc`); 200 000 `signal()` Futures on
+  one number cost 82 MiB and left in 0.1 s; watches are at most `PHP_NSIG`. INI entries: none new.
+  Test-only code: the S6 test hooks sit under `TRUE_ASYNC_TEST_HOOKS` and IO chaos under
+  `TRUE_ASYNC_FUZZ`; a build of the default configuration has no `TrueAsync\Test\` function and no
+  test or fuzz symbol (checked). CI: the MySQL service came by the mutable tag `mysql:8.3` and is now
+  pinned by digest; the fixture's password and its loopback binding are the entry of 2026-10-05; the
+  HTTP fixture listens on `localhost:0` and removes its document root.
+- 2026-10-07 Accepted (S6.9): a delivery between `pcntl_signal()` and the reactor's next poll reaches
+  the pcntl handler alone and the Future waits for the next one (`signal/032`); a `proc_open()` child
+  started while a watch's number is blocked by the reblock alone (the case of `signal/031`) inherits
+  the block, since the core's child mask knows only the handle's record: both wait for
+  `RFC-CHANGES.md` 5, the hook TrueAsync's core has (`zend_async_sigaction_fn`). A `pcntl_fork()`
+  child keeps the parent's watches and their blocked numbers, so a signal sent to a child that never
+  waits for it stays pending. `signal_forward()` neither resets a handler installed with
+  `SA_RESETHAND` nor performs `SIG_DFL`'s action, as TrueAsync's `libuv_global_signal_callback()`;
+  no PHP function installs `SA_RESETHAND`, and what nobody waited for is raised again when the watch
+  goes. A handler a C extension installs with a raw `sigaction()` during a request, outside the Zend
+  table, does not see a watched number while the watch lives. A build without `ZEND_SIGNALS` has no
+  forward: a pcntl handler for a watched number runs only at the watch's end (`dev/plans/S6.md`
+  section 8). The registry's unblock undoes a block the script took itself after a reblock, which it
+  cannot tell apart, and a script's own `Io\Poll\Context` watching the same number through a
+  `SignalHandle` loses its block with it: the core's count of handles per number is not a PHPAPI
+  (`RFC-CHANGES.md` 5).
+
 ## Open findings
 
 None.
