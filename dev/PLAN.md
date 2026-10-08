@@ -754,12 +754,15 @@ Tier: T1.
 Scope, context, channels, task groups, pools, iterators: each its own plan, agreed with Edmond.
 Layer 1, Scope: `Async\Scope`, `ScopeProvider`, `SpawnStrategy`, `spawn_with()`, the global scope,
 zombies, the error route through scopes, both `finally` methods on TrueAsync's iterator core.
+Layer 2, Context: `Async\Context` over the core's storage, the context of a coroutine and of a scope,
+`current_context()`, `coroutine_context()`, `root_context()`.
 Done when: S9.txt's layer 1 block and `await/062` pass on debug and ASAN; the S3-S7 lists pass as before.
+Layer 2 done when: S9.txt's layer 2 block passes on debug and ASAN; the S3-S7 lists and layer 1 pass as before.
 Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
-Notes: dev/plans/S9-scope.md
-Active: none; layer 2 (Context) waits for its plan, agreed with Edmond
+Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md
+Active: none; layer 2's plan (S9.10) waits for Edmond's agreement and its question 1
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -880,6 +883,45 @@ Active: none; layer 2 (Context) waits for its plan, agreed with Edmond
         sibling rescans. On CORE_REF 0145ca90d78: debug 1181 PASS, 11 XFAIL; ASAN 1157 PASS, 10 XFAIL;
         0 unexpected on both; 20 fuzz seeds over the new tests clean. Two Critic passes: a release on the
         refusal path could start a GC run inside the walk.
+- [x] S9.10 Design note `dev/plans/S9-context.md` (layer 2, Context).
+      done: the note pushed; every Critic finding fixed or answered in the note; the question of its
+        section 9 put to Edmond
+      tier: T2 · role: Critic → Sage
+      handoff: done 2026-10-08: the core already holds the context's storage (`zend_async_context_t`,
+        the coroutine's `context`), so the layer adds the class over it, a `context` field per scope
+        and the walk up the scope tree. Probes `c1.php`-`c14.php` on the reference
+        (`/mnt/project-files/s9/probes/s9.context/`): TrueAsync collects no cycle through a context,
+        a destructor at shutdown reading a context stops its debug build, its root context is empty
+        in shutdown functions, and it puts a Fiber's coroutine into the current scope, which layer 1
+        took for the opposite (question 1 of the note). Three Critic passes and the Sage: the context
+        released after the scope walk; the scope object reports its context, and its handlers (layer
+        1's bug), only while no member reaches the scope; the teardown's user values released last;
+        `RFC-CHANGES.md` 16, a heap corruption in the core's string-key replace, waits for Edmond's
+        word to push to `async-core`.
+- [ ] S9.11 The list block for layer 2, `Context` and `ContextException`, the factory slot,
+      `coroutine_context()`, `Coroutine::getContext()` (note sections 2, 3, 8); after a core update
+      carrying `RFC-CHANGES.md` 16.
+      done: the block's S9.11 tests and the note's S9.11 own tests pass on debug and ASAN; the S3-S7
+        lists and layer 1 pass as before
+      tier: T2 · role: Critic
+- [ ] S9.12 The context of a scope, `current_context()`, `root_context()`, `request_context()`, the
+      walk, the scope object's `get_gc` for its context and, by the same rule, its handlers, its
+      return to the root buffer (note sections 4, 5); if question 1 of the note is answered as
+      TrueAsync, the step its section 6 adds comes before this one.
+      done: the block's S9.12 tests and the note's S9.12 own tests pass on debug and ASAN; the S3-S7
+        lists and layer 1 pass as before
+      tier: T2 · role: Critic
+- [ ] S9.13 The teardown's user values released as its last step (note section 4).
+      done: the note's S9.13 own test passes on debug and ASAN; the S3-S7 lists and layer 1 pass as
+        before
+      tier: T1 · role: Critic
+- [ ] S9.14 Layer review: Critic after S9.11-S9.13, coverage, Mull on the layer's diff, the fuzz
+      oracle over 100 seeds, the measurements of note section 8.
+      done: the layer's Done when holds on the day; survivors killed or explained
+      tier: T2 · role: Critic
+- [ ] S9.15 Security pass by `dev/SECURITY.md`.
+      done: a journal entry per checklist item; findings fixed with a test or recorded
+      tier: T2 · role: —
 
 ## S10 — Beyond the RFCs  [ ]
 

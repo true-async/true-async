@@ -420,3 +420,11 @@ S9.8 done 2026-10-08: the security pass (`dev/SECURITY.md`, two entries of 2026-
 `async_finally_handlers_start()` runs no PHP code and leaves refused handlers to its caller; a child
 scope has `child_index`; `scope_is_completed()` takes the child scope a walk up came from. Own tests
 `scope/123`-`125`. Layer 1 is done; layer 2 (Context) needs its plan agreed with Edmond first.
+
+S9.10 done 2026-10-08: `dev/plans/S9-context.md` (layer 2, Context). The pinned core holds the
+context's storage (`zend_async_context_t`, `zend_coroutine_t.context`, `zend_async_new_context_fn`),
+so the layer wraps it in `Async\Context`, adds `async_scope_t.context` and the walk up the scope tree.
+Probes `c1.php`-`c14.php` in `/mnt/project-files/s9/probes/s9.context/` ran on the debug build of the
+reference that S9.1 above describes. Waiting for Edmond: agreement to the plan, its question 1 (the scope
+of a Fiber's coroutine), and his word to push the core fix of `RFC-CHANGES.md` 16 to `async-core`,
+which S9.11's `set()` needs.

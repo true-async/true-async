@@ -266,3 +266,24 @@ entry may set the coroutine's result (the GC run's count, which each waiter read
 awaited).
 
 Waits for it: nothing; the pinned core carries it (`gc/025`).
+
+## 16. Scheduler API: replacing a context's string-key value destroys the old value in place
+
+State: not sent; found in S9.10 (the Critic, 2026-10-08). The scheduler RFC is ours: the fix is one
+commit on `async-core`; pushing it updates php/php-src#22561 and waits for Edmond's word. PR: none.
+
+Need: `zend_async_context_entry_set()` replaces a string key's value with `zend_hash_update()`
+(`Zend/zend_async_API.c:240`), which runs the old value's destructor while the bucket still holds the
+old value and writes the new one after (`Zend/zend_hash.c:864-873`). A destructor that writes to the
+same context corrupts the heap: `set()` calls of other keys that grow the table (eight fill the
+initial eight-slot table that holds only the key) make the write land in the freed bucket array, and
+the new array keeps a pointer to the freed old value; an `unset()` of the key frees the dying value a
+second time. A destructor of an element of an array value that reads the key reads an array part-way
+through being freed. The object-key path copies the new value in first and releases the old one after
+(`:244-258`); TrueAsync's `context.c:77` has the string-key bug too.
+
+Request: the string-key path replaces as the object-key path does: find the bucket, copy the new value
+in, then release the old one; add a new entry only when the key is absent.
+
+Waits for it: S9.11's `Context::set()` and its own test (a replaced value whose destructor reads the key,
+sets eight other keys and unsets the key, on ASAN).
