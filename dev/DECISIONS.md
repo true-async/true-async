@@ -1691,3 +1691,24 @@ stack options were shown with the code).
   waits in a loop for the destructor instead of one `suspend()`: under the fuzz oracle's random order
   the coroutine had not run yet (the layer 1 test gotcha). Expected output unchanged; 100 of 100
   seeds print it.
+- 2026-10-08 S9.16, layer 3: a channel bound to its owner scope (TrueAsync's binding) closes with
+  `SCOPE_DISPOSED` when the scope is cancelled or destroyed, not when it completes: Edmond («делаем как
+  в TrueAsync + закрываем канал когда Scope разрушается... но вот закончились корутины - нет... пусть
+  сборщик мусора решает такой случай»). TrueAsync's code closes on every notify of the scope, its
+  documentation promises "when that scope is disposed or cancelled". The close comes at the
+  transition: the cancel's and the error route's notify, the branch where a completed or already
+  cancelled scope is cancelled or disposed (`src/scope.c:547-570`, silent in both implementations),
+  which closes the bound channels without a notify, and the scope's free.
+  Accepted cost: a channel handed out of a completed scope, still held by live code, whose producer
+  never closed it, keeps its receiver parked until the channel's timers or the global deadlock.
+  Critic and Sage checked it; the Sage ran the rule on the reference: `channel/`, `edge_cases/015` and
+  `scope/` pass. Details: `dev/plans/S9-channel.md` sections 5 and 8.
+- 2026-10-08 S9.16, layer 3: a CHANNEL wait record stays linked from its wake until its frame takes it
+  out, and a cancel's or a token's wake leaves it in the channel's queue, as TrueAsync's waiter (its
+  close and its delivery acknowledgement take it out of the queue) and as the waits table of
+  `dev/plans/S3.md` (690) planned; an
+  exception to D26 for that kind, and `async_wait_record_unlink()`'s assert exempts it: Edmond («я думаю
+  1»). Why: a scope's cancel queues its coroutines before its notify, so a close at the notify must still
+  find them (`channel/048`, `050`-`053`, `063` fail otherwise, probed on the reference by the Sage), and
+  `abort` reaches only linked records (S3 4.4's bailout case). Details: `dev/plans/S9-channel.md`
+  section 3.

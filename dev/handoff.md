@@ -460,3 +460,11 @@ B13 (`find()` up the scopes) and B14 (a coroutine's context) are in `dev/BENCHMA
 
 S9.15 done 2026-10-08: the security pass, journal entries in `dev/SECURITY.md`; one recorded limit
 (the scope object's `get_gc` recursion, now armed by a context alone). Layer 2 (Context) is done.
+
+S9.16 done 2026-10-08: `dev/plans/S9-channel.md` (layer 3, Channel). The pinned core has no channel type,
+so the layer is the extension's own, on the wait-record layer: the coroutine's waker record is the queue
+entry. A debug build of the reference (the fork at `863f6dd90cf` with `ext/async` at `REFERENCE`, built as
+S9.1 above describes) passes the 93 tests of the list; probes `h1.php`-`h14.php` in
+`/mnt/project-files/s9/probes/s9.channel/`. Edmond decided the note's two questions (DECISIONS
+2026-10-08: the scope's cancel and destruction close its channels, its completion does not; a CHANNEL
+record stays linked until its frame runs). S9.17 starts once he agrees to the plan.

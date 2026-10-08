@@ -769,13 +769,16 @@ Layer 1, Scope: `Async\Scope`, `ScopeProvider`, `SpawnStrategy`, `spawn_with()`,
 zombies, the error route through scopes, both `finally` methods on TrueAsync's iterator core.
 Layer 2, Context: `Async\Context` over the core's storage, the context of a coroutine and of a scope,
 `current_context()`, `coroutine_context()`, `root_context()`.
+Layer 3, Channel: `Async\Channel`, `ChannelException`, `ChannelCloseReason`, the CHANNEL wait kind,
+`recvAsync()`, `foreach`, the per-channel timers, the close at the global deadlock and by the owner scope.
 Done when: S9.txt's layer 1 block and `await/062` pass on debug and ASAN; the S3-S7 lists pass as before.
 Layer 2 done when: S9.txt's layer 2 block passes on debug and ASAN; the S3-S7 lists and layer 1 pass as before.
+Layer 3 done when: S9.txt's layer 3 block passes on debug and ASAN; the S3-S7 lists and layers 1 and 2 pass as before.
 Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
-Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md
-Active: none; layer 2 done, the next layer needs its plan agreed with Edmond
+Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md
+Active: none; S9.17 starts once Edmond agrees to layer 3's plan (S9.16)
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -976,6 +979,42 @@ Active: none; layer 2 done, the next layer needs its plan agreed with Edmond
         alone now makes its object's `get_gc` test the child scopes recursively, so a collection under
         about 43 000 nested scopes overflows the GC coroutine's stack, the limit S9.8 accepted; the
         per-scope count of busy child scopes would remove it and is not built. Docs only, no lane run.
+- [x] S9.16 Design note `dev/plans/S9-channel.md` (layer 3, Channel).
+      done: the note pushed; every Critic finding fixed or answered in the note; the question of its
+        section 10 answered by Edmond
+      tier: T2 · role: Critic → Sage
+      handoff: done 2026-10-08: the pinned core has no channel type, so the layer is the extension's own,
+        on S4's wait-record layer: the coroutine's waker record is the queue entry (D29). Edmond decided
+        both questions (DECISIONS 2026-10-08): the owner scope closes its channels when it is cancelled
+        or destroyed, not when it completes, and a CHANNEL record stays linked from its wake until its
+        frame takes it out (an exception to D26, as TrueAsync's waiter). Three Critic passes and a Sage;
+        the Sage ran the scope rule and the D26 case on the reference. Probes `h1.php`-`h14.php`,
+        `f1a.php`-`f7.php`, `t048.php`-`t063.php` in `/mnt/project-files/s9/probes/s9.channel/`.
+        93 reference tests for the list.
+- [ ] S9.17 The list block for layer 3, the channel, its buffer, `send()`, `sendAsync()`, `recv()`,
+      `close()` and the readers, the reservations, the CHANNEL kind, cancellation tokens, the destructor,
+      `ChannelException` and `ChannelCloseReason` (note sections 2, 3, 5, 9).
+      done: the block's S9.17 tests and the note's S9.17 own tests pass on debug and ASAN; the S3-S7
+        lists and layers 1 and 2 pass as before
+      tier: T2 · role: Critic
+- [ ] S9.18 `recvAsync()`, `foreach` and `getIterator()`, the channel as an `await_*` item and a token
+      (note section 4).
+      done: the block's S9.18 tests and the note's S9.18 own tests pass on debug and ASAN; the S3-S7
+        lists and layers 1 and 2 pass as before
+      tier: T2 · role: Critic
+- [ ] S9.19 The per-channel timers, the close at the global deadlock, the owner-scope binding and the
+      close of a completed or cancelled scope's channels, CHANNEL's `collector_target`, S7's channel case (note
+      sections 5, 6).
+      done: the block's S9.19 tests and the note's S9.19 own tests pass on debug and ASAN; the S3-S7
+        lists and layers 1 and 2 pass as before
+      tier: T2 · role: Critic
+- [ ] S9.20 Layer review: Critic after S9.17-S9.19, coverage, Mull on the layer's diff, the fuzz
+      oracle over 100 seeds, the measurements of note section 9.
+      done: the layer's Done when holds on the day; survivors killed or explained
+      tier: T2 · role: Critic
+- [ ] S9.21 Security pass by `dev/SECURITY.md`.
+      done: a journal entry per checklist item; findings fixed with a test or recorded
+      tier: T2 · role: —
 
 ## S10 — Beyond the RFCs  [ ]
 
