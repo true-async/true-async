@@ -9,6 +9,7 @@ reactor, its due timeout could complete before the readiness on ior's IOCP backe
 --FILE--
 <?php
 use function Async\spawn;
+use function Async\await;
 use function Async\await_all_or_fail;
 
 $server_context = stream_context_create(['ssl' => [
@@ -27,7 +28,7 @@ $peer = spawn(function () use ($server) {
     return $data;
 });
 
-$client = spawn(function () use ($address) {
+$client = spawn(function () use ($address, $peer) {
     $client_context = stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]]);
     $socket = stream_socket_client($address, $errno, $errstr, 5, STREAM_CLIENT_CONNECT, $client_context);
 
@@ -38,6 +39,9 @@ $client = spawn(function () use ($address) {
     echo "after feof\n";
 
     fwrite($socket, 'x');
+    // A close with the server's session tickets unread resets the connection, which on Windows can
+    // discard the handshake's last record before the peer's accept reads it.
+    await($peer);
     fclose($socket);
 });
 

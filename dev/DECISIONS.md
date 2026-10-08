@@ -1691,3 +1691,29 @@ stack options were shown with the code).
   waits in a loop for the destructor instead of one `suspend()`: under the fuzz oracle's random order
   the coroutine had not run yet (the layer 1 test gotcha). Expected output unchanged; 100 of 100
   seeds print it.
+- 2026-10-08 S6.10 builds S6.md 9.1 as agreed (Edmond «согласен», 07:25): the switch
+  `php_io_overlapped_pipes`, set in MINIT when the extension is built with ior; STDIN and `exec`
+  pipes unchanged. A pipe handed to a child is taken off the Ring's completion port right before
+  `CreateProcessW()` through the new queue op `release()` and `ior_release_handle()`, and ior keeps
+  dropping packets that are not its ops (Edmond's choice on the card, 14:31, after his objections to
+  the filter alone: an address can match a slot by chance, and one process's I/O should not reach
+  another's port). The filter does not compare the completion key: an op on a recycled handle value
+  can complete under another key, and a key check would drop its packet and hang it (the Critic).
+  The Ring ignores the release's answer (`-EBUSY`, `-ENOTSUP`: the filter covers those); a pipe with
+  an op in flight fails `proc_open()` as a concurrent access, as the cast does. Not done: a free
+  list that keeps a recycled op slot from matching a stale packet (the Critic), since with the
+  release only a hand-out the core does not see posts there.
+- 2026-10-08 `signal/031-reblock_unblocks_with_its_watch.phpt` and
+  `signal/032-pcntl_signal_unblocks_until_the_next_poll.phpt` (ours, S6.9 and S6.5;
+  `changed:2026-10-08`) expect a watched number to stay blocked under `pcntl_sigprocmask()` and
+  `pcntl_signal()`: bukka's `bdfa5fa7a12`, in the core from `async-core-io-2026-10-08-2`, keeps it
+  blocked in pcntl, the main part of `RFC-CHANGES.md` 5. `032`'s delivery now reaches the Future and
+  not the handler. Why: the tests recorded the gap the core change closes (Edmond 08:12, «если тест
+  устарел - меняй его»). `async_signal_reblock()` stays: other callers of `zend_sigaction()` and
+  pcntl's request shutdown still unblock.
+- 2026-10-08 `awaitable_gets_implemented()` returns void: `interface_gets_implemented` does since the
+  php-src master that bukka's `io_hooks_poc` head merges.
+- 2026-10-08 The `pocs-win` lane loads `php_sockets.dll`, `php_openssl.dll` and `php_curl.dll` from
+  `TRUE_ASYNC_WIN_BUILD` when they exist (a snapshot build, CI's Release_TS, makes them shared; a
+  Debug_TS build of `tools/windows` links them in), and the `skip-on:pocs-win(...-not-loaded-until-S6.x)`
+  tags are dropped from the lists. Why: S6.10's done line.

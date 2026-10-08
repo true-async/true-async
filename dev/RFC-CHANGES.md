@@ -77,7 +77,12 @@ Waits for it: `stream/030` (`--XFAIL--` naming S8).
 
 ## 5. Poll API additions: zend_sigaction() leaves a SignalHandle's signals blocked
 
-State: drafted 2026-10-06 (S6.5), not sent. PR: none.
+State: drafted 2026-10-06 (S6.5), not sent. PR: none. The main part is in bukka's `io_hooks_poc`
+since `bdfa5fa7a12` (2026-10-07), in the core from `async-core-io-2026-10-08-2`: `pcntl_signal()` and
+`pcntl_sigprocmask()` leave a number a `SignalHandle` watches blocked, and `exec()` and friends start
+the child with `php_io_poll_signal_child_mask()` (`signal/031`, `032` changed, DECISIONS 2026-10-08).
+Still open: the `PHPAPI` to watch a handle's set without a Context, the record of the extension's own
+block for the child mask, and the count of handles per number.
 
 Need: `Async\signal()` takes a signal through a SIGWAIT op on a number an `Io\Poll\SignalHandle`
 blocks while a `Context` watches it (`dev/plans/S6.md` section 8). `zend_sigaction()` unblocks the
@@ -308,3 +313,24 @@ Request: `zend_async_context_get()` returns NULL when the coroutine's object has
 as for a missing provider.
 
 Waits for it: nothing in this repository.
+
+## 18. IO hooks: overlapped proc_open() pipes on Windows
+
+State: on `io-hooks-fixes` `60ec85a2fb4` (2026-10-08, S6.10), in the core from
+`async-core-io-2026-10-08-2`; PR text for bukka in
+`/mnt/project-files/notes/s6-10/io-hooks-overlapped-pipes-pr.md`, Edmond opens it. Needs ior with
+`ior_release_handle()` (true-async/ior `release-handle`, PR text for libior/ior in
+`/mnt/project-files/notes/s6-10/ior-drop-foreign-packets-pr.md`). PR: none.
+
+Need: an anonymous pipe takes no overlapped I/O, so on Windows a coroutine reading a `proc_open()`
+pipe blocks the thread and `stream_select()` on pipes only polls (`dev/plans/S6.md` section 9).
+
+Request: `php_io_overlapped_pipes`, set at MINIT by the extension that installs the provider, makes
+the parent's end of each `'pipe'` descriptor an overlapped named pipe (libuv's `uv_spawn()` layout);
+its reads, writes and select readiness go to the provider as ops with `PHP_IO_OP_F_PIPE`. A new queue
+op `release()`, called through `php_io_queues_release()` right before `CreateProcessW()`, takes each
+pipe passed to the child off the queue's completion port, so the child's own overlapped I/O does not
+post there.
+
+Waits for it: the switch in `PHP_MINIT_FUNCTION(true_async)` (`src/true_async.c`) and the drain of a
+select's cancelled pipe poll in `io_provider_run()` (`src/io_provider.c`); `io_provider/028`-`035`.
