@@ -5,26 +5,26 @@ Twenty children read at once, each in its own coroutine: their waits overlap
 use function Async\spawn;
 use function Async\await_all;
 
-$started = hrtime(true);
 $readers = [];
 for ($i = 0; $i < 20; $i++) {
     $readers[] = spawn(function () use ($i) {
-        $process = proc_open([PHP_BINARY, '-r', "usleep(300000); echo 'child $i';"], [1 => ['pipe', 'w']], $pipes);
+        $process = proc_open([PHP_BINARY, '-r', "usleep(1000000); echo 'child $i';"], [1 => ['pipe', 'w']], $pipes);
+        $read_started = hrtime(true);
         $data = stream_get_contents($pipes[1]);
+        $read_ended = hrtime(true);
         fclose($pipes[1]);
         proc_close($process);
-        return $data;
+        return [$data, $read_started, $read_ended];
     });
 }
 
 [$results, $errors] = await_all($readers);
-$elapsed = (hrtime(true) - $started) / 1e9;
 
 $expected = array_map(fn ($i) => "child $i", range(0, 19));
-echo "all read: ", var_export($results === $expected, true), "\n";
+echo "all read: ", var_export(array_column($results, 0) === $expected, true), "\n";
 echo "errors: ", count($errors), "\n";
-/* One after another the sleeps alone take 6 s */
-echo "overlapped: ", var_export($elapsed < 4, true), "\n";
+/* A read that blocked the thread would end before the next coroutine's read began */
+echo "overlapped: ", var_export(max(array_column($results, 1)) < min(array_column($results, 2)), true), "\n";
 ?>
 --EXPECT--
 all read: true

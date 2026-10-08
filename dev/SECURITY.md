@@ -350,7 +350,7 @@ finding left open gets an owner step in `PLAN.md`.
   release and kept in a static gets "Couldn't execute method ...::__destruct" from `zend_deactivate`,
   as one made in an output handler does without the extension.
 - 2026-10-08 S6.10 changes what a Windows `proc_open()` exposes when the extension is loaded: each
-  `'pipe'` descriptor is a named pipe (`io-hooks-fixes` `60ec85a2fb4`, `create_overlapped_pipe()` in
+  `'pipe'` descriptor is a named pipe (`io-hooks-fixes` `01f279ee8d2`, `create_overlapped_pipe()` in
   `ext/standard/proc_open.c`). Another process cannot take the child's end: the name carries 64
   random bits and the pid, the pipe allows one instance and is made with
   `FILE_FLAG_FIRST_PIPE_INSTANCE` (a name already taken fails and a new one is drawn),

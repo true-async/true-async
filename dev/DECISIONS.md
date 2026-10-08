@@ -1729,3 +1729,10 @@ stack options were shown with the code).
   stay `--XFAIL--`, now by design: a socket write the kernel takes at once returns without
   suspending the coroutine, since the core sends first and submits an op only after `EAGAIN`
   (S6.md section 4); TrueAsync's fork waits for every libuv write on Windows.
+- 2026-10-08 `collector/027-future_state_kept_by_running_coroutine.phpt` and
+  `collector/036-waiter_with_timeout_keeps_state_of_other_waiter.phpt` (ours, S7;
+  `changed:2026-10-08`): two `suspend()` calls after the main script's `delay()`, before it prints
+  `end`. Why: under load on Windows the main script printed `end` before the waiter the first
+  coroutine woke (each failed once in two `pocs-win` runs and passed 10 of 10 alone, Edmond's PC,
+  S6.10); inferred cause: both timers fire in one tick, and the wake of the waiter queues behind
+  the main script. The tests check what the collector reports, not the order of the two timers.

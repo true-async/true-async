@@ -632,9 +632,9 @@ Active: none; stage closed with S6.10
       (`dev/plans/S6.md` section 9), the Windows lane's socket expectations from S6.4.
       done: `sockets` and `openssl` load in `pocs-win`; no `xfail-on` tag or `--XFAIL--` names
         S6.10; the frozen `skip-on:pocs-win(...-until-S6.4)` and `(...-until-S6.5)` tags skip nothing
-      handoff: done 2026-10-08 on core `bbbbe010dd4` (`async-core-io-2026-10-08-2`: bukka's head
-        `566a6833eb5`, `io-hooks-fixes` `60ec85a2fb4`, `php-src-fixes` `acc6b34faa3`) and ior
-        `e13c369400e` (`release-handle` in true-async/ior): `pocs-dbg` 1243 PASS, 11 SKIP, 11 XFAIL;
+      handoff: done 2026-10-08 on core `c803683148a` (`async-core-io-2026-10-08-2`: bukka's head
+        `566a6833eb5`, `io-hooks-fixes` `01f279ee8d2`, `php-src-fixes` `acc6b34faa3`) and ior
+        `574afcd7901` (`release-handle` in true-async/ior): `pocs-dbg` 1243 PASS, 11 SKIP, 11 XFAIL;
         `pocs-asan` 1219 PASS, 36 SKIP, 10 XFAIL; 7 left out by `core:` tags; 0 unexpected. On
         Edmond's PC, `pocs-win` Release_TS and Debug_TS each 1151 PASS, 102 SKIP, 12 XFAIL, 0
         unexpected, with `sockets`, `openssl` and `curl` loaded (curl 69 PASS). S6.md 9.1 as built:

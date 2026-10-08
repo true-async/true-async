@@ -316,7 +316,7 @@ Waits for it: nothing in this repository.
 
 ## 18. IO hooks: overlapped proc_open() pipes on Windows
 
-State: on `io-hooks-fixes` `60ec85a2fb4` (2026-10-08, S6.10), in the core from
+State: on `io-hooks-fixes` `01f279ee8d2` (2026-10-08, S6.10), in the core from
 `async-core-io-2026-10-08-2`; PR text for bukka in
 `/mnt/project-files/notes/s6-10/io-hooks-overlapped-pipes-pr.md`, Edmond opens it. Needs ior with
 `ior_release_handle()` (true-async/ior `release-handle`, PR text for libior/ior in

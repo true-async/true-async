@@ -7,7 +7,7 @@ Written 2026-10-06. S3 closed: S3.24 re-ran its Done when on the final core; S4,
 
 ## State
 
-- Core pinned: `async-core-io-2026-10-08-2` (`bbbbe010dd4`), ior `e13c369400e` (2026-10-08, S6.10). CI gates every lane on every list; a
+- Core pinned: `async-core-io-2026-10-08-2` (`c803683148a`), ior `574afcd7901` (2026-10-08, S6.10). CI gates every lane on every list; a
   test that cannot pass yet carries `--XFAIL--` naming its step, and the commit that makes it pass
   removes the section. run-tests (`tools/run-tests.patch`) fails a test the timeout killed.
 - S3.3-S3.6a: internal API, classes, the `Coroutine` object, the core's slots, the FIFO run queue,
@@ -301,10 +301,10 @@ PRs to bukka and libior/ior from `/mnt/project-files/notes/s6-10/`.
   the copy of an ACCEPT op into a POLL (note section 4). The Ring's multishot accept hid pending
   connections from `stream_select()`; that Ring bug goes to bukka (a pull request is being
   prepared in the S6.4 thread, `dev/WORKFLOW.md` "Ownership").
-- The core is `async-core-io-2026-10-08-2` (`bbbbe010dd4`): `async-core-io-2026-10-08` with bukka's
+- The core is `async-core-io-2026-10-08-2` (`c803683148a`): `async-core-io-2026-10-08` with bukka's
   head `566a6833eb5` (a newer php-src master: `interface_gets_implemented` returns void; his
-  `bdfa5fa7a12` keeps a watched signal blocked under pcntl), `io-hooks-fixes` `60ec85a2fb4` (the
-  pipes) and `php-src-fixes` `acc6b34faa3` merged; ior `e13c369400e` (true-async/ior
+  `bdfa5fa7a12` keeps a watched signal blocked under pcntl), `io-hooks-fixes` `01f279ee8d2` (the
+  pipes) and `php-src-fixes` `acc6b34faa3` merged; ior `574afcd7901` (true-async/ior
   `release-handle`; CI fetches it by SHA through libior/ior's URL, which serves the fork's
   commits). `async-core-io-2026-10-08` (`662dfe91919`) was `async-core-io-2026-10-07-6` with
   `async-core` `b7c70909437` (a context value's replace and the context's destroy release the old
