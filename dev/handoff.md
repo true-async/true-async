@@ -298,7 +298,9 @@ the stage's last step.
   the copy of an ACCEPT op into a POLL (note section 4). The Ring's multishot accept hid pending
   connections from `stream_select()`; that Ring bug goes to bukka (a pull request is being
   prepared in the S6.4 thread, `dev/WORKFLOW.md` "Ownership").
-- The core is `async-core-io-2026-10-07-6` (`0145ca90d78`): `async-core-io-2026-10-07-5` with
+- The core is `async-core-io-2026-10-08` (`662dfe91919`): `async-core-io-2026-10-07-6` with
+  `async-core` `b7c70909437` (a context value's replace and the context's destroy release the old
+  value last, `dev/RFC-CHANGES.md` 16) merged. -6 is `async-core-io-2026-10-07-5` with
   `php-src-fixes` `74a581afc06` (the pcntl dispatch fix) and `async-core` `f6f3eb6e44b` (a test
   file only) merged. -5 is `async-core-io-2026-10-07-4` (the connect fix of
   `io-hooks-connect-started`, bukka/php-src#4) with `async-core` `50cd33b0eec` (the GC run first in

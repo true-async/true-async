@@ -269,8 +269,12 @@ Waits for it: nothing; the pinned core carries it (`gc/025`).
 
 ## 16. Scheduler API: replacing a context's string-key value destroys the old value in place
 
-State: not sent; found in S9.10 (the Critic, 2026-10-08). The scheduler RFC is ours: the fix is one
-commit on `async-core`; pushing it updates php/php-src#22561 and waits for Edmond's word. PR: none.
+State: fixed on `async-core` `b7c70909437` (2026-10-08, pushed on Edmond's word; it updates
+php/php-src#22561), pinned in `async-core-io-2026-10-08` `662dfe91919`; found in S9.10 (the Critic).
+The same commit fixes `zend_async_internal_context_set()` and `zend_async_context_destroy()`, which
+released the store while the coroutine still pointed at it. Tested through the bridge
+ext-scheduler-hook (`/mnt/project-files/s9/rfc16/`): php-src has no class to reach the userland
+context. PR: none.
 
 Need: `zend_async_context_entry_set()` replaces a string key's value with `zend_hash_update()`
 (`Zend/zend_async_API.c:240`), which runs the old value's destructor while the bucket still holds the
