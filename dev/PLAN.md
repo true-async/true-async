@@ -65,6 +65,14 @@ Waiting for Edmond's call; nothing here is being worked on.
   scheduler's suspend, which the extension does not call by Edmond's rule (`tools/check-gates.py`
   refuses it); the second option is leaving it to the script, the third a core change (pcntl lifts
   its block and mask around a coroutine's suspend), an S8 change-request candidate. Edmond's call.
+- Fiber stacks on Windows (the Critic on `scope/058`): `zend_fiber_stack_allocate()` commits the
+  whole 2 MB stack (`VirtualAlloc(MEM_COMMIT)`, `Zend/zend_fibers.c:234`), as TrueAsync's core and
+  PHP's `Fiber` do, so 20 000 suspended coroutines need about 40 GB of commit; `collector/064`
+  skips on Windows, and `scope/058` suspends fewer to fit there. Reserving the stack and committing
+  it on demand is a core change: `make_fcontext()` stores the bottom of the whole stack as its
+  limit (`Zend/asm/make_x86_64_ms_pe_masm.asm:115-118`) and the switch writes it into the thread's
+  TIB (`jump_x86_64_ms_pe_masm.asm:169-171`), so `__chkstk` probes no page of a large frame, and a
+  guard page alone would be jumped (read from the code, not tried on Windows). Edmond's call.
 
 ## Parallel tracks
 

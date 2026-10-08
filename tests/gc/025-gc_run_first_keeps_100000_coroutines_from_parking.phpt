@@ -1,5 +1,7 @@
 --TEST--
 GC: the collector's run goes to the front of the queue, so 100 000 coroutines that fill the root buffer do not park until the fibers pass vm.max_map_count
+--CONFLICTS--
+fiber_stacks
 --SKIPIF--
 <?php
 if (getenv('TRUE_ASYNC_SCHED') !== false) {

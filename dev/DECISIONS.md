@@ -1563,3 +1563,24 @@ stack options were shown with the code).
   Accepted with TrueAsync: the recursive subtree walks, the per-level completion test of a cascade and
   the sibling rescans (`dev/SECURITY.md`, 2026-10-08); an iterative walk by the child index is noted,
   not built.
+- 2026-10-08 `scope/058-scope_many_members_leave_out_of_order.phpt`: one coroutine in a hundred
+  yields once, not one in ten; every tenth still runs until the cancel, and GC stays off.
+  Reversible; the coordinator's call, not Edmond's. Why: Windows commits each 2 MB fiber stack in
+  full (`Zend/zend_fibers.c:234` of async-core `f6f3eb6e44b`; TrueAsync's core the same, line 236
+  of branch `true-async`), and 20 000 suspended coroutines, about 40 GB, passed the CI runner's
+  commit limit ("VirtualAlloc failed: [0x000005af]") in each `pocs-win` run of main checked (CI
+  runs 126, 130, 131, 132); a test run beside it died at the same limit (`scope/066` "Can't
+  initialize heap", `scope/085` 0xC000012D). On the Linux debug build (`VmPeak`) the old version
+  peaks at 40.6 GB in 20 013 mappings of 2 MB or more, the new one at 22.4 GB in 11 013;
+  `gc/025`, the one-in-ten loop with GC on, peaks at 28.4 GB and passes on the runner. The
+  expected output is unchanged. `scope/058` and
+  `gc/025-gc_run_first_keeps_100000_coroutines_from_parking.phpt` take `--CONFLICTS--`
+  with the key `fiber_stacks`, so run-tests never runs them together: the commit limit is the
+  machine's. Rejected: GC on outside the fuzz lane, because main then resumes after each GC run of
+  the spawn loop behind the coroutines spawned so far, and the scope holds 49 001 coroutines at the
+  loop's end instead of 100 001; a SKIPIF on Windows, as `collector/064`, kept as
+  the fallback; a smaller `fiber.stack_size` for every lane, because ASAN reserves 480 KB of it
+  (`OnUpdateReservedStackSize`) and a smaller stack throws at once. Committing a fiber stack on
+  demand is a core change (PLAN, Open questions).
+- 2026-10-08 `scope/106` and `scope/107` take `skip-on:pocs-win(pcntl=no_Windows_build)`, as the
+  fork tests of S4: they need pcntl, which the Windows build lacks.

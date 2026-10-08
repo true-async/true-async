@@ -1,5 +1,7 @@
 --TEST--
 Scope: 100 000 members leave in another order than they joined; a cancel then reaches each one left
+--CONFLICTS--
+fiber_stacks
 --INI--
 zend.enable_gc=0
 --FILE--
@@ -9,18 +11,18 @@ use Async\Scope;
 use function Async\suspend;
 use function TrueAsync\Test\coroutine_count;
 
-// GC is off: the fuzz lane's random pick takes the GC run off the front of the queue, and the
-// coroutines that fill the root buffer meanwhile park until tens of thousands of fibers pass
-// vm.max_map_count. gc/025 checks the run at the front.
+// GC is off so all 100 000 join before any runs: with GC on, main resumes after each GC run of the
+// spawn loop at the tail of the queue, behind the coroutines spawned so far.
 $scope = new Scope();
 $count = 100000;
 $survivors = [];
 
-// Every tenth coroutine runs until it is cancelled, another tenth yields once, the rest finish on their
-// first run.
+// Every tenth coroutine runs until it is cancelled, one in a hundred yields once, the rest finish on
+// their first run. Windows commits each suspended coroutine's 2 MB stack in full, and 20 000 of them
+// pass the CI runner's commit limit.
 for ($i = 0; $i < $count; $i++) {
     $coroutine = $scope->spawn(function (int $kind) {
-        if ($kind === 0) {
+        if ($kind % 10 === 0) {
             for (;;) {
                 suspend();
             }
@@ -29,7 +31,7 @@ for ($i = 0; $i < $count; $i++) {
         if ($kind === 5) {
             suspend();
         }
-    }, $i % 10);
+    }, $i % 100);
 
     if ($i % 10 === 0) {
         $survivors[] = $coroutine;
