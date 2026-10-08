@@ -415,3 +415,8 @@ when it rebuilt). A finish handler that replaces the exception gives the corouti
 --diff-ref d196cbd`; it builds the debug module, so ASAN-only mutants survive it. Probe of the deep
 chain in `/mnt/project-files/s9/probes/s9.7/`. Next is S9.8, the security pass; the stack overflow
 and the refused finally start in the cancel loops are its first items.
+
+S9.8 done 2026-10-08: the security pass (`dev/SECURITY.md`, two entries of 2026-10-08).
+`async_finally_handlers_start()` runs no PHP code and leaves refused handlers to its caller; a child
+scope has `child_index`; `scope_is_completed()` takes the child scope a walk up came from. Own tests
+`scope/123`-`125`. Layer 1 is done; layer 2 (Context) needs its plan agreed with Edmond first.

@@ -1555,3 +1555,11 @@ stack options were shown with the code).
   in its chain (`zend_exception_merge`, `zend_common.c:109`). For S9.8: a chain of 50 000 nested
   scopes overflows the C stack on both; a refused finally start inside `async_scope_cancel()`'s loops
   releases handlers whose destructors run PHP code.
+- 2026-10-08 S9.8's security pass. Finally handlers whose run the scheduler refuses stay with their
+  scope: a closed scope's disposal starts them again, a disposal's own refusal releases them unrun
+  after its walk. Why: released at the refusal, their destructors ran inside a cancel's cascade and
+  could make it skip a child scope (`scope/123`). A child scope keeps its index in its parent's vector,
+  and a member's finish skips the child scope its walk up came from (section 9, items 1 and 27).
+  Accepted with TrueAsync: the recursive subtree walks, the per-level completion test of a cascade and
+  the sibling rescans (`dev/SECURITY.md`, 2026-10-08); an iterative walk by the child index is noted,
+  not built.

@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-07 · Active: per stage, under its `Tier:` line (Parallel tracks)
+Updated: 2026-10-08 · Active: per stage, under its `Tier:` line (Parallel tracks)
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -751,7 +751,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md
-Active: S9.8
+Active: none; layer 2 (Context) waits for its plan, agreed with Edmond
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -860,9 +860,18 @@ Active: S9.8
         old one's marks and reaching an `await()` waiter twice, comments that contradicted each
         other. Departures: note 9, items 22-26. For S9.8: a chain of 50 000 nested scopes overflows
         the C stack (as on TrueAsync); a refused finally start inside the cancel loops.
-- [ ] S9.8 Security pass by `dev/SECURITY.md`.
+- [x] S9.8 Security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item; findings fixed with a test or recorded
       tier: T2 · role: —
+      handoff: done 2026-10-08: journal entries in `SECURITY.md`. Fixed with tests: a finally run refused
+        for want of a stack released its handlers inside a cancel's cascade, whose destructors could make
+        it skip a child scope (`scope/123`); a child scope searched its parent's vector to leave it
+        (`scope/125`); a member's finish re-walked each parent's subtree, O(N^2) in a chain of N
+        (`scope/124`). Accepted, as TrueAsync: the recursive walks (about 43 000 nested scopes in a
+        coroutine on debug, a `stdClass` list about 6 000), a cascade's per-level completion test and the
+        sibling rescans. On CORE_REF 0145ca90d78: debug 1181 PASS, 11 XFAIL; ASAN 1157 PASS, 10 XFAIL;
+        0 unexpected on both; 20 fuzz seeds over the new tests clean. Two Critic passes: a release on the
+        refusal path could start a GC run inside the walk.
 
 ## S10 — Beyond the RFCs  [ ]
 

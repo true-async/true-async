@@ -110,11 +110,13 @@ zend_execute_data *async_coroutine_suspend_frame(async_coroutine_t *coroutine);
 void async_exit_exception_add(zend_object *exception);
 void async_unobserved_exception_add(zend_object *exception);
 
-/* Runs `finally_handlers` (taken), each called with `target` (a reference taken; NULL passes null), in
- * workers of a new child scope of `scope` (a root when NULL), at the front of the queue, one more while a
+/* Runs `finally_handlers`, taken on success, each called with `target` (a reference taken; NULL passes null),
+ * in workers of a new child scope of `scope` (a root when NULL), at the front of the queue, one more while a
  * handler waits, as TrueAsync's async_call_finally_handlers (coroutine.c:1275-1318). One handler's error is the
- * worker's outcome, several a CompositeException, and goes the worker's error route. False, with the handlers released,
- * when nothing can run them: the core turned async off, or the scheduler refused the worker. */
+ * worker's outcome, several a CompositeException, and goes the worker's error route. False, with the handlers left
+ * to the caller, when nothing can run them: the core turned async off, or the scheduler refused the worker, whose
+ * stack error is then pending. Runs no PHP code, so a caller inside a walk over scopes releases refused handlers
+ * after the walk. */
 bool async_finally_handlers_start(HashTable *finally_handlers, async_scope_t *scope, zend_object *target);
 
 #endif /* TRUE_ASYNC_COROUTINE_H */

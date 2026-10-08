@@ -512,9 +512,8 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 	if (UNEXPECTED(finally_handlers != NULL)) {
 		coroutine->finally_handlers = NULL;
 
-		if (EXPECTED(!is_bailout)) {
-			async_finally_handlers_start(finally_handlers, coroutine->scope, &coroutine->std);
-		} else {
+		if (UNEXPECTED(is_bailout ||
+					   !async_finally_handlers_start(finally_handlers, coroutine->scope, &coroutine->std))) {
 			zend_array_release(finally_handlers);
 		}
 	}
@@ -614,7 +613,6 @@ static void finally_run_dtor(async_iterator_t *iterator)
 bool async_finally_handlers_start(HashTable *finally_handlers, async_scope_t *scope, zend_object *target)
 {
 	if (UNEXPECTED(!ZEND_ASYNC_IS_ACTIVE)) {
-		zend_array_release(finally_handlers);
 		return false;
 	}
 
@@ -625,20 +623,22 @@ bool async_finally_handlers_start(HashTable *finally_handlers, async_scope_t *sc
 	finally_run_t *run = (finally_run_t *) async_iterator_new(
 			&handlers, NULL, NULL, finally_handler_call, async_scope_new(scope), 0, true, sizeof(finally_run_t));
 
-	zval_ptr_dtor(&handlers);
-
-	run->target = target;
-
-	if (target != NULL) {
-		GC_ADDREF(target);
-	}
-
+	/* The run takes the caller's reference; a refusal hands it back by forgetting it. */
+	GC_DELREF(finally_handlers);
 	run->iterator.extended_dtor = finally_run_dtor;
 
 	/* A refused worker took the run's empty scope with it. */
 	if (UNEXPECTED(!async_iterator_run_in_coroutine(&run->iterator))) {
+		ZVAL_UNDEF(&run->iterator.array);
 		ZEND_ASYNC_MICROTASK_RELEASE(&run->iterator.microtask);
 		return false;
+	}
+
+	/* Read only when the worker runs. */
+	run->target = target;
+
+	if (target != NULL) {
+		GC_ADDREF(target);
 	}
 
 	return true;

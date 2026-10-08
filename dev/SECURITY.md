@@ -278,6 +278,43 @@ finding left open gets an owner step in `PLAN.md`.
   `SignalHandle` loses its block with it: the core's count of handles per number is not a PHPAPI
   (`RFC-CHANGES.md` 5).
 
+- 2026-10-08 Security pass of the Scope layer (S9.8) over the S9 commits `9567b02`, `73a8469`,
+  `7f3068f`, `5f6982c`, `0e8ce93`, `49f90a2`, `05037c7`, `2f78732` (`src/scope.c`, `src/iterator.c`,
+  their parts of `coroutine.c`, `scheduler.c`, `await.c`, `true_async.c`, `collector.c`), by checklist
+  item, with scripts run on the debug and ASAN builds. Lifetimes: one defect fixed. A finally run the
+  scheduler refused for want of a stack (no scheduler coroutine yet, `fiber.stack_size` unmappable)
+  released its handlers inside `async_scope_cancel()`'s cascade, so a closure's destructor ran PHP code
+  in the loop: one that dropped the object of the scope at the loop's index disposed it, the last
+  sibling took its place, and the cascade skipped it, left open. The handlers now stay with the scope,
+  whose disposal starts them again or releases them after its walk, and the start releases nothing on
+  that path, so no GC run starts there either (`scope/123`). No use after free found: route handlers
+  that drop every object of the route's scopes, dispose and cancel them, spawn into them and replace
+  themselves; finally handlers that add handlers to their own scope, dispose its parent and throw;
+  `SpawnStrategy` hooks that cancel their scope, drop it and suspend between the hooks; a fatal error
+  with handlers' closures whose destructors spawn and make scopes. Refcounts on exception and bailout
+  paths: balanced (the route's handler that throws, rethrows or exits, a hook that throws, a refused
+  spawn). Engine state: no exception is pending at a handler's call; its error is taken and cleared,
+  and an exit ends the request. Sizes: two costs fixed. A child scope searched its parent's vector to
+  leave it, so 100 000 child scopes freed newest first took 5.8 s on the debug build; it keeps its index
+  now, 0.03 s for the same 100 000 (`scope/125`). A member's finish walked each parent's whole subtree again, so in the
+  innermost of 20 000 nested scopes one finish took 6.4 s; the walk up skips the child it came from
+  (`scope/124`, 0.001 s). Scope counts and the finally handlers are bounded by `memory_limit`; the
+  vectors' capacities are 32-bit and wrap at 2^31 entries, unreachable under it, as the callbacks
+  vector's. INI entries: none new. Test-only code: the oracle's hand-out and checks and
+  `TrueAsync\Test\iterate()` sit under `TRUE_ASYNC_TEST_HOOKS`; a build of the default configuration has
+  no `TrueAsync\Test\` string (checked). CI: no change of S9's own; `tools/windows/` takes the SDK by tag
+  and the dependencies without a hash, as the entry of 2026-10-03 says for the Windows lane.
+- 2026-10-08 Accepted (S9.8): the subtree walks recurse, as TrueAsync's: nested scopes overflow a
+  coroutine's C stack at about 43 000 levels on the debug build, where a plain linked list of
+  `stdClass` released in a coroutine overflows at about 6 000; walking by `parent_scope` and the child
+  index in O(1) space would remove the limit and is not built. `cancel()` tests each scope of its
+  cascade for completion over its subtree, as TrueAsync's, so a cascade down a chain of N scopes with a
+  member at the bottom costs O(N^2) (8 000: 0.67 s), and so does releasing N nested `Scope` objects
+  outermost first (20 000: 6.6 s). A completion test walks the child scopes until one runs: M members
+  that each complete their own child scope rescan N empty siblings ahead of them (20 000 each: 1.5 s),
+  and `awaitAfterCancellation()`'s wake rescans a cancelled subtree at every member's end. User code
+  pays for the shape it builds, which `memory_limit` bounds.
+
 ## Open findings
 
 None.

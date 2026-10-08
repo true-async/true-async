@@ -361,7 +361,9 @@ Traversable's exception; `await/062` loses its `--XFAIL--` in that step.
 1. **A member leaves its scope in O(1)**: the coroutine keeps its index in the scope's vector, and
    the removal moves the last member into the gap and updates its index, as S5.6 did for callbacks.
    TrueAsync searches the vector (`scope.c:58-74`), which made its 100 000-coroutine run 88 % scope
-   bookkeeping (`dev/plans/S3.md:1270`).
+   bookkeeping (`dev/plans/S3.md:1270`). A child scope keeps its index in its parent's vector the same
+   way (S9.8, `scope/125`): freeing 100 000 child scopes newest first searched for 5.8 s on the debug
+   build, and takes 0.03 s now.
 2. **Waits on a scope are S4 wait records**: a bailout while parked in `awaitCompletion()` or
    `awaitAfterCancellation()` leaves no waiter in the scope's vector, which TrueAsync's parks
    without `zend_try` do (`scope.c:370, 439`; `dev/plans/S3.md:1382`, reference bug 14).
@@ -460,7 +462,10 @@ Traversable's exception; `await/062` loses its `--XFAIL--` in that step.
     handler; TrueAsync's run takes the exit as its worker's and the script goes on to its end, then
     exits with the status (probe `pc.php`).
 21. **Handlers left when the scheduler is off are dropped unrun** (`async_finally_handlers_start`):
-    nothing would run their coroutine.
+    nothing would run their coroutine. Handlers whose run the scheduler refuses for want of a stack
+    stay with their scope: a closed scope's disposal starts them again, and a disposal's own refusal
+    releases them unrun with the scope, after its walk (S9.8, `scope/123`); a coroutine's are released
+    unrun at its finish, outside any walk.
 22. **A walk another worker stopped during a move stays stopped** (S9.7, `internal/069`): the move's
     end restores STARTED only from MOVING. TrueAsync's `ITERATOR_SAFE_MOVING_END` restores it
     whatever the state, so a worker whose generator step suspended restarts a walk another worker's
@@ -478,7 +483,11 @@ Traversable's exception; `await/062` loses its `--XFAIL--` in that step.
     (`scope_provide`, `scope/119`); TrueAsync reads the NULL scope as no scope and spawns in the
     current one (`async_API.c:32-58`).
 26. **A chain of nested scopes deep enough overflows the C stack** in the subtree walks, ours and the
-    reference's alike (50 000 `Scope::inherit()` in a coroutine, probe `s9.7/deep2.php`); S9.8 takes it.
+    reference's alike (50 000 `Scope::inherit()` in a coroutine, probe `s9.7/deep2.php`); accepted in
+    S9.8 (`dev/SECURITY.md`, 2026-10-08).
+27. **A member's finish walks each parent's other child scopes only** (S9.8, `scope/124`): the walk up
+    skips the child scope it found completed, where TrueAsync's `scope_check_completion_and_notify`
+    walks each parent's whole subtree again (`scope.c:1575-1592`), O(N^2) a finish in a chain of N.
 
 The probes of S9.6 are in `/mnt/project-files/s9/probes/s9.6/`. The probes of S9.3 are `/mnt/project-files/s9/probes/s9.3/q1.php`-`q16.php`; on the reference and
 on ours they print the same but for items 9 and 10 and for S3's report of an unobserved exception of

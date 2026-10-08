@@ -25,7 +25,7 @@
  * scope, which spawn() uses at the top level, and the root of the engine's own coroutines have no
  * object and live for the request. */
 
-/* A scope's child scopes; removal searches, as TrueAsync's. */
+/* A scope's child scopes; each knows its index (`child_index`), so it leaves in O(1). */
 typedef struct
 {
 	async_scope_t **data;
@@ -67,6 +67,7 @@ struct _async_scope_s
 	zend_fcall_info_cache child_exception_handler;
 	zend_string *filename; /* where the scope was made; NULL outside PHP code */
 	uint32_t lineno;
+	uint32_t child_index; /* in the parent's `child_scopes` */
 	/* The await_* walk whose exception cancels this scope (await.c); NULL for any other scope, and once
 	 * the walk has finished. */
 	async_coroutine_t *iterator_coroutine;

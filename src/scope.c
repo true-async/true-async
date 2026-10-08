@@ -46,20 +46,21 @@ static void scope_add_child(async_scope_t *parent_scope, async_scope_t *child_sc
 		child_scopes->data = safe_erealloc(child_scopes->data, child_scopes->capacity, sizeof(async_scope_t *), 0);
 	}
 
-	child_scopes->data[child_scopes->length++] = child_scope;
 	child_scope->parent_scope = parent_scope;
+	child_scope->child_index = child_scopes->length;
+	child_scopes->data[child_scopes->length++] = child_scope;
 }
 
 static void scope_remove_child(async_scope_t *parent_scope, const async_scope_t *child_scope)
 {
 	async_scopes_vector_t *child_scopes = &parent_scope->child_scopes;
 
-	for (uint32_t i = 0; i < child_scopes->length; i++) {
-		if (child_scopes->data[i] == child_scope) {
-			child_scopes->data[i] = child_scopes->data[--child_scopes->length];
-			return;
-		}
-	}
+	ZEND_ASSERT(child_scopes->data[child_scope->child_index] == child_scope);
+
+	async_scope_t *last_child_scope = child_scopes->data[--child_scopes->length];
+
+	child_scopes->data[child_scope->child_index] = last_child_scope;
+	last_child_scope->child_index = child_scope->child_index;
 }
 
 void async_scope_add_coroutine(async_scope_t *scope, async_coroutine_t *coroutine)
@@ -137,8 +138,10 @@ async_scope_t *async_scope_current(void)
 
 /* No coroutine of the scope or of its children runs, zombies counted or not; a closed or cancelled
  * scope counts as completed whatever runs in it (TrueAsync's can_be_disposed without the object check,
- * scope.c:1503-1555): isFinished(), and cancel()'s test for a scope with nothing left to cancel. */
-static bool scope_is_completed(const async_scope_t *scope, const bool with_zombies)
+ * scope.c:1503-1555): isFinished(), and cancel()'s test for a scope with nothing left to cancel. A
+ * `completed_child_scope` the caller found completed is not walked again. */
+static bool
+scope_is_completed(const async_scope_t *scope, const bool with_zombies, const async_scope_t *completed_child_scope)
 {
 	if (scope->event.flags & (ASYNC_SCOPE_F_CLOSED | ASYNC_SCOPE_F_CANCELLED)) {
 		return true;
@@ -151,7 +154,9 @@ static bool scope_is_completed(const async_scope_t *scope, const bool with_zombi
 	}
 
 	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
-		if (!scope_is_completed(scope->child_scopes.data[i], with_zombies)) {
+		const async_scope_t *child_scope = scope->child_scopes.data[i];
+
+		if (child_scope != completed_child_scope && !scope_is_completed(child_scope, with_zombies, NULL)) {
 			return false;
 		}
 	}
@@ -216,11 +221,15 @@ static void scope_notify_completion(async_scope_t *scope, const bool with_zombie
 	(void) member;
 #endif
 
-	while (scope != NULL && scope_is_completed(scope, with_zombies)) {
+	const async_scope_t *completed_child_scope = NULL;
+
+	/* A parent walks only its other child scopes, so a chain of N nested scopes costs O(N), not O(N^2). */
+	while (scope != NULL && scope_is_completed(scope, with_zombies, completed_child_scope)) {
 #ifdef TRUE_ASYNC_TEST_HOOKS
 		async_collector_check_records_wake(&scope->event.callbacks, member);
 #endif
 		async_callbacks_notify((async_awaitable_t *) &scope->event, &scope->event.callbacks, NULL, NULL);
+		completed_child_scope = scope;
 		scope = scope->parent_scope;
 	}
 }
@@ -321,7 +330,7 @@ static void scope_free(async_scope_t *scope, zend_array **released_handlers)
 	scope_handler_keep_back(&scope->exception_handler, released_handlers);
 	scope_handler_keep_back(&scope->child_exception_handler, released_handlers);
 
-	/* Handlers no disposal started, when the request's end frees the scope: released unrun. */
+	/* Handlers no disposal started, or whose start was refused: released unrun. */
 	if (UNEXPECTED(scope->finally_handlers != NULL)) {
 		zval finally_handlers;
 
@@ -360,7 +369,13 @@ static bool scope_finally_start(async_scope_t *scope)
 
 	if (UNEXPECTED(finally_handlers != NULL)) {
 		scope->finally_handlers = NULL;
-		is_started |= async_finally_handlers_start(finally_handlers, scope, scope->scope_object);
+
+		if (async_finally_handlers_start(finally_handlers, scope, scope->scope_object)) {
+			is_started = true;
+		} else {
+			/* Released unrun with the scope, after the walk. */
+			scope->finally_handlers = finally_handlers;
+		}
 	}
 
 	scope->event.flags &= ~ASYNC_SCOPE_F_DISPOSING;
@@ -422,7 +437,7 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 		return;
 	}
 
-	if (scope_is_completed(scope, true)) {
+	if (scope_is_completed(scope, true, NULL)) {
 		scope->event.flags |= ASYNC_SCOPE_F_CLOSED;
 		/* Its fire would find the scope closed. */
 		scope_dispose_timer_disarm(scope);
@@ -431,12 +446,17 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 			OBJ_RELEASE(error);
 		}
 
-		/* As TrueAsync's (scope.c:964-971); the run's scope keeps this one. */
+		/* As TrueAsync's (scope.c:964-971); the run's scope keeps this one. A refused start leaves the handlers
+		 * to the scope's disposal, which tries again: released here, they would run destructors inside the
+		 * cascade of the cancel walking this scope's parent. */
 		HashTable *finally_handlers = scope->finally_handlers;
 
 		if (UNEXPECTED(finally_handlers != NULL)) {
 			scope->finally_handlers = NULL;
-			async_finally_handlers_start(finally_handlers, scope, scope->scope_object);
+
+			if (UNEXPECTED(!async_finally_handlers_start(finally_handlers, scope, scope->scope_object))) {
+				scope->finally_handlers = finally_handlers;
+			}
 		}
 
 		return;
@@ -449,9 +469,8 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 
 	scope_set_cancelled(scope);
 
-	/* A cancel only queues and a closed child scope's finally run starts in a worker, so no PHP code changes
-	 * either vector under the loops while the scheduler takes the worker; a refused one releases the
-	 * handlers here (S9.8). */
+	/* A cancel only queues and a closed child scope's finally run starts in a worker, or is left to its
+	 * disposal when refused, so no PHP code changes either vector under the loops. */
 	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
 		async_scope_cancel(scope->child_scopes.data[i], error, false, is_safely);
 	}
@@ -615,8 +634,7 @@ bool async_scope_catch(async_coroutine_t *coroutine, zend_object *error)
 
 	/* Every scope on the way keeps a member, the coroutine or a child scope, until the coroutine leaves
 	 * its scope after the route, so none is disposed under the loop. An exception the cancels leave (a
-	 * refused finally start: its stack error, or a destructor of its handlers) stops the route; the caller
-	 * ends the request with it. */
+	 * refused finally start's stack error) stops the route; the caller ends the request with it. */
 	while (scope != NULL && EXPECTED(EG(exception) == NULL)) {
 		bool is_taken = false;
 
@@ -1392,7 +1410,7 @@ ZEND_METHOD(Async_Scope, awaitCompletion)
 		RETURN_THROWS();
 	}
 
-	if (scope_is_completed(scope, false)) {
+	if (scope_is_completed(scope, false, NULL)) {
 		return;
 	}
 
@@ -1432,7 +1450,7 @@ ZEND_METHOD(Async_Scope, awaitCompletion)
 		}
 
 		scope = scope_object->scope;
-	} while (scope != NULL && !scope_is_completed(scope, false));
+	} while (scope != NULL && !scope_is_completed(scope, false, NULL));
 
 	async_awaitable_release(token);
 }
@@ -1600,7 +1618,7 @@ ZEND_METHOD(Async_Scope, isFinished)
 
 	const async_scope_t *scope = THIS_SCOPE_OBJECT->scope;
 
-	RETURN_BOOL(scope == NULL || scope_is_completed(scope, false));
+	RETURN_BOOL(scope == NULL || scope_is_completed(scope, false, NULL));
 }
 
 ZEND_METHOD(Async_Scope, isClosed)
