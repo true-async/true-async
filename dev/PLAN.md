@@ -72,13 +72,12 @@ Waiting for Edmond's call; nothing here is being worked on.
   submit. The provider answers a passed deadline itself; a readiness probe at issue in ior, or in the ring as `php_io_ring_group_probe()`
   does for ANY members, is a change to bukka's code. Edmond's call.
 - Fiber stacks on Windows (the Critic on `scope/058`): `zend_fiber_stack_allocate()` commits the
-  whole 2 MB stack (`VirtualAlloc(MEM_COMMIT)`, `Zend/zend_fibers.c:234`), as TrueAsync's core and
-  PHP's `Fiber` do, so 20 000 suspended coroutines need about 40 GB of commit; `collector/064`
-  skips on Windows, and `scope/058` suspends fewer to fit there. Reserving the stack and committing
-  it on demand is a core change: `make_fcontext()` stores the bottom of the whole stack as its
-  limit (`Zend/asm/make_x86_64_ms_pe_masm.asm:115-118`) and the switch writes it into the thread's
-  TIB (`jump_x86_64_ms_pe_masm.asm:169-171`), so `__chkstk` probes no page of a large frame, and a
-  guard page alone would be jumped (read from the code, not tried on Windows). Edmond's call.
+  whole 2 MB stack (`VirtualAlloc(MEM_COMMIT)`), as TrueAsync's core and PHP's `Fiber` do, so 20 000
+  suspended coroutines need about 40 GB of commit; `collector/064` skips on Windows, and `scope/058`
+  suspends fewer to fit there. Fix proposed upstream as php/php-src#24190 (2026-10-08, branch
+  `win-fiber-stack-on-demand`): reserve the stack, commit 32 KiB, let the kernel grow it; 2074 to
+  41 KiB per suspended coroutine on Edmond's PC. Once it is in the pinned core: `scope/058` back to
+  20 000 and `collector/064` unskipped on Windows.
 - The scope of a Future's `map()`, `catch()` and `finally()` callbacks (S9.12, the Critic): S5's
   chain drain runs them in the global scope, so their `current_context()` is the root context
   (`context/039`); TrueAsync runs the mapper in the scope captured at `map()` (`future.c:1593-1600`).

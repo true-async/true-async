@@ -1,7 +1,7 @@
 --TEST--
 Scope: a finally run refused for want of a stack runs no PHP code inside the cancel's cascade, which closes every child scope; the scope's disposal starts the handlers once a stack can be had
 --INI--
-fiber.stack_size=64G
+fiber.stack_size=1048576G
 --FILE--
 <?php
 

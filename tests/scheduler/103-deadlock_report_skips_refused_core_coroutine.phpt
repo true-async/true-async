@@ -8,7 +8,7 @@ display_errors=1
 use function Async\spawn;
 use function Async\await;
 
-ini_set('fiber.stack_size', '64G'); // mmap refuses it (vm.overcommit_memory 0 or 2)
+ini_set('fiber.stack_size', '1048576G'); // 1 PiB: beyond what mmap and VirtualAlloc can place, refused everywhere
 
 $fiber = new Fiber(function () {
     echo "not reached\n";

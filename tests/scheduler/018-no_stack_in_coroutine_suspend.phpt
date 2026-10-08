@@ -9,7 +9,7 @@ register_shutdown_function(function () use (&$first, &$second) {
 
 $first = Async\spawn(function () use (&$second) {
     echo "first\n";
-    ini_set('fiber.stack_size', '64G'); // mmap refuses it (vm.overcommit_memory 0 or 2)
+    ini_set('fiber.stack_size', '1048576G'); // 1 PiB: beyond what mmap and VirtualAlloc can place, refused everywhere
     $second = Async\spawn(fn() => print("never\n"));
     Async\suspend();
     echo "not reached\n";

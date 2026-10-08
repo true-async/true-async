@@ -26,9 +26,9 @@ for ($i = 0; $i < 10001; $i++) {
 $coroutine = Async\spawn(function () use ($nodes) {
     echo "ran\n";
 });
-// After the spawn, which created the scheduler with its own stack; mmap refuses this size
-// (vm.overcommit_memory 0 or 2).
-ini_set('fiber.stack_size', '64G');
+// After the spawn, which created the scheduler with its own stack; 1 PiB is more than mmap
+// or VirtualAlloc places without an address hint, so every system refuses it.
+ini_set('fiber.stack_size', '1048576G');
 unset($nodes, $node);
 echo "end\n";
 ?>

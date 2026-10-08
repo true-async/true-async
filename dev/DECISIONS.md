@@ -1660,3 +1660,16 @@ stack options were shown with the code).
   once async is off, `context/041`; before S9.13 it read a NULL global scope), and
   `Scope::disposeAfterTimeout()` there made a new reactor queue that nothing freed (it now does
   nothing once async is off, `context/043`).
+- 2026-10-08 The tests that need a refused fiber stack ask for 1 PiB (`fiber.stack_size=1048576G`)
+  instead of 64G: beyond the 128-256 TiB that mmap without a hint and VirtualAlloc can place, so it
+  is refused on every system. Why: 64G was mapped with Linux `vm.overcommit_memory=1` (checked) or
+  mode 0 on a host with more than 64 GB of RAM and swap, and on Windows with php/php-src#24190, which
+  reserves a fiber stack and commits it on demand (10 failures on Edmond's PC; scope/123 was not in
+  that run). Not reverted with #24190. Edmond (09:03, «тесты пока временно поправь»). Tests:
+  scheduler/005-no_stack_for_coroutine.phpt, scheduler/007-no_stack_with_exception_handler.phpt,
+  scheduler/016-no_stack_full_gc_buffer.phpt, scheduler/017-no_stack_in_shutdown_suspend.phpt,
+  scheduler/018-no_stack_in_coroutine_suspend.phpt, scheduler/065-no_stack_refusals.phpt,
+  scheduler/081-suspend_refused_without_stack.phpt, scheduler/086-core_coroutine_refused_released.phpt,
+  scheduler/087-refused_core_coroutine_not_a_waiter.phpt,
+  scheduler/103-deadlock_report_skips_refused_core_coroutine.phpt,
+  scope/123-refused_finally_start_leaves_cancel_cascade_whole.phpt.

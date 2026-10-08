@@ -1,7 +1,7 @@
 --TEST--
 With no stack for the scheduler coroutine, suspend() in main is refused with the stack's exception and main runs on
 --INI--
-fiber.stack_size=64G
+fiber.stack_size=1048576G
 --FILE--
 <?php
 try {

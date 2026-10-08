@@ -1,7 +1,7 @@
 --TEST--
 With no stack for the scheduler coroutine, a microtask, a spawn and a wake of main are refused with the stack's exception
 --INI--
-fiber.stack_size=64G
+fiber.stack_size=1048576G
 --FILE--
 <?php
 use function Async\spawn;

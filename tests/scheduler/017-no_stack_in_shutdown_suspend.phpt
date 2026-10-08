@@ -5,9 +5,9 @@ A stack that cannot be taken in a shutdown function's suspend() ends the request
 register_shutdown_function(function () {
     echo "shutdown\n";
     $coroutine = Async\spawn(fn() => print("never\n"));
-    // After the spawn, which created the scheduler with its own stack; mmap refuses this size
-    // (vm.overcommit_memory 0 or 2).
-    ini_set('fiber.stack_size', '64G');
+    // After the spawn, which created the scheduler with its own stack; 1 PiB is more than mmap
+    // or VirtualAlloc places without an address hint, so every system refuses it.
+    ini_set('fiber.stack_size', '1048576G');
     Async\suspend();
     echo "not reached\n";
 });

@@ -34,7 +34,7 @@ Written 2026-10-06. S3 closed: S3.24 re-ran its Done when on the final core; S4,
 - S3.11: `dev/BENCHMARKS.md`; D2 holds on B1-B5. O6 taken (`spawn_fcall`), the context pool floor
   1024 with TrueAsync's run-queue rule, every context's first VM stack page on its C stack
   (`context_vm_stack_start`; the context's stack is `fiber.stack_size` + 16 KiB), tests
-  `scheduler/055`, `056`; the no-stack tests use `fiber.stack_size=64G`, which mmap refuses. Benchmarks: `bench/`, `tools/bench.py --count`
+  `scheduler/055`, `056`; the no-stack tests use `fiber.stack_size=1048576G` (1 PiB), which every system refuses. Benchmarks: `bench/`, `tools/bench.py --count`
   (cachegrind; the container has no hardware counters) and `--wall`. The reference builds only into
   the fork core's tree (`ext/async` lacks `ZEND_TSRMLS_CACHE_DEFINE`); our in-tree build needs the
   configure header check removed.
