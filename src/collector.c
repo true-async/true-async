@@ -909,6 +909,9 @@ async_coroutine_t **async_collector_find(uint32_t *count, const size_t ceiling)
 	}
 
 	async_coroutine_t **found = safe_emalloc(candidate_count, sizeof(*found), 0);
+#ifdef TRUE_ASYNC_TEST_HOOKS
+	const uint32_t run = ++ASYNC_G(test_collector_runs);
+#endif
 
 	for (uint32_t candidate = 0; candidate < candidate_count; candidate++) {
 		if (EXPECTED(collector.nodes[candidate].flags & COLLECTOR_NODE_LIVE)) {
@@ -919,6 +922,7 @@ async_coroutine_t **async_collector_find(uint32_t *count, const size_t ceiling)
 		found[(*count)++] = coroutine;
 #ifdef TRUE_ASYNC_TEST_HOOKS
 		coroutine->coroutine.flags |= ASYNC_COROUTINE_F_DEADLOCK_FOUND;
+		coroutine->found_run = run;
 #endif
 	}
 
@@ -1034,7 +1038,7 @@ static bool collector_report(async_coroutine_t **found, const uint32_t count)
 
 /* `cancel` (S7.md 6): each coroutine still parked is cancelled as the global deadlock cancels its
  * waiters, protection cleared. True when it cancelled one; `*first` when one of them had never been
- * cancelled before, which is what resets the back-off. */
+ * cancelled by a run before, which is what resets the back-off. */
 static bool collector_cancel(async_coroutine_t **found, const uint32_t count, bool *first)
 {
 	bool cancelled = false;
@@ -1055,7 +1059,9 @@ static bool collector_cancel(async_coroutine_t **found, const uint32_t count, bo
 			continue;
 		}
 
-		if (EXPECTED(!ZEND_COROUTINE_IS_CANCELLED(zend_coroutine))) {
+		/* Not the cancelled bit: a zombie has it without having been woken. */
+		if (EXPECTED(!(zend_coroutine->flags & ASYNC_COROUTINE_F_DEADLOCK_CANCELLED))) {
+			zend_coroutine->flags |= ASYNC_COROUTINE_F_DEADLOCK_CANCELLED;
 			*first = true;
 		}
 
@@ -1175,7 +1181,9 @@ void async_collector_check_event_wake(async_coroutine_t *waiter)
 	const async_coroutine_t *completer = (const async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
 
 	if (UNEXPECTED(completer != NULL && !ZEND_ASYNC_IN_SCHEDULER_CONTEXT &&
-				   (completer->coroutine.flags & ASYNC_COROUTINE_F_BAILOUT))) {
+				   ((completer->coroutine.flags & ASYNC_COROUTINE_F_BAILOUT) ||
+					((completer->coroutine.flags & ASYNC_COROUTINE_F_DEADLOCK_FOUND) &&
+					 completer->found_run == waiter->found_run)))) {
 		waiter->coroutine.flags |= ASYNC_COROUTINE_F_HANDED_OUT;
 		return;
 	}
@@ -1190,6 +1198,25 @@ void async_collector_check_event_wake(async_coroutine_t *waiter)
 			waiter->std.handle);
 	fflush(stderr);
 	abort();
+}
+
+void async_collector_check_records_wake(async_callbacks_vector_t *callbacks, const async_coroutine_t *member)
+{
+	async_event_callback_t **callback_slots = async_callbacks_slots(callbacks);
+
+	for (uint32_t i = 0; i < callbacks->length; i++) {
+		if (UNEXPECTED(!(callback_slots[i]->flags & ASYNC_CALLBACK_F_RECORD))) {
+			continue;
+		}
+
+		async_coroutine_t *waiter = ((async_coroutine_event_callback_t *) callback_slots[i])->coroutine;
+
+		if (member != NULL) {
+			async_collector_check_wake(waiter, member);
+		} else {
+			async_collector_check_event_wake(waiter);
+		}
+	}
 }
 
 void async_collector_check_cancel(async_coroutine_t *coroutine)

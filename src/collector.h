@@ -107,12 +107,18 @@ void async_collector_request_startup(void);
 void async_collector_check_wake(async_coroutine_t *waiter, const async_coroutine_t *target);
 
 /* The oracle for a wake by an event (a future, a token, a scope's cancel): `waiter` is woken because
- * the running code completed the event. Only a completer in the bailout is excused: what wakes found
- * coroutines (the registry's walks, get_deadlocked_coroutines(), the `cancel` policy) hands out what
- * it wakes, and the policy main too, which it does not cancel, so the waiters they wake are handed
- * out already. The route's and a SpawnStrategy's hand-out covers a subtree only (S9-scope.md 6). An
- * outside source completes in scheduler context, and what it holds the walk counts live. */
+ * the running code completed the event. Excused, and the waiter marked handed out: a completer in the
+ * bailout, and a completer the waiter's last run found too, which runs only because something excused
+ * woke it, such as the route's hand-out of a subtree (S9-scope.md 6). A handed-out completer is not:
+ * get_coroutines() marks every coroutine, its running caller too. An outside source completes in
+ * scheduler context, and what it holds the walk counts live. */
 void async_collector_check_event_wake(async_coroutine_t *waiter);
+
+/* The oracle at a notify site, before the notify, for the waiters whose records are in `callbacks`:
+ * woken because `member` finished or became a zombie, or, with no member, because the running code
+ * completed the event. The notify itself runs its callbacks in scheduler context, where the running
+ * code is not known (S9-scope.md 6). */
+void async_collector_check_records_wake(async_callbacks_vector_t *callbacks, const async_coroutine_t *member);
 
 /* The same oracle for a cancel: a coroutine the collector found is cancelled only through the
  * registry's walks (registry_cancel), the `cancel` policy or the bailout; anything else held it. */

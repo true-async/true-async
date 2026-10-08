@@ -404,3 +404,14 @@ scope, the microtask that adds them, SAFE_MOVING); the last worker to leave ends
 `/mnt/project-files/s9/probes/s9.6/`. Own tests `internal/066`-`069`, `scope/111`-`117`,
 `coroutine/040`, `bailout/016`, `017`. Next is S9.7, the layer review; the iterator is new code for its
 coverage and Mull run.
+
+S9.7 done 2026-10-07: the layer review (note 10, "The layer review"; DECISIONS, S9.7's backlog). The
+oracle stamps a run id on each found coroutine (`found_run`, test hooks only) and checks a Future's
+and a scope's waiters before the notify (`async_collector_check_records_wake`); the `cancel` policy
+marks what it cancelled (`ASYNC_COROUTINE_F_DEADLOCK_CANCELLED`); a forked child rebuilds its reactor
+at the idle point and in `get_deadlocked_coroutines()` (`async_reactor_check_fork()` returns true
+when it rebuilt). A finish handler that replaces the exception gives the coroutine a new outcome
+(the `async_finish_handler_add` contract). Benchmark `bench/b12.php` (B12). Mull: `tools/mull.py
+--diff-ref d196cbd`; it builds the debug module, so ASAN-only mutants survive it. Probe of the deep
+chain in `/mnt/project-files/s9/probes/s9.7/`. Next is S9.8, the security pass; the stack overflow
+and the refused finally start in the cancel loops are its first items.

@@ -276,14 +276,15 @@ Three cancels hold no Scope object:
 The oracle runs at the notify sites, before the wake, since the notify runs its callbacks in
 scheduler context: `scope_notify_completion()` checks the scope's waiters against the member that
 finished or became a zombie (`async_collector_check_wake()`, which excuses one handed out or in the
-bailout), and `async_scope_cancel()` against the running code (`async_collector_check_event_wake()`).
+bailout), and `async_scope_cancel()` and a Future's completion against the running code, both before their
+notify (`async_collector_check_records_wake()`, S9.7).
 The `cancel` policy hands out main too, which it does not cancel and the coroutines it cancels may
 wake (`scope/093`). The route's own notify needs none: the hand-out ran first. (The Critic and the Sage, 2026-10-07;
 S9.9's Critic, 2026-10-07.)
 
 ## 7. Finally handlers (D21)
 
-`Scope::finally(callable)` and `Coroutine::finally(\Closure)` store the callable; at the scope's
+`Scope::finally(\Closure)` and `Coroutine::finally(\Closure)` store the closure; at the scope's
 disposal or the coroutine's finish the handlers run through an iterator in a child scope of the
 scope (or of the coroutine's scope), with the scope or the coroutine as the argument
 (`coroutine.c:1225-1350`, `scope.c:1720-1753`). One handler error goes on as itself, two or more as a
@@ -460,6 +461,24 @@ Traversable's exception; `await/062` loses its `--XFAIL--` in that step.
     exits with the status (probe `pc.php`).
 21. **Handlers left when the scheduler is off are dropped unrun** (`async_finally_handlers_start`):
     nothing would run their coroutine.
+22. **A walk another worker stopped during a move stays stopped** (S9.7, `internal/069`): the move's
+    end restores STARTED only from MOVING. TrueAsync's `ITERATOR_SAFE_MOVING_END` restores it
+    whatever the state, so a worker whose generator step suspended restarts a walk another worker's
+    `return false` had stopped. `valid()` runs inside the same guard, which the reference calls
+    outside it; a Traversable without `get_current_key` gives the position as the key, where the
+    reference calls the NULL handler (`iterator.c:445`).
+23. **`awaitCompletion()` waits again while the subtree still runs when the waiter runs** (S9.7,
+    `scope.c` awaitCompletion's loop): woken by another enqueue than the scope's, or by the scope's
+    with a member spawned before it ran (`scope/122`); TrueAsync returns at the first wake
+    (`scope.c:301-372`).
+24. **`awaitCompletion()` counts running coroutines of the subtree, not child scopes** (`scope/119`):
+    a scope whose child scopes have no coroutine left returns at once, where TrueAsync waits while
+    `scopes.length != 0` (`scope.c:344`).
+25. **A provider returning a Scope whose scope was freed throws** "Scope object has been disposed"
+    (`scope_provide`, `scope/119`); TrueAsync reads the NULL scope as no scope and spawns in the
+    current one (`async_API.c:32-58`).
+26. **A chain of nested scopes deep enough overflows the C stack** in the subtree walks, ours and the
+    reference's alike (50 000 `Scope::inherit()` in a coroutine, probe `s9.7/deep2.php`); S9.8 takes it.
 
 The probes of S9.6 are in `/mnt/project-files/s9/probes/s9.6/`. The probes of S9.3 are `/mnt/project-files/s9/probes/s9.3/q1.php`-`q16.php`; on the reference and
 on ours they print the same but for items 9 and 10 and for S3's report of an unobserved exception of
@@ -516,6 +535,8 @@ that directory.
 - S9.6: `internal/066`-`069` for the iterator core through `TrueAsync\Test\iterate()`;
   `scope/111`-`117`, `coroutine/040` and `bailout/016`, `017` for section 9, items 18-20, where the
   handlers' errors go, a handler that suspends, a handler added late, and the handlers after a bailout.
+- S9.7: `collector/073`-`078`, `scope/118`-`122`, `internal/070`, `071` for the backlog, the Critic's
+  findings and the Mull survivors (the layer review below).
 
 **Core dependencies**: none. `is_safely` and `get_coroutine_count` are in the pinned core
 (API version 2).
@@ -523,6 +544,30 @@ that directory.
 **Measurements** (stage review, `dev/BENCHMARKS.md`): spawn to finish with the scope against the
 same code before S9.2, and against the reference, at 1, 1 000 and 100 000 coroutines; one
 `awaitCompletion()` over N in 1 000 and 100 000 members.
+
+**The layer review** (S9.7, 2026-10-07). Coverage on the debug lane: `src/scope.c` 775 of 819 lines,
+`src/iterator.c` 212 of 248 (before S9.7's tests). Mull (`tools/mull.py --diff-ref d196cbd --source
+src/scope.c --source src/iterator.c`, the 247 tests of `S9.txt` and `collector/`): 175 mutants, 26 not
+killed, 15 killed for time, line numbers as in that run; after it, `collector/078` and `scope/120`
+kill `scope.c:170`, `1303`, `1307`, and `scope/122` kills `1434` in the FIFO order (checked by
+hand). The other 22, by what answers them:
+
+- Seen only by ASAN, as Mull builds the debug module: `scope.c:45`, two mutants (the vector's
+  growth), `57` (a read past the vector when the child is missing), `831` (a read past the
+  arguments), `298`, `302` (a freed scope's later child or coroutine keeps its pointer).
+- Unreachable: `scope.c:81` (every add takes a new coroutine, never a zombie); `147` (a scope with
+  zombies is cancelled and returns at the flag check before the sum); `192` (a child scope that can
+  be disposed is disposed at once, so none waits in the vector ahead of one that cannot);
+  `iterator.c:352`, `353`, `360` (an INDIRECT slot: the callers hand in a copied array or the
+  handlers' table).
+- Equivalent: `scope.c:1190` (a timer re-armed at the same deadline); `1452` (an extra wake of
+  `awaitAfterCancellation()` waits again in its loop); `1780` (`scope_free` detaches what the
+  request's removal skips).
+- Not covered by a test: `scope.c:328` (finally handlers no disposal started, freed at the request's
+  end); `486` (a stand-in's `isCancelled()` after its scope is gone); `751` (a cancel refused for want
+  of a stack); `577`, `588`, `598` (the oracle's hand-out with two found members in one routed scope:
+  a mutant only narrows the excuse); `iterator.c:401` (the index is the key only for a Traversable
+  without `get_current_key`, item 22).
 
 ## 11. Steps
 

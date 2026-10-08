@@ -31,6 +31,9 @@ struct _async_coroutine_s
 	async_waker_t waker;
 	async_scope_t *scope; /* NULL out of a scope (scope.h) */
 	uint32_t scope_index;
+#ifdef TRUE_ASYNC_TEST_HOOKS
+	uint32_t found_run; /* the oracle's: the last run that found it (collector.h); in scope_index's padding */
+#endif
 	zend_object *deferred_cancellation;                        /* the cancel that arrived inside protect() */
 	async_coroutine_switch_handlers_vector_t *switch_handlers; /* lazy */
 	HashTable *finally_handlers;                               /* lazy: the closures of Coroutine::finally() */
@@ -92,7 +95,8 @@ void async_register_coroutine_ce(zend_class_entry *completable_interface);
 void async_coroutine_execute(async_coroutine_t *coroutine);
 
 /* Finishes the coroutine: FINISHED, an exception pending in EG becomes its outcome, its waiters and
- * finish handlers run (is_bailout when ASYNC_COROUTINE_F_BAILOUT is set), it leaves the registry
+ * finish handlers run (is_bailout when ASYNC_COROUTINE_F_BAILOUT is set), an error nobody observed takes
+ * its scope's route (S9-scope.md 4), its finally handlers start, it leaves its scope and the registry,
  * and the scheduler drops its birth reference. An outcome exception nobody can observe becomes the
  * request's exit exception (S3.md section 6). */
 void async_coroutine_finalize(async_coroutine_t *coroutine);
@@ -106,10 +110,10 @@ zend_execute_data *async_coroutine_suspend_frame(async_coroutine_t *coroutine);
 void async_exit_exception_add(zend_object *exception);
 void async_unobserved_exception_add(zend_object *exception);
 
-/* Runs `finally_handlers` (taken), each called with `target` (a reference taken; NULL passes null), in a
- * worker of a new child scope of `scope` (a root when NULL), at the front of the queue, as TrueAsync's
- * async_call_finally_handlers (coroutine.c:1275-1318). One handler's error is the worker's outcome,
- * several a CompositeException, and goes the worker's error route. False, with the handlers released,
+/* Runs `finally_handlers` (taken), each called with `target` (a reference taken; NULL passes null), in
+ * workers of a new child scope of `scope` (a root when NULL), at the front of the queue, one more while a
+ * handler waits, as TrueAsync's async_call_finally_handlers (coroutine.c:1275-1318). One handler's error is the
+ * worker's outcome, several a CompositeException, and goes the worker's error route. False, with the handlers released,
  * when nothing can run them: the core turned async off, or the scheduler refused the worker. */
 bool async_finally_handlers_start(HashTable *finally_handlers, async_scope_t *scope, zend_object *target);
 

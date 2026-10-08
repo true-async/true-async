@@ -42,10 +42,9 @@ static void iterator_defer(async_iterator_t *iterator)
 
 /* The last worker to leave ends with the iterator's exception, which then goes its route as that
  * worker's error, a cancellation it was given before chained as its previous. One that ran throws it in
- * its body, where an exit stays. One that never ran has no body to throw from: its finish handler makes
- * the error its outcome and takes finalize's steps with it, in the notify (S9-scope.md 9, item 9): a
- * cancellation ends there, a scope's handler may take the error, and one nobody holds ends the request. */
-static void iterator_end_worker(async_iterator_t *iterator, async_coroutine_t *worker, const bool is_run)
+ * its body, where an exit stays; one that never ran has no body, so its finish handler makes the error
+ * its outcome, which finalize takes after the notify. */
+static void iterator_end_worker(async_iterator_t *iterator, async_coroutine_t *worker, const bool has_run)
 {
 	zend_object *exception = iterator->exception;
 
@@ -55,11 +54,11 @@ static void iterator_end_worker(async_iterator_t *iterator, async_coroutine_t *w
 
 	iterator->exception = NULL;
 
-	if (is_run) {
+	if (EXPECTED(has_run)) {
 		zend_object *previous = EG(exception);
 
 		if (UNEXPECTED(previous != NULL)) {
-			if (async_is_exit_object(previous)) {
+			if (UNEXPECTED(async_is_exit_object(previous))) {
 				OBJ_RELEASE(exception);
 				return;
 			}
@@ -75,31 +74,12 @@ static void iterator_end_worker(async_iterator_t *iterator, async_coroutine_t *w
 
 	zend_coroutine_t *zend_worker = &worker->coroutine;
 
-	if (zend_worker->exception != NULL) {
-		zend_exception_set_previous(exception, zend_worker->exception);
-	}
-
+	zend_exception_set_previous(exception, zend_worker->exception);
 	zend_worker->exception = exception;
-
-	if (instanceof_function(exception->ce, async_ce_cancellation)) {
-		return;
-	}
-
-	if (async_scope_catch(worker, exception)) {
-		zend_worker->flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
-		return;
-	}
-
-	/* Nobody holds the worker: only the scheduler's reference and finalize's are left, as finalize checks. */
-	if (GC_REFCOUNT(&worker->std) <= 2) {
-		zend_worker->flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
-		GC_ADDREF(exception);
-		async_scheduler_exit_with(exception);
-	}
 }
 
 /* Gives back the slot a worker took at its spawn; the last one to leave finishes the iterator. */
-static void iterator_release_coroutine(async_iterator_t *iterator, async_coroutine_t *worker, const bool is_run)
+static void iterator_release_coroutine(async_iterator_t *iterator, async_coroutine_t *worker, const bool has_run)
 {
 	if (iterator->active_coroutines > 1) {
 		iterator->active_coroutines--;
@@ -108,11 +88,11 @@ static void iterator_release_coroutine(async_iterator_t *iterator, async_corouti
 
 	iterator->active_coroutines = 0;
 	iterator->state = ASYNC_ITERATOR_FINISHED;
-	iterator_end_worker(iterator, worker, is_run);
+	iterator_end_worker(iterator, worker, has_run);
 }
 
-/* A worker cancelled before its first run: its slot and its reference go here. After a bailout nothing
- * more runs, and the iterator's exception goes with it. */
+/* Lets go of a worker that never ran, whose entry would have taken `extended_data`: its slot and its
+ * reference go here. After a bailout nothing more runs, and the iterator's exception goes with it. */
 static bool iterator_worker_finished(zend_coroutine_t *coroutine, zend_coroutine_t *waiter, void *data, bool is_bailout)
 {
 	(void) waiter;
@@ -159,9 +139,7 @@ static async_coroutine_t *iterator_worker_spawn(async_iterator_t *iterator)
 	async_scope_add_coroutine(iterator->scope, worker);
 
 	if (UNEXPECTED(!async_scheduler_enqueue(&worker->coroutine, NULL, false))) {
-		async_scope_remove_coroutine(worker);
-		zend_hash_index_del(&ASYNC_G(coroutines), worker->std.handle);
-		OBJ_RELEASE(&worker->std);
+		async_scope_discard_coroutine(worker);
 		return NULL;
 	}
 
@@ -192,7 +170,7 @@ static void iterator_dtor(zend_async_microtask_t *microtask)
 	async_iterator_t *iterator = (async_iterator_t *) microtask;
 
 	if (iterator->extended_dtor != NULL) {
-		const async_iterator_method_t extended_dtor = iterator->extended_dtor;
+		const async_iterator_dtor_t extended_dtor = iterator->extended_dtor;
 		iterator->extended_dtor = NULL;
 		extended_dtor(iterator);
 	}
@@ -224,7 +202,7 @@ static void iterator_dtor(zend_async_microtask_t *microtask)
 /* The Traversable is moved by one worker at a time: a move may run PHP code that suspends, and the
  * microtask spawns no worker meanwhile. A microtask the tick dropped while it was cancelled is queued
  * again; the cancel is lifted, or no worker would be spawned after a move that did not suspend. A walk
- * another worker stopped during the move stays stopped: TrueAsync's end of the move started it again. */
+ * another worker stopped during the move stays stopped (S9-scope.md 9, item 22). */
 #define ITERATOR_SAFE_MOVING_START(iterator) \
 	(iterator)->state = ASYNC_ITERATOR_MOVING; \
 	(iterator)->microtask.is_cancelled = true; \
@@ -313,7 +291,8 @@ static void iterator_walk(async_iterator_t *iterator)
 			iterator->hash_iterator = zend_hash_iterator_add(Z_ARRVAL(iterator->array), iterator->position);
 		}
 
-		/* The array may have changed while the previous handler ran. */
+		/* As TrueAsync (iterator.c:349), for an array a handler changed. Kept for parity: our callers hand
+		 * in arrays no PHP code can change. */
 		iterator->position = zend_hash_iterator_pos_ex(iterator->hash_iterator, &iterator->array);
 		iterator->target_hash = Z_ARRVAL(iterator->array);
 	} else if (iterator->state == ASYNC_ITERATOR_INIT) {
@@ -355,19 +334,19 @@ static void iterator_walk(async_iterator_t *iterator)
 				break;
 			}
 
-			if (current != NULL) {
+			if (EXPECTED(current != NULL)) {
 				ZVAL_COPY(&current_item, current);
 				current = &current_item;
 			}
 		}
 
-		if (current == NULL) {
+		if (UNEXPECTED(current == NULL)) {
 			ITERATOR_FINISH(iterator);
 			break;
 		}
 
 		/* An undefined slot of an object's properties table is skipped. */
-		if (Z_TYPE_P(current) == IS_INDIRECT) {
+		if (UNEXPECTED(Z_TYPE_P(current) == IS_INDIRECT)) {
 			current = Z_INDIRECT_P(current);
 
 			if (Z_TYPE_P(current) == IS_UNDEF) {
@@ -411,7 +390,8 @@ static void iterator_walk(async_iterator_t *iterator)
 			}
 		}
 
-		/* The next element before the call, as foreach does: the handler may change the array. */
+		/* The next element before the call, as foreach does: while the handler waits, another worker takes
+		 * the next one. */
 		if (iterator->target_hash != NULL) {
 			zend_hash_move_forward_ex(iterator->target_hash, &iterator->position);
 			EG(ht_iterators)[iterator->hash_iterator].pos = iterator->position;
@@ -484,9 +464,7 @@ static void iterator_take_exception(async_iterator_t *iterator)
 	GC_ADDREF(exception);
 	zend_clear_exception();
 
-	if (iterator->exception != NULL) {
-		zend_exception_set_previous(exception, iterator->exception);
-	}
+	zend_exception_set_previous(exception, iterator->exception);
 
 	iterator->exception = exception;
 
@@ -502,7 +480,7 @@ static void iterator_take_exception(async_iterator_t *iterator)
 					   (scope->event.flags & ASYNC_SCOPE_F_DISPOSE_SAFELY) != 0);
 }
 
-void async_iterator_run(async_iterator_t *iterator)
+static void iterator_run(async_iterator_t *iterator)
 {
 	iterator_defer(iterator);
 	iterator_walk(iterator);
@@ -515,7 +493,7 @@ static void iterator_worker_entry(void)
 	async_iterator_t *iterator = worker->extended_data;
 
 	worker->extended_data = NULL;
-	async_iterator_run(iterator);
+	iterator_run(iterator);
 	iterator_release_coroutine(iterator, (async_coroutine_t *) worker, true);
 	ZEND_ASYNC_MICROTASK_RELEASE(&iterator->microtask);
 }

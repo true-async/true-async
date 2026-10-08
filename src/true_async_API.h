@@ -56,11 +56,13 @@ typedef struct _async_awaitable_s
 #define ASYNC_COROUTINE_F_HI_PRIORITY (1u << 21)
 /* The collector warned that the coroutine can never wake (collector.h); never cleared. */
 #define ASYNC_COROUTINE_F_DEADLOCK_REPORTED (1u << 22)
+/* The collector's `cancel` policy cancelled it (collector.h); never cleared. */
+#define ASYNC_COROUTINE_F_DEADLOCK_CANCELLED (1u << 25)
 #ifdef TRUE_ASYNC_TEST_HOOKS
-/* The collector's oracle (collector.h): found by a run and not cancelled since. */
+/* The collector's oracle (collector.h): found by a run, the one in `found_run` last; never cleared. */
 #define ASYNC_COROUTINE_F_DEADLOCK_FOUND (1u << 23)
-/* The oracle's excuse: handed out by get_coroutines() or get_deadlocked_coroutines(), or woken by a
- * target that was. */
+/* The oracle's excuse: handed out to PHP code or cancelled by the collector's policy, or woken by
+ * something excused (collector.h). */
 #define ASYNC_COROUTINE_F_HANDED_OUT (1u << 24)
 #endif
 
@@ -288,7 +290,9 @@ typedef struct
 /* The add_finish_handler slot: adds an RFC finish handler to the coroutine's vector; returns its id, stable across the
  * removal of other handlers (a position would shift). The handler fires at most once, on the coroutine's notify (not
  * when a callback before it throws), and is dropped before it runs; its return value has no meaning (the core's own
- * handlers return false). */
+ * handlers return false). One that replaces the coroutine's exception owns the old one's reference (to release or
+ * chain) and gives the coroutine a new outcome; the callbacks after it in the same notify get the old one as their
+ * argument. */
 uint32_t async_finish_handler_add(zend_coroutine_t *coroutine,
 								  zend_coroutine_finish_handler_fn handler,
 								  zend_coroutine_t *waiter,

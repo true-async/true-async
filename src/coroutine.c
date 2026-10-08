@@ -460,6 +460,18 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 	const bool is_waiter_woken = async_callbacks_notify(
 			(async_awaitable_t *) coroutine, &coroutine->callbacks, &zend_coroutine->result, exception);
 
+	/* A finish handler may give the coroutine another outcome: an iterator worker that never ran ends with
+	 * the walk's error (iterator.c). The records that read the notify's argument marked the old one. */
+	if (UNEXPECTED(zend_coroutine->exception != NULL && zend_coroutine->exception != exception)) {
+		if (exception != NULL) {
+			OBJ_RELEASE(exception);
+		}
+
+		exception = zend_coroutine->exception;
+		GC_ADDREF(exception);
+		zend_coroutine->flags &= ~ASYNC_COROUTINE_F_EXCEPTION_HANDLED;
+	}
+
 	/* Observed: a waiter took the exception, or a finish handler cleared it. */
 	if (exception != NULL &&
 		((zend_coroutine->flags & ASYNC_COROUTINE_F_EXCEPTION_HANDLED) || zend_coroutine->exception == NULL)) {
@@ -491,10 +503,10 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 		async_scheduler_exit_with(exception);
 	}
 
-	/* After the route and the exit it may start, unlike TrueAsync, which starts them first
-	 * (coroutine.c:680), so that the route's cancel of this scope or the exit's of every coroutine does
-	 * not cancel them before they run (S9-scope.md 9). Destroyed unrun after a bailout, as TrueAsync's
-	 * (coroutine.c:1334-1340). While the coroutine is in its scope, which the run's scope hangs off. */
+	/* After the route and the unheld check, unlike TrueAsync, which starts them first (coroutine.c:680), so
+	 * that the cancel either makes does not cancel them unrun (S9-scope.md 9, item 18). Before the
+	 * coroutine leaves its scope: the run's scope is a child of it and keeps it from being disposed.
+	 * Destroyed unrun after a bailout, as TrueAsync's (coroutine.c:1334-1340). */
 	HashTable *finally_handlers = coroutine->finally_handlers;
 
 	if (UNEXPECTED(finally_handlers != NULL)) {

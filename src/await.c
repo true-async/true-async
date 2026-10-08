@@ -1253,9 +1253,7 @@ static void await_traversable(await_context_t *context, zend_object_iterator *it
 	async_finish_handler_add(&iterator_coroutine->coroutine, await_iterator_finished, NULL, NULL);
 
 	if (UNEXPECTED(!async_scheduler_enqueue(&iterator_coroutine->coroutine, NULL, false))) {
-		async_scope_remove_coroutine(iterator_coroutine);
-		zend_hash_index_del(&ASYNC_G(coroutines), iterator_coroutine->std.handle);
-		OBJ_RELEASE(&iterator_coroutine->std);
+		async_scope_discard_coroutine(iterator_coroutine);
 		return;
 	}
 

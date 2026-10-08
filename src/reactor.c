@@ -740,13 +740,15 @@ static void timers_run(async_reactor_t *reactor)
 }
 
 /* At every reactor entry: a forked child rebuilds first (S4.md 3.1). */
-static zend_always_inline void reactor_check_fork(async_reactor_t *reactor)
+static zend_always_inline bool reactor_check_fork(async_reactor_t *reactor)
 {
 #ifndef PHP_WIN32
 	if (UNEXPECTED(reactor->queue != NULL && reactor->queue_pid != getpid())) {
 		reactor_rebuild(reactor);
+		return true;
 	}
 #endif
+	return false;
 }
 
 /* The submit to an existing queue, a TIMER's to the heap instead, without the dispatch of an inline
@@ -845,9 +847,9 @@ static int reactor_try_submit(async_reactor_t *reactor, async_io_event_t *event,
 	return 0;
 }
 
-void async_reactor_check_fork(void)
+bool async_reactor_check_fork(void)
 {
-	reactor_check_fork(&ASYNC_G(reactor));
+	return reactor_check_fork(&ASYNC_G(reactor));
 }
 
 zend_result async_io_event_submit(async_io_event_t *event)
@@ -1322,8 +1324,8 @@ bool async_reactor_wait_idle(void)
 {
 	async_reactor_t *reactor = &ASYNC_G(reactor);
 
-	ZEND_ASSERT(async_reactor_has_waits(reactor));
 	reactor_check_fork(reactor);
+	ZEND_ASSERT(async_reactor_has_waits(reactor));
 
 	/* Started triggers in a child whose rebuild could not make a queue: nothing can wake them. */
 	if (UNEXPECTED(reactor->queue == NULL)) {

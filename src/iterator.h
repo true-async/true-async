@@ -26,7 +26,7 @@ typedef struct _async_iterator_s async_iterator_t;
 
 /* Called for an element; FAILURE or an exception stops the walk. */
 typedef zend_result (*async_iterator_handler_t)(async_iterator_t *iterator, zval *current, zval *key);
-typedef void (*async_iterator_method_t)(async_iterator_t *iterator);
+typedef void (*async_iterator_dtor_t)(async_iterator_t *iterator);
 
 typedef enum
 {
@@ -42,8 +42,8 @@ struct _async_iterator_s
 	/* First: the microtask's last release frees the iterator. Each worker and the queued microtask hold a
 	 * reference, and so does the creator until it starts the walk. */
 	zend_async_microtask_t microtask;
-	async_scope_t *scope;                  /* where the workers are spawned */
-	async_iterator_method_t extended_dtor; /* releases what a caller's larger struct holds */
+	async_scope_t *scope;                /* where the workers are spawned */
+	async_iterator_dtor_t extended_dtor; /* releases what a caller's larger struct holds */
 	unsigned int concurrency;
 	bool is_hi_priority; /* each worker goes to the front of the queue on its first enqueue */
 	async_iterator_state_t state;
@@ -55,17 +55,17 @@ struct _async_iterator_s
 	zend_object *exception;
 	async_iterator_handler_t handler;
 	zend_fcall_t *fcall; /* a callable called as fn($value, $key) instead of `handler`; the iterator's */
-	zval array;          /* a copy of the walked array, UNDEF for a Traversable */
+	zval array;          /* the walked array, a reference of the iterator's; UNDEF for a Traversable */
 	HashTable *target_hash;
 	HashPosition position;
 	uint32_t hash_iterator;              /* the engine's iterator of `array`, kept valid across its changes */
 	zend_object_iterator *zend_iterator; /* the walked Traversable's, the iterator's */
 };
 
-/* An iterator over `array` (copied, never immutable: the caller separates it) or over `zend_iterator`
+/* An iterator over `array` (referenced, never immutable: the caller separates it) or over `zend_iterator`
  * (taken), calling `fcall` (taken) or `handler` for each element, with workers spawned in `scope`.
  * `iterator_size` is the size of a caller's struct that starts with this one, or 0. Nothing runs
- * until async_iterator_run() or async_iterator_run_in_coroutine(). */
+ * until async_iterator_run_in_coroutine(). */
 async_iterator_t *async_iterator_new(zval *array,
 									 zend_object_iterator *zend_iterator,
 									 zend_fcall_t *fcall,
@@ -74,11 +74,6 @@ async_iterator_t *async_iterator_new(zval *array,
 									 unsigned int concurrency,
 									 bool is_hi_priority,
 									 size_t iterator_size);
-
-/* Walks the elements in the current coroutine, with workers joining while a handler waits. The
- * walk's exception lands in `exception` and cancels the iterator's scope; the current coroutine is no
- * worker and does not end with it. */
-void async_iterator_run(async_iterator_t *iterator);
 
 /* Walks the elements in a new worker, which takes the creator's reference. False when the worker
  * cannot be spawned; the reference is the caller's then. */

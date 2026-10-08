@@ -1540,3 +1540,18 @@ stack options were shown with the code).
 - 2026-10-07 After a fatal error a scope's finally handlers run in the scheduler's last run after the
   shutdown destructors, as TrueAsync's; a scope disposed while the bailout unwinds the coroutines drops
   them unrun, as the reference does; the bailout rule stays (S9.6, `bailout/013`-`017`).
+- 2026-10-07 S9.7's backlog. The fuzz oracle excuses an event's wake when the completer was found by
+  the run that found the waiter (a run id per find, test hooks only), and checks a Future's and a
+  scope's waiters before the notify, which runs in scheduler context (`collector/073`, `077`). The
+  `cancel` policy's back-off resets on a run that cancels a coroutine no run cancelled before, by a
+  flag of its own: a safe cancel sets a zombie's cancelled bit without waking it (`collector/074`).
+  A forked child rebuilds its reactor at the scheduler's idle point and in
+  `get_deadlocked_coroutines()` before either reads the parent's waits; a rebuild inside the
+  collector's run would leave `async_reactor_wait_idle()` with no waits (`collector/075`, `076`). A finish handler that replaces a
+  coroutine's exception gives it a new outcome, which takes the route when no waiter was woken: the
+  iterator's unrun last worker ends that way. Kept as TrueAsync: the route marks a closed scope
+  cancelled (catch_or_cancel does the same), so `awaitAfterCancellation()` waits for its subtree as
+  for any cancelled scope (`scope/118`); an AsyncCancellation a scope handler throws keeps the error
+  in its chain (`zend_exception_merge`, `zend_common.c:109`). For S9.8: a chain of 50 000 nested
+  scopes overflows the C stack on both; a refused finally start inside `async_scope_cancel()`'s loops
+  releases handlers whose destructors run PHP code.

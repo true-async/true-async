@@ -3,6 +3,39 @@
 The results journal: every measurement with its date, builds and outcome. The method and the
 benchmarks are `dev/plans/S3.md`, section 12; the scripts are `bench/`, the runner `tools/bench.py`.
 
+## 2026-10-07, S9.7: spawn to finish with the scope, and awaitCompletion()
+
+**Builds.** Release, ZTS, `-O2`, gcc 13.3, run with `-n`, no opcache; one count per side, the child
+pinned to one CPU of 4 (cachegrind counts, so the load of the other lanes does not change them).
+
+- `ours`: the pinned core `0145ca90d78` (`async-core-io-2026-10-07-6`) and our extension as a
+  `phpize` module of `05037c7` with S9.7's changes, the test hooks off.
+- `before`: the same core and the extension of `d196cbd`, the last commit before S9.2, which has no
+  scope (it builds and runs on this core; the note's "before S9.2" side, on the same core rather than
+  that commit's `8f89755d2b1`, so only the extension differs).
+- `ref`: the fork core `863f6dd90cf` with `ext/async` `1fdacf8` built in.
+
+`B1-1`, `B1-1000` and `B1-unbatched` are B1 at batches of 1, 1 000 and 100 000 spawns before their
+awaits; `B12-1000` and `B12-100000` spawn N members into a new Scope and wait with one
+`awaitCompletion()` (`bench/b12.php`). B12 has no `before` row: there is no Scope.
+
+| Bench | before | ours | ref | ours / before | ours / ref |
+|---|---|---|---|---|---|
+| B1 | 2,702.0 / 1.020 | 2,889.0 / 1.020 | 3,128.9 / 2.030 | 1.069 | 0.923 |
+| B1-1 | 4,100.0 / 3.000 | 4,292.0 / 3.000 | 4,793.6 / 5.000 | 1.047 | 0.895 |
+| B1-1000 | 2,682.2 / 1.002 | 2,869.2 / 1.002 | 4,233.4 / 2.006 | 1.070 | 0.678 |
+| B1-unbatched | 2,743.8 / 1.000 | 2,937.0 / 1.000 | 378,032.5 / 2.000 | 1.070 | 0.008 |
+| B12-1000 | | 2,433.4 / 1.003 | 3,887.0 / 2.007 | | 0.626 |
+| B12-100000 | | 2,429.1 / 1.000 | 127,645.9 / 2.000 | | 0.019 |
+
+Instructions / allocations per operation. Known answer: `B1-known` adds one `new stdClass` per spawn
+and counts +370.0 instructions and +1.000 allocation on `ours`, +370.0 / +1.000 on `before`, +372.1 /
++1.000 on `ref`. The scope adds about 190 instructions per spawn and no allocation, flat from 1 to
+100 000 members. The reference's cost per spawn grows with the number of live members (its code
+removes a member by a linear search of the scope's vector, `scope.c:58-73`), and it allocates one
+more block per spawn. Page faults and system calls per operation are 0 but for the unbatched runs,
+whose 100 000 live coroutines fault 0.14-0.21 pages per spawn.
+
 ## 2026-10-07, S5.6: a callback keeps its index in the vector
 
 **Builds.** As the S5.5 entry: release, ZTS, `-O2`, gcc 13.3, the core `1ee473ff67b` of that entry

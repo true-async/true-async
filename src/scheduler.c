@@ -880,6 +880,11 @@ static bool scheduler_loop(void)
 				continue;
 			}
 
+			/* Before the parent's waits are read as this child's, by the check below and the collector. */
+			if (UNEXPECTED(async_reactor_check_fork())) {
+				continue;
+			}
+
 			if (async_reactor_has_waits(&ASYNC_G(reactor))) {
 				/* In a graceful shutdown with no coroutine left, what still waits belongs to no coroutine,
 				 * as a held signal() Future: one poll that does not block delivers what already arrived,

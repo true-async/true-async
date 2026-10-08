@@ -166,8 +166,9 @@ bool async_trigger_link(async_coroutine_event_callback_t *record, async_coroutin
 php_io_queue *async_reactor_live_queue(void);
 
 /* Rebuilds the reactor in a forked child before its first submit, which does it otherwise: for a holder
- * that reads an IO event's place on the lists (a Timeout's timer). */
-void async_reactor_check_fork(void);
+ * that reads an IO event's place on the lists (a Timeout's timer). True when it rebuilt, which may have
+ * queued the coroutines whose waits it ended. */
+bool async_reactor_check_fork(void);
 
 /* A Timer op's deadline `ms` > 0 milliseconds from now, the latest finite one past the clock's range:
  * delay()'s and timeout()'s. */

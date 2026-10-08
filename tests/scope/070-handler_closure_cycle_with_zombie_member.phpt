@@ -5,6 +5,7 @@ Scope: the GC collects a scope object in a cycle with its handler while a zombie
 
 use Async\Scope;
 use function Async\delay;
+use function Async\suspend;
 
 function start(): Async\Coroutine
 {
@@ -17,7 +18,9 @@ function start(): Async\Coroutine
         delay(20);
         throw new RuntimeException("after the GC");
     });
-    delay(1);
+    while (!$member->isStarted()) {
+        suspend();
+    }
 
     return $member;
 }
@@ -29,7 +32,9 @@ gc_collect_cycles();
 gc_collect_cycles();
 echo "collected\n";
 
-delay(50);
+while (!$member->isCompleted()) {
+    delay(10);
+}
 echo "end\n";
 
 ?>

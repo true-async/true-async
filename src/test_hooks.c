@@ -1041,7 +1041,7 @@ static ZEND_FUNCTION(iterate)
 		Z_PARAM_LONG(concurrency)
 	ZEND_PARSE_PARAMETERS_END();
 
-	if (concurrency < 0 || concurrency > UINT_MAX) {
+	if (UNEXPECTED(concurrency < 0 || concurrency > UINT_MAX)) {
 		zend_argument_value_error(3, "must be between 0 and %u", UINT_MAX);
 		RETURN_THROWS();
 	}
@@ -1281,7 +1281,10 @@ static ZEND_FUNCTION(mark_found)
 		Z_PARAM_OBJ_OF_CLASS(coroutine, async_ce_coroutine)
 	ZEND_PARSE_PARAMETERS_END();
 
-	async_coroutine_from_object(coroutine)->coroutine.flags |= ASYNC_COROUTINE_F_DEADLOCK_FOUND;
+	async_coroutine_t *found = async_coroutine_from_object(coroutine);
+
+	found->coroutine.flags |= ASYNC_COROUTINE_F_DEADLOCK_FOUND;
+	found->found_run = ++ASYNC_G(test_collector_runs);
 }
 
 static void test_execute_ex(zend_execute_data *execute_data)

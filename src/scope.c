@@ -39,24 +39,24 @@ static zend_object_handlers scope_handlers;
 
 static void scope_add_child(async_scope_t *parent_scope, async_scope_t *child_scope)
 {
-	async_scopes_vector_t *vector = &parent_scope->child_scopes;
+	async_scopes_vector_t *child_scopes = &parent_scope->child_scopes;
 
-	if (vector->length == vector->capacity) {
-		vector->capacity = vector->capacity == 0 ? 4 : vector->capacity * 2;
-		vector->data = safe_erealloc(vector->data, vector->capacity, sizeof(async_scope_t *), 0);
+	if (child_scopes->length == child_scopes->capacity) {
+		child_scopes->capacity = child_scopes->capacity == 0 ? 4 : child_scopes->capacity * 2;
+		child_scopes->data = safe_erealloc(child_scopes->data, child_scopes->capacity, sizeof(async_scope_t *), 0);
 	}
 
-	vector->data[vector->length++] = child_scope;
+	child_scopes->data[child_scopes->length++] = child_scope;
 	child_scope->parent_scope = parent_scope;
 }
 
 static void scope_remove_child(async_scope_t *parent_scope, const async_scope_t *child_scope)
 {
-	async_scopes_vector_t *vector = &parent_scope->child_scopes;
+	async_scopes_vector_t *child_scopes = &parent_scope->child_scopes;
 
-	for (uint32_t i = 0; i < vector->length; i++) {
-		if (vector->data[i] == child_scope) {
-			vector->data[i] = vector->data[--vector->length];
+	for (uint32_t i = 0; i < child_scopes->length; i++) {
+		if (child_scopes->data[i] == child_scope) {
+			child_scopes->data[i] = child_scopes->data[--child_scopes->length];
 			return;
 		}
 	}
@@ -64,18 +64,18 @@ static void scope_remove_child(async_scope_t *parent_scope, const async_scope_t 
 
 void async_scope_add_coroutine(async_scope_t *scope, async_coroutine_t *coroutine)
 {
-	async_coroutines_vector_t *vector = &scope->coroutines;
+	async_coroutines_vector_t *coroutines = &scope->coroutines;
 
 	ZEND_ASSERT(coroutine->scope == NULL);
 
-	if (vector->length == vector->capacity) {
-		vector->capacity = vector->capacity == 0 ? 4 : vector->capacity * 2;
-		vector->data = safe_erealloc(vector->data, vector->capacity, sizeof(async_coroutine_t *), 0);
+	if (coroutines->length == coroutines->capacity) {
+		coroutines->capacity = coroutines->capacity == 0 ? 4 : coroutines->capacity * 2;
+		coroutines->data = safe_erealloc(coroutines->data, coroutines->capacity, sizeof(async_coroutine_t *), 0);
 	}
 
 	coroutine->scope = scope;
-	coroutine->scope_index = vector->length;
-	vector->data[vector->length++] = coroutine;
+	coroutine->scope_index = coroutines->length;
+	coroutines->data[coroutines->length++] = coroutine;
 
 	if (UNEXPECTED(coroutine->coroutine.flags & ASYNC_COROUTINE_F_ZOMBIE)) {
 		scope->zombie_coroutines_count++;
@@ -88,13 +88,13 @@ void async_scope_add_coroutine(async_scope_t *scope, async_coroutine_t *coroutin
 static void scope_detach_coroutine(async_coroutine_t *coroutine)
 {
 	async_scope_t *scope = coroutine->scope;
-	async_coroutines_vector_t *vector = &scope->coroutines;
-	async_coroutine_t *last = vector->data[--vector->length];
+	async_coroutines_vector_t *coroutines = &scope->coroutines;
+	async_coroutine_t *last_coroutine = coroutines->data[--coroutines->length];
 
-	ZEND_ASSERT(vector->data[coroutine->scope_index] == coroutine);
+	ZEND_ASSERT(coroutines->data[coroutine->scope_index] == coroutine);
 
-	vector->data[coroutine->scope_index] = last;
-	last->scope_index = coroutine->scope_index;
+	coroutines->data[coroutine->scope_index] = last_coroutine;
+	last_coroutine->scope_index = coroutine->scope_index;
 	coroutine->scope = NULL;
 
 	if (UNEXPECTED(coroutine->coroutine.flags & ASYNC_COROUTINE_F_ZOMBIE)) {
@@ -144,9 +144,9 @@ static bool scope_is_completed(const async_scope_t *scope, const bool with_zombi
 		return true;
 	}
 
-	const uint32_t running = scope->active_coroutines_count + (with_zombies ? scope->zombie_coroutines_count : 0);
+	const uint32_t running_count = scope->active_coroutines_count + (with_zombies ? scope->zombie_coroutines_count : 0);
 
-	if (EXPECTED(running > 0)) {
+	if (EXPECTED(running_count > 0)) {
 		return false;
 	}
 
@@ -185,7 +185,7 @@ static bool scope_can_be_disposed(const async_scope_t *scope)
 		return false;
 	}
 
-	if (EXPECTED(!(scope->event.flags & ASYNC_SCOPE_F_CANCELLED) && scope->scope_object != NULL)) {
+	if (!(scope->event.flags & ASYNC_SCOPE_F_CANCELLED) && scope->scope_object != NULL) {
 		return false;
 	}
 
@@ -207,30 +207,6 @@ static void scope_set_cancelled(async_scope_t *scope)
 	}
 }
 
-#ifdef TRUE_ASYNC_TEST_HOOKS
-/* The collector's oracle for the waiters a notify of the scope is about to wake (S9-scope.md 6): by
- * `member`'s finish or zombie mark, or, with no member, by the running code's cancel. The notify itself
- * runs its callbacks in scheduler context, where the running code is not known. */
-static void scope_check_waiters_wake(async_scope_t *scope, const async_coroutine_t *member)
-{
-	async_event_callback_t **slots = async_callbacks_slots(&scope->event.callbacks);
-
-	for (uint32_t i = 0; i < scope->event.callbacks.length; i++) {
-		if (UNEXPECTED(!(slots[i]->flags & ASYNC_CALLBACK_F_RECORD))) {
-			continue;
-		}
-
-		async_coroutine_t *waiter = ((async_coroutine_event_callback_t *) slots[i])->coroutine;
-
-		if (member != NULL) {
-			async_collector_check_wake(waiter, member);
-		} else {
-			async_collector_check_event_wake(waiter);
-		}
-	}
-}
-#endif
-
 /* Wakes the waiters of the scope, then of each parent, while each has completed in turn (TrueAsync's
  * scope_check_completion_and_notify, scope.c:1575-1592), because `member` finished or became a zombie.
  * A wake only enqueues. */
@@ -242,7 +218,7 @@ static void scope_notify_completion(async_scope_t *scope, const bool with_zombie
 
 	while (scope != NULL && scope_is_completed(scope, with_zombies)) {
 #ifdef TRUE_ASYNC_TEST_HOOKS
-		scope_check_waiters_wake(scope, member);
+		async_collector_check_records_wake(&scope->event.callbacks, member);
 #endif
 		async_callbacks_notify((async_awaitable_t *) &scope->event, &scope->event.callbacks, NULL, NULL);
 		scope = scope->parent_scope;
@@ -288,18 +264,18 @@ static void scope_handler_keep_back(zend_fcall_info_cache *handler, zend_array *
 		*released_handlers = zend_new_array(4);
 	}
 
-	zval reference;
+	zval held_value;
 
 	if (handler->object != NULL) {
-		ZVAL_OBJ(&reference, handler->object);
-		zend_hash_next_index_insert_new(*released_handlers, &reference);
+		ZVAL_OBJ(&held_value, handler->object);
+		zend_hash_next_index_insert_new(*released_handlers, &held_value);
 	}
 
 	zend_release_fcall_info_cache(handler);
 
 	if (handler->closure != NULL) {
-		ZVAL_OBJ(&reference, handler->closure);
-		zend_hash_next_index_insert_new(*released_handlers, &reference);
+		ZVAL_OBJ(&held_value, handler->closure);
+		zend_hash_next_index_insert_new(*released_handlers, &held_value);
 	}
 
 	*handler = empty_fcall_info_cache;
@@ -438,7 +414,7 @@ void async_scope_remove_coroutine(async_coroutine_t *coroutine)
 
 void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_error, const bool is_safely)
 {
-	if (scope->event.flags & ASYNC_SCOPE_F_CLOSED) {
+	if (UNEXPECTED(scope->event.flags & ASYNC_SCOPE_F_CLOSED)) {
 		if (error != NULL && transfer_error) {
 			OBJ_RELEASE(error);
 		}
@@ -473,7 +449,9 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 
 	scope_set_cancelled(scope);
 
-	/* No PHP code runs on the way: a cancel only queues, so neither vector changes under the loops. */
+	/* A cancel only queues and a closed child scope's finally run starts in a worker, so no PHP code changes
+	 * either vector under the loops while the scheduler takes the worker; a refused one releases the
+	 * handlers here (S9.8). */
 	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
 		async_scope_cancel(scope->child_scopes.data[i], error, false, is_safely);
 	}
@@ -483,7 +461,7 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 	}
 
 #ifdef TRUE_ASYNC_TEST_HOOKS
-	scope_check_waiters_wake(scope, NULL);
+	async_collector_check_records_wake(&scope->event.callbacks, NULL);
 #endif
 	async_callbacks_notify((async_awaitable_t *) &scope->event, &scope->event.callbacks, NULL, error);
 
@@ -592,9 +570,9 @@ static bool scope_handle_error(async_scope_t *scope,
 #ifdef TRUE_ASYNC_TEST_HOOKS
 /* The collector leaves out the route, whose level gets its scope's object, and a SpawnStrategy's hooks
  * for a null provideScope(), which get the current scope's (S7.md 10): what it found in that subtree
- * is handed out, as registry_cancel() hands out what it cancels, so the oracle excuses them. Once is
- * enough: while the hooks run, the reference spawn_with_strategy() holds is one the count never sees,
- * and a handler cannot park. */
+ * is handed out, as registry_cancel() hands out what it cancels, so the oracle excuses them. Marked
+ * once, before the calls: a handler cannot park, and a run that starts while a hook parks finds
+ * nothing there, as the hook's caller holds the scope's object. */
 static void scope_hand_out_found(async_scope_t *scope)
 {
 	for (uint32_t i = 0; i < scope->coroutines.length; i++) {
@@ -606,11 +584,11 @@ static void scope_hand_out_found(async_scope_t *scope)
 	}
 
 	/* The waiters in awaitCompletion(), wherever they run: the cancels that follow wake them. */
-	async_event_callback_t **slots = async_callbacks_slots(&scope->event.callbacks);
+	async_event_callback_t **callback_slots = async_callbacks_slots(&scope->event.callbacks);
 
 	for (uint32_t i = 0; i < scope->event.callbacks.length; i++) {
-		if (EXPECTED(slots[i]->flags & ASYNC_CALLBACK_F_RECORD)) {
-			zend_coroutine_t *waiter = &((async_coroutine_event_callback_t *) slots[i])->coroutine->coroutine;
+		if (EXPECTED(callback_slots[i]->flags & ASYNC_CALLBACK_F_RECORD)) {
+			zend_coroutine_t *waiter = &((async_coroutine_event_callback_t *) callback_slots[i])->coroutine->coroutine;
 
 			if (UNEXPECTED(waiter->flags & ASYNC_COROUTINE_F_DEADLOCK_FOUND)) {
 				waiter->flags |= ASYNC_COROUTINE_F_HANDED_OUT;
@@ -636,8 +614,9 @@ bool async_scope_catch(async_coroutine_t *coroutine, zend_object *error)
 	GC_ADDREF(error);
 
 	/* Every scope on the way keeps a member, the coroutine or a child scope, until the coroutine leaves
-	 * its scope after the route, so none is disposed under the loop. A destructor that a handler's release
-	 * ran and that threw stops the route; the caller ends the request with it. */
+	 * its scope after the route, so none is disposed under the loop. An exception the cancels leave (a
+	 * refused finally start: its stack error, or a destructor of its handlers) stops the route; the caller
+	 * ends the request with it. */
 	while (scope != NULL && EXPECTED(EG(exception) == NULL)) {
 		bool is_taken = false;
 
@@ -665,8 +644,7 @@ bool async_scope_catch(async_coroutine_t *coroutine, zend_object *error)
 
 		scope_set_cancelled(scope);
 
-		/* Fresh cancellations, not the error (scope.c:1020-1044). No PHP code runs in the loops: a
-		 * cancel only queues. */
+		/* Fresh cancellations, not the error (scope.c:1020-1044); the loops hold as async_scope_cancel()'s. */
 		for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
 			async_scope_cancel(scope->child_scopes.data[i], NULL, false, is_safely);
 		}
@@ -693,20 +671,20 @@ bool async_scope_catch(async_coroutine_t *coroutine, zend_object *error)
 
 void async_scope_collector_reach(async_collector_t *collector, async_coroutine_t *coroutine, const uint32_t node)
 {
-	uint32_t reached = node;
+	uint32_t reached_node = node;
 
 	for (async_scope_t *scope = coroutine->scope; scope != NULL; scope = scope->parent_scope) {
-		bool added;
-		const uint32_t scope_node = async_collector_reach_node(collector, &scope->coroutines, &added);
+		bool is_new_node;
+		const uint32_t scope_node = async_collector_reach_node(collector, &scope->coroutines, &is_new_node);
 
-		async_collector_report_reach(collector, scope_node, reached);
+		async_collector_report_reach(collector, scope_node, reached_node);
 
 		/* Its parents are linked already. */
-		if (EXPECTED(!added)) {
+		if (EXPECTED(!is_new_node)) {
 			return;
 		}
 
-		if (EXPECTED(scope->scope_object != NULL)) {
+		if (scope->scope_object != NULL) {
 			async_collector_report_holder(collector, scope->scope_object, scope_node);
 		}
 
@@ -720,7 +698,7 @@ void async_scope_collector_reach(async_collector_t *collector, async_coroutine_t
 			async_collector_report_live_reach(collector, scope_node);
 		}
 
-		reached = scope_node;
+		reached_node = scope_node;
 	}
 }
 
@@ -728,8 +706,7 @@ void async_scope_collector_reach(async_collector_t *collector, async_coroutine_t
 /// Spawn
 ///////////////////////////////////////////////////////////////////
 
-/* A coroutine that never got into the run queue leaves the request as if it had never existed. */
-static void spawn_discard(async_coroutine_t *coroutine)
+void async_scope_discard_coroutine(async_coroutine_t *coroutine)
 {
 	async_scope_remove_coroutine(coroutine);
 	zend_hash_index_del(&ASYNC_G(coroutines), coroutine->std.handle);
@@ -773,7 +750,7 @@ static void spawn_cancel(async_coroutine_t *coroutine)
 		zend_clear_exception();
 
 		if (ZEND_COROUTINE_STATUS(&coroutine->coroutine) == ZEND_COROUTINE_STATUS_CREATED) {
-			spawn_discard(coroutine);
+			async_scope_discard_coroutine(coroutine);
 		}
 	}
 
@@ -801,7 +778,7 @@ spawn_with_strategy(async_scope_t *scope, zend_object *spawn_strategy, async_cor
 		/* Refused only when the scheduler coroutine cannot get a stack, so the coroutine is still CREATED,
 		 * or QUEUED by a hook, which the enqueue accepts. */
 		if (UNEXPECTED(!async_scheduler_enqueue(&coroutine->coroutine, NULL, false))) {
-			spawn_discard(coroutine);
+			async_scope_discard_coroutine(coroutine);
 			OBJ_RELEASE(&coroutine->std);
 			coroutine = NULL;
 		} else {
@@ -884,7 +861,7 @@ async_coroutine_t *async_scope_spawn(async_scope_t *scope,
 	/* A CREATED coroutine is refused only when the scheduler coroutine cannot get a stack: the coroutine
 	 * then never existed. */
 	if (UNEXPECTED(!async_scheduler_enqueue(&coroutine->coroutine, NULL, false))) {
-		spawn_discard(coroutine);
+		async_scope_discard_coroutine(coroutine);
 		return NULL;
 	}
 
@@ -897,8 +874,7 @@ async_coroutine_t *async_scope_spawn(async_scope_t *scope,
 /// The object
 ///////////////////////////////////////////////////////////////////
 
-/* A scope with no coroutine yet, below `parent_scope` (whose safe disposal it takes), or a root. */
-static async_scope_t *scope_new(async_scope_t *parent_scope)
+async_scope_t *async_scope_new(async_scope_t *parent_scope)
 {
 	async_scope_t *scope = ecalloc(1, sizeof(async_scope_t));
 	zend_string *filename = zend_get_executed_filename_ex();
@@ -915,11 +891,6 @@ static async_scope_t *scope_new(async_scope_t *parent_scope)
 	return scope;
 }
 
-async_scope_t *async_scope_new(async_scope_t *parent_scope)
-{
-	return scope_new(parent_scope);
-}
-
 static zend_object *scope_object_new(zend_class_entry *class_entry, async_scope_t *parent_scope)
 {
 	async_scope_object_t *scope_object = zend_object_alloc(sizeof(async_scope_object_t), class_entry);
@@ -927,7 +898,7 @@ static zend_object *scope_object_new(zend_class_entry *class_entry, async_scope_
 	zend_object_std_init(&scope_object->std, class_entry);
 	object_properties_init(&scope_object->std, class_entry);
 
-	scope_object->scope = scope_new(parent_scope);
+	scope_object->scope = async_scope_new(parent_scope);
 	scope_object->scope->scope_object = &scope_object->std;
 	scope_object->is_cancelled = false;
 	scope_object->is_stand_in = false;
@@ -1206,8 +1177,8 @@ ZEND_METHOD(Async_Scope, disposeAfterTimeout)
 
 	async_scope_t *scope = THIS_SCOPE_OBJECT->scope;
 
-	if (scope == NULL || (scope->event.flags & ASYNC_SCOPE_F_CLOSED) ||
-		(scope->coroutines.length == 0 && scope->child_scopes.length == 0)) {
+	if (UNEXPECTED(scope == NULL || (scope->event.flags & ASYNC_SCOPE_F_CLOSED) ||
+				   (scope->coroutines.length == 0 && scope->child_scopes.length == 0))) {
 		return;
 	}
 
@@ -1317,7 +1288,7 @@ static zend_string *scope_record_info(const async_coroutine_event_callback_t *re
 {
 	const async_scope_t *scope = (const async_scope_t *) record->event;
 
-	if (scope->filename == NULL) {
+	if (UNEXPECTED(scope->filename == NULL)) {
 		return zend_string_init(ZEND_STRL("await: scope"), 0);
 	}
 
@@ -1336,12 +1307,12 @@ scope_report_completion_sources(const async_scope_t *scope, async_collector_t *c
 
 	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
 		const async_scope_t *child_scope = scope->child_scopes.data[i];
-		bool added;
-		const uint32_t child_node = async_collector_reach_node(collector, &child_scope->event, &added);
+		bool is_new_node;
+		const uint32_t child_node = async_collector_reach_node(collector, &child_scope->event, &is_new_node);
 
 		async_collector_report_reach(collector, child_node, node);
 
-		if (added) {
+		if (is_new_node) {
 			scope_report_completion_sources(child_scope, collector, child_node);
 		}
 	}
@@ -1350,10 +1321,10 @@ scope_report_completion_sources(const async_scope_t *scope, async_collector_t *c
 static void scope_record_collector_target(const async_coroutine_event_callback_t *record, async_collector_t *collector)
 {
 	const async_scope_t *scope = (const async_scope_t *) record->event;
-	bool added;
-	const uint32_t node = async_collector_report_reach_target(collector, &scope->event, &added);
+	bool is_new_node;
+	const uint32_t node = async_collector_report_reach_target(collector, &scope->event, &is_new_node);
 
-	if (added) {
+	if (is_new_node) {
 		scope_report_completion_sources(scope, collector, node);
 	}
 }
@@ -1490,10 +1461,8 @@ static void scope_after_cancellation_record_wake(async_awaitable_t *target,
 	async_scheduler_enqueue(&record->coroutine->coroutine, exception, true);
 }
 
-/* TrueAsync's awaitAfterCancellation (scope.c:374-483), until no coroutine of the subtree is left, as
- * its comment says; the reference returns at the first member's end (probe s9.5/d3.php). Its handler
- * runs in the finishing coroutine inside the notify; ours in the waiter, since a notify runs in
- * scheduler context. */
+/* TrueAsync's awaitAfterCancellation (scope.c:374-483), until no coroutine of the subtree is left
+ * (S9-scope.md 9, item 17). The handler runs in the waiter, since a notify runs in scheduler context. */
 ZEND_METHOD(Async_Scope, awaitAfterCancellation)
 {
 	zend_fcall_info error_handler = empty_fcall_info;
@@ -1660,10 +1629,10 @@ ZEND_METHOD(Async_Scope, isCancelled)
  * the caller, which gets what it throws. */
 ZEND_METHOD(Async_Scope, finally)
 {
-	zval *callback;
+	zval *finally_handler;
 
 	ZEND_PARSE_PARAMETERS_START(1, 1)
-		Z_PARAM_OBJECT_OF_CLASS(callback, zend_ce_closure)
+		Z_PARAM_OBJECT_OF_CLASS(finally_handler, zend_ce_closure)
 	ZEND_PARSE_PARAMETERS_END();
 
 	async_scope_t *scope = THIS_SCOPE_OBJECT->scope;
@@ -1671,7 +1640,7 @@ ZEND_METHOD(Async_Scope, finally)
 	if (UNEXPECTED(scope == NULL)) {
 		zval retval;
 
-		call_user_function(NULL, NULL, callback, &retval, 1, ZEND_THIS);
+		call_user_function(NULL, NULL, finally_handler, &retval, 1, ZEND_THIS);
 		zval_ptr_dtor(&retval);
 		return;
 	}
@@ -1680,8 +1649,8 @@ ZEND_METHOD(Async_Scope, finally)
 		scope->finally_handlers = zend_new_array(1);
 	}
 
-	Z_ADDREF_P(callback);
-	zend_hash_next_index_insert_new(scope->finally_handlers, callback);
+	Z_ADDREF_P(finally_handler);
+	zend_hash_next_index_insert_new(scope->finally_handlers, finally_handler);
 }
 
 ZEND_METHOD(Async_Scope, getChildScopes)
@@ -1796,9 +1765,9 @@ ZEND_FUNCTION(Async_spawn_with)
 
 void async_scope_request_startup(void)
 {
-	ASYNC_G(global_scope) = scope_new(NULL);
+	ASYNC_G(global_scope) = async_scope_new(NULL);
 	ASYNC_G(global_scope)->event.flags |= ASYNC_SCOPE_F_DISPOSE_SAFELY | ASYNC_SCOPE_F_REQUEST_LIFETIME;
-	ASYNC_G(engine_scope) = scope_new(NULL);
+	ASYNC_G(engine_scope) = async_scope_new(NULL);
 	ASYNC_G(engine_scope)->event.flags |= ASYNC_SCOPE_F_REQUEST_LIFETIME;
 	ASYNC_G(zombie_coroutines_count) = 0;
 }

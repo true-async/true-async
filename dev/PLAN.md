@@ -751,7 +751,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md
-Active: S9.7
+Active: S9.8
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -840,10 +840,26 @@ Active: S9.7
         18-21 (handlers start after the route; a run's error is its last worker's; `exit()` in a
         handler ends the request). Three Critic passes: an unrun last worker's error, a walk stopped
         during a move restarting (TrueAsync's bug, `internal/069`), the DISPOSING walk fixed with tests.
-- [ ] S9.7 Layer review: Critic after S9.2-S9.6, coverage of `src/scope.c` and the iterator, Mull on
+- [x] S9.7 Layer review: Critic after S9.2-S9.6, coverage of `src/scope.c` and the iterator, Mull on
       the layer's diff, the fuzz oracle over 100 seeds, the measurements of note section 10.
       done: the layer's Done when holds on the day; survivors killed or explained
       tier: T2 · role: Critic
+      handoff: done 2026-10-07: coverage on debug `src/scope.c` 775 of 819 lines, `src/iterator.c`
+        212 of 248; Mull on the diff since `d196cbd`: 175 mutants, 26 not killed, 15 killed for
+        time, each survivor killed by a later test or explained (note 10); the fuzz oracle over 100
+        seeds of the 247 tests of `S9.txt` and `collector/`: 0 failed seeds, and the 29 tests whose
+        diagnostics change with the order change the same way on `05037c7`; six own tests made to
+        wait for their coroutines, each 100 of 100 seeds. BENCHMARKS: the scope adds about 190
+        instructions per spawn; with `awaitCompletion()` ours 2,433 per member to the reference's
+        3,887 at 1 000 members. Backlog: the found waiter, the zombie's back-off and the forked
+        child fixed (`collector/073`-`077`); the closed scope marked cancelled and the handler's
+        AsyncCancellation kept as TrueAsync (`scope/118`). Own tests `collector/073`-`078`,
+        `scope/118`-`122`, `internal/070`, `071`. On CORE_REF 0145ca90d78: debug 1178 PASS, 11
+        XFAIL; ASAN 1154 PASS, 10 XFAIL; 0 unexpected on both. Five Critic passes: a forked child's
+        assert, an over-broad oracle excuse, a false iterator assert, a replaced outcome keeping the
+        old one's marks and reaching an `await()` waiter twice, comments that contradicted each
+        other. Departures: note 9, items 22-26. For S9.8: a chain of 50 000 nested scopes overflows
+        the C stack (as on TrueAsync); a refused finally start inside the cancel loops.
 - [ ] S9.8 Security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item; findings fixed with a test or recorded
       tier: T2 · role: —

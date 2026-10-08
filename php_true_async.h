@@ -60,6 +60,7 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	uint32_t test_aborts;            /* test kind aborts in this request */
 	zend_long test_exit_deadline_ms; /* D16's deadline in this request; 0 for ASYNC_EXIT_DEADLINE_MS */
 	async_trigger_t *test_trigger;   /* TrueAsync\Test\trigger_new()'s; NULL without */
+	uint32_t test_collector_runs;    /* the collector's runs and mark_found() calls: the oracle's run ids */
 	void *test_firer;                /* the thread trigger_fire() started; NULL when joined */
 #endif
 #ifdef TRUE_ASYNC_FUZZ

@@ -649,6 +649,9 @@ future_event_complete(async_future_event_t *future, zval *result, zend_object *e
 	future_location_set(&future->completed_filename, &future->completed_lineno);
 	future->base.flags |= ASYNC_EVENT_F_CLOSED;
 
+#ifdef TRUE_ASYNC_TEST_HOOKS
+	async_collector_check_records_wake(&future->base.callbacks, NULL);
+#endif
 	async_callbacks_notify((async_awaitable_t *) future, &future->base.callbacks, &future->result, future->exception);
 	/* A completed future takes no record, and one that a throwing callback left behind wakes here and
 	 * reads the outcome. */

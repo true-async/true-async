@@ -534,6 +534,9 @@ ZEND_FUNCTION(Async_get_deadlocked_coroutines)
 
 	ZEND_PARSE_PARAMETERS_NONE();
 
+	/* A forked child's first entry may be this call: the parent's timers would read as armed. */
+	async_reactor_check_fork();
+
 	uint32_t count = 0;
 	async_coroutine_t **found = async_collector_find(&count, 0);
 

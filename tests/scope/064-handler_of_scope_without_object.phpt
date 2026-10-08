@@ -5,6 +5,7 @@ Scope: the handler of a scope whose object is gone is called with a stand-in Sco
 
 use Async\Scope;
 use function Async\delay;
+use function Async\suspend;
 
 // The object goes while its started coroutine runs on as a zombie (the scope inherits the global
 // scope's safe disposal); the coroutine's later error still reaches the handler.
@@ -20,13 +21,17 @@ function start(): Async\Coroutine
         delay(10);
         throw new RuntimeException("orphan");
     });
-    delay(1);
+    while (!$coroutine->isStarted()) {
+        suspend();
+    }
 
     return $coroutine;
 }
 
 $coroutine = start();
-delay(50);
+while (!$coroutine->isCompleted()) {
+    delay(10);
+}
 echo "end\n";
 
 ?>
