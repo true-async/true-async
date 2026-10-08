@@ -119,7 +119,7 @@ functions make it on the first call, link it (`scope`) and return it (`async.c:7
 
 Both refuse with `THROW_IF_UNAVAILABLE` (`php_true_async.h:96-100`), as `coroutine_context()`: in
 scheduler context, and once async is off, where `ASYNC_G(global_scope)` may already be NULL
-(`src/scope.c:1809`). TrueAsync launches the scheduler first, since its scopes exist only after the
+(`src/scope.c:1855`). TrueAsync launches the scheduler first, since its scopes exist only after the
 launch (`async.c:806-809`, `context/009`); ours exist from the first opcode (layer 1 note, section 3).
 
 `request_context()` returns null, the reference's answer whenever no embedder marked a request scope
@@ -137,11 +137,11 @@ overflow the recursive walks of layer 1 (layer 1 note, section 9, item 26) do no
 Coroutines of `Scope::finally()` and of `await_*` run in child scopes and see their parent's values
 (probed `c5.php`).
 
-**Lifetime.** The scope holds one reference to its context. `scope_free` (`src/scope.c:305`) clears
+**Lifetime.** The scope holds one reference to its context. `scope_free` (`src/scope.c:315`) clears
 `scope` and hands the reference to `released_handlers`, which its caller releases after the walk, as it
-does the handlers' closures (`src/scope.c:293-300`): the release runs destructors, and one that
+does the handlers' closures (`src/scope.c:302-310`): the release runs destructors, and one that
 disposes the parent scope inside `scope_dispose` would leave it reading the freed parent
-(`src/scope.c:402-407`). TrueAsync releases it in place (`scope.c:1257-1261`). A `Context` held
+(`src/scope.c:442-447`). TrueAsync releases it in place (`scope.c:1257-1261`). A `Context` held
 past its scope answers from its own table (probed `c6.php`: `find('root')` is null once the scope is
 gone, `find('own')` still answers). A closed or cancelled scope still makes and returns its context: a
 zombie or a finally handler of a disposed scope reads it (probed `c7.php`).
@@ -152,7 +152,7 @@ PHP code: an object made after the destructor pass (an output handler runs after
 the fork, destructors at 1930, `php_output_end_all` at 1955) has its destructor still to run, and a
 destructor that throws there becomes a fatal error and a bailout, which skips the rest of the
 teardown. Other releases of the teardown carry the same exposure today: user scopes disposed inside
-`async_scope_request_shutdown`'s loop (`src/scope.c:1800`, their handlers and, with this layer, their
+`async_scope_request_shutdown`'s loop (`src/scope.c:1846`, their handlers and, with this layer, their
 contexts) and the coroutine objects released at `src/scheduler.c:2359` (their results and arguments,
 and their contexts). S9.13 collects the user values these releases drop into one array released as the
 teardown's last step, with a test in which an output handler's object throws from its destructor at
@@ -178,7 +178,7 @@ force-closed fiber" (`c10.php`), and a Fiber suspended and never resumed keeps i
 (`c14.php`). On our core a cancelled Fiber may suspend again (D5, `scheduler/044`; `fiber/030`
 excluded), and the cancellation reaches it once, so a Fiber that catches it or suspends in `finally`
 would keep a cancelled scope's `awaitAfterCancellation()` and `dispose()` waiting; and destroying a
-Scope object cancels the Fibers in it (`src/scope.c:949-953`), so a long-lived Fiber first made inside
+Scope object cancels the Fibers in it (`src/scope.c:993-998`), so a long-lived Fiber first made inside
 a user scope (an event loop's) ends with that scope. Question 1, section 9.
 
 ## 5. Garbage collection
@@ -194,34 +194,29 @@ Ours, so that each cycle collects:
 
 - `Context` reports its entries (section 2);
 - a coroutine reports its context object (built in S3, `src/coroutine.c:268-269`);
-- a scope object reports its scope's context object only while nothing but the object reaches the
-  scope: no coroutine (zombies included), no child scope, and not a scope of the request's lifetime
-  (`ASYNC_SCOPE_F_REQUEST_LIFETIME`, the global and the engine scope, which `root_context()` and
+- a scope object reports its scope's context object only while no coroutine is in the scope or in a
+  child scope, in any state (queued, suspended, zombie), and the scope is not of the
+  request's lifetime (`ASYNC_SCOPE_F_REQUEST_LIFETIME`, the global and the engine scope, which
+  `root_context()` and
   the engine's coroutines reach without a member). While members run, they reach the context through
   `current_context()`, an edge no object reports, so a reported context would let a cycle "object →
   context → value → object" look unreachable, and PHP's collector would call the object's destructor
   (marked at `Zend/zend_gc.c:2400-2410` of the pinned core, called at `2433-2466`), which cancels the
-  running scope (`src/scope.c:949-953`). With no member left, the destructor detaches the object and
+  running scope (`src/scope.c:993-998`). With no member left, the destructor detaches the object and
   disposes the scope: it frees it, or starts its finally handlers and frees it after them
-  (`src/scope.c:395-396`). The collector frees nothing reached from an object whose destructor it
+  (`src/scope.c:435-436`). The collector frees nothing reached from an object whose destructor it
   called in that pass and runs again (`zend_gc.c:2385-2431`), when the detached object reports
   nothing.
-- when a scope that has an object loses its last coroutine or child scope, the object goes back to
-  PHP's root buffer, so a cycle formed while members ran is collected by the next run, which found the
-  object live before (the Sage, 2026-10-08). Not by a call inside the walk: `gc_check_possible_root()`
-  can start a collection when the buffer is full, and a destructor it runs may free the parent the walk
-  reads next (`src/scope.c:407`). A child scope's removal (`src/scope.c:402`, inside the walk) adds a
-  reference to the object and hands it to `released_handlers`, released after the walk. A coroutine's
-  removal (`async_scope_remove_coroutine`, `src/scope.c:413-424`) usually runs no walk, since a scope
-  that keeps its object cannot be disposed: when the scope is left with no coroutine and no child
-  scope, it takes a reference to the object into a local before line 419 and releases it after the
-  `if`, reading nothing of the scope, which the walk may have freed. That decrement puts the object in
-  the root buffer at a safe point. During the request's shutdown the same release joins S9.13's
-  array, so no collection starts inside the loop over `ASYNC_G(coroutines)` (`src/scope.c:1797-1802`).
+- when a coroutine leaves its scope and parents without coroutines, their objects go back to
+  PHP's root buffer, so a cycle formed while coroutines ran is collected by the next run, which found
+  the object live before (the Sage, 2026-10-08): `scope_objects_give_back_to_gc()` keeps a reference in
+  `released_handlers`, released after the disposal, since a collection the release starts may free
+  the scopes. S9.12 adds "has a context" to `scope_has_handlers()`, the test both `get_gc` and the
+  give-back use, and names it after what the object reports.
 
-The handlers the scope object reports today (`src/scope.c:960-977`) break the same way: a handler
-closure that holds its scope's object, with members running, lets the collector cancel the scope.
-S9.12 applies the same rule to them, with a test (the Critic, 2026-10-08; layer 1's bug).
+The rule and the return to the root buffer already hold for the handlers: the handlers' fix of layer 1
+(the Critic, 2026-10-08; S9-scope.md 9 item 28), committed apart from this layer. S9.12 adds the
+context to what the object reports under the same rule.
 
 Accepted: PHP calls the destructors of one garbage cycle in no defined order and checks only that each
 has not run yet (`zend_gc.c:1922-1939`), so in a cycle "scope object → context → value → scope
@@ -229,8 +224,8 @@ object" a value whose destructor spawns into the scope runs before the scope obj
 which then cancels that new coroutine ("Scope is being disposed due to object destruction").
 
 The async object collector (S7) needs no change: it reads `Context` through its `get_gc`
-(`src/collector.c:616-618`) and a coroutine through its own, and it does not walk a scope object
-(`src/collector.c:610-614`), so what a scope's context holds counts as held from outside.
+(`src/collector.c:617-619`) and a coroutine through its own, and it does not walk a scope object
+(`src/collector.c:610-615`), so what a scope's context holds counts as held from outside.
 
 ## 6. Steps
 
@@ -240,8 +235,7 @@ The async object collector (S7) needs no change: it reads `Context` through its 
   `Coroutine::getContext()` (sections 2, 3). Its `set()` waits for the core fix of
   `dev/RFC-CHANGES.md` 16 in the pinned core (section 8).
 - S9.12 The context of a scope, `current_context()`, `root_context()`, `request_context()`, the walk,
-  the scope object's `get_gc` and its return to the root buffer, the same rule for the handlers
-  (sections 4, 5).
+  the context in the scope object's `get_gc` under the handlers' rule (sections 4, 5).
 - S9.13 The teardown's user values released as its last step (section 4): `async_scope_remove_coroutine`
   takes the array its shutdown loop passes, for the handlers, contexts and scope objects it drops.
 - S9.14 Layer review: the Critic over S9.11-S9.13, coverage of `src/context.c` and the new lines of
@@ -303,7 +297,7 @@ TrueAsync's `fuzzy-tests/context/context.feature` is not ported, as no fuzzy tes
 - S9.12: `c6.php` (a context held past its scope), `c11.php` (a scope whose context holds its object
   collects), `c13.php` (the root context in a shutdown function and a destructor), `c7.php` (the scope
   object of a scope with a running zombie is not collected and the zombie reads it: "collected: 0",
-  "zombie reads: Async\Scope", as the reference), a running scope whose handler closure or context
+  "zombie reads: Async\Scope", as the reference), a running scope whose context
   holds its object survives `gc_collect_cycles()`, the same cycle collected by a second
   `gc_collect_cycles()` after the last member ends, a scope with pending finally handlers whose
   object the GC destroys, a context released by `scope_free` whose value's destructor disposes the

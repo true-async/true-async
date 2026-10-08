@@ -116,7 +116,8 @@ void async_scope_add_coroutine(async_scope_t *scope, async_coroutine_t *coroutin
 
 /* Takes `coroutine` out of its scope, which it leaves finished or never queued, and disposes the scope
  * once nothing keeps it: a disposal releases the handlers, whose destructors may run PHP code, or starts
- * the finally handlers. */
+ * the finally handlers. The scope objects it leaves without coroutines go back to the GC's root buffer:
+ * a collection may have found them live while it was there. */
 void async_scope_remove_coroutine(async_coroutine_t *coroutine);
 
 /* Takes `coroutine`, which the scheduler refused to enqueue, out of its scope and the registry and

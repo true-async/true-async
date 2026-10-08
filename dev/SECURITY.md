@@ -286,8 +286,10 @@ finding left open gets an owner step in `PLAN.md`.
   released its handlers inside `async_scope_cancel()`'s cascade, so a closure's destructor ran PHP code
   in the loop: one that dropped the object of the scope at the loop's index disposed it, the last
   sibling took its place, and the cascade skipped it, left open. The handlers now stay with the scope,
-  whose disposal starts them again or releases them after its walk, and the start releases nothing on
-  that path, so no GC run starts there either (`scope/123`). No use after free found: route handlers
+  whose disposal starts them again or releases them after its walk (`scope/123`). The refused start may
+  still release scope objects given back to the GC (S9-scope.md 9 item 28), but no PHP code runs from
+  it: a refusal means the scheduler coroutine could not be made, so the GC coroutine cannot be either,
+  and a full root buffer only defers the collection (2026-10-08). No use after free found: route handlers
   that drop every object of the route's scopes, dispose and cancel them, spawn into them and replace
   themselves; finally handlers that add handlers to their own scope, dispose its parent and throw;
   `SpawnStrategy` hooks that cancel their scope, drop it and suspend between the hooks; a fatal error
@@ -314,6 +316,12 @@ finding left open gets an owner step in `PLAN.md`.
   that each complete their own child scope rescan N empty siblings ahead of them (20 000 each: 1.5 s),
   and `awaitAfterCancellation()`'s wake rescans a cancelled subtree at every member's end. User code
   pays for the shape it builds, which `memory_limit` bounds.
+- 2026-10-08 Accepted: the scope object's `get_gc` walks its subtree for a coroutine when the scope has
+  handlers (S9-scope.md 9 item 28), so a collection recurses down a deep chain under such a scope on
+  whatever stack runs it, with the limit of the entry above, and a chain of N nested scopes that all
+  have handlers and roots in the buffer costs O(N^2) per collection. A coroutine's removal walks up the
+  scopes it leaves without coroutines with the same subtree test, the cost shape of the completion
+  walk above. A per-scope count of busy child scopes would make both O(1) and is not built.
 
 ## Open findings
 

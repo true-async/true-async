@@ -607,8 +607,9 @@ static void collector_object_references(async_collector_t *collector, zend_objec
 		return;
 	}
 
-	/* Its get_gc reports the exception handlers, which belong to the internal scope: the route of an
-	 * unhandled error calls them, the object gone or not, so what they capture is held from outside. */
+	/* Its get_gc reports the handlers of a scope without coroutines, which belong to the internal scope:
+	 * the route of an unhandled error calls them, the object gone or not, so what they capture is held
+	 * from outside. */
 	if (UNEXPECTED(object->ce == async_ce_scope)) {
 		return;
 	}

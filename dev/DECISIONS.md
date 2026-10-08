@@ -1584,3 +1584,15 @@ stack options were shown with the code).
   demand is a core change (PLAN, Open questions).
 - 2026-10-08 `scope/106` and `scope/107` take `skip-on:pocs-win(pcntl=no_Windows_build)`, as the
   fork tests of S4: they need pcntl, which the Windows build lacks.
+- 2026-10-08 The scope object reports its handlers to the GC only while no coroutine is in the scope
+  or in its child scopes, and goes back to the GC's root buffer when a coroutine leaves the scope
+  without coroutines (S9-scope.md 9 item 28, `scope/126`). This replaces the entry of
+  2026-10-07 that reported them while the object has its scope. Why: a coroutine reaches the
+  handlers through the error route, which no object reports, so a handler's closure that holds the
+  object let `gc_collect_cycles()` cancel the running scope of a `new Scope()` (the member got "Scope
+  is being disposed due to object destruction"), or make the member of an inherited scope a zombie.
+  `scope/070-handler_closure_cycle_with_zombie_member.phpt` (`changed:2026-10-08`) expected that
+  zombie and a stand-in in the handler; now the object stays live and the handler gets it. Rejected
+  (the Critic): no report while a child scope exists, which never collects a cycle through a child
+  scope without coroutines. Accepted, as TrueAsync: a GC run while a held child scope is idle can still
+  close the parent whose handler holds the parent's object (S9-scope.md 9 item 28).

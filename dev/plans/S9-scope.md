@@ -488,6 +488,20 @@ Traversable's exception; `await/062` loses its `--XFAIL--` in that step.
 27. **A member's finish walks each parent's other child scopes only** (S9.8, `scope/124`): the walk up
     skips the child scope it found completed, where TrueAsync's `scope_check_completion_and_notify`
     walks each parent's whole subtree again (`scope.c:1575-1592`), O(N^2) a finish in a chain of N.
+28. **The object reports the handlers to the GC only while no coroutine is in the scope or in its
+    child scopes** (2026-10-08, `scope/070`, `scope/126`). Such a coroutine reaches them through the
+    error route, which no object reports, so TrueAsync's `scope_object_gc` (`scope.c:1418-1472`),
+    which reports them always, lets the GC call the destructor of an object a handler's closure
+    holds, and the destructor cancels the running scope (seen on ours before the fix: the member got
+    "Scope is being disposed due to object destruction"). A child scope without coroutines routes no
+    error now, so a cycle through it is collected, as TrueAsync's. Accepted, as TrueAsync: a child
+    scope the user still holds may spawn later and route an error to the parent's handler, so a GC run
+    while it is idle can call the parent object's destructor, which closes the parent, and the later
+    error reaches its handler with a stand-in; without the GC run the parent stays open. No cheap test
+    tells that edge apart, and stopping the reports while a descendant has an object never collects
+    such a cycle; S9.12 settles the same question for a child scope's context before it is built. When
+    a coroutine leaves its scope and parents without coroutines, their objects with handlers go back to
+    the GC's root buffer, which dropped them as live, after the disposal.
 
 The probes of S9.6 are in `/mnt/project-files/s9/probes/s9.6/`. The probes of S9.3 are `/mnt/project-files/s9/probes/s9.3/q1.php`-`q16.php`; on the reference and
 on ours they print the same but for items 9 and 10 and for S3's report of an unobserved exception of

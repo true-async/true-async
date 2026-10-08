@@ -1,5 +1,5 @@
 --TEST--
-Scope: the GC collects a scope object in a cycle with its handler while a zombie member keeps the scope, and the handler still runs
+Scope: the GC leaves a scope object in a cycle with its handler while a member runs, and the handler gets the object itself
 --FILE--
 <?php
 
@@ -26,11 +26,11 @@ function start(): Async\Coroutine
 }
 
 $member = start();
-// The GC runs the object's destructor, which makes the member a zombie and detaches the scope; the
-// closure stays with the scope, which keeps the object, and the handler gets a stand-in.
+// The member reaches the handler through the error route, so the object is live: no destructor, no
+// zombie, no stand-in.
 gc_collect_cycles();
 gc_collect_cycles();
-echo "collected\n";
+echo "gc ran\n";
 
 while (!$member->isCompleted()) {
     delay(10);
@@ -39,6 +39,6 @@ echo "end\n";
 
 ?>
 --EXPECT--
-collected
-handler: after the GC, stand-in: true
+gc ran
+handler: after the GC, stand-in: false
 end

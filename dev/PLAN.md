@@ -905,8 +905,8 @@ Active: none; layer 2's plan (S9.10) waits for Edmond's agreement and its questi
         lists and layer 1 pass as before
       tier: T2 · role: Critic
 - [ ] S9.12 The context of a scope, `current_context()`, `root_context()`, `request_context()`, the
-      walk, the scope object's `get_gc` for its context and, by the same rule, its handlers, its
-      return to the root buffer (note sections 4, 5); if question 1 of the note is answered as
+      walk, the context in the scope object's `get_gc` under the rule the handlers follow since their
+      fix (note sections 4, 5); if question 1 of the note is answered as
       TrueAsync, the step its section 6 adds comes before this one.
       done: the block's S9.12 tests and the note's S9.12 own tests pass on debug and ASAN; the S3-S7
         lists and layer 1 pass as before
