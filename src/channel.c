@@ -62,7 +62,7 @@ static zend_always_inline async_channel_t *channel_from_object(zend_object *obje
 
 static zend_always_inline bool channel_is_closed(const async_channel_t *channel)
 {
-	return (channel->event.flags & ASYNC_EVENT_F_CLOSED) != 0;
+	return (channel->base.flags & ASYNC_EVENT_F_CLOSED) != 0;
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -336,7 +336,7 @@ static void channel_close(async_channel_t *channel, const async_channel_close_re
 	}
 
 	channel->close_reason = reason;
-	channel->event.flags |= ASYNC_EVENT_F_CLOSED;
+	channel->base.flags |= ASYNC_EVENT_F_CLOSED;
 
 	zend_object *const exception = channel_exception_new(reason);
 	uint32_t index = channel->receivers.length;
@@ -476,7 +476,7 @@ channel_wait_link(async_channel_t *channel, async_awaitable_t *const token, cons
 
 	async_coroutine_event_callback_t *const record = &waiter->waker.records[0];
 
-	async_wait_link_outside(record, waiter, (async_awaitable_t *) &channel->event, &channel_wait_kind);
+	async_wait_link_outside(record, waiter, (async_awaitable_t *) &channel->base, &channel_wait_kind);
 	record->event_callback.flags |= role;
 	channel_queue_push(queue, record);
 
@@ -663,7 +663,7 @@ static zend_object *channel_object_create(zend_class_entry *class_entry)
 	async_channel_t *const channel = zend_object_alloc(sizeof(async_channel_t), class_entry);
 
 	memset(channel, 0, offsetof(async_channel_t, std));
-	async_event_init_in_object(&channel->event, ASYNC_CHANNEL_F_CHANNEL, offsetof(async_channel_t, std));
+	async_event_init_in_object(&channel->base, ASYNC_CHANNEL_F_CHANNEL, offsetof(async_channel_t, std));
 	ZVAL_UNDEF(&channel->rendezvous_value);
 
 	zend_object_std_init(&channel->std, class_entry);
@@ -728,7 +728,7 @@ ZEND_METHOD(Async_Channel, __construct)
 	async_channel_t *const channel = THIS_CHANNEL;
 
 	/* TrueAsync's second construction drops the held values and leaks them (S9-channel.md 8, item 4). */
-	if (UNEXPECTED(channel->event.flags & ASYNC_CHANNEL_F_CONSTRUCTED)) {
+	if (UNEXPECTED(channel->base.flags & ASYNC_CHANNEL_F_CONSTRUCTED)) {
 		zend_throw_error(NULL, "Cannot call constructor twice");
 		RETURN_THROWS();
 	}
@@ -746,7 +746,7 @@ ZEND_METHOD(Async_Channel, __construct)
 	channel->no_producer_timeout_ms = (int32_t) no_producer_timeout;
 	channel->no_consumer_timeout_ms = (int32_t) no_consumer_timeout;
 	channel->hard_timeouts = hard_timeouts;
-	channel->event.flags |= ASYNC_CHANNEL_F_CONSTRUCTED;
+	channel->base.flags |= ASYNC_CHANNEL_F_CONSTRUCTED;
 }
 
 ZEND_METHOD(Async_Channel, send)

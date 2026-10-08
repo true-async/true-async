@@ -362,7 +362,7 @@ marks the waiters it wakes handed out before it closes, as the route's hand-out 
 outside. Every other wake of a channel waiter tells the fuzz oracle: a send, a receive or a close by
 running code calls `async_collector_check_event_wake()` for each queued waiter it wakes, as a Future's
 wake does (`src/future.c:714`), and a close by running code calls
-`async_collector_check_records_wake(&channel->event.callbacks, NULL)` before it notifies the Awaitable
+`async_collector_check_records_wake(&channel->base.callbacks, NULL)` before it notifies the Awaitable
 subscribers, as a Future and a scope do before theirs (`src/future.c:658`, `src/scope.c:590`). A timer's
 close runs in scheduler context, as an outside source. TrueAsync detects none of this: a receiver on a channel nobody else
 holds waits until the global deadlock (probed `h8.php`).

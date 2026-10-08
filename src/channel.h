@@ -51,7 +51,7 @@ typedef struct
 
 typedef struct
 {
-	async_event_t event;           /* ASYNC_EVENT_F_CLOSED once closed; ZEND_OBJ: inside `std`'s allocation */
+	async_event_t base;            /* ASYNC_EVENT_F_CLOSED once closed; ZEND_OBJ: inside `std`'s allocation */
 	uint32_t capacity;             /* 0: a rendezvous */
 	zval_circular_buffer_t buffer; /* capacity > 0: the values, oldest first */
 	zval rendezvous_value;         /* capacity 0: the one value in the slot */
