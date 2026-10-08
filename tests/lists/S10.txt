@@ -1,0 +1,26 @@
+# S10: TrueAsync features beyond the RFCs (dev/plans/S10.md, section 10).
+# Reference: true-async/php-async at tests/lists/REFERENCE. A test its step has not made pass carries --XFAIL-- naming the step.
+
+# cleanup
+cleanup/001-curl_global_no_coroutine.phpt  ref:867846c7db5b27295447e7b143f4c50dfbbd02c2472fb74b05f65f8ba857b884
+cleanup/002-socket_global_no_coroutine.phpt  ref:8e9848c0f26b5c064dc7b44c14d601deb4e5330fe7318d260d8dafd9f607b2da
+cleanup/003-file_global_no_coroutine.phpt  ref:04036a5e6af99c211a8cac164c24a0870dcb96978cd821e0e99cd5c28c08a3a7
+cleanup/004-mixed_global_no_coroutine.phpt  ref:23ffa30bfe9514961f7b522819ed7debca0be0a5c9447b1a7e243d6136480aa6
+
+# fork
+fork/002-fork_reactor_reinit_child.phpt  ref:281c9baaf452f8c5f211f29274cad30842fe676c8e8e42941fc2c3dda1efedb9  skip-on:pocs-win(pcntl=no_Windows_build)
+fork/003-fork_async_off.phpt  ref:401230771b75f9486ec1b3b5aac461ce854903bb168b5d88b0ccf23c50d8c667  skip-on:pocs-win(pcntl=no_Windows_build)
+
+# socket
+socket/001-socket_connect_ipv6_async.phpt  ref:27fbcf323327885f1c7f950ee68cb0b0bb1232f158c5d405dd23526fd2a84de0  changed:2026-10-08:a9b2eb4525a73af95d764166d59673bec8f63a5da3b223edf88ec9bec59ab2aa  skip-on:*(no-AF_INET6)
+socket/002-socket_bind_ipv6_async.phpt  ref:a2922d4b8a1ceb04fe7a042403178f40b78d94476a55b9c7c6fd958c9fc9b50f  changed:2026-10-08:e2b55a528f095d65b2ada9cf1cc0c7ee8012e7aea240f7a863563cf252280bf3  skip-on:*(no-AF_INET6)
+socket/003-socket_sendto_ipv6_async.phpt  ref:17cf4ad0104cbbee77393754c5ed6f9c2208eefa13a70b48484ceb7e026eb8f2  changed:2026-10-08:83f3226da85b1fd0cc8ef8d4bd8b28859d78f9616d2004f8af2c40b1c73da5bb  skip-on:*(no-AF_INET6)
+
+# fiber
+fiber/019-fiber_getCoroutine.phpt  ref:984de142c265a07657ac29b18fb8bafdd0234da9860e69bb8e1b9bf9ee6a463d
+fiber/023-fiber_cancel_via_coroutine.phpt  ref:8bb0b6275d5546ffbb120f03d3974595ed45200bf8c0f4e88d806ad0d3e833eb
+fiber/024-fiber_cancel_during_suspend.phpt  ref:dd82f72265971e9fbeb43dd659c9d4d019cffd4153592ad25081d055fbe25705
+fiber/025-fiber_double_cancel.phpt  ref:60376a4ec5d0f9d88e5b15e57519e4703086d4cdfef6540868de7d2f98a8578b
+fiber/026-fiber_getCoroutine_after_termination.phpt  ref:a1c25149bc2b898a2cf44823ef33d0ea6dadd9cce72515580962a33fb1377f74
+fiber/027-fiber_cancel_in_nested_spawn.phpt  ref:3f3e6698aeeb21b0ad70f4b7f58b200f29195bbe1ca94aa751b60102313e7789
+fiber/028-fiber_exception_vs_cancel.phpt  ref:e4e9a0a5c3c927e157bfb42b3c9f5cdf4b9ef7c4c9d2f8cb57d69b8f695e4f3e

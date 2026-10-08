@@ -1773,3 +1773,18 @@ stack options were shown with the code).
   second hook began, which printed its `before:` line after the first `after the wait:` (once in a
   `pocs-win` run, 10 of 10 alone, Edmond's PC, S6.10); the test checks that the stand-in stays
   usable while two hooks wait on it, which needs both waiting at once.
+- 2026-10-08 S10 outcomes (`dev/plans/S10.md`; Edmond 17:40, «да в целом согласен с планом»):
+  per-coroutine output buffers are not built (Edmond: «можно не делать ваще»), `output_buffer/001`-`006`
+  stay excluded; `Fiber::getCoroutine()` is added to `Fiber` by the extension at MINIT; no
+  `zend_sigaction` hook in the scheduler API, a `zend_signal.c` hook that `ext/standard` fills is
+  requested from bukka, and the signal handle count is fixed in the extension; the PDO pool, pgsql and
+  threads are not in the first version (the pool later as `ext/pdo` hooks by a PDO RFC with the pool in
+  the extension; pgsql later as our own php-src PR; threads later at extension level); Windows signals
+  in the extension through `SetConsoleCtrlHandler()`; Windows exec output, console reads and the M9 call
+  sites are requests to bukka; FileSystemWatcher is a new S9 layer. Why: the note's sections 2-9; P1.1
+  rules out a private core patch.
+- 2026-10-08 `socket/001-socket_connect_ipv6_async.phpt`, `socket/002-socket_bind_ipv6_async.phpt` and
+  `socket/003-socket_sendto_ipv6_async.phpt` (reference, `changed:2026-10-08`) probe the IPv6 socket in
+  SKIPIF with `@socket_create()`, and their lines take `skip-on:*(no-AF_INET6)`. Why: without IPv6
+  the probe's warning comes before "skip" and run-tests reports BORK, and the reference's `CI_NO_IPV6`
+  never reaches a test through `tools/test.py` (the Critic of S10.2).

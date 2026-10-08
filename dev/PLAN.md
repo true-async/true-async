@@ -1053,16 +1053,17 @@ One decision per fork feature that needs core changes: PDO pool, per-coroutine o
 pgsql, `Fiber::getCoroutine()`, `zend_sigaction` hook, thread pool, Windows, and what the inventory
 of the fork's core diff found besides (`dev/plans/S10.md` section 9). Each becomes an RFC
 change, an upstream fix, an extension-level design, or "not in the first version".
-Done when: every item of the note's section 1 has Edmond's outcome in `DECISIONS.md`; the outcomes
-built in S10 pass on debug and ASAN with the S3-S9 lists as before; every reference group is in a
-list or an exclusion with its reason.
+Done when: every item of the note's section 1 has its outcome in `DECISIONS.md` (2026-10-08); the outcomes
+built in S10 pass on debug and ASAN with the S3-S9 lists as before; every reference group of the note's
+section 10 is in a list or an exclusion with its reason (`iterate`, `task_group`, `task_set` and `pool`
+are S9's later layers).
 Tier: T2. Roles: Critic and Sage on S10.1, Critic after every coding step.
 Tests: interleaved
 Base: 3c859b5
 Notes: dev/plans/S10.md
-Active: S10.1
+Active: S10.3
 
-- [~] S10.1 Decision note `dev/plans/S10.md`: per item what TrueAsync does, what the pinned core has,
+- [x] S10.1 Decision note `dev/plans/S10.md`: per item what TrueAsync does, what the pinned core has,
       the options and the proposed outcome; the inventory of the fork's other core changes.
       done: the note pushed; every Critic finding fixed or answered in the note; Edmond's answers to
         the 11 questions of section 11 recorded in `DECISIONS.md`
@@ -1078,29 +1079,43 @@ Active: S10.1
       Critic 2026-10-08 round 3 (section 2): a fiber runs after its caller is switched out, so its
         stack follows `caller_coroutine`; the invariant and the one swap helper stated; a fatal error's
         message flushed, not discarded; `scheduler/053` and `io_provider/011` change too. Fixed; four
-        design points left to S10.5's note.
-- [ ] S10.2 The frozen lists `tests/lists/S10.txt` and `S10.excluded` (note section 10).
-      done: `check-lists.py` passes; every reference group is in a list or an exclusion with its reason
+        design points left to the output buffers' own note.
+      handoff: done 2026-10-08: Edmond approved the note (17:40); output buffers are not built
+        (`DECISIONS.md` 2026-10-08), so their step is gone. The research reports are in
+        `/mnt/project-files/notes/s10/`.
+- [x] S10.2 The frozen lists `tests/lists/S10.txt` and `S10.excluded` (note section 10).
+      done: `check-lists.py` passes; every reference group of note section 10 is in a list or an
+        exclusion with its reason
       tier: T1 · role: Critic
+      result 2026-10-08: `S10.txt` 16 tests (`cleanup` 4, `fork` 2, `socket` 3, `fiber` 7),
+        `S10.excluded` 318; `output_buffer/007`, `008` appended to `S6.txt`; the PDO pool and thread
+        lines of `S6.excluded` and the output buffer lines of `S3.excluded` cite the 2026-10-08
+        outcomes. `S10.txt` and `output_buffer/007`, `008`: pocs-dbg 9 PASS, 3 SKIP (no IPv6 here),
+        6 XFAIL (S10.4); pocs-asan 8 PASS, 4 SKIP (and `007`'s `--XLEAK--`), 6 XFAIL; 0 unexpected.
+        `fiber/025` passes already, its parent is cancelled before the fiber starts. `socket/001`-`003` changed (DECISIONS) and
+        skip without IPv6, as in this container; CI runs them.
+      Critic 2026-10-08: `fork/002`, `003` skip on Windows and `output_buffer/007` (`--XLEAK--`) under
+        ASAN, untagged; the socket SKIPIF borks without IPv6; `signal/008`, `009`, `012` still named
+        S10; `socket/004` and `cleanup/005` had the wrong reason; the count and the done line were
+        false; `fiber/025` proves nothing about `getCoroutine()`. Fixed; S10.4 adds its own test.
 - [ ] S10.3 The fixes that need no decision (note section 12): the HTTP headers leak on
       `php-src-fixes` (a core update), the signal handle count, the run of note section 4 (b), the fiber
-      frames reproducer; the `cleanup`, `fork`, `socket` and `output_buffer/007`, `008` tests.
-      done: each fix with its test passes on debug and ASAN; the S3-S9 lists pass as before; the core
+      frames reproducer; `socket/001`-`003` seen passing on CI.
+      done: each fix with its test passes on debug and ASAN; `socket/001`-`003` PASS on the CI
+        `pocs-dbg` and `pocs-asan` lanes; the S3-S9 lists pass as before; the core
         update's checks of WORKFLOW pass (S1 suites diffed, the bridge); Edmond's answer on `signal/031`
         after the run recorded
       tier: T2 · role: Critic
-- [ ] S10.4 `Fiber::getCoroutine()` as Edmond decides.
-      done: `fiber/019`, `023`-`028` pass on debug and ASAN
+- [ ] S10.4 `Fiber::getCoroutine()` added to `Fiber` by the extension.
+      done: `fiber/019`, `023`-`028` pass on debug and ASAN, with an own test that cancels the
+        coroutine of a suspended fiber, then its parent
       tier: T1 · role: Critic
-- [ ] S10.5 Per-coroutine output buffers as Edmond decides: a design note reviewed before the code.
-      done: `output_buffer/001`-`006` pass on debug and ASAN; the S3-S9 lists pass as before or each
-        changed test has Edmond's word; the per-switch cost in `BENCHMARKS.md`
-      tier: T2 · role: Critic → Sage
-- [ ] S10.6 The requests of the note written into `RFC-CHANGES.md`; Windows signals as Edmond decides;
-      the items left out of the first version recorded with their follow-up paths.
+- [ ] S10.5 The requests of the note written into `RFC-CHANGES.md`; Windows signals in the extension;
+      the items left out of the first version recorded with their follow-up paths; FileSystemWatcher
+      added to S9's layers.
       done: one entry per request; `signal/001` passes on Windows if built; a Fog line per item left out
       tier: T2 · role: Critic
-- [ ] S10.7 Security pass by `dev/SECURITY.md`.
+- [ ] S10.6 Security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item; findings fixed with a test or recorded
       tier: T2 · role: —
 

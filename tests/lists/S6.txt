@@ -407,3 +407,7 @@ signal/030-script_end_waits_for_held_watch.phpt  own:283d0a78274d23a88bb13920efd
 signal/031-reblock_unblocks_with_its_watch.phpt  own:da8552f7d6adea2d5b7786fca5f31e55e454d542736814e5444752ee1b66f7ad  changed:2026-10-08:d1257616a0c86abec96add4309462849b7507f464e2443fc85f4d9528f9cd77a  skip-on:*-win(Unix-only)
 signal/032-pcntl_signal_unblocks_until_the_next_poll.phpt  own:70dbe1beb0e0b2471f6c0b1d12a15eddf49d5f6a536b3233cb968e5816d9f300  changed:2026-10-08:6c54eb7bebde5d5affcbb1e01d5db3d3ceda359b1a7d9ebcd943a721f4019df7  skip-on:*-win(Unix-only)
 signal/033-watch_dropped_in_pcntl_handler_unblocks.phpt  own:2e0405c750a7a98b4e93356b641d74b297e68cde0b861d8a8e392314b33f4d77  skip-on:*-win(Unix-only)
+
+# output_buffer (moved from S3.excluded by S10.2, dev/plans/S10.md section 10)
+output_buffer/007-ob_start_in_handler_fatal.phpt  ref:930beeb44f9e3d733b508be20fcc0cdd54720088d434f0ee9779f355172fea34  skip-on:*-asan(XLEAK-skipped-under-asan)
+output_buffer/008-ob_flush_after_file_write.phpt  ref:9bfdbf22dbeb60811a36455ee2438e18c6929ff1feb4244fc025096edcd1f719

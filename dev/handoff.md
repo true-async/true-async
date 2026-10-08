@@ -488,9 +488,9 @@ channel), 16 for S9.19 (timers, deadlock close, owner scope, collector). Next is
 
 ## S10
 
-- S10.1 (2026-10-08): `dev/plans/S10.md` written from read-only research of the fork core
-  (`829cde6d4b5`, own changes = diff from `a7b265ca611b`), `ext/async` at `REFERENCE` and the pinned
-  core; nothing was run. Three Critic rounds and the Sage are in PLAN S10.1. Waiting for Edmond's
-  answers to its section 11; S10.2 and S10.3 need none.
+- S10.1 closed 2026-10-08: `dev/plans/S10.md` approved by Edmond (17:40) except output buffers, which
+  are not built; the outcomes are in `DECISIONS.md` 2026-10-08.
+- S10.2 closed 2026-10-08: lists frozen (PLAN result line). This container has no IPv6, so
+  `socket/001`-`003` skip locally (`skip-on:*(no-AF_INET6)`); only CI runs them. Next is S10.3.
 - Core update: S10.3 (the HTTP headers leak on `php-src-fixes`) asks the coordinator for the slot
   first. The research reports behind the note: `/mnt/project-files/notes/s10/` (project files).

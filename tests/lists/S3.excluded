@@ -18,21 +18,12 @@ common/cpu_usage_basic.phpt  component:S9 (TrueAsync API outside S3.md section 1
 common/runtime_stats.phpt  component:S9 (TrueAsync API outside S3.md section 1; no stage in PLAN.md names it)
 
 # output_buffer
-output_buffer/001-ob_start_basic_isolation.phpt  needs-core:per-coroutine-output-buffers (PLAN S10, D22)
-output_buffer/002-multiple_coroutines_isolation.phpt  needs-core:per-coroutine-output-buffers (PLAN S10, D22)
-output_buffer/003-nested_ob_start.phpt  needs-core:per-coroutine-output-buffers (PLAN S10, D22)
-output_buffer/004-ob_flush_isolation.phpt  needs-core:per-coroutine-output-buffers (PLAN S10, D22)
-output_buffer/005-mixed_buffering.phpt  needs-core:per-coroutine-output-buffers (PLAN S10, D22)
-output_buffer/006-exception_handling.phpt  needs-core:per-coroutine-output-buffers (PLAN S10, D22)
-output_buffer/007-ob_start_in_handler_fatal.phpt  component:S6 (proc_open, D22)
-output_buffer/008-ob_flush_after_file_write.phpt  component:S6 (file_put_contents, D22)
+output_buffer/001-ob_start_basic_isolation.phpt  rfc-rule:2026-10-08 S10 outcomes (per-coroutine output buffers are not built)
+output_buffer/002-multiple_coroutines_isolation.phpt  rfc-rule:2026-10-08 S10 outcomes (per-coroutine output buffers are not built)
+output_buffer/003-nested_ob_start.phpt  rfc-rule:2026-10-08 S10 outcomes (per-coroutine output buffers are not built)
+output_buffer/004-ob_flush_isolation.phpt  rfc-rule:2026-10-08 S10 outcomes (per-coroutine output buffers are not built)
+output_buffer/005-mixed_buffering.phpt  rfc-rule:2026-10-08 S10 outcomes (per-coroutine output buffers are not built)
+output_buffer/006-exception_handling.phpt  rfc-rule:2026-10-08 S10 outcomes (per-coroutine output buffers are not built)
 
 # fiber
-fiber/019-fiber_getCoroutine.phpt  needs-core:Fiber::getCoroutine (PLAN S10)
-fiber/023-fiber_cancel_via_coroutine.phpt  needs-core:Fiber::getCoroutine (PLAN S10)
-fiber/024-fiber_cancel_during_suspend.phpt  needs-core:Fiber::getCoroutine (PLAN S10)
-fiber/025-fiber_double_cancel.phpt  needs-core:Fiber::getCoroutine (PLAN S10)
-fiber/026-fiber_getCoroutine_after_termination.phpt  needs-core:Fiber::getCoroutine (PLAN S10)
-fiber/027-fiber_cancel_in_nested_spawn.phpt  needs-core:Fiber::getCoroutine (PLAN S10)
-fiber/028-fiber_exception_vs_cancel.phpt  needs-core:Fiber::getCoroutine (PLAN S10)
 fiber/030-fiber_suspend_in_finally_after_shutdown.phpt  rfc-rule:2026-10-02 S3 design agreed, D5 (a cancelled fiber may suspend in finally; no FiberError)

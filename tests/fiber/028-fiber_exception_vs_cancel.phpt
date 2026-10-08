@@ -1,0 +1,40 @@
+--TEST--
+Fiber throws exception while coroutine is being cancelled
+--XFAIL--
+Not implemented yet: S10.4 of dev/PLAN.md
+--FILE--
+<?php
+
+use function Async\spawn;
+use function Async\await;
+use Async\AsyncCancellation;
+
+$c = spawn(function() {
+    $fiber = new Fiber(function() {
+        Fiber::suspend();
+        throw new Exception("fiber exception");
+    });
+
+    $fiber->start();
+    $coro = $fiber->getCoroutine();
+
+    // Cancel coroutine
+    $coro->cancel(new AsyncCancellation("cancel"));
+
+    // Resume - what happens? Exception or AsyncCancellation?
+    try {
+        $fiber->resume();
+        echo "No exception\n";
+    } catch (AsyncCancellation $e) {
+        echo "AsyncCancellation: " . $e->getMessage() . "\n";
+    } catch (Exception $e) {
+        echo "Exception: " . $e->getMessage() . "\n";
+    }
+});
+
+await($c);
+echo "OK\n";
+?>
+--EXPECTF--
+%a
+OK
