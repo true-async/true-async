@@ -1,0 +1,424 @@
+From 29ccc5d5c90a78f0b2701ce11820b3d8035e2f3d Mon Sep 17 00:00:00 2001
+From: Edmond <1571649+edmonddantes@users.noreply.github.com>
+Date: Thu, 8 Oct 2026 12:48:19 +0000
+Subject: [PATCH 3/4] Add ior_release_handle() to take a handle off the
+ completion port
+
+A handle stays associated with the port of the context that used it, and
+the association belongs to the file object, so a process given the handle
+posts the packets of its own overlapped I/O to this port. The packet
+filter drops them, but cannot tell one whose OVERLAPPED equals the
+address of a slot with a request in flight from that request's own.
+
+ior_release_handle() unties the handle before it is handed out:
+NtSetInformationFile(FileReplaceCompletionInformation) with no port,
+Windows 8.1 and later. It returns -EBUSY while a read, write, send, recv,
+accept or connect of the context on the handle is queued or its
+completion not yet dequeued (such an op may issue on the handle again:
+a multishot accept's next child, an abort replay): Windows 11 unties a
+handle even with a request pending on it, and that request's packet
+then reaches no port. -ENOTSUP where ntdll lacks the call or rejects
+the class (Wine); -EBADF for NULL or INVALID_HANDLE_VALUE; -EINVAL for a
+NULL context or a refusal of the kernel (a closed handle); 0 for a
+handle the context does not own, which it leaves as it is. On success
+the owner record goes and the handle-set entry is no longer owned, so
+the next op on the value associates it again. Other backends tie
+nothing to a context and return 0.
+
+test_iocp_backend: after the release another port takes the handle and
+a read issued outside ior posts there, not to the ring; the ring's next
+write binds it again; a pending read of the ring refuses the release
+and still completes; a read pending outside ior is untied with the
+handle and completes; a handle never used, or held by another ring, is
+left alone.
+---
+ README.md                 |   4 +-
+ src/ior.c                 |  13 ++++
+ src/ior.h                 |  26 +++++++
+ src/ior_backend.h         |   2 +
+ src/ior_iocp.c            |  88 ++++++++++++++++++++++
+ tests/test_iocp_backend.c | 152 ++++++++++++++++++++++++++++++++++++++
+ 6 files changed, 284 insertions(+), 1 deletion(-)
+
+diff --git a/README.md b/README.md
+index 2dbd7e2..c62e895 100644
+--- a/README.md
++++ b/README.md
+@@ -174,7 +174,9 @@ int main() {
+ > so that process's own overlapped I/O on the handle also posts a packet
+ > there, and the ring drops it. The I/O itself completes for that process at
+ > once, whether or not the ring dequeues. I/O whose `hEvent` has the low-order
+-> bit set queues no packet.
++> bit set queues no packet. `ior_release_handle()` takes the handle off the
++> port before it is handed out (Windows 8.1 and later); the ring's next
++> operation on it associates it again.
+ 
+ ### Operation Chaining Example
+ 
+diff --git a/src/ior.c b/src/ior.c
+index 6a07833..c71cee7 100644
+--- a/src/ior.c
++++ b/src/ior.c
+@@ -159,6 +159,19 @@ int ior_queue_forget(ior_ctx *ctx)
+ 	return 0;
+ }
+ 
++int ior_release_handle(ior_ctx *ctx, ior_fd_t fd)
++{
++	if (!ctx) {
++		return -EINVAL;
++	}
++
++	if (!ctx->ops->release_handle) {
++		return 0;
++	}
++
++	return ctx->ops->release_handle(ctx->backend_ctx, fd);
++}
++
+ /* Submission operations - just call through vtable */
+ ior_sqe *ior_get_sqe(ior_ctx *ctx)
+ {
+diff --git a/src/ior.h b/src/ior.h
+index ba83c84..b690835 100644
+--- a/src/ior.h
++++ b/src/ior.h
+@@ -454,6 +454,32 @@ void ior_queue_exit(ior_ctx *ctx);
+  */
+ int ior_queue_forget(ior_ctx *ctx);
+ 
++/**
++ * Untie a descriptor from the context before another process gets it.
++ *
++ * On IOCP a handle the context did I/O on stays associated with its
++ * completion port, and the association belongs to the file object, which a
++ * duplicate shares: a process given the handle (inherited, or through
++ * DuplicateHandle) posts the packets of its own overlapped I/O on it to this
++ * port. This takes the handle off the port; the next operation on it here
++ * associates it again. A request another process has pending on the handle
++ * is untied with it: its completion reaches no port. Call it on the thread
++ * that submits. On other backends nothing ties a descriptor to a context,
++ * and it returns 0.
++ *
++ * @param ctx  I/O context.
++ * @param fd   Descriptor about to be handed out.
++ *
++ * @return 0 when nothing of this context ties @p fd to its port any more,
++ *         as far as ior records (a handle it never associated is left as it
++ *         is); -EINVAL for a NULL @p ctx, or when the kernel refuses (a
++ *         closed handle); -EBADF for a NULL or INVALID_HANDLE_VALUE @p fd;
++ *         -EBUSY while an operation of the context on @p fd is queued or its
++ *         completion not yet dequeued; -ENOTSUP where the system cannot
++ *         (before Windows 8.1). The handle stays associated on any error.
++ */
++int ior_release_handle(ior_ctx *ctx, ior_fd_t fd);
++
+ /* Submission */
+ 
+ /**
+diff --git a/src/ior_backend.h b/src/ior_backend.h
+index e694636..9848a38 100644
+--- a/src/ior_backend.h
++++ b/src/ior_backend.h
+@@ -166,6 +166,8 @@ typedef struct ior_backend_ops {
+ 	void (*destroy)(void *backend_ctx);
+ 	/* Optional (NULL = no fork): ior_queue_forget() in a forked child. */
+ 	void (*forget)(void *backend_ctx);
++	/* Optional (NULL = nothing ties a descriptor to the context): ior_release_handle(). */
++	int (*release_handle)(void *backend_ctx, ior_fd_t fd);
+ 
+ 	/* Submission queue operations. get_sqe: 0, -ENOSPC (submission queue
+ 	 * full), -ENOMEM (no memory for the entry, IOCP). */
+diff --git a/src/ior_iocp.c b/src/ior_iocp.c
+index ac6a4fd..9a06c0f 100644
+--- a/src/ior_iocp.c
++++ b/src/ior_iocp.c
+@@ -1230,6 +1230,8 @@ typedef NTSTATUS(NTAPI *ior_nt_set_information_file_fn)(
+ 		HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, ULONG);
+ 
+ #define IOR_FILE_REPLACE_COMPLETION_INFORMATION 61
++#define IOR_STATUS_NOT_IMPLEMENTED ((NTSTATUS) 0xC0000002L)
++#define IOR_STATUS_INVALID_INFO_CLASS ((NTSTATUS) 0xC0000003L)
+ #ifndef NT_SUCCESS
+ #define NT_SUCCESS(status) (((NTSTATUS) (status)) >= 0)
+ #endif
+@@ -1271,6 +1273,91 @@ static int iocp_take_over_handle(ior_ctx_iocp *ctx, HANDLE h)
+ 	return status == (NTSTATUS) 0xC0000001L ? -EBUSY : -EINVAL; // STATUS_UNSUCCESSFUL
+ }
+ 
++// Whether op is on h and needs h tied to the port, now or when it issues again.
++static bool iocp_op_binds_handle(const ior_iocp_op *op, HANDLE h)
++{
++	if (op->fd != h) {
++		return false;
++	}
++
++	switch (op->opcode) {
++		case IOR_OP_READ:
++		case IOR_OP_WRITE:
++		case IOR_OP_SEND:
++		case IOR_OP_RECV:
++		case IOR_OP_ACCEPT:
++		case IOR_OP_CONNECT:
++			return true;
++		default:
++			return false;
++	}
++}
++
++/*
++ * ior_release_handle(): untie h from ctx's port. It runs on the consumer
++ * thread, as every association does, so no op of ctx can bind h meanwhile.
++ * Windows unties a handle even with a request pending on it, and that
++ * request's packet then reaches no port; hence the scans for ops of ctx on h.
++ */
++static int ior_iocp_backend_release_handle(void *backend_ctx, ior_fd_t fd)
++{
++	ior_ctx_iocp *const ctx = backend_ctx;
++	const HANDLE h = (HANDLE) fd;
++	if (h == NULL || h == INVALID_HANDLE_VALUE) {
++		return -EBADF;
++	}
++
++	for (const ior_iocp_op *op = ctx->live_head; op; op = op->live_next) {
++		if (iocp_op_binds_handle(op, h)) {
++			return -EBUSY;
++		}
++	}
++
++	for (uint32_t i = ctx->sq_head; i != ctx->sq_tail; i++) {
++		if (iocp_op_binds_handle(ctx->sq_array[i & ctx->sq_mask], h)) {
++			return -EBUSY;
++		}
++	}
++
++	AcquireSRWLockExclusive(&g_owner_lock);
++	owner_entry **const pp = iocp_owner_find_locked(h);
++	owner_entry *const o = *pp;
++	if (!o || o->owner != ctx) {
++		ReleaseSRWLockExclusive(&g_owner_lock);
++		return 0;
++	}
++
++	InitOnceExecuteOnce(&g_nt_set_info_once, iocp_nt_set_info_resolve, NULL, NULL);
++	int ret = -ENOTSUP;
++	if (g_nt_set_info) {
++		IO_STATUS_BLOCK iosb;
++		ior_file_completion_information info = { NULL, NULL };
++		const NTSTATUS status = g_nt_set_info(
++				h, &iosb, &info, sizeof(info), IOR_FILE_REPLACE_COMPLETION_INFORMATION);
++		if (NT_SUCCESS(status)) {
++			ret = 0;
++		} else if (status != IOR_STATUS_NOT_IMPLEMENTED
++				&& status != IOR_STATUS_INVALID_INFO_CLASS) {
++			ret = -EINVAL;
++		}
++	}
++
++	if (ret == 0) {
++		*pp = o->next;
++		free(o);
++		EnterCriticalSection(&ctx->handles.lock);
++		handle_set_entry *const entry = handle_set_find_locked(&ctx->handles, h);
++		if (entry) {
++			entry->owned = false;
++		}
++
++		LeaveCriticalSection(&ctx->handles.lock);
++	}
++
++	ReleaseSRWLockExclusive(&g_owner_lock);
++	return ret;
++}
++
+ // The completion status of an op whose handle could not be tied to the port.
+ static DWORD association_error(int ret)
+ {
+@@ -5144,6 +5231,7 @@ const ior_backend_ops ior_iocp_ops = {
+ 	.cqe_get_flags = ior_iocp_backend_cqe_get_flags,
+ 	.notify_fd = ior_iocp_backend_notify_fd,
+ 	.notify_clear = ior_iocp_backend_notify_clear,
++	.release_handle = ior_iocp_backend_release_handle,
+ 	.backend_name = ior_iocp_backend_name,
+ 	.get_features = ior_iocp_backend_get_features,
+ 	.sq_entries = ior_iocp_backend_sq_entries,
+diff --git a/tests/test_iocp_backend.c b/tests/test_iocp_backend.c
+index 0b088f1..9abea84 100644
+--- a/tests/test_iocp_backend.c
++++ b/tests/test_iocp_backend.c
+@@ -14,6 +14,7 @@
+  *     recycled handle values, requests pending elsewhere and racing rings
+  *   - pipes: another process's packets on a handle passed to it, ops on a
+  *     duplicate of the handle, and the errno of a closed or empty pipe
++ *   - a handle taken off the port before it is handed out
+  *
+  * The whole file compiles to an empty (passing) cmocka group on non-IOCP
+  * builds, so it is harmless to register unconditionally in CMake - but the
+@@ -952,6 +953,151 @@ static void test_read_empty_nowait_pipe_eagain(void **state)
+ 	CloseHandle(server);
+ }
+ 
++/* ===================================================================== */
++/* Releasing a handle                                                    */
++/* ===================================================================== */
++
++// False where the system cannot untie a handle (Wine, before Windows 8.1).
++static bool try_release(ior_ctx *ctx, HANDLE h)
++{
++	const int ret = ior_release_handle(ctx, h);
++	if (ret == -ENOTSUP) {
++		return false;
++	}
++
++	assert_int_equal(ret, 0);
++	return true;
++}
++
++// A released handle is on no port: another port takes it, and a read issued
++// on it outside ior posts there, not to the ring.
++static void test_release_handle_unbinds(void **state)
++{
++	iocp_state *const s = (iocp_state *) *state;
++	HANDLE server, client;
++	pipe_used_by_ring(s->ctx, &server, &client);
++	if (!try_release(s->ctx, server)) {
++		CloseHandle(client);
++		CloseHandle(server);
++		skip();
++	}
++
++	const HANDLE port = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
++	assert_non_null(port);
++	assert_non_null(CreateIoCompletionPort(server, port, 7, 0));
++	foreign_read *const reads = foreign_reads_issue(server, 1);
++	DWORD got = 0;
++	assert_true(WriteFile(client, "a", 1, &got, NULL) && got == 1);
++	DWORD bytes = 0;
++	ULONG_PTR key = 0;
++	OVERLAPPED *ov = NULL;
++	assert_true(GetQueuedCompletionStatus(port, &bytes, &key, &ov, 2000));
++	assert_int_equal(key, 7);
++	assert_ptr_equal(ov, &reads[0].ov);
++	foreign_reads_check_and_free(server, reads, 1);
++
++	ior_cqe *cqe = NULL;
++	assert_int_equal(ior_peek_cqe(s->ctx, &cqe), -EAGAIN);
++	CloseHandle(client);
++	CloseHandle(server);
++	CloseHandle(port);
++}
++
++// The ring's next op on a released handle ties it to the port again.
++static void test_release_handle_rebinds(void **state)
++{
++	iocp_state *const s = (iocp_state *) *state;
++	HANDLE server, client;
++	pipe_used_by_ring(s->ctx, &server, &client);
++	if (!try_release(s->ctx, server)) {
++		CloseHandle(client);
++		CloseHandle(server);
++		skip();
++	}
++
++	char byte = 'y';
++	assert_int_equal(pipe_op_once(s->ctx, server, &byte, 1, true), 1);
++	DWORD got = 0;
++	assert_true(ReadFile(client, &byte, 1, &got, NULL) && got == 1 && byte == 'y');
++	CloseHandle(client);
++	CloseHandle(server);
++}
++
++// A read in flight on the handle refuses the release; the read still
++// completes, and the release succeeds after it.
++static void test_release_handle_busy(void **state)
++{
++	iocp_state *const s = (iocp_state *) *state;
++	HANDLE server, client;
++	pipe_used_by_ring(s->ctx, &server, &client);
++	char byte = 0;
++	ior_sqe *const sqe = ior_get_sqe(s->ctx);
++	assert_non_null(sqe);
++	ior_prep_read(s->ctx, sqe, server, &byte, 1, IOR_OFF_NONE);
++	assert_true(ior_submit(s->ctx) >= 0);
++
++	assert_int_equal(ior_release_handle(s->ctx, server), -EBUSY);
++	DWORD got = 0;
++	assert_true(WriteFile(client, "b", 1, &got, NULL) && got == 1);
++	ior_cqe *cqe = NULL;
++	ior_timespec timeout = { .tv_sec = 2, .tv_nsec = 0 };
++	assert_return_code(ior_wait_cqe_timeout(s->ctx, &cqe, &timeout), 0);
++	assert_int_equal(ior_cqe_get_res(s->ctx, cqe), 1);
++	assert_int_equal(byte, 'b');
++	ior_cqe_seen(s->ctx, cqe);
++
++	const int ret = ior_release_handle(s->ctx, server);
++	assert_true(ret == 0 || ret == -ENOTSUP);
++	CloseHandle(client);
++	CloseHandle(server);
++}
++
++// A read issued outside ior and still pending is untied with the handle: it
++// completes, and its packet reaches no port.
++static void test_release_handle_foreign_pending(void **state)
++{
++	iocp_state *const s = (iocp_state *) *state;
++	HANDLE server, client;
++	pipe_used_by_ring(s->ctx, &server, &client);
++	foreign_read *const reads = foreign_reads_issue(server, 1);
++	const int ret = ior_release_handle(s->ctx, server);
++	assert_true(ret == 0 || ret == -ENOTSUP);
++
++	DWORD got = 0;
++	assert_true(WriteFile(client, "a", 1, &got, NULL) && got == 1);
++	foreign_reads_wait_queued(reads, 1);
++	ior_cqe *cqe = NULL;
++	assert_int_equal(ior_peek_cqe(s->ctx, &cqe), -EAGAIN);
++	foreign_reads_check_and_free(server, reads, 1);
++	CloseHandle(client);
++	CloseHandle(server);
++}
++
++// A handle the ring never used, or one another ring holds, is left as it is.
++static void test_release_handle_not_ours(void **state)
++{
++	iocp_state *const s = (iocp_state *) *state;
++	HANDLE server, client;
++	make_pipe_pair(PIPE_TYPE_BYTE, &server, &client);
++	assert_int_equal(ior_release_handle(s->ctx, server), 0);
++	assert_int_equal(ior_release_handle(s->ctx, INVALID_HANDLE_VALUE), -EBADF);
++
++	ior_ctx *other = NULL;
++	assert_return_code(ior_queue_init(32, &other), 0);
++	char byte = 'x';
++	assert_int_equal(pipe_op_once(other, server, &byte, 1, true), 1);
++	assert_int_equal(ior_release_handle(s->ctx, server), 0);
++
++	const HANDLE port = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
++	assert_non_null(port);
++	assert_null(CreateIoCompletionPort(server, port, 7, 0));
++	assert_int_equal(pipe_op_once(other, server, &byte, 1, true), 1);
++	ior_queue_exit(other);
++	CloseHandle(port);
++	CloseHandle(client);
++	CloseHandle(server);
++}
++
+ /* ===================================================================== */
+ /* Teardown with operations still in flight                              */
+ /* ===================================================================== */
+@@ -1023,6 +1169,12 @@ int main(void)
+ 		cmocka_unit_test_setup_teardown(test_write_to_closed_pipe_epipe, iocp_setup, iocp_teardown),
+ 		cmocka_unit_test_setup_teardown(
+ 				test_read_empty_nowait_pipe_eagain, iocp_setup, iocp_teardown),
++		cmocka_unit_test_setup_teardown(test_release_handle_unbinds, iocp_setup, iocp_teardown),
++		cmocka_unit_test_setup_teardown(test_release_handle_rebinds, iocp_setup, iocp_teardown),
++		cmocka_unit_test_setup_teardown(test_release_handle_busy, iocp_setup, iocp_teardown),
++		cmocka_unit_test_setup_teardown(
++				test_release_handle_foreign_pending, iocp_setup, iocp_teardown),
++		cmocka_unit_test_setup_teardown(test_release_handle_not_ours, iocp_setup, iocp_teardown),
+ 	};
+ 	return cmocka_run_group_tests(tests, NULL, NULL);
+ #else
+-- 
+2.43.0
+
