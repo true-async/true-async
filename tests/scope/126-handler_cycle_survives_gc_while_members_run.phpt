@@ -51,7 +51,8 @@ foreach ([false, true] as $in_child_scope) {
     echo "alive after: ", var_export($scope->get() !== null, true), "\n";
 }
 
-// A child scope without coroutines routes no error: the cycle through it is collected.
+// The GC cannot see that only the parent's handler holds the child scope's object, so the cycle lives
+// until the request ends.
 $scope = new Scope();
 $child_scope = Scope::inherit($scope);
 $scope->setExceptionHandler(function (Scope $s, Async\Coroutine $c, Throwable $e) use ($scope, $child_scope) {});
@@ -68,4 +69,4 @@ alive after: false
 alive while the member runs: true
 member: finished
 alive after: false
-child scope without coroutines, alive: false
+child scope without coroutines, alive: true

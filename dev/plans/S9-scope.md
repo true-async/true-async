@@ -494,12 +494,12 @@ Traversable's exception; `await/062` loses its `--XFAIL--` in that step.
     which reports them always, lets the GC call the destructor of an object a handler's closure
     holds, and the destructor cancels the running scope (seen on ours before the fix: the member got
     "Scope is being disposed due to object destruction"). A child scope without coroutines routes no
-    error now, so a cycle through it is collected, as TrueAsync's. Accepted, as TrueAsync: a child
-    scope the user still holds may spawn later and route an error to the parent's handler, so a GC run
-    while it is idle can call the parent object's destructor, which closes the parent, and the later
-    error reaches its handler with a stand-in; without the GC run the parent stays open. No cheap test
-    tells that edge apart, and stopping the reports while a descendant has an object never collects
-    such a cycle; S9.12 settles the same question for a child scope's context before it is built. When
+    error now, so a cycle through it is collected, as TrueAsync's. A child scope the user still holds
+    may spawn later and route an error to the parent's handler: S9.12 stops the reports while a child
+    scope has its object and is not cancelled, and gives the parent's object back to the root buffer
+    when a child scope is freed (S9-context.md, section 5, "As built"; `scope/127`). Before, a GC run
+    while the child was idle closed the parent and the later error reached its handler with a
+    stand-in. When
     a coroutine leaves its scope and parents without coroutines, their objects with handlers go back to
     the GC's root buffer, which dropped them as live, after the disposal.
 

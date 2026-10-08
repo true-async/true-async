@@ -1,5 +1,5 @@
 /* This is a generated file, edit true_async.stub.php instead.
- * Stub hash: c60d20168481b269030c9e7db7a139041d3dc69e */
+ * Stub hash: 6bd3cd9109a5597164819ee97a5f32c4e5db9ab2 */
 
 #include "zend_enum.h"
 
@@ -80,6 +80,13 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_Async_coroutine_context, 0, 0, Async\\Context, 0)
 ZEND_END_ARG_INFO()
 
+#define arginfo_Async_current_context arginfo_Async_coroutine_context
+
+#define arginfo_Async_root_context arginfo_Async_coroutine_context
+
+ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_Async_request_context, 0, 0, Async\\Context, 1)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_Async_get_coroutines, 0, 0, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
 
@@ -114,6 +121,9 @@ ZEND_FUNCTION(Async_delay);
 ZEND_FUNCTION(Async_protect);
 ZEND_FUNCTION(Async_current_coroutine);
 ZEND_FUNCTION(Async_coroutine_context);
+ZEND_FUNCTION(Async_current_context);
+ZEND_FUNCTION(Async_root_context);
+ZEND_FUNCTION(Async_request_context);
 ZEND_FUNCTION(Async_get_coroutines);
 ZEND_FUNCTION(Async_get_deadlocked_coroutines);
 ZEND_FUNCTION(Async_graceful_shutdown);
@@ -135,6 +145,9 @@ static const zend_function_entry ext_functions[] = {
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "protect"), zif_Async_protect, arginfo_Async_protect, 0, NULL, NULL)
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "current_coroutine"), zif_Async_current_coroutine, arginfo_Async_current_coroutine, 0, NULL, NULL)
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "coroutine_context"), zif_Async_coroutine_context, arginfo_Async_coroutine_context, 0, NULL, NULL)
+	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "current_context"), zif_Async_current_context, arginfo_Async_current_context, 0, NULL, NULL)
+	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "root_context"), zif_Async_root_context, arginfo_Async_root_context, 0, NULL, NULL)
+	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "request_context"), zif_Async_request_context, arginfo_Async_request_context, 0, NULL, NULL)
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "get_coroutines"), zif_Async_get_coroutines, arginfo_Async_get_coroutines, 0, NULL, NULL)
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "get_deadlocked_coroutines"), zif_Async_get_deadlocked_coroutines, arginfo_Async_get_deadlocked_coroutines, 0, NULL, NULL)
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "graceful_shutdown"), zif_Async_graceful_shutdown, arginfo_Async_graceful_shutdown, 0, NULL, NULL)

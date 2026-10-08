@@ -106,6 +106,25 @@ function current_coroutine(): Coroutine {}
 function coroutine_context(): Context {}
 
 /**
+ * The context of the current coroutine's scope: the root scope's at the top level, in a Fiber and in
+ * Future callbacks; the engine's own scope's in a destructor the GC runs. Its find() reads the contexts
+ * of the scopes above too.
+ *
+ * @throws AsyncException While a finished coroutine that left a scope other than the root one releases
+ *                        what it held.
+ */
+function current_context(): Context {}
+
+/**
+ * The context of the root scope, which the find() of every scope's context reaches except under a
+ * `new Scope()` and in the engine's own scope.
+ */
+function root_context(): Context {}
+
+/** The context of the request scope an embedder marks; null, as no embedder can mark one yet. */
+function request_context(): ?Context {}
+
+/**
  * Every coroutine that was spawned and has not finished, the main one included.
  *
  * @return Coroutine[]

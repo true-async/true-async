@@ -1,7 +1,5 @@
 --TEST--
 current_context() - values written before the first coroutine survive and are visible
---XFAIL--
-Not implemented yet: S9.12 of dev/PLAN.md
 --FILE--
 <?php
 

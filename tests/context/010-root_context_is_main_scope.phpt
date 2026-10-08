@@ -1,7 +1,5 @@
 --TEST--
 root_context() - is the main Scope's context and is reachable through find()
---XFAIL--
-Not implemented yet: S9.12 of dev/PLAN.md
 --FILE--
 <?php
 

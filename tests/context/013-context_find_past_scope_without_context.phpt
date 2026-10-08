@@ -1,7 +1,5 @@
 --TEST--
 Context: find() walks past a parent scope that has no context at all
---XFAIL--
-Not implemented yet: S9.12 of dev/PLAN.md
 --FILE--
 <?php
 

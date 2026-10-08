@@ -79,6 +79,10 @@ Waiting for Edmond's call; nothing here is being worked on.
   limit (`Zend/asm/make_x86_64_ms_pe_masm.asm:115-118`) and the switch writes it into the thread's
   TIB (`jump_x86_64_ms_pe_masm.asm:169-171`), so `__chkstk` probes no page of a large frame, and a
   guard page alone would be jumped (read from the code, not tried on Windows). Edmond's call.
+- The scope of a Future's `map()`, `catch()` and `finally()` callbacks (S9.12, the Critic): S5's
+  chain drain runs them in the global scope, so their `current_context()` is the root context
+  (`context/039`); TrueAsync runs the mapper in the scope captured at `map()` (`future.c:1593-1600`).
+  Following it changes S5's drain (a callback per subscriber scope); Edmond's call.
 
 ## Parallel tracks
 
@@ -768,7 +772,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md
-Active: S9.12
+Active: S9.13
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -918,12 +922,20 @@ Active: S9.12
         `RFC-CHANGES.md` 17 for C callers). On CORE_REF 662dfe91919: debug 1199 PASS, 9 SKIP, 22
         XFAIL, one timing FAIL of `await/069` (1 in 200 runs under load, unrelated: `timeout(1)`'s
         deadline passes before the await, D32); ASAN 1176 PASS, 34 SKIP, 21 XFAIL; 0 unexpected.
-- [ ] S9.12 The context of a scope, `current_context()`, `root_context()`, `request_context()`, the
+- [x] S9.12 The context of a scope, `current_context()`, `root_context()`, `request_context()`, the
       walk, the context in the scope object's `get_gc` under the rule the handlers follow since their
       fix (note sections 4, 5).
       done: the block's S9.12 tests and the note's S9.12 own tests pass on debug and ASAN; the S3-S7
         lists and layer 1 pass as before
       tier: T2 · role: Critic
+      handoff: done 2026-10-08: the 11 XFAIL reference tests pass, own `context/026`-`039` and
+        `scope/127`. Three Critic passes: an idle child scope the script holds kept no parent out of
+        the GC, so the scope object reports its handlers and context only while every child scope can
+        be disposed, and the give-back walks up (`context/037`, `scope/127`; `scope/126`'s last case
+        changed on Edmond's word); `current_context()` refuses a finished coroutine that left a scope
+        other than the global one (`context/038`). On CORE_REF 662dfe91919: debug 1228 PASS, 9 SKIP,
+        11 XFAIL; ASAN 1202 PASS, 34 SKIP, 10 XFAIL; 0 unexpected. `collector/018` failed once in a
+        loaded run and passed on retry; 80 runs alone and under load passed (not S9.12's).
 - [ ] S9.13 The teardown's user values released as its last step (note section 4).
       done: the note's S9.13 own test passes on debug and ASAN; the S3-S7 lists and layer 1 pass as
         before

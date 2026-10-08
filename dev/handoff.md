@@ -437,5 +437,14 @@ destroys the tables after `zend_object_std_dtor`, `get_gc` reports keys and valu
 `zend_async_new_context_fn` once our scheduler registered, MSHUTDOWN resets it. `coroutine_context()`,
 `current_coroutine()` and `Coroutine::getContext()` refuse a coroutine whose object is being freed
 (`RFC-CHANGES.md` 17 asks the core for the same). The layer 2 block of `tests/lists/S9.txt`: 17
-reference tests (11 with `--XFAIL--` naming S9.12), own `context/014`-`025`. Next is S9.12: the
-scope's context, `current_context()`, `root_context()`, `request_context()`, the walk.
+reference tests (11 with `--XFAIL--` naming S9.12), own `context/014`-`025`.
+
+S9.12 done 2026-10-08: `Async\Context` is `async_context_t {scope, context}` in `src/context.c`; the
+scope's context is lazy (`async_scope_t.context`, one reference), `find`/`get`/`has` walk up the
+parent scopes, a freed scope detaches its context and releases it after the scope walk
+(`released_values`), the global and engine scopes' at RSHUTDOWN. `get_gc` reports the handlers and
+the context only under `scope_is_reached_only_by_object()`; `scope_objects_give_back_to_gc()` walks
+up after a coroutine leaves or a child scope goes. `ASYNC_COROUTINE_F_LEFT_NON_GLOBAL_SCOPE` makes
+`current_context()` refuse a finished coroutine's release window. `request_context()` returns null.
+Open: the scope of Future callbacks (PLAN, Open questions). Next is S9.13: the teardown's user values
+released last.

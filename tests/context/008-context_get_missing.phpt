@@ -1,7 +1,5 @@
 --TEST--
 Context: get() throws for missing keys
---XFAIL--
-Not implemented yet: S9.12 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -18,7 +18,21 @@
 #include "zend_exceptions.h"
 #include "exceptions.h"
 #include "context.h"
+#include "scope.h"
 #include "context_arginfo.h"
+
+typedef struct
+{
+	/* The scope whose context this is, borrowed: the scope holds the context and its free clears this.
+	 * NULL for a coroutine's context and for `new Context()`. */
+	async_scope_t *scope;
+	zend_async_context_t context; /* std last */
+} async_context_t;
+
+static zend_always_inline async_context_t *async_context_from_object(zend_object *object)
+{
+	return (async_context_t *) ((char *) object - offsetof(async_context_t, context.std));
+}
 
 zend_class_entry *async_ce_context = NULL;
 zend_class_entry *async_ce_context_exception = NULL;
@@ -27,18 +41,33 @@ static zend_object_handlers context_handlers;
 
 static zend_object *context_object_create(zend_class_entry *class_entry)
 {
-	zend_async_context_t *context = zend_object_alloc(sizeof(zend_async_context_t), class_entry);
+	async_context_t *context = zend_object_alloc(sizeof(async_context_t), class_entry);
 
-	zend_async_context_tables_init(context);
-	zend_object_std_init(&context->std, class_entry);
-	object_properties_init(&context->std, class_entry);
+	context->scope = NULL;
+	zend_async_context_tables_init(&context->context);
+	zend_object_std_init(&context->context.std, class_entry);
+	object_properties_init(&context->context.std, class_entry);
 
-	return &context->std;
+	return &context->context.std;
 }
 
 zend_object *async_context_new(void)
 {
 	return context_object_create(async_ce_context);
+}
+
+zend_object *async_context_new_for_scope(async_scope_t *scope)
+{
+	zend_object *object = context_object_create(async_ce_context);
+
+	async_context_from_object(object)->scope = scope;
+
+	return object;
+}
+
+void async_context_detach_scope(zend_object *object)
+{
+	async_context_from_object(object)->scope = NULL;
 }
 
 /* The tables go after zend_object_std_dtor, which clears the WeakReferences: a value's destructor that
@@ -86,6 +115,36 @@ static zval *context_find_local(zend_object *object, const zval *key)
 	return zend_async_context_entry_find(context, NULL, Z_OBJ_P(key));
 }
 
+/* The value at the nearest level: this Context, then the context of each scope above its scope, up to a
+ * scope with no parent. A scope without a context is skipped: one is made only when asked for (TrueAsync's
+ * async_context_find, context.c:26-71). A loop, so a deep chain of scopes costs no C stack. */
+static zval *context_find(zend_object *object, const zval *key)
+{
+	zval *value = context_find_local(object, key);
+
+	if (value != NULL) {
+		return value;
+	}
+
+	const async_scope_t *scope = async_context_from_object(object)->scope;
+
+	if (scope == NULL) {
+		return NULL;
+	}
+
+	for (scope = scope->parent_scope; scope != NULL; scope = scope->parent_scope) {
+		if (scope->context != NULL) {
+			value = context_find_local(scope->context, key);
+
+			if (value != NULL) {
+				return value;
+			}
+		}
+	}
+
+	return NULL;
+}
+
 static ZEND_COLD void context_throw_missing_key(const zval *key)
 {
 	if (Z_TYPE_P(key) == IS_STRING) {
@@ -108,7 +167,7 @@ ZEND_METHOD(Async_Context, find)
 	zval *key;
 	CONTEXT_METHOD_KEY(key);
 
-	const zval *value = context_find_local(Z_OBJ_P(ZEND_THIS), key);
+	const zval *value = context_find(Z_OBJ_P(ZEND_THIS), key);
 
 	if (value == NULL) {
 		RETURN_NULL();
@@ -122,7 +181,7 @@ ZEND_METHOD(Async_Context, get)
 	zval *key;
 	CONTEXT_METHOD_KEY(key);
 
-	const zval *value = context_find_local(Z_OBJ_P(ZEND_THIS), key);
+	const zval *value = context_find(Z_OBJ_P(ZEND_THIS), key);
 
 	if (UNEXPECTED(value == NULL)) {
 		context_throw_missing_key(key);
@@ -137,7 +196,7 @@ ZEND_METHOD(Async_Context, has)
 	zval *key;
 	CONTEXT_METHOD_KEY(key);
 
-	RETURN_BOOL(context_find_local(Z_OBJ_P(ZEND_THIS), key) != NULL);
+	RETURN_BOOL(context_find(Z_OBJ_P(ZEND_THIS), key) != NULL);
 }
 
 ZEND_METHOD(Async_Context, findLocal)
@@ -235,7 +294,7 @@ void async_register_context_ce(void)
 	async_ce_context->default_object_handlers = &context_handlers;
 
 	memcpy(&context_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
-	context_handlers.offset = offsetof(zend_async_context_t, std);
+	context_handlers.offset = offsetof(async_context_t, context.std);
 	context_handlers.free_obj = context_object_free;
 	context_handlers.get_gc = context_object_get_gc;
 	context_handlers.clone_obj = NULL;

@@ -58,6 +58,9 @@ typedef struct _async_awaitable_s
 #define ASYNC_COROUTINE_F_DEADLOCK_REPORTED (1u << 22)
 /* The collector's `cancel` policy cancelled it (collector.h); never cleared. */
 #define ASYNC_COROUTINE_F_DEADLOCK_CANCELLED (1u << 25)
+/* The coroutine left a scope other than the global one: a finished one has no scope to read a context
+ * from (current_context()). Never cleared. */
+#define ASYNC_COROUTINE_F_LEFT_NON_GLOBAL_SCOPE (1u << 26)
 #ifdef TRUE_ASYNC_TEST_HOOKS
 /* The collector's oracle (collector.h): found by a run, the one in `found_run` last; never cleared. */
 #define ASYNC_COROUTINE_F_DEADLOCK_FOUND (1u << 23)

@@ -1,7 +1,5 @@
 --TEST--
 Context: get() reaches parent Scopes, and reports an object key by class
---XFAIL--
-Not implemented yet: S9.12 of dev/PLAN.md
 --FILE--
 <?php
 

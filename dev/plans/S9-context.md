@@ -130,6 +130,10 @@ Both refuse with `THROW_IF_UNAVAILABLE` (`php_true_async.h:96-100`), as `corouti
 scheduler context, and once async is off, where `ASYNC_G(global_scope)` may already be NULL
 (`src/scope.c:1855`). TrueAsync launches the scheduler first, since its scopes exist only after the
 launch (`async.c:806-809`, `context/009`); ours exist from the first opcode (layer 1 note, section 3).
+`current_context()` also refuses, with "The current scope is not defined", while a finished coroutine
+that left a scope other than the global one releases what it held: the global scope's context would hand
+a `new Scope()`'s destructors the root values (`context/038`, the Critic; TrueAsync throws the same on a
+NULL scope, `async.c:811-813`). One that left the global scope reads the root context.
 
 `request_context()` returns null, the reference's answer whenever no embedder marked a request scope
 (probed `c8.php`; nothing in `ext/async` marks one, `async.c:905-927`, `F:1491-1492`,
@@ -147,7 +151,7 @@ Coroutines of `Scope::finally()` and of `await_*` run in child scopes and see th
 (probed `c5.php`).
 
 **Lifetime.** The scope holds one reference to its context. `scope_free` (`src/scope.c:315`) clears
-`scope` and hands the reference to `released_handlers`, which its caller releases after the walk, as it
+`scope` and hands the reference to `released_values`, which its caller releases after the walk, as it
 does the handlers' closures (`src/scope.c:302-310`): the release runs destructors, and one that
 disposes the parent scope inside `scope_dispose` would leave it reading the freed parent
 (`src/scope.c:442-447`). TrueAsync releases it in place (`scope.c:1257-1261`). A `Context` held
@@ -219,13 +223,27 @@ Ours, so that each cycle collects:
 - when a coroutine leaves its scope and parents without coroutines, their objects go back to
   PHP's root buffer, so a cycle formed while coroutines ran is collected by the next run, which found
   the object live before (the Sage, 2026-10-08): `scope_objects_give_back_to_gc()` keeps a reference in
-  `released_handlers`, released after the disposal, since a collection the release starts may free
+  `released_values`, released after the disposal, since a collection the release starts may free
   the scopes. S9.12 adds "has a context" to `scope_has_handlers()`, the test both `get_gc` and the
-  give-back use, and names it after what the object reports.
+  give-back use, and names it after what the object reports (`scope_has_user_values()`).
 
 The rule and the return to the root buffer already hold for the handlers: the handlers' fix of layer 1
 (the Critic, 2026-10-08; S9-scope.md 9 item 28), committed apart from this layer. S9.12 adds the
 context to what the object reports under the same rule.
+
+**As built in S9.12** (the Critic, 2026-10-08): the rule is "only the object reaches the scope"
+(`scope_is_reached_only_by_object()`): no coroutine in the scope, and every child scope can be disposed,
+that is, has no coroutine and no object or is cancelled, down the subtree. An idle child scope the
+script holds reaches the parent's context through its context's `find()` and the parent's handlers
+through its spawns, so while it has its object the parent's object reports nothing; before, a GC run
+then closed the parent (its finally handlers ran) and a later `get('server')->spawn()` threw "Scope
+object has been disposed" (`context/037`; for the handlers `scope/127`, which item 28 of the layer 1
+note had accepted). When a child scope is freed and its parent stays, the parent's object goes back to
+the root buffer, so the cycle collects once the last child scope goes. Not collected until the request's
+end: a parent whose own context or handler holds its child scope's object, as TrueAsync collects no
+cycle through a context. The test is recursive and linear in the subtree, as layer 1's
+`scope_has_coroutines()` was, and every scope object with a context pays it in a GC run now, not only
+one with handlers (layer 1 note, section 9, items 26, 27).
 
 Accepted: PHP calls the destructors of one garbage cycle in no defined order and checks only that each
 has not run yet (`zend_gc.c:1922-1939`), so in a cycle "scope object → context → value → scope
@@ -282,6 +300,11 @@ layer 1's note corrected.
 8. **An object key's entry releases its key before its value**, the core's order
    (`async_context_entry_dtor`), on `unset()` and when the Context is freed, where a string key's
    values go first; TrueAsync releases the values, then the keys (`context.c:106-110`, `373-374`).
+9. **`current_context()` in a Future's `map()`, `catch()` and `finally()` callbacks is the root
+   context**: S5's chain drain runs them in a coroutine of the global scope, which serves the chains of
+   every scope (layer 1 note, section 3); TrueAsync runs the mapper in the scope captured at `map()`
+   (`future.c:1593-1600`, `1751`), so a callback there reads its subscriber's scope values. Found by the
+   Critic in S9.12 (`context/039`); a change to S5's drain, open for Edmond (PLAN, Open questions).
 
 Kept as TrueAsync and noted: `new Context()` is public and makes a context the walk never leaves;
 a held context of a freed scope stops answering for the parents (`c6.php`); `set()` and `unset()`

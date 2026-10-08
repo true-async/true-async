@@ -1,7 +1,5 @@
 --TEST--
 Scope: gc_get handler walks scope context values and object keys
---XFAIL--
-Not implemented yet: S9.12 of dev/PLAN.md
 --FILE--
 <?php
 

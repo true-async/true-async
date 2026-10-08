@@ -25,6 +25,7 @@
 #include "await.h"
 #include "future.h"
 #include "collector.h"
+#include "context.h"
 #include "scope_arginfo.h"
 
 zend_class_entry *async_ce_scope = NULL;
@@ -98,6 +99,10 @@ static void scope_detach_coroutine(async_coroutine_t *coroutine)
 	last_coroutine->scope_index = coroutine->scope_index;
 	coroutine->scope = NULL;
 
+	if (scope != ASYNC_G(global_scope)) {
+		coroutine->coroutine.flags |= ASYNC_COROUTINE_F_LEFT_NON_GLOBAL_SCOPE;
+	}
+
 	if (UNEXPECTED(coroutine->coroutine.flags & ASYNC_COROUTINE_F_ZOMBIE)) {
 		scope->zombie_coroutines_count--;
 	} else {
@@ -130,6 +135,15 @@ async_scope_t *async_scope_current(void)
 	const async_coroutine_t *coroutine = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
 
 	return coroutine != NULL && coroutine->scope != NULL ? coroutine->scope : ASYNC_G(global_scope);
+}
+
+zend_object *async_scope_context(async_scope_t *scope)
+{
+	if (scope->context == NULL) {
+		scope->context = async_context_new_for_scope(scope);
+	}
+
+	return scope->context;
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -165,9 +179,8 @@ scope_is_completed(const async_scope_t *scope, const bool with_zombies, const as
 }
 
 /* A coroutine of the scope or of its child scopes has not finished, zombies included, whatever the
- * scope's state: what awaitAfterCancellation() waits for. An `empty_child_scope` the caller found
- * without coroutines is not walked again. */
-static bool scope_has_coroutines(const async_scope_t *scope, const async_scope_t *empty_child_scope)
+ * scope's state: what awaitAfterCancellation() waits for. */
+static bool scope_has_coroutines(const async_scope_t *scope)
 {
 	if (scope->coroutines.length > 0) {
 		return true;
@@ -176,7 +189,7 @@ static bool scope_has_coroutines(const async_scope_t *scope, const async_scope_t
 	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
 		const async_scope_t *child_scope = scope->child_scopes.data[i];
 
-		if (child_scope != empty_child_scope && scope_has_coroutines(child_scope, NULL)) {
+		if (scope_has_coroutines(child_scope)) {
 			return true;
 		}
 	}
@@ -184,10 +197,10 @@ static bool scope_has_coroutines(const async_scope_t *scope, const async_scope_t
 	return false;
 }
 
-static bool scope_has_handlers(const async_scope_t *scope)
+static bool scope_has_user_values(const async_scope_t *scope)
 {
 	return ZEND_FCC_INITIALIZED(scope->exception_handler) || ZEND_FCC_INITIALIZED(scope->child_exception_handler) ||
-			scope->finally_handlers != NULL;
+			scope->finally_handlers != NULL || scope->context != NULL;
 }
 
 /* Nothing can use the scope any more: no coroutine, zombies included, it is cancelled or its object is
@@ -205,6 +218,28 @@ static bool scope_can_be_disposed(const async_scope_t *scope)
 
 	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
 		if (!scope_can_be_disposed(scope->child_scopes.data[i])) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+/* Only the object reaches the scope: destroying it would dispose the scope, at once or after its finally
+ * handlers. A coroutine in the subtree reaches the handlers through the error route and the context through
+ * current_context(), and a held child scope through its spawns and its context's find(), none of which an
+ * object reports. A `disposable_child_scope` the caller found disposable is not walked again. */
+static bool scope_is_reached_only_by_object(const async_scope_t *scope, const async_scope_t *disposable_child_scope)
+{
+	if (scope->active_coroutines_count + scope->zombie_coroutines_count > 0 ||
+		(scope->event.flags & ASYNC_SCOPE_F_REQUEST_LIFETIME)) {
+		return false;
+	}
+
+	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
+		const async_scope_t *child_scope = scope->child_scopes.data[i];
+
+		if (child_scope != disposable_child_scope && !scope_can_be_disposed(child_scope)) {
 			return false;
 		}
 	}
@@ -270,49 +305,49 @@ static bool scope_dispose_timer_is_armed(const async_scope_t *scope)
 	return scope->dispose_timer != NULL && scope->dispose_timer->reactor_link.prev != NULL;
 }
 
-/* Moves the references `handler` holds into `released_handlers`, made on the first one; the copy of a
+/* Moves the references `handler` holds into `released_values`, made on the first one; the copy of a
  * __call trampoline goes here, which runs no PHP code. */
-static void scope_handler_keep_back(zend_fcall_info_cache *handler, zend_array **released_handlers)
+static void scope_handler_keep_back(zend_fcall_info_cache *handler, zend_array **released_values)
 {
 	if (EXPECTED(!ZEND_FCC_INITIALIZED(*handler))) {
 		return;
 	}
 
-	if (*released_handlers == NULL) {
-		*released_handlers = zend_new_array(4);
+	if (*released_values == NULL) {
+		*released_values = zend_new_array(4);
 	}
 
 	zval held_value;
 
 	if (handler->object != NULL) {
 		ZVAL_OBJ(&held_value, handler->object);
-		zend_hash_next_index_insert_new(*released_handlers, &held_value);
+		zend_hash_next_index_insert_new(*released_values, &held_value);
 	}
 
 	zend_release_fcall_info_cache(handler);
 
 	if (handler->closure != NULL) {
 		ZVAL_OBJ(&held_value, handler->closure);
-		zend_hash_next_index_insert_new(*released_handlers, &held_value);
+		zend_hash_next_index_insert_new(*released_values, &held_value);
 	}
 
 	*handler = empty_fcall_info_cache;
 }
 
-/* Releases what the freed scopes' handlers held and the scope objects given back to the GC, once the
+/* Releases the freed scopes' handlers and contexts and the scope objects given back to the GC, once the
  * caller reads no scope pointer any more: the release runs destructors, which may dispose other scopes,
  * the parent of a freed one included. */
-static void scope_handlers_release(zend_array *released_handlers)
+static void scope_values_release(zend_array *released_values)
 {
-	if (UNEXPECTED(released_handlers != NULL)) {
-		zend_array_release(released_handlers);
+	if (UNEXPECTED(released_values != NULL)) {
+		zend_array_release(released_values);
 	}
 }
 
-/* Frees the scope and its child scopes, whose coroutines are all gone or detached, keeping their
- * handlers' references back in `released_handlers`. The object stays with whoever holds it and reads
- * as closed. */
-static void scope_free(async_scope_t *scope, zend_array **released_handlers)
+/* Frees the scope and its child scopes, whose coroutines are all gone or detached, keeping the references
+ * of their handlers and contexts back in `released_values`. The object stays with whoever holds it and
+ * reads as closed; a context held elsewhere answers from its own table. */
+static void scope_free(async_scope_t *scope, zend_array **released_values)
 {
 	/* Before the child scopes go: the object's get_gc walks them. */
 	if (scope->scope_object != NULL) {
@@ -320,7 +355,7 @@ static void scope_free(async_scope_t *scope, zend_array **released_handlers)
 	}
 
 	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
-		scope_free(scope->child_scopes.data[i], released_handlers);
+		scope_free(scope->child_scopes.data[i], released_values);
 	}
 
 	for (uint32_t i = 0; i < scope->coroutines.length; i++) {
@@ -338,20 +373,33 @@ static void scope_free(async_scope_t *scope, zend_array **released_handlers)
 		efree(scope->coroutines.data);
 	}
 
-	scope_handler_keep_back(&scope->exception_handler, released_handlers);
-	scope_handler_keep_back(&scope->child_exception_handler, released_handlers);
+	scope_handler_keep_back(&scope->exception_handler, released_values);
+	scope_handler_keep_back(&scope->child_exception_handler, released_values);
 
 	/* Handlers no disposal started, or whose start was refused: released unrun. */
 	if (UNEXPECTED(scope->finally_handlers != NULL)) {
 		zval finally_handlers;
 
-		if (*released_handlers == NULL) {
-			*released_handlers = zend_new_array(1);
+		if (*released_values == NULL) {
+			*released_values = zend_new_array(1);
 		}
 
 		ZVAL_ARR(&finally_handlers, scope->finally_handlers);
-		zend_hash_next_index_insert_new(*released_handlers, &finally_handlers);
+		zend_hash_next_index_insert_new(*released_values, &finally_handlers);
 		scope->finally_handlers = NULL;
+	}
+
+	if (scope->context != NULL) {
+		zval context;
+
+		if (*released_values == NULL) {
+			*released_values = zend_new_array(1);
+		}
+
+		async_context_detach_scope(scope->context);
+		ZVAL_OBJ(&context, scope->context);
+		zend_hash_next_index_insert_new(*released_values, &context);
+		scope->context = NULL;
 	}
 
 	if (scope->filename != NULL) {
@@ -361,31 +409,34 @@ static void scope_free(async_scope_t *scope, zend_array **released_handlers)
 	efree(scope);
 }
 
-/* The scope and each parent left without coroutines report their handlers again (scope_object_get_gc):
- * the objects are kept in `released_handlers`, whose release puts them back in the GC's root buffer, which
- * dropped them as live while coroutines ran. Not released here: a collection the release starts may free
- * the scopes the caller reads next. */
-static void scope_objects_give_back_to_gc(const async_scope_t *scope, zend_array **released_handlers)
+/* The scope and each parent that only its object reaches now, after a coroutine left or a child scope went,
+ * report their user values again (scope_object_get_gc): the objects are kept in `released_values`, whose
+ * release puts them back in the GC's root buffer, which dropped them as live before. Not released here: a
+ * collection the release starts may free the scopes the caller reads next. */
+static void scope_objects_give_back_to_gc(const async_scope_t *scope, zend_array **released_values)
 {
-	const async_scope_t *empty_child_scope = NULL;
+	const async_scope_t *disposable_child_scope = NULL;
 
-	/* A parent walks only its other child scopes, as scope_notify_completion(). */
-	while (scope != NULL && !(scope->event.flags & ASYNC_SCOPE_F_REQUEST_LIFETIME) &&
-		   !scope_has_coroutines(scope, empty_child_scope)) {
+	while (scope != NULL && scope_is_reached_only_by_object(scope, disposable_child_scope)) {
 		zend_object *scope_object = scope->scope_object;
 
-		if (scope_object != NULL && scope_has_handlers(scope) && GC_INFO(scope_object) == 0) {
+		if (scope_object != NULL && scope_has_user_values(scope) && GC_INFO(scope_object) == 0) {
 			zval held_value;
 
-			if (*released_handlers == NULL) {
-				*released_handlers = zend_new_array(1);
+			if (*released_values == NULL) {
+				*released_values = zend_new_array(1);
 			}
 
 			ZVAL_OBJ_COPY(&held_value, scope_object);
-			zend_hash_next_index_insert_new(*released_handlers, &held_value);
+			zend_hash_next_index_insert_new(*released_values, &held_value);
 		}
 
-		empty_child_scope = scope;
+		/* The object keeps the scope from being disposed, so it reaches the parent's values too. */
+		if (scope_object != NULL && !(scope->event.flags & ASYNC_SCOPE_F_CANCELLED)) {
+			break;
+		}
+
+		disposable_child_scope = scope;
 		scope = scope->parent_scope;
 	}
 }
@@ -426,7 +477,7 @@ static bool scope_finally_start(async_scope_t *scope)
 /* TrueAsync's scope_dispose (scope.c:1179-1300) for a scope that can be disposed: its finally handlers
  * start, and it stays until they end; else it leaves its parent, which the last child to go disposes in
  * turn when it can, and goes with its child scopes. */
-static void scope_dispose(async_scope_t *scope, zend_array **released_handlers)
+static void scope_dispose(async_scope_t *scope, zend_array **released_values)
 {
 	if (UNEXPECTED(scope->event.flags & ASYNC_SCOPE_F_DISPOSING)) {
 		return;
@@ -442,11 +493,18 @@ static void scope_dispose(async_scope_t *scope, zend_array **released_handlers)
 		scope_remove_child(parent_scope, scope);
 	}
 
-	scope_free(scope, released_handlers);
+	scope_free(scope, released_values);
 
-	if (parent_scope != NULL && parent_scope->child_scopes.length == 0 && scope_can_be_disposed(parent_scope)) {
-		scope_dispose(parent_scope, released_handlers);
+	if (parent_scope == NULL) {
+		return;
 	}
+
+	if (parent_scope->child_scopes.length == 0 && scope_can_be_disposed(parent_scope)) {
+		scope_dispose(parent_scope, released_values);
+		return;
+	}
+
+	scope_objects_give_back_to_gc(parent_scope, released_values);
 }
 
 void async_scope_remove_coroutine(async_coroutine_t *coroutine)
@@ -456,15 +514,16 @@ void async_scope_remove_coroutine(async_coroutine_t *coroutine)
 	scope_detach_coroutine(coroutine);
 	scope_notify_completion(scope, true, coroutine);
 
-	zend_array *released_handlers = NULL;
+	zend_array *released_values = NULL;
 
-	scope_objects_give_back_to_gc(scope, &released_handlers);
-
+	/* scope_dispose gives the parent back itself. */
 	if (UNEXPECTED(scope_can_be_disposed(scope))) {
-		scope_dispose(scope, &released_handlers);
+		scope_dispose(scope, &released_values);
+	} else {
+		scope_objects_give_back_to_gc(scope, &released_values);
 	}
 
-	scope_handlers_release(released_handlers);
+	scope_values_release(released_values);
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -984,9 +1043,9 @@ static void scope_object_release_scope(async_scope_object_t *scope_object, const
 	scope->scope_object = NULL;
 
 	if (scope_can_be_disposed(scope)) {
-		zend_array *released_handlers = NULL;
-		scope_dispose(scope, &released_handlers);
-		scope_handlers_release(released_handlers);
+		zend_array *released_values = NULL;
+		scope_dispose(scope, &released_values);
+		scope_values_release(released_values);
 		return;
 	}
 
@@ -998,17 +1057,15 @@ static void scope_object_release_scope(async_scope_object_t *scope_object, const
 	}
 }
 
-/* The handlers, finally handlers included, only while no coroutine is in the scope or in its child
- * scopes: a coroutine reaches them through the error route, which no object reports, and a cycle through a
- * handler would let the GC call the destructor, which cancels the running scope. The destructor detaches
- * the scope before the GC frees such a cycle. */
+/* The handlers, finally handlers included, and the context, only while nothing but the object reaches the
+ * scope: otherwise a cycle through one of them would let the GC call the destructor, which closes or
+ * cancels a scope still in use. The destructor detaches the scope before the GC frees such a cycle. */
 static HashTable *scope_object_get_gc(zend_object *object, zval **table, int *num)
 {
 	async_scope_t *scope = async_scope_object_from_object(object)->scope;
 	zend_get_gc_buffer *gc_buffer = zend_get_gc_buffer_create();
 
-	if (EXPECTED(scope != NULL) && scope_has_handlers(scope) &&
-		!(scope->event.flags & ASYNC_SCOPE_F_REQUEST_LIFETIME) && !scope_has_coroutines(scope, NULL)) {
+	if (EXPECTED(scope != NULL) && scope_has_user_values(scope) && scope_is_reached_only_by_object(scope, NULL)) {
 		if (UNEXPECTED(ZEND_FCC_INITIALIZED(scope->exception_handler))) {
 			zend_get_gc_buffer_add_fcc(gc_buffer, &scope->exception_handler);
 		}
@@ -1019,6 +1076,10 @@ static HashTable *scope_object_get_gc(zend_object *object, zval **table, int *nu
 
 		if (UNEXPECTED(scope->finally_handlers != NULL)) {
 			zend_get_gc_buffer_add_ht(gc_buffer, scope->finally_handlers);
+		}
+
+		if (UNEXPECTED(scope->context != NULL)) {
+			zend_get_gc_buffer_add_obj(gc_buffer, scope->context);
 		}
 	}
 
@@ -1514,7 +1575,7 @@ static void scope_after_cancellation_record_wake(async_awaitable_t *target,
 
 	const async_coroutine_event_callback_t *record = (async_coroutine_event_callback_t *) callback;
 
-	if (exception == NULL && record->event != NULL && scope_has_coroutines((const async_scope_t *) target, NULL)) {
+	if (exception == NULL && record->event != NULL && scope_has_coroutines((const async_scope_t *) target)) {
 		return;
 	}
 
@@ -1576,7 +1637,7 @@ ZEND_METHOD(Async_Scope, awaitAfterCancellation)
 		RETURN_THROWS();
 	}
 
-	if (!scope_has_coroutines(scope, NULL)) {
+	if (!scope_has_coroutines(scope)) {
 		return;
 	}
 
@@ -1651,7 +1712,7 @@ ZEND_METHOD(Async_Scope, awaitAfterCancellation)
 		}
 
 		scope = scope_object->scope;
-	} while (scope != NULL && scope_has_coroutines(scope, NULL));
+	} while (scope != NULL && scope_has_coroutines(scope));
 
 	if (token != NULL) {
 		async_awaitable_release(token);
@@ -1848,13 +1909,13 @@ void async_scope_request_shutdown(void)
 	}
 	ZEND_HASH_FOREACH_END();
 
-	zend_array *released_handlers = NULL;
+	zend_array *released_values = NULL;
 
-	scope_free(ASYNC_G(global_scope), &released_handlers);
-	scope_free(ASYNC_G(engine_scope), &released_handlers);
+	scope_free(ASYNC_G(global_scope), &released_values);
+	scope_free(ASYNC_G(engine_scope), &released_values);
 	ASYNC_G(global_scope) = NULL;
 	ASYNC_G(engine_scope) = NULL;
-	scope_handlers_release(released_handlers);
+	scope_values_release(released_values);
 }
 
 void async_register_scope_ce(void)

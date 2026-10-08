@@ -1,7 +1,5 @@
 --TEST--
 Context inheritance through scope hierarchy
---XFAIL--
-Not implemented yet: S9.12 of dev/PLAN.md
 --FILE--
 <?php
 

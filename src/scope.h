@@ -76,6 +76,7 @@ struct _async_scope_s
 	async_io_event_t *dispose_timer;
 	async_event_callback_t dispose_timer_callback; /* in `dispose_timer`'s vector while armed */
 	HashTable *finally_handlers;                   /* lazy: the closures of Scope::finally() */
+	zend_object *context;                          /* lazy: the scope's Async\Context, one reference */
 };
 
 /* Async\Scope. A stand-in is the object a SpawnStrategy's hooks get for a scope without one; it stays
@@ -104,8 +105,11 @@ void async_scope_request_startup(void);
 void async_scope_request_shutdown(void);
 
 /* The scope spawn() uses: the current coroutine's, or the global scope when no coroutine runs or the
- * current one has no scope (a Fiber's, the scheduler's). */
+ * current one has no scope (a Fiber's, the scheduler's, a finished one's, as TrueAsync). */
 async_scope_t *async_scope_current(void);
+
+/* The scope's Async\Context, made at the first call, a closed or cancelled scope's too; borrowed. */
+zend_object *async_scope_context(async_scope_t *scope);
 
 /* A scope with no object below `parent_scope`, whose safe disposal it takes, or a root when NULL; one
  * without an object goes with its last coroutine. */
@@ -115,9 +119,9 @@ async_scope_t *async_scope_new(async_scope_t *parent_scope);
 void async_scope_add_coroutine(async_scope_t *scope, async_coroutine_t *coroutine);
 
 /* Takes `coroutine` out of its scope, which it leaves finished or never queued, and disposes the scope
- * once nothing keeps it: a disposal releases the handlers, whose destructors may run PHP code, or starts
- * the finally handlers. The scope objects it leaves without coroutines go back to the GC's root buffer:
- * a collection may have found them live while it was there. */
+ * once nothing keeps it: a disposal releases the handlers and the context, whose destructors may run PHP
+ * code, or starts the finally handlers. Otherwise the scope objects that only their objects reach now go
+ * back to the GC's root buffer, up to the first live one: a collection may have found them live. */
 void async_scope_remove_coroutine(async_coroutine_t *coroutine);
 
 /* Takes `coroutine`, which the scheduler refused to enqueue, out of its scope and the registry and

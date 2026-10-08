@@ -1,7 +1,5 @@
 --TEST--
 Context: get()/getLocal() throw on a missing key, find()/findLocal() answer null
---XFAIL--
-Not implemented yet: S9.12 of dev/PLAN.md
 --FILE--
 <?php
 

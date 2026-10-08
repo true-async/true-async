@@ -1,7 +1,5 @@
 --TEST--
 root_context() basic usage and no memory leak
---XFAIL--
-Not implemented yet: S9.12 of dev/PLAN.md
 --FILE--
 <?php
 

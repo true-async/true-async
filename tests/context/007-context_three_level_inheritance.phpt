@@ -1,7 +1,5 @@
 --TEST--
 Context: three-level scope hierarchy walks past intermediate empty contexts
---XFAIL--
-Not implemented yet: S9.12 of dev/PLAN.md
 --FILE--
 <?php
 

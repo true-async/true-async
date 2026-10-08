@@ -1630,3 +1630,22 @@ stack options were shown with the code).
   missed a peer reset (`stream/046-write_wakes_on_peer_reset_win`, CI run 37744080113); TrueAsync polls
   a zero timeout synchronously (`php_poll2_async()`). ior's IOCP backend still races for a deadline not
   yet passed: PLAN Open questions.
+- 2026-10-08 S9.12: a scope object reports its handlers and its context to the GC only while nothing
+  but the object reaches the scope: no coroutine in it, and every child scope can be disposed (no
+  coroutine, and no object or cancelled). A freed child scope gives its parent's object back to the
+  root buffer. Why: an idle child scope the script holds reaches the parent's context through its
+  context's walk and the parent's handlers through its spawns, and a GC run then closed the parent,
+  so a later spawn into it threw (the Critic; `context/037`, `scope/127`). This replaces "accepted, as
+  TrueAsync" in the entry of 2026-10-08 on the handlers. Not collected: a parent whose own context or
+  handler holds its child scope's object, as TrueAsync collects no cycle through a context: it lives,
+  and its finally handlers wait, until the request ends. Reversible. Edmond (08:12,
+  «если тест устарел - меняй его»): `tests/scope/126-handler_cycle_survives_gc_while_members_run.phpt`, last case, now
+  expects "alive: true"; the other way, a child scope's object holding its parent's, would keep a parent
+  object the script dropped from its destructor, unlike TrueAsync.
+- 2026-10-08 S9.12: `current_context()` throws "The current scope is not defined" while a finished
+  coroutine that left a scope other than the global one releases what it held, as TrueAsync on a NULL
+  scope (`async.c:811-813`): the global scope's context would hand a `new Scope()`'s destructors the
+  root values (`context/038`). One that left the global scope reads the root context; the flag
+  `ASYNC_COROUTINE_F_LEFT_NON_GLOBAL_SCOPE` tells the two apart. `spawn()` and `Scope::inherit()` in
+  that window use the global scope, as TrueAsync. `released_handlers` of `src/scope.c` is
+  `released_values`: it carries the freed scopes' contexts too.

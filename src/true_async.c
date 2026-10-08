@@ -542,6 +542,45 @@ ZEND_FUNCTION(Async_coroutine_context)
 	RETURN_OBJ_COPY(context);
 }
 
+ZEND_FUNCTION(Async_current_context)
+{
+	THROW_IF_UNAVAILABLE();
+
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	const zend_coroutine_t *coroutine = ZEND_ASYNC_CURRENT_COROUTINE;
+
+	/* A finished coroutine is still current while it releases what it held, after it left its scope: the
+	 * global scope's context would hand the code of another scope, a `new Scope()` included, the root
+	 * values (TrueAsync throws on a NULL scope, async.c:811-813). One that left the global scope reads the
+	 * root context. */
+	if (UNEXPECTED(coroutine != NULL && (coroutine->flags & ASYNC_COROUTINE_F_LEFT_NON_GLOBAL_SCOPE) &&
+				   ((const async_coroutine_t *) coroutine)->scope == NULL)) {
+		zend_throw_exception(async_ce_async_exception, "The current scope is not defined", 0);
+		RETURN_THROWS();
+	}
+
+	RETURN_OBJ_COPY(async_scope_context(async_scope_current()));
+}
+
+ZEND_FUNCTION(Async_root_context)
+{
+	THROW_IF_UNAVAILABLE();
+
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	RETURN_OBJ_COPY(async_scope_context(ASYNC_G(global_scope)));
+}
+
+ZEND_FUNCTION(Async_request_context)
+{
+	THROW_IF_UNAVAILABLE();
+
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	RETURN_NULL();
+}
+
 ZEND_FUNCTION(Async_get_coroutines)
 {
 	THROW_IF_UNAVAILABLE();

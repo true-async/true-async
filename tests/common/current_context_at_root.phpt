@@ -1,7 +1,5 @@
 --TEST--
 Async\current_context() and Async\coroutine_context() called at script root return fresh contexts
---XFAIL--
-Not implemented yet: S9.12 of dev/PLAN.md
 --FILE--
 <?php
 
