@@ -102,6 +102,9 @@ function protect(\Closure $closure): mixed {}
 /** The coroutine that is running; the script's top level runs in the main coroutine. */
 function current_coroutine(): Coroutine {}
 
+/** The context of the current coroutine; no other coroutine inherits it. */
+function coroutine_context(): Context {}
+
 /**
  * Every coroutine that was spawned and has not finished, the main one included.
  *

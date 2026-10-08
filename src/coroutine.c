@@ -668,6 +668,23 @@ ZEND_METHOD(Async_Coroutine, asHiPriority)
 	RETURN_OBJ_COPY(Z_OBJ_P(ZEND_THIS));
 }
 
+ZEND_METHOD(Async_Coroutine, getContext)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	/* A WeakReference still reaches the object while its free_obj runs a WeakMap value's destructor; a
+	 * context made then would never be released. */
+	if (UNEXPECTED(OBJ_FLAGS(Z_OBJ_P(ZEND_THIS)) & IS_OBJ_FREE_CALLED)) {
+		zend_throw_exception(async_ce_async_exception, "The coroutine is being freed", 0);
+		RETURN_THROWS();
+	}
+
+	zend_object *context = zend_async_context_get(&THIS_COROUTINE->coroutine);
+	ZEND_ASSERT(context != NULL && "a coroutine exists only while this extension's factory is set");
+
+	RETURN_OBJ_COPY(context);
+}
+
 ZEND_METHOD(Async_Coroutine, getResult)
 {
 	ZEND_PARSE_PARAMETERS_NONE();

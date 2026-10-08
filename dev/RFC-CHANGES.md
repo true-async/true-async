@@ -289,5 +289,22 @@ through being freed. The object-key path copies the new value in first and relea
 Request: the string-key path replaces as the object-key path does: find the bucket, copy the new value
 in, then release the old one; add a new entry only when the key is absent.
 
-Waits for it: S9.11's `Context::set()` and its own test (a replaced value whose destructor reads the key,
-sets eight other keys and unsets the key, on ASAN).
+Waits for it: nothing; S9.11's `Context::set()` and its own test `context/017` pass on the pinned
+core.
+
+## 17. Scheduler API: no userland context for a coroutine whose object is being freed
+
+State: not sent; found in S9.11 (the Critic). PR: none.
+
+Need: a finished coroutine is still `ZEND_ASYNC_CURRENT_COROUTINE` while its object's `free_obj` runs
+PHP code (a WeakMap value's destructor, in `zend_object_std_dtor`), and the engine frees the object
+after `free_obj` whatever its refcount (`Zend/zend_objects_API.c`, `zend_objects_store_del`).
+`zend_async_context_get()` called then (`ZEND_ASYNC_CONTEXT_SET(NULL, ...)` from a C extension) finds
+`context` already released and mints a new one into a coroutine that is never released again: the
+context and its values leak until the request's end. The extension refuses this window for
+`coroutine_context()` and `current_coroutine()` (`context/020`); a C caller goes to the core directly.
+
+Request: `zend_async_context_get()` returns NULL when the coroutine's object has `IS_OBJ_FREE_CALLED`,
+as for a missing provider.
+
+Waits for it: nothing in this repository.

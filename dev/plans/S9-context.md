@@ -83,7 +83,9 @@ TrueAsync's `create_object` (`context.c:362-366`; `coroutine/021` constructs one
   value goes through the core's `entry_set`, whose `zend_hash_update` runs the old value's destructor
   while the slot still holds it (`R.c:240`), so a destructor that reads the key gets the value being
   destroyed; TrueAsync has the same (`context.c:77`). The object-key path copies first (`R.c:244-258`).
-  A core fix, `dev/RFC-CHANGES.md` 16; the extension does not work around it. `unset()` removes the
+  A core fix, `dev/RFC-CHANGES.md` 16 (`async-core` `b7c70909437`, pinned in
+  `async-core-io-2026-10-08` `662dfe91919` before S9.11): the new value is written first and the old
+  one released last, on both paths (`context/017`). `unset()` removes the
   key from this context only and returns the same object (`context.c:346-360`; the bridge's returns a
   bool).
 
@@ -97,7 +99,14 @@ or the given coroutine: one object per coroutine, made at the first call, its `s
 (`src/coroutine.c:116-121`) and in `free_obj`, which runs the same release, and reports the context
 object to the GC (`src/coroutine.c:268-269`). `coroutine_context()` refuses in scheduler context, as
 every function of `src/true_async.c` (`THROW_IF_UNAVAILABLE`, `php_true_async.h:96-100`); TrueAsync's
-`THROW_IF_SCHEDULER_CONTEXT` does the same (`async.c:834`).
+`THROW_IF_SCHEDULER_CONTEXT` does the same (`async.c:834`). It and `current_coroutine()` also refuse,
+with "The current coroutine is not defined", while the current coroutine's object is being freed: its
+`free_obj` runs a WeakMap value's destructor while it is still current, and a context made then would
+never be released (`context/020`; `dev/RFC-CHANGES.md` 17 for C callers); `getContext()` refuses the
+same object, which a WeakReference still returns there, with "The coroutine is being freed". Uncaught,
+the refusal ends the request as an exit exception (`context/024`). While `dtor_obj` releases the
+coroutine's values, a destructor that asks gets a new, empty context, which `free_obj` releases
+(`context/025`).
 
 Main is a coroutine from the script's first opcode, so `coroutine_context()` at the top level is main's
 context, distinct from `current_context()` (`common/current_context_at_root`). A shutdown function or
@@ -270,6 +279,10 @@ layer 1's note corrected.
 7. **`request_context()` is null without a field behind it** (section 4): TrueAsync's request scope is
    a scope field nothing in `ext/async` sets.
 
+8. **An object key's entry releases its key before its value**, the core's order
+   (`async_context_entry_dtor`), on `unset()` and when the Context is freed, where a string key's
+   values go first; TrueAsync releases the values, then the keys (`context.c:106-110`, `373-374`).
+
 Kept as TrueAsync and noted: `new Context()` is public and makes a context the walk never leaves;
 a held context of a freed scope stops answering for the parents (`c6.php`); `set()` and `unset()`
 return the context, not a status.
@@ -311,7 +324,8 @@ TrueAsync's `fuzzy-tests/context/context.feature` is not ported, as no fuzzy tes
 `dev/RFC-CHANGES.md` 16: the string-key replace of `zend_async_context_entry_set` corrupts the heap
 when the old value's destructor writes to the same context; the fix is one commit on `async-core`
 (the scheduler RFC is ours), which a core update brings in before S9.11's `set()` lands. Pushing
-`async-core` updates php/php-src#22561 and waits for Edmond's word.
+`async-core` updates php/php-src#22561 and waits for Edmond's word. Done: `b7c70909437`, pinned
+`662dfe91919`.
 
 **Measurements** (S9.14, `dev/BENCHMARKS.md`): `find()` of a missing key at depth 1, 10 and 1 000,
 and `coroutine_context()->set()`/`get()` per coroutine at 1 000 coroutines, against the reference.
@@ -331,6 +345,9 @@ and `coroutine_context()->set()`/`get()` per coroutine at 1 000 coroutines, agai
    Recommended: 2. A Fiber runs code that does not know about scopes (an event loop, a library's
    generator-like flow); on our core option 1 lets such a Fiber hold a cancelled scope's disposal for
    good, and the layer 1 tests pass either way.
+
+   Answered by Edmond on 2026-10-08: option 2. Section 6's extra step is not taken
+   (`dev/DECISIONS.md`, 2026-10-08).
 
 Taken without a question: `request_context()` is ported and returns null until an exported C API lets
 an embedder mark a request scope (section 4; the Sage, 2026-10-08).

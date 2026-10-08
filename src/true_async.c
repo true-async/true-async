@@ -21,6 +21,7 @@
 #include "php_true_async.h"
 #include "coroutine.h"
 #include "collector.h"
+#include "context.h"
 #include "exceptions.h"
 #include "await.h"
 #include "future.h"
@@ -168,6 +169,8 @@ static PHP_MINIT_FUNCTION(true_async)
 	async_register_future_ce(async_ce_completable);
 	async_register_timeout_ce(async_ce_completable);
 	async_register_scope_ce();
+	async_register_context_ce();
+	zend_async_new_context_fn = async_context_new;
 
 	if (UNEXPECTED(zend_register_functions(NULL, ext_functions, NULL, type) == FAILURE)) {
 		return FAILURE;
@@ -235,6 +238,11 @@ static PHP_RSHUTDOWN_FUNCTION(true_async)
 static PHP_MSHUTDOWN_FUNCTION(true_async)
 {
 	UNREGISTER_INI_ENTRIES();
+
+	/* The core's unregister leaves the slot, and the factory goes with this module's code. */
+	if (zend_async_new_context_fn == async_context_new) {
+		zend_async_new_context_fn = NULL;
+	}
 
 	return SUCCESS;
 }
@@ -484,13 +492,28 @@ ZEND_FUNCTION(Async_protect)
 	}
 }
 
+/* The current coroutine, NULL if none or if its object is being freed: free_obj of a finished coroutine
+ * runs PHP code (a WeakMap value's destructor) while it is still current, and the engine frees the
+ * object after free_obj whatever its refcount, so a reference taken then, or a context made for it,
+ * would outlive it. */
+static zend_coroutine_t *async_current_coroutine_alive(void)
+{
+	zend_coroutine_t *coroutine = ZEND_ASYNC_CURRENT_COROUTINE;
+
+	if (UNEXPECTED(coroutine != NULL && (OBJ_FLAGS(ZEND_COROUTINE_OBJECT(coroutine)) & IS_OBJ_FREE_CALLED))) {
+		return NULL;
+	}
+
+	return coroutine;
+}
+
 ZEND_FUNCTION(Async_current_coroutine)
 {
 	THROW_IF_UNAVAILABLE();
 
 	ZEND_PARSE_PARAMETERS_NONE();
 
-	zend_coroutine_t *coroutine = ZEND_ASYNC_CURRENT_COROUTINE;
+	zend_coroutine_t *coroutine = async_current_coroutine_alive();
 
 	if (UNEXPECTED(coroutine == NULL)) {
 		zend_throw_exception(async_ce_async_exception, "The current coroutine is not defined", 0);
@@ -498,6 +521,25 @@ ZEND_FUNCTION(Async_current_coroutine)
 	}
 
 	RETURN_OBJ_COPY(ZEND_COROUTINE_OBJECT(coroutine));
+}
+
+ZEND_FUNCTION(Async_coroutine_context)
+{
+	THROW_IF_UNAVAILABLE();
+
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	zend_coroutine_t *coroutine = async_current_coroutine_alive();
+
+	if (UNEXPECTED(coroutine == NULL)) {
+		zend_throw_exception(async_ce_async_exception, "The current coroutine is not defined", 0);
+		RETURN_THROWS();
+	}
+
+	zend_object *context = zend_async_context_get(coroutine);
+	ZEND_ASSERT(context != NULL && "a coroutine exists only while this extension's factory is set");
+
+	RETURN_OBJ_COPY(context);
 }
 
 ZEND_FUNCTION(Async_get_coroutines)

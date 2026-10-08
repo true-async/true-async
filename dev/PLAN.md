@@ -762,7 +762,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md
-Active: none; layer 2's plan (S9.10) waits for Edmond's agreement and its question 1
+Active: S9.12
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -898,16 +898,23 @@ Active: none; layer 2's plan (S9.10) waits for Edmond's agreement and its questi
         1's bug), only while no member reaches the scope; the teardown's user values released last;
         `RFC-CHANGES.md` 16, a heap corruption in the core's string-key replace, waits for Edmond's
         word to push to `async-core`.
-- [ ] S9.11 The list block for layer 2, `Context` and `ContextException`, the factory slot,
+- [x] S9.11 The list block for layer 2, `Context` and `ContextException`, the factory slot,
       `coroutine_context()`, `Coroutine::getContext()` (note sections 2, 3, 8); after a core update
       carrying `RFC-CHANGES.md` 16.
       done: the block's S9.11 tests and the note's S9.11 own tests pass on debug and ASAN; the S3-S7
         lists and layer 1 pass as before
       tier: T2 · role: Critic
+      handoff: done 2026-10-08: 17 reference tests (6 pass, 11 with `--XFAIL--` naming S9.12), own
+        `context/014`-`025`; `S9.excluded` is gone, three lines leave `S3.excluded`. Three Critic
+        passes: a finished coroutine is still current while its `free_obj` runs a WeakMap value's
+        destructor, so `current_coroutine()` handed out an object about to be freed and a context
+        made there leaked; the three entry points refuse that window (`context/020`, `024`, `025`;
+        `RFC-CHANGES.md` 17 for C callers). On CORE_REF 662dfe91919: debug 1199 PASS, 9 SKIP, 22
+        XFAIL, one timing FAIL of `await/069` (1 in 200 runs under load, unrelated: `timeout(1)`'s
+        deadline passes before the await, D32); ASAN 1176 PASS, 34 SKIP, 21 XFAIL; 0 unexpected.
 - [ ] S9.12 The context of a scope, `current_context()`, `root_context()`, `request_context()`, the
       walk, the context in the scope object's `get_gc` under the rule the handlers follow since their
-      fix (note sections 4, 5); if question 1 of the note is answered as
-      TrueAsync, the step its section 6 adds comes before this one.
+      fix (note sections 4, 5).
       done: the block's S9.12 tests and the note's S9.12 own tests pass on debug and ASAN; the S3-S7
         lists and layer 1 pass as before
       tier: T2 · role: Critic

@@ -1,4 +1,0 @@
-# S9: reference tests of the groups S9 ports that wait for a later S9 layer (dev/plans/S2.md, section 3).
-
-# scope
-scope/052-scope_gc_with_context_values.phpt  component:S9 (Context)

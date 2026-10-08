@@ -1596,3 +1596,24 @@ stack options were shown with the code).
   (the Critic): no report while a child scope exists, which never collects a cycle through a child
   scope without coroutines. Accepted, as TrueAsync: a GC run while a held child scope is idle can still
   close the parent whose handler holds the parent's object (S9-scope.md 9 item 28).
+- 2026-10-08 A Fiber's coroutine joins no scope, Edmond's answer to question 1 of
+  `dev/plans/S9-context.md` (section 9, option 2): `spawn()` in a Fiber goes to the global scope and
+  `current_context()` there is the root context. A departure from TrueAsync's fork, which puts it into
+  the current scope at `new Fiber()` (`Zend/zend_fibers.c:1315-1318` of `863f6dd90cf`). Why: a Fiber
+  runs code that does not know about scopes (an event loop), and on our core a cancelled Fiber may
+  suspend again (D5), so a Fiber in a cancelled scope could hold its disposal for good; destroying a
+  Scope object would end an event loop's Fiber first made inside it.
+- 2026-10-08 S9.11: `Async\Context` is the core's `zend_async_context_t` itself, with no field of
+  ours in front; S9.12 adds the scope pointer with the walk that reads it. The tables are destroyed
+  in `free_obj`, after `zend_object_std_dtor` clears the WeakReferences, and `get_gc` reports every
+  key object and value (note section 7, item 2; `context/014`-`016`). `coroutine_context()` with no
+  current coroutine throws AsyncException "The current coroutine is not defined", as
+  `current_coroutine()`; `Coroutine::getContext()` checks nothing, as TrueAsync's.
+- 2026-10-08 `current_coroutine()` and `coroutine_context()` throw "The current coroutine is not
+  defined" while the current coroutine's object is being freed (`IS_OBJ_FREE_CALLED`), and
+  `Coroutine::getContext()` on that object throws "The coroutine is being freed". Why: finalize
+  drops a finished coroutine's last reference while it is still current, its `free_obj` runs a WeakMap
+  value's destructor, and the engine frees the object after `free_obj` whatever its refcount, so the
+  object `current_coroutine()` returned there was freed under its holder, and a context made there
+  leaked to the request's end (`context/020`). The core's own `zend_async_context_get()` has the same
+  window for C callers: `dev/RFC-CHANGES.md` 17.

@@ -1,9 +1,5 @@
 # S3: reference tests of the S3 groups not ported in S3, one reason each (dev/plans/S2.md, section 3).
 
-# coroutine
-coroutine/012-coroutine_getContext.phpt  component:S9 (Context)
-coroutine/021-coroutine_gc_with_context.phpt  component:S9 (Context)
-
 # gc
 gc/018-gc_threshold_stable_without_coroutine.phpt  component:S6 (stream read switches the reference GC to async; see report)
 
@@ -22,7 +18,6 @@ common/cpu_loadavg.phpt  component:S9 (TrueAsync API outside S3.md section 1; no
 common/cpu_snapshot_basic.phpt  component:S9 (TrueAsync API outside S3.md section 1; no stage in PLAN.md names it)
 common/cpu_snapshot_invariants.phpt  component:S9 (TrueAsync API outside S3.md section 1; no stage in PLAN.md names it)
 common/cpu_usage_basic.phpt  component:S9 (TrueAsync API outside S3.md section 1; no stage in PLAN.md names it)
-common/current_context_at_root.phpt  component:S9 (Context)
 common/runtime_stats.phpt  component:S9 (TrueAsync API outside S3.md section 1; no stage in PLAN.md names it)
 
 # output_buffer

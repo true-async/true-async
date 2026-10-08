@@ -1,10 +1,13 @@
 /* This is a generated file, edit coroutine.stub.php instead.
- * Stub hash: 84845bc6bf1caa3b6fb2ab97fb9e2de353c3d4e0 */
+ * Stub hash: b4b8c5f43f324bf55133a649d49a1c02e77c2434 */
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_Coroutine_getId, 0, 0, IS_LONG, 0)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_class_Async_Coroutine_asHiPriority, 0, 0, Async\\Coroutine, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_class_Async_Coroutine_getContext, 0, 0, Async\\Context, 0)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_Coroutine_getResult, 0, 0, IS_MIXED, 0)
@@ -54,6 +57,7 @@ ZEND_END_ARG_INFO()
 
 ZEND_METHOD(Async_Coroutine, getId);
 ZEND_METHOD(Async_Coroutine, asHiPriority);
+ZEND_METHOD(Async_Coroutine, getContext);
 ZEND_METHOD(Async_Coroutine, getResult);
 ZEND_METHOD(Async_Coroutine, getException);
 ZEND_METHOD(Async_Coroutine, getTrace);
@@ -75,6 +79,7 @@ ZEND_METHOD(Async_Coroutine, finally);
 static const zend_function_entry class_Async_Coroutine_methods[] = {
 	ZEND_ME(Async_Coroutine, getId, arginfo_class_Async_Coroutine_getId, ZEND_ACC_PUBLIC)
 	ZEND_ME(Async_Coroutine, asHiPriority, arginfo_class_Async_Coroutine_asHiPriority, ZEND_ACC_PUBLIC)
+	ZEND_ME(Async_Coroutine, getContext, arginfo_class_Async_Coroutine_getContext, ZEND_ACC_PUBLIC)
 	ZEND_ME(Async_Coroutine, getResult, arginfo_class_Async_Coroutine_getResult, ZEND_ACC_PUBLIC)
 	ZEND_ME(Async_Coroutine, getException, arginfo_class_Async_Coroutine_getException, ZEND_ACC_PUBLIC)
 	ZEND_ME(Async_Coroutine, getTrace, arginfo_class_Async_Coroutine_getTrace, ZEND_ACC_PUBLIC)

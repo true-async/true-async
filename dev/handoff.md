@@ -427,6 +427,15 @@ S9.10 done 2026-10-08: `dev/plans/S9-context.md` (layer 2, Context). The pinned 
 context's storage (`zend_async_context_t`, `zend_coroutine_t.context`, `zend_async_new_context_fn`),
 so the layer wraps it in `Async\Context`, adds `async_scope_t.context` and the walk up the scope tree.
 Probes `c1.php`-`c14.php` in `/mnt/project-files/s9/probes/s9.context/` ran on the debug build of the
-reference that S9.1 above describes. Waiting for Edmond: agreement to the plan, its question 1 (the scope
-of a Fiber's coroutine), and his word to push the core fix of `RFC-CHANGES.md` 16 to `async-core`,
-which S9.11's `set()` needs.
+reference that S9.1 above describes. Edmond approved the plan on 2026-10-08 and answered its question 1:
+a Fiber's coroutine joins no scope. The core fix of `RFC-CHANGES.md` 16 is on `async-core`
+`b7c70909437`, pinned in `async-core-io-2026-10-08` `662dfe91919`.
+
+S9.11 done 2026-10-08: `src/context.c`/`context.h`/`context.stub.php`. `Async\Context` is the core's
+`zend_async_context_t` itself (S9.12 puts the scope pointer in front, with the walk); `free_obj`
+destroys the tables after `zend_object_std_dtor`, `get_gc` reports keys and values. MINIT sets
+`zend_async_new_context_fn` once our scheduler registered, MSHUTDOWN resets it. `coroutine_context()`,
+`current_coroutine()` and `Coroutine::getContext()` refuse a coroutine whose object is being freed
+(`RFC-CHANGES.md` 17 asks the core for the same). The layer 2 block of `tests/lists/S9.txt`: 17
+reference tests (11 with `--XFAIL--` naming S9.12), own `context/014`-`025`. Next is S9.12: the
+scope's context, `current_context()`, `root_context()`, `request_context()`, the walk.

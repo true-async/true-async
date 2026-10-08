@@ -15,6 +15,14 @@ final class Coroutine implements Completable
     /** The coroutine's next enqueue puts it at the front of the run queue, once. */
     public function asHiPriority(): Coroutine {}
 
+    /**
+     * The coroutine's own context, the object coroutine_context() returns in it; a finished coroutine has
+     * one too.
+     *
+     * @throws AsyncException While the coroutine's object is being freed.
+     */
+    public function getContext(): Context {}
+
     /** The result once the coroutine finished, else null. */
     public function getResult(): mixed {}
 
