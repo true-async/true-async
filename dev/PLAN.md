@@ -102,7 +102,7 @@ track's test runs: each tests against the same pinned core, in its own container
 | S7 | once the S5 and S6 design notes are pushed | its roots are provider ops, timers, signals and wakeups, its edges Futures and channels |
 | S8 | after S6 | measured on a real provider |
 | S9 | after S5, each layer once Edmond agrees its plan | Scope's `awaitCompletion`, task groups and channels wait on Futures, cancellations and timeouts; Context hangs off Scope |
-| S10 | after S6 | each outcome is a core or RFC change; the pool needs S9, the `zend_sigaction` hook S6, the thread pool the Fog's ZTS line |
+| S10 | after S6 | its outcomes are RFC requests, upstream fixes or extension code (`dev/plans/S10.md`); the PDO pool needs S9's pools, the thread pool the Fog's ZTS line |
 
 While tracks run in parallel:
 
@@ -1047,11 +1047,62 @@ Active: S9.18
       done: a journal entry per checklist item; findings fixed with a test or recorded
       tier: T2 · role: —
 
-## S10 — Beyond the RFCs  [ ]
+## S10 — Beyond the RFCs  [in progress]
 
 One decision per fork feature that needs core changes: PDO pool, per-coroutine output buffers,
-pgsql, `Fiber::getCoroutine()`, `zend_sigaction` hook, thread pool, Windows. Each becomes an RFC
+pgsql, `Fiber::getCoroutine()`, `zend_sigaction` hook, thread pool, Windows, and what the inventory
+of the fork's core diff found besides (`dev/plans/S10.md` section 9). Each becomes an RFC
 change, an upstream fix, an extension-level design, or "not in the first version".
+Done when: every item of the note's section 1 has Edmond's outcome in `DECISIONS.md`; the outcomes
+built in S10 pass on debug and ASAN with the S3-S9 lists as before; every reference group is in a
+list or an exclusion with its reason.
+Tier: T2. Roles: Critic and Sage on S10.1, Critic after every coding step.
+Tests: interleaved
+Base: 3c859b5
+Notes: dev/plans/S10.md
+Active: S10.1
+
+- [~] S10.1 Decision note `dev/plans/S10.md`: per item what TrueAsync does, what the pinned core has,
+      the options and the proposed outcome; the inventory of the fork's other core changes.
+      done: the note pushed; every Critic finding fixed or answered in the note; Edmond's answers to
+        the 11 questions of section 11 recorded in `DECISIONS.md`
+      tier: T2 · role: Critic → Sage
+      Critic 2026-10-08 round 1: 3 high (output buffers on a private core branch against P1.1; the INI
+        handlers start before the launch; TrueAsync's bypass against our listed tests and Fibers), 6
+        medium (the headers leak is php-src's, the M9 request, the lists, the questions). Fixed.
+      Sage 2026-10-08: output buffers in the extension (C) over an RFC change (A), which would widen a
+        public RFC's scope; C keeps its state in our own fields, not a hack; `Fiber::getCoroutine()`
+        added by the extension and Windows signals in the extension accepted. Final.
+      Critic 2026-10-08 round 2: write-through has no defined model and C gives bypass only; fibers
+        need their resumer's stack. Section 2 rewritten: C, bypass, fibers on their resumer's stack.
+      Critic 2026-10-08 round 3 (section 2): a fiber runs after its caller is switched out, so its
+        stack follows `caller_coroutine`; the invariant and the one swap helper stated; a fatal error's
+        message flushed, not discarded; `scheduler/053` and `io_provider/011` change too. Fixed; four
+        design points left to S10.5's note.
+- [ ] S10.2 The frozen lists `tests/lists/S10.txt` and `S10.excluded` (note section 10).
+      done: `check-lists.py` passes; every reference group is in a list or an exclusion with its reason
+      tier: T1 · role: Critic
+- [ ] S10.3 The fixes that need no decision (note section 12): the HTTP headers leak on
+      `php-src-fixes` (a core update), the signal handle count, the run of note section 4 (b), the fiber
+      frames reproducer; the `cleanup`, `fork`, `socket` and `output_buffer/007`, `008` tests.
+      done: each fix with its test passes on debug and ASAN; the S3-S9 lists pass as before; the core
+        update's checks of WORKFLOW pass (S1 suites diffed, the bridge); Edmond's answer on `signal/031`
+        after the run recorded
+      tier: T2 · role: Critic
+- [ ] S10.4 `Fiber::getCoroutine()` as Edmond decides.
+      done: `fiber/019`, `023`-`028` pass on debug and ASAN
+      tier: T1 · role: Critic
+- [ ] S10.5 Per-coroutine output buffers as Edmond decides: a design note reviewed before the code.
+      done: `output_buffer/001`-`006` pass on debug and ASAN; the S3-S9 lists pass as before or each
+        changed test has Edmond's word; the per-switch cost in `BENCHMARKS.md`
+      tier: T2 · role: Critic → Sage
+- [ ] S10.6 The requests of the note written into `RFC-CHANGES.md`; Windows signals as Edmond decides;
+      the items left out of the first version recorded with their follow-up paths.
+      done: one entry per request; `signal/001` passes on Windows if built; a Fog line per item left out
+      tier: T2 · role: Critic
+- [ ] S10.7 Security pass by `dev/SECURITY.md`.
+      done: a journal entry per checklist item; findings fixed with a test or recorded
+      tier: T2 · role: —
 
 ## S11 — Namespace `Async` renamed to `TrueAsync`  [ ]
 

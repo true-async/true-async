@@ -485,3 +485,12 @@ frame takes it out after its suspend (`channel_record_leave()`), the kind's `abo
 runs again, and `async_wait_end()` aborts a stale one. 63 reference tests pass; 14 wait for S9.18
 (`recvAsync()`, `foreach`, `await_*`; until then those throw and `async_await_awaitable_of()` refuses a
 channel), 16 for S9.19 (timers, deadlock close, owner scope, collector). Next is S9.18.
+
+## S10
+
+- S10.1 (2026-10-08): `dev/plans/S10.md` written from read-only research of the fork core
+  (`829cde6d4b5`, own changes = diff from `a7b265ca611b`), `ext/async` at `REFERENCE` and the pinned
+  core; nothing was run. Three Critic rounds and the Sage are in PLAN S10.1. Waiting for Edmond's
+  answers to its section 11; S10.2 and S10.3 need none.
+- Core update: S10.3 (the HTTP headers leak on `php-src-fixes`) asks the coordinator for the slot
+  first. The research reports behind the note: `/mnt/project-files/notes/s10/` (project files).

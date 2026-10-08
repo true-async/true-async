@@ -38,6 +38,9 @@ Where to look in this repository and around it. Pointers only.
   a coroutine and of a scope, the walk up the scope tree, cycles through a context.
 - `dev/plans/S9-channel.md`: S9 layer 3 notes: `Async\Channel` on the wait-record layer (the CHANNEL kind,
   reservations), `recvAsync()`, `foreach`, the deadlock protections, the collector's channel edges.
+- `dev/plans/S10.md`: S10 notes: per TrueAsync feature beyond the RFCs (output buffers, `Fiber::getCoroutine()`,
+  signals, PDO pool, pgsql, threads, Windows) the options and the proposed outcome; the inventory of the
+  fork's other core changes and the reference groups without a list.
 - `dev/plans/S3.7-spec.md`: the PHP-visible behaviour of S3.7 (`await()`, the GC's wait,
   `getAwaitingInfo()`), the specification the S3.7 tests were written from.
 - `dev/plans/S1-lsan-fork.md`: S1's LeakSanitizer report after `fork()` with ior's thread backend.
