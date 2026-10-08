@@ -532,9 +532,14 @@ static void future_drain_coroutine_entry(void)
 }
 
 /* A coroutine in the drain, with its own reference. False with an exception when the scheduler
- * refuses it. */
+ * refuses it. None while async is not active: no coroutine would run, and in RSHUTDOWN's final release,
+ * whose destructors may still map a Future, the scopes and the registry are gone. */
 static bool future_drain_spawn(future_drain_t *drain)
 {
+	if (UNEXPECTED(!ZEND_ASYNC_IS_ACTIVE)) {
+		return false;
+	}
+
 	async_coroutine_t *coroutine = async_coroutine_new();
 
 	coroutine->coroutine.internal_entry = future_drain_coroutine_entry;

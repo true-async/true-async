@@ -62,6 +62,7 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	async_trigger_t *test_trigger;   /* TrueAsync\Test\trigger_new()'s; NULL without */
 	uint32_t test_collector_runs;    /* the collector's runs and mark_found() calls: the oracle's run ids */
 	void *test_firer;                /* the thread trigger_fire() started; NULL when joined */
+	bool test_print_at_teardown;     /* RSHUTDOWN prints "teardown: done" (print_at_teardown()) */
 #endif
 #ifdef TRUE_ASYNC_FUZZ
 	async_fuzz_state_t fuzz; /* TRUE_ASYNC_SCHED of this request */
@@ -75,7 +76,7 @@ extern zend_class_entry *async_ce_awaitable;
 extern zend_class_entry *async_ce_completable;
 #define ASYNC_G(v) ZEND_MODULE_GLOBALS_ACCESSOR(true_async, v)
 
-/* Refuses while no scheduler runs (php -r launches none; after the request's last drain the core
+/* Refuses while no scheduler runs (php -a launches none; after the request's last drain the core
  * turns async off), as TrueAsync. */
 #define THROW_IF_ASYNC_OFF() \
 	do { \

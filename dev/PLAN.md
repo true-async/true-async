@@ -772,7 +772,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md
-Active: S9.13
+Active: S9.14
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -936,10 +936,17 @@ Active: S9.13
         other than the global one (`context/038`). On CORE_REF 662dfe91919: debug 1228 PASS, 9 SKIP,
         11 XFAIL; ASAN 1202 PASS, 34 SKIP, 10 XFAIL; 0 unexpected. `collector/018` failed once in a
         loaded run and passed on retry; 80 runs alone and under load passed (not S9.12's).
-- [ ] S9.13 The teardown's user values released as its last step (note section 4).
+- [x] S9.13 The teardown's user values released as its last step (note section 4).
       done: the note's S9.13 own test passes on debug and ASAN; the S3-S7 lists and layer 1 pass as
         before
       tier: T1 · role: Critic
+      handoff: done 2026-10-08: RSHUTDOWN releases the scope values, the registry's coroutine objects
+        and the unobserved exceptions after the reactor's teardown (`context/040`, `042`, `044`, with
+        the test hook `print_at_teardown()`). Three Critic passes: a Future mapped in that release
+        wrote into the freed registry and `disposeAfterTimeout()` made a reactor queue nothing freed;
+        both now do nothing while async is not active (`context/041`, `043`). Each test fails with its
+        fix taken out. On CORE_REF 662dfe91919: debug 1233 PASS, 9 SKIP, 11 XFAIL; ASAN 1209 PASS, 34
+        SKIP, 10 XFAIL; 0 unexpected.
 - [ ] S9.14 Layer review: Critic after S9.11-S9.13, coverage, Mull on the layer's diff, the fuzz
       oracle over 100 seeds, the measurements of note section 8.
       done: the layer's Done when holds on the day; survivors killed or explained

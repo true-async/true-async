@@ -1649,3 +1649,14 @@ stack options were shown with the code).
   `ASYNC_COROUTINE_F_LEFT_NON_GLOBAL_SCOPE` tells the two apart. `spawn()` and `Scope::inherit()` in
   that window use the global scope, as TrueAsync. `released_handlers` of `src/scope.c` is
   `released_values`: it carries the freed scopes' contexts too.
+- 2026-10-08 S9.13: RSHUTDOWN releases the user values its teardown drops (scope handlers, contexts
+  and objects, the registry's coroutine objects, the unobserved exceptions) as its last step, after
+  the IO provider, signal and reactor teardown: a destructor that throws there bails out of the rest
+  of RSHUTDOWN (`context/040`, `042`, `044`). The test hook `TrueAsync\Test\print_at_teardown()`
+  prints "teardown: done" before that release. Not as the note's test: an output handler reaches no
+  value the teardown releases (async is off there, and a Context it holds outlives RSHUTDOWN); a
+  coroutine spawned from a shutdown destructor does. Found by the Critic, fixed here: a destructor in
+  that release that maps a Future wrote into the freed registry (`future_drain_spawn` now refuses
+  once async is off, `context/041`; before S9.13 it read a NULL global scope), and
+  `Scope::disposeAfterTimeout()` there made a new reactor queue that nothing freed (it now does
+  nothing once async is off, `context/043`).

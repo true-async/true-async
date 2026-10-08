@@ -1304,6 +1304,17 @@ static ZEND_FUNCTION(replace_execute_ex)
 	zend_execute_ex = test_execute_ex;
 }
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_print_at_teardown, 0, 0, IS_VOID, 0)
+ZEND_END_ARG_INFO()
+
+/* RSHUTDOWN prints "teardown: done" before it releases the user values it dropped. */
+static ZEND_FUNCTION(print_at_teardown)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	ASYNC_G(test_print_at_teardown) = true;
+}
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_coroutine_count, 0, 0, IS_LONG, 0)
 ZEND_END_ARG_INFO()
 
@@ -2319,6 +2330,7 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\fail_at", ZEND_FN(fail_at), arginfo_fail_at, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_printing_switch_handler", ZEND_FN(add_printing_switch_handler), arginfo_add_printing_switch_handler, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_clearing_finish_handler", ZEND_FN(add_clearing_finish_handler), arginfo_add_clearing_finish_handler, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\print_at_teardown", ZEND_FN(print_at_teardown), arginfo_print_at_teardown, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\coroutine_count", ZEND_FN(coroutine_count), arginfo_coroutine_count, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\coroutine_from_object", ZEND_FN(coroutine_from_object), arginfo_coroutine_from_object, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\collector_age", ZEND_FN(collector_age), arginfo_collector_age, 0, NULL, NULL)

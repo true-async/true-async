@@ -171,6 +171,11 @@ and their contexts). S9.13 collects the user values these releases drop into one
 teardown's last step, with a test in which an output handler's object throws from its destructor at
 RSHUTDOWN.
 
+As built in S9.13: the array is RSHUTDOWN's (`src/true_async.c`), released after the reactor's
+teardown, and carries the unobserved exceptions too. The test spawns the value's owner from a
+shutdown destructor instead: an output handler runs with async off and reaches no value the teardown
+releases (DECISIONS 2026-10-08 S9.13).
+
 **The engine's coroutines.** The core's GC run and the shutdown pass's destructor iterators join the
 private root scope (`engine_scope`, `src/scheduler.c:1368`; layer 1 note, section 3). A destructor
 that runs there, in a GC run or in the shutdown pass after an earlier destructor suspended, gets the

@@ -115,7 +115,8 @@ final class Scope implements ScopeProvider
     /**
      * Cancels the scope as dispose() does with AsyncCancellation("Scope has been disposed due to
      * timeout") once `$timeout` ms have passed, unless the scope is gone by then; the earliest of
-     * several calls wins. Nothing for a closed scope or one with no coroutine and no child scope.
+     * several calls wins. Nothing for a closed scope, one with no coroutine and no child scope, or once
+     * async is off (an output handler, the request's teardown).
      */
     public function disposeAfterTimeout(int $timeout): void {}
 

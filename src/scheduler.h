@@ -40,7 +40,7 @@ bool async_scheduler_register(void);
 
 /* Per-request state: the run queue, the context pool, the coroutine registry. */
 void async_scheduler_request_startup(void);
-void async_scheduler_request_shutdown(void);
+void async_scheduler_request_shutdown(zend_array **released_values);
 
 /* A new coroutine in CREATED with no entry point, for the caller to enqueue. In the registry from
  * its birth: the registry holds the birth reference until the coroutine finishes or the request ends

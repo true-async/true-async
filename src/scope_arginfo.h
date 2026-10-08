@@ -1,5 +1,5 @@
 /* This is a generated file, edit scope.stub.php instead.
- * Stub hash: 72699e94ade79744f02615a8397145e50a1ad4c7 */
+ * Stub hash: 8aa3811fd7247693a82cda84a0b4a1423ece277e */
 
 #include "zend_attributes.h"
 

@@ -2312,8 +2312,10 @@ void async_scheduler_request_startup(void)
  * run any more, so a parked stack is unmapped without unwinding: the heap never reclaims a fiber
  * stack, and a worker would lose one per such request. TrueAsync's dtor only releases the objects.
  * What the dropped frames held is leaked to the heap, which is silent after a bailout
- * (CG(unclean_shutdown)). Each coroutine finishes without handlers. */
-void async_scheduler_request_shutdown(void)
+ * (CG(unclean_shutdown)). Each coroutine finishes without handlers. The user values it drops, the
+ * coroutine objects and the unobserved exceptions included, go to `released_values` for the caller to
+ * release last: their destructors may bail out, which ends the caller's teardown there. */
+void async_scheduler_request_shutdown(zend_array **released_values)
 {
 	/* A bailout in a shutdown destructor leaves no later from_main call to print in. What the last call
 	 * printed is skipped. */
@@ -2350,13 +2352,20 @@ void async_scheduler_request_shutdown(void)
 	ZEND_HASH_FOREACH_END();
 
 	/* Out of their scopes first: a coroutine is freed out of any scope. */
-	async_scope_request_shutdown();
+	async_scope_request_shutdown(released_values);
 
-	/* Released once every wait is unlinked: a target freed with a waiter linked would wake it, which
+	if (*released_values == NULL) {
+		*released_values = zend_new_array(zend_hash_num_elements(&ASYNC_G(coroutines)));
+	}
+
+	/* Released after every wait is unlinked: a target freed with a waiter linked would wake it, which
 	 * creates a scheduler. */
 	ZEND_HASH_FOREACH_PTR(&ASYNC_G(coroutines), coroutine)
 	{
-		OBJ_RELEASE(&coroutine->std);
+		zval coroutine_value;
+
+		ZVAL_OBJ(&coroutine_value, &coroutine->std);
+		zend_hash_next_index_insert_new(*released_values, &coroutine_value);
 	}
 	ZEND_HASH_FOREACH_END();
 
@@ -2392,6 +2401,18 @@ void async_scheduler_request_shutdown(void)
 	circular_buffer_dtor(&ASYNC_G(microtasks));
 
 	/* The printed exceptions and what a bailout left unprinted. */
+	zval *exception_value = NULL;
+
+	ZEND_HASH_FOREACH_VAL(&ASYNC_G(unobserved_exceptions), exception_value)
+	{
+		zval exception;
+
+		ZVAL_OBJ(&exception, Z_TYPE_P(exception_value) == IS_PTR ? Z_PTR_P(exception_value) : Z_OBJ_P(exception_value));
+		zend_hash_next_index_insert_new(*released_values, &exception);
+	}
+	ZEND_HASH_FOREACH_END();
+
+	ASYNC_G(unobserved_exceptions).pDestructor = NULL;
 	zend_hash_destroy(&ASYNC_G(unobserved_exceptions));
 
 	/* Before the reactor destroys the queue: a bailout cut the drain short. */

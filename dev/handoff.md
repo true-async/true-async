@@ -446,5 +446,10 @@ parent scopes, a freed scope detaches its context and releases it after the scop
 the context only under `scope_is_reached_only_by_object()`; `scope_objects_give_back_to_gc()` walks
 up after a coroutine leaves or a child scope goes. `ASYNC_COROUTINE_F_LEFT_NON_GLOBAL_SCOPE` makes
 `current_context()` refuse a finished coroutine's release window. `request_context()` returns null.
-Open: the scope of Future callbacks (PLAN, Open questions). Next is S9.13: the teardown's user values
-released last.
+Open: the scope of Future callbacks (PLAN, Open questions).
+
+S9.13 done 2026-10-08: `async_scheduler_request_shutdown()` and `async_scope_request_shutdown()` put
+the user values they drop into one array that `PHP_RSHUTDOWN` releases after the reactor's teardown;
+a throwing destructor there no longer skips the IO provider, signal and reactor teardown.
+`future_drain_spawn()` and `Scope::disposeAfterTimeout()` do nothing while async is not active.
+Test hook `TrueAsync\Test\print_at_teardown()`. Next is S9.14: the layer review.

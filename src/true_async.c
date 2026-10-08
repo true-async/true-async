@@ -213,6 +213,7 @@ static PHP_RINIT_FUNCTION(true_async)
 	ASYNC_G(test_exit_deadline_ms) = 0;
 	ASYNC_G(test_trigger) = NULL;
 	ASYNC_G(test_firer) = NULL;
+	ASYNC_G(test_print_at_teardown) = false;
 #endif
 
 	return SUCCESS;
@@ -221,7 +222,9 @@ static PHP_RINIT_FUNCTION(true_async)
 static PHP_RSHUTDOWN_FUNCTION(true_async)
 {
 	if (scheduler_registered) {
-		async_scheduler_request_shutdown();
+		zend_array *released_values = NULL;
+
+		async_scheduler_request_shutdown(&released_values);
 #ifdef TRUE_ASYNC_TEST_HOOKS
 		async_test_hooks_request_shutdown();
 #endif
@@ -230,6 +233,15 @@ static PHP_RSHUTDOWN_FUNCTION(true_async)
 		async_signal_request_shutdown();
 #endif
 		async_reactor_request_shutdown();
+
+#ifdef TRUE_ASYNC_TEST_HOOKS
+		if (UNEXPECTED(ASYNC_G(test_print_at_teardown))) {
+			php_printf("teardown: done\n");
+		}
+#endif
+
+		/* Last: a destructor that throws here bails out of the rest of this function. */
+		zend_array_release(released_values);
 	}
 
 	return SUCCESS;

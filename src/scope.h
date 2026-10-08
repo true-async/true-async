@@ -101,8 +101,9 @@ void async_scope_request_startup(void);
 /* Takes every coroutine left in the registry out of its scope, disposing the scopes that leaves with
  * nothing, then frees the two request scopes with their child scopes; their objects are detached and
  * stay with whoever holds them. Called before the registry's coroutines are released. A root scope of
- * user code that still has its object is freed by the object. */
-void async_scope_request_shutdown(void);
+ * user code that still has its object is freed by the object. The handlers, contexts and scope objects
+ * it drops go to `released_values`, made on the first one, for the caller to release. */
+void async_scope_request_shutdown(zend_array **released_values);
 
 /* The scope spawn() uses: the current coroutine's, or the global scope when no coroutine runs or the
  * current one has no scope (a Fiber's, the scheduler's, a finished one's, as TrueAsync). */

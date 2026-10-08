@@ -507,22 +507,26 @@ static void scope_dispose(async_scope_t *scope, zend_array **released_values)
 	scope_objects_give_back_to_gc(parent_scope, released_values);
 }
 
-void async_scope_remove_coroutine(async_coroutine_t *coroutine)
+static void scope_remove_coroutine(async_coroutine_t *coroutine, zend_array **released_values)
 {
 	async_scope_t *scope = coroutine->scope;
 
 	scope_detach_coroutine(coroutine);
 	scope_notify_completion(scope, true, coroutine);
 
-	zend_array *released_values = NULL;
-
 	/* scope_dispose gives the parent back itself. */
 	if (UNEXPECTED(scope_can_be_disposed(scope))) {
-		scope_dispose(scope, &released_values);
+		scope_dispose(scope, released_values);
 	} else {
-		scope_objects_give_back_to_gc(scope, &released_values);
+		scope_objects_give_back_to_gc(scope, released_values);
 	}
+}
 
+void async_scope_remove_coroutine(async_coroutine_t *coroutine)
+{
+	zend_array *released_values = NULL;
+
+	scope_remove_coroutine(coroutine, &released_values);
 	scope_values_release(released_values);
 }
 
@@ -1302,7 +1306,8 @@ ZEND_METHOD(Async_Scope, disposeAfterTimeout)
 
 	async_scope_t *scope = THIS_SCOPE_OBJECT->scope;
 
-	if (UNEXPECTED(scope == NULL || (scope->event.flags & ASYNC_SCOPE_F_CLOSED) ||
+	/* No timer fires while async is not active, and in RSHUTDOWN's final release the reactor is gone. */
+	if (UNEXPECTED(!ZEND_ASYNC_IS_ACTIVE || scope == NULL || (scope->event.flags & ASYNC_SCOPE_F_CLOSED) ||
 				   (scope->coroutines.length == 0 && scope->child_scopes.length == 0))) {
 		return;
 	}
@@ -1897,25 +1902,22 @@ void async_scope_request_startup(void)
 	ASYNC_G(zombie_coroutines_count) = 0;
 }
 
-void async_scope_request_shutdown(void)
+void async_scope_request_shutdown(zend_array **released_values)
 {
 	async_coroutine_t *coroutine = NULL;
 
 	ZEND_HASH_FOREACH_PTR(&ASYNC_G(coroutines), coroutine)
 	{
 		if (coroutine->scope != NULL) {
-			async_scope_remove_coroutine(coroutine);
+			scope_remove_coroutine(coroutine, released_values);
 		}
 	}
 	ZEND_HASH_FOREACH_END();
 
-	zend_array *released_values = NULL;
-
-	scope_free(ASYNC_G(global_scope), &released_values);
-	scope_free(ASYNC_G(engine_scope), &released_values);
+	scope_free(ASYNC_G(global_scope), released_values);
+	scope_free(ASYNC_G(engine_scope), released_values);
 	ASYNC_G(global_scope) = NULL;
 	ASYNC_G(engine_scope) = NULL;
-	scope_values_release(released_values);
 }
 
 void async_register_scope_ce(void)
