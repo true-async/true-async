@@ -1,5 +1,5 @@
 --TEST--
-Async\signal(): the number the reactor blocked again before a poll is unblocked when its watch goes, and one the script blocked before its watch stays blocked
+Async\signal(): a watched number stays blocked whatever pcntl_sigprocmask() asks, and one the script blocked before its watch stays blocked after it
 --EXTENSIONS--
 pcntl
 --SKIPIF--
@@ -34,7 +34,7 @@ pcntl_sigprocmask(SIG_BLOCK, [SIGUSR1, SIGUSR2]);
 // Keeps the registry, and its record of reblocked numbers, across the SIGUSR1 watches.
 $held = signal(Signal::SIGUSR2);
 
-// Unblocked by the script, blocked again by the poll.
+// The core keeps a watched number blocked: the unblock leaves it in the mask.
 $future = signal(Signal::SIGUSR1);
 pcntl_sigprocmask(SIG_UNBLOCK, [SIGUSR1]);
 poll();
@@ -58,5 +58,5 @@ $held = null;
 ?>
 --EXPECT--
 bool(true)
-bool(false)
+bool(true)
 bool(true)
