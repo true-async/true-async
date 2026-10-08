@@ -1061,7 +1061,7 @@ Tier: T2. Roles: Critic and Sage on S10.1, Critic after every coding step.
 Tests: interleaved
 Base: 3c859b5
 Notes: dev/plans/S10.md
-Active: S10.3
+Active: S10.4
 
 - [x] S10.1 Decision note `dev/plans/S10.md`: per item what TrueAsync does, what the pinned core has,
       the options and the proposed outcome; the inventory of the fork's other core changes.
@@ -1098,13 +1098,40 @@ Active: S10.3
         ASAN, untagged; the socket SKIPIF borks without IPv6; `signal/008`, `009`, `012` still named
         S10; `socket/004` and `cleanup/005` had the wrong reason; the count and the done line were
         false; `fiber/025` proves nothing about `getCoroutine()`. Fixed; S10.4 adds its own test.
-- [ ] S10.3 The fixes that need no decision (note section 12): the HTTP headers leak on
-      `php-src-fixes` (a core update), the signal handle count, the run of note section 4 (b), the fiber
+- [x] S10.3 The fixes that need no decision (note section 12): the HTTP headers leak on
+      `php-src-fixes` (a core update), the signal handle count (moved to S10.3a), the run of note section 4 (b), the fiber
       frames reproducer; `socket/001`-`003` seen passing on CI.
       done: each fix with its test passes on debug and ASAN; `socket/001`-`003` PASS on the CI
         `pocs-dbg` and `pocs-asan` lanes; the S3-S9 lists pass as before; the core
         update's checks of WORKFLOW pass (S1 suites diffed, the bridge); Edmond's answer on `signal/031`
         after the run recorded
+      tier: T2 · role: Critic
+      result 2026-10-08: core `async-core-io-2026-10-08-3` `3e61b9fc00e` (-2 with `php-src-fixes`
+        `68f790cb2d4` merged): the HTTP headers leak and the fiber GC of a file included from a
+        function (the reproducer the note asked for), each with a `PHP-8.4` test red without the fix.
+        Section 4 (b) run: confirmed, and a block during a watch is lost too; Edmond 18:06 «ок сделай
+        я потом рассмотрю». The fix (which also settles the handle count of (c)) waits on his answer
+        about `$old` (18:47 «я подумаю об этом...»), so it moved to S10.3a (the coordinator, 18:47).
+        All lists: pocs-dbg 1326 PASS, 14 SKIP, 47 XFAIL; pocs-asan 1301 PASS, 40 SKIP, 46 XFAIL; 0
+        unexpected. S1 suites, old core against new: no difference (debug 236, ASAN 235 PASS);
+        `ext-scheduler-hook` 23 of 23 on debug and ASAN. `socket/001`-`003` on CI (3d6cc85, old core): the run
+        prints no per-test lines, so from the counts: CI has 3 more PASS and 3 fewer SKIP than here
+        on both lanes (pocs-dbg 1329 and 11, pocs-asan 1304 and 37), 0 unexpected; here the extra 3
+        are these tests (no IPv6), and the other 11 dbg skips are 10 Windows-only tests and `curl/071`
+        (libcurl below 8.11.1, as on ubuntu-24.04, which ci.yml pins). The step closes on these local
+        runs and the old core's CI run; CI on this commit, the first on the new core (Windows
+        included), follows the push.
+        Found: `io_provider/032` loses bytes under load on the old core too (`php_stream_read()` drops
+        what it took when the refill's wait is cancelled); its own thread and core update.
+      Critic 2026-10-08: the first signal fix returned the real mask in `$old`, which left a watched
+        number blocked after a block-and-restore during the watch (run). Changed to the script's mask;
+        the choice went to Edmond as a decision card.
+- [ ] S10.3a The signal fix of note section 4 (b) and (c): the script's mask after a watch, in bukka's
+      code (`io-hooks-fixes` and a PR branch to bukka, a core update), the extension's `reblocked`
+      record removed. The patches are in `/mnt/project-files/notes/s10/signal-fix/`.
+      done: Edmond's answer about `$old` recorded; (c) settled as DECISIONS then says; `signal/018`,
+        `031`, `033`-`035` and the core's
+        `poll_signal_handle_script_mask.phpt` pass on debug and ASAN; the core update's checks pass
       tier: T2 · role: Critic
 - [ ] S10.4 `Fiber::getCoroutine()` added to `Fiber` by the extension.
       done: `fiber/019`, `023`-`028` pass on debug and ASAN, with an own test that cancels the

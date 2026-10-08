@@ -7,7 +7,7 @@ Written 2026-10-06. S3 closed: S3.24 re-ran its Done when on the final core; S4,
 
 ## State
 
-- Core pinned: `async-core-io-2026-10-08-2` (`d3681ac7d41`), ior `d46649f6425` (2026-10-08, S6.10).
+- Core pinned: `async-core-io-2026-10-08-3` (`3e61b9fc00e`), ior `d46649f6425` (2026-10-08, S10.3).
   CI gates every lane on every list; a test that cannot pass yet carries `--XFAIL--` naming its
   step, and the commit that makes it pass removes the section. run-tests (`tools/run-tests.patch`)
   fails a test the timeout killed.
@@ -302,7 +302,9 @@ PRs to bukka and libior/ior from `/mnt/project-files/notes/s6-10/`.
   the copy of an ACCEPT op into a POLL (note section 4). The Ring's multishot accept hid pending
   connections from `stream_select()`; that Ring bug goes to bukka (a pull request is being
   prepared in the S6.4 thread, `dev/WORKFLOW.md` "Ownership").
-- The core is `async-core-io-2026-10-08-2` (`d3681ac7d41`): `async-core-io-2026-10-08` with bukka's
+- The core is `async-core-io-2026-10-08-3` (`3e61b9fc00e`): -2 with `php-src-fixes` `68f790cb2d4`
+  (the HTTP headers leak, the fiber GC of an included file) merged. `async-core-io-2026-10-08-2`
+  (`d3681ac7d41`) was `async-core-io-2026-10-08` with bukka's
   head `566a6833eb5` (a newer php-src master: `interface_gets_implemented` returns void; his
   `bdfa5fa7a12` keeps a watched signal blocked under pcntl), `io-hooks-fixes` `424116620a7` (the
   pipes) and `php-src-fixes` `acc6b34faa3` merged; ior `d46649f6425` (true-async/ior
@@ -492,5 +494,10 @@ channel), 16 for S9.19 (timers, deadlock close, owner scope, collector). Next is
   are not built; the outcomes are in `DECISIONS.md` 2026-10-08.
 - S10.2 closed 2026-10-08: lists frozen (PLAN result line). This container has no IPv6, so
   `socket/001`-`003` skip locally (`skip-on:*(no-AF_INET6)`); only CI runs them. Next is S10.3.
-- Core update: S10.3 (the HTTP headers leak on `php-src-fixes`) asks the coordinator for the slot
-  first. The research reports behind the note: `/mnt/project-files/notes/s10/` (project files).
+- S10.3 closed 2026-10-08 (PLAN result line): the core update to `async-core-io-2026-10-08-3`. PR
+  texts for Edmond in `/mnt/project-files/notes/`: `http-last-response-headers-leak-pr.md` and
+  `fiber-gc-include-symbol-table-pr.md` (php/php-src, base `PHP-8.4`).
+- S10.3a waits on Edmond's answer about `$old` (decision card of 18:40): the signal fix is in
+  `/mnt/project-files/notes/s10/signal-fix/` (two patches; the bukka PR text is
+  `/mnt/project-files/notes/signal-mask-script-view-pr.md`), a core update of its own. Next is S10.4.
+  The research reports behind the note: `/mnt/project-files/notes/s10/` (project files).

@@ -59,7 +59,7 @@ How work is done in this repository and in the core branch it builds on.
 | `io-hooks-fixes` | bukka's `io_hooks_poc` head | our fixes to bukka's IO hooks PoC, sent to him as PRs |
 | `php-src-fixes` | `PHP-8.4` and master's merge base | our fixes to php-src bugs outside both RFCs, merged into the core |
 | `io-hooks-connect-started` | bukka's `io_hooks_poc` head | one fix to the IO hooks PoC, the branch of its PR to bukka |
-| `stream-chunk-size-read-filter`, `stream-filter-remove-in-callback`, `stream-copy-close-in-callback`, `stream-pclose-in-filter`, `zlib-inflate-error-handler`, `pcntl-dispatch-keeps-handler-mask` | `php-src-fixes`' base | one fix each from `php-src-fixes`, the branch of its PR to php/php-src |
+| `stream-chunk-size-read-filter`, `stream-filter-remove-in-callback`, `stream-copy-close-in-callback`, `stream-pclose-in-filter`, `zlib-inflate-error-handler`, `pcntl-dispatch-keeps-handler-mask`, `http-last-response-headers-leak`, `fiber-gc-include-symbol-table` | `php-src-fixes`' base | one fix each from `php-src-fixes`, the branch of its PR to php/php-src |
 | `async-core-io-<date>` | the previous one | the core this repository builds on: merges of the four above and bukka's head; the pinned one is in "Pinned core" |
 | `async-core-io` | php/php-src master | the first core branch, kept as it was |
 | `fiber-callable-object-8.4`, `fiber-callable-object` | `PHP-8.4`, master | the Fiber `$this` use-after-free fix, php/php-src#24134 |
@@ -69,14 +69,14 @@ The other branches there belong to the TrueAsync fork's earlier work and are not
 
 ## Pinned core
 
-| Part | Revision | In `async-core-io-2026-10-08-2` `d3681ac7d41` |
+| Part | Revision | In `async-core-io-2026-10-08-3` `3e61b9fc00e` |
 |---|---|---|
 | php-src master | `e17e2970bc0` | merged through bukka's head |
 | Scheduler PoC (`async-core`, php/php-src#22561) | `b7c70909437` | merged |
 | IO hooks PoC (php/php-src#23997) | `566a6833eb5` | merged |
 | Our fixes to the IO hooks PoC (`io-hooks-fixes`) | `424116620a7` | merged; `dev/RFC-CHANGES.md` 2, 18 |
 | The connect fix (`io-hooks-connect-started`, bukka/php-src#4, on bukka's `2bf149c2f50`) | `dca62e39da4` | picked onto `8159f7baa5c` (`async-core-io-2026-10-07-4`) |
-| Our fixes to php-src (`php-src-fixes`) | `acc6b34faa3` | merged |
+| Our fixes to php-src (`php-src-fixes`) | `68f790cb2d4` | merged |
 | ior (`release-handle` in true-async/ior, on libior/ior `2bfd2319896`) | `d46649f6425` | built per tree, "Building the core" |
 | `ext/async` (reference tests, true-async/php-async) | `1fdacf8575b` | `tests/lists/REFERENCE` |
 
