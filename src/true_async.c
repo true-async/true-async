@@ -111,19 +111,17 @@ static bool scheduler_registered = false;
 /* Only this extension's classes implement Awaitable: generic wait code reads an awaitable's memory
  * as a coroutine or an event (dev/plans/S3.md, section 13, bug 10). Completable extends it, so
  * this covers both. */
-static int awaitable_gets_implemented(zend_class_entry *interface, zend_class_entry *class_entry)
+static void awaitable_gets_implemented(zend_class_entry *interface, zend_class_entry *class_entry)
 {
 	if (EXPECTED(class_entry->type == ZEND_INTERNAL_CLASS &&
 				 class_entry->info.internal.module == &true_async_module_entry)) {
-		return SUCCESS;
+		return;
 	}
 
 	zend_error_noreturn(E_ERROR,
 						"Class %s cannot implement interface %s: only the classes of true_async implement it",
 						ZSTR_VAL(class_entry->name),
 						ZSTR_VAL(interface->name));
-
-	return FAILURE;
 }
 
 static PHP_GINIT_FUNCTION(true_async)
