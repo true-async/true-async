@@ -322,6 +322,33 @@ finding left open gets an owner step in `PLAN.md`.
   have handlers and roots in the buffer costs O(N^2) per collection. A coroutine's removal walks up the
   scopes it leaves without coroutines with the same subtree test, the cost shape of the completion
   walk above. A per-scope count of busy child scopes would make both O(1) and is not built.
+- 2026-10-08 Security pass of the Context layer (S9.15) over the S9 commits `c3c4fd8`, `e222071`,
+  `7e82c15` (`src/context.c`, their parts of `scope.c`, `coroutine.c`, `scheduler.c`, `future.c`,
+  `true_async.c`, `test_hooks.c`), by checklist item, with scripts run on the debug and ASAN builds.
+  Lifetimes: clean. Only a scope and a coroutine reach a Context by pointer, each owning a reference it
+  clears before the release; a freed scope detaches its subtree's contexts first, so `find()`'s walk
+  reads live scopes only (a held grandchild's context finds its grandparent's key, then nothing after
+  the chain's disposal and collection). A finished coroutine's release window refuses
+  `current_context()` and switches and puts a `spawn()` in the global scope; the final release of
+  RSHUTDOWN runs after async is deactivated, so every context, spawn, await and signal call there
+  throws, and values made there and kept in a static are freed in `zend_deactivate` cleanly.
+  Destructors that suspend, rewrite or unset keys during `set()`, `unset()` and the table's free give
+  the right output (the core replaces the slot, then releases the old value). Refcounts on exception
+  paths: balanced (a throwing old value on `set()` and `unset()`, two throwing values chained on free;
+  each scope has one object, so its context is reported once). Engine state: none added. Sizes: keys
+  and values under `memory_limit`; `find()` walks in a loop, O(depth) per call. INI entries: none new.
+  Test-only code: `print_at_teardown()` and its flag sit under `TRUE_ASYNC_TEST_HOOKS`; a build of the
+  default configuration has no `TrueAsync\Test` string (checked). CI: no change.
+- 2026-10-08 Accepted (S9.15), the entry above on `get_gc` widened: since S9.12 a scope's context
+  alone, made by one `current_context()`, makes the scope object's `get_gc` test its child scopes
+  (`scope_can_be_disposed()`, recursive), so a collection with that object in the root buffer
+  overflows the GC coroutine's stack under a chain of about 43 000 nested scopes on the debug build
+  (50 000 crashed; building them took 87 s through the cancel cascade's O(N^2)). TrueAsync's
+  `get_gc` does not recurse, but its other subtree walks overflow at the same depth (S9.8). The fix
+  is the per-scope count of busy child scopes named above, not built.
+- 2026-10-08 Seen in S9.15, not a defect of ours: an object with `__destruct` made in RSHUTDOWN's final
+  release and kept in a static gets "Couldn't execute method ...::__destruct" from `zend_deactivate`,
+  as one made in an output handler does without the extension.
 
 ## Open findings
 

@@ -775,7 +775,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md
-Active: S9.15
+Active: none; layer 2 done, the next layer needs its plan agreed with Edmond
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -967,9 +967,15 @@ Active: S9.15
         per level (ref 50), a coroutine's context 1,287 instructions and 2 allocations (ref 1,232
         and 2). On CORE_REF 662dfe91919: debug 1237 PASS, 9 SKIP, 11 XFAIL; ASAN 1213 PASS, 34 SKIP,
         10 XFAIL; 0 unexpected.
-- [ ] S9.15 Security pass by `dev/SECURITY.md`.
+- [x] S9.15 Security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item; findings fixed with a test or recorded
       tier: T2 · role: —
+      handoff: done 2026-10-08: journal entries in `SECURITY.md`, by checklist item; no memory or
+        refcount defect found on the debug and ASAN builds (the context's walk, the release window, the
+        final release in RSHUTDOWN, destructors that rewrite the table). Recorded: a scope's context
+        alone now makes its object's `get_gc` test the child scopes recursively, so a collection under
+        about 43 000 nested scopes overflows the GC coroutine's stack, the limit S9.8 accepted; the
+        per-scope count of busy child scopes would remove it and is not built. Docs only, no lane run.
 
 ## S10 — Beyond the RFCs  [ ]
 

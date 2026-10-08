@@ -456,5 +456,7 @@ Test hook `TrueAsync\Test\print_at_teardown()`.
 
 S9.14 done 2026-10-08: the layer review. Mull's one survivor (`scope.c:203`) is killed by
 `scope/131`; four are explained in PLAN. `context/025` waits in a loop (the fuzz order). Benchmarks
-B13 (`find()` up the scopes) and B14 (a coroutine's context) are in `dev/BENCHMARKS.md`. Next is
-S9.15: the security pass by `dev/SECURITY.md`.
+B13 (`find()` up the scopes) and B14 (a coroutine's context) are in `dev/BENCHMARKS.md`.
+
+S9.15 done 2026-10-08: the security pass, journal entries in `dev/SECURITY.md`; one recorded limit
+(the scope object's `get_gc` recursion, now armed by a context alone). Layer 2 (Context) is done.
