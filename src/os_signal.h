@@ -29,8 +29,7 @@ typedef struct
 	zend_object *context; /* never waited on: its add() blocks a number, its remove unblocks it */
 	uint32_t count;       /* the watches */
 #ifndef PHP_WIN32
-	sigset_t watched;   /* their numbers */
-	sigset_t reblocked; /* of them, blocked by async_signal_reblock() */
+	sigset_t watched; /* their numbers */
 #endif
 	async_signal_watch_t *watches[PHP_NSIG];
 } async_signal_registry_t;
@@ -41,8 +40,9 @@ extern zend_class_entry *async_ce_signal;
 /* Withdraws every watch: a Future still waiting stays pending. */
 void async_signal_request_shutdown(void);
 
-/* zend_sigaction() (Zend/zend_signal.c:258-263) and the script's pcntl_sigprocmask() unblock watched
- * numbers: blocks them again, before every poll of the reactor. */
+/* zend_sigaction() outside pcntl (Zend/zend_signal.c:260-263) unblocks watched numbers. Blocks them
+ * again before every poll of the reactor and records them with the core, so the last removal of their
+ * handles unblocks them. */
 void async_signal_reblock(void);
 
 /* For the collector of coroutines that can never wake (collector.h): every Future a watch will

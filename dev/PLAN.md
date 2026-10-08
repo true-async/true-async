@@ -1146,13 +1146,32 @@ Active: S10.4
       Critic 2026-10-08: the first signal fix returned the real mask in `$old`, which left a watched
         number blocked after a block-and-restore during the watch (run). Changed to the script's mask;
         the choice went to Edmond as a decision card.
-- [ ] S10.3a The signal fix of note section 4 (b) and (c): the script's mask after a watch, in bukka's
-      code (`io-hooks-fixes` and a PR branch to bukka, a core update), the extension's `reblocked`
-      record removed. The patches are in `/mnt/project-files/notes/s10/signal-fix/`.
-      done: Edmond's answer about `$old` recorded; (c) settled as DECISIONS then says; `signal/018`,
-        `031`, `033`-`035` and the core's
-        `poll_signal_handle_script_mask.phpt` pass on debug and ASAN; the core update's checks pass
+- [x] S10.3a The signal fix of note section 4 (b) and (c), on the small path (Edmond 19:22): the
+      script's unblock of a watched number kept for the last removal, in bukka's code (`io-hooks-fixes`
+      and a PR branch to bukka, a core update), the extension's `reblocked` record removed.
+      done: Edmond's answers recorded; `signal/018`, `031`, `033`-`035` and the core's
+        `poll_signal_handle_script_unblock*.phpt` pass on debug and ASAN; the core update's checks pass
       tier: T2 · role: Critic
+      result 2026-10-08: core `async-core-io-2026-10-08-4` `77dbfc061f3` (-3 with `io-hooks-fixes`
+        `2a74924668c`); PR branch `signal-unblock-at-removal` `c44eccf72a` on bukka's `566a6833eb5`, PR
+        text `/mnt/project-files/notes/signal-unblock-at-removal-pr.md` (Edmond opens it). `$old` stays
+        the real mask (Edmond 19:22, «пока вообще не трогать маску»); a later block by the script takes
+        a recorded unblock back (Edmond 19:46, card «Отменять»), so no script ends worse than before.
+        Left to bukka as a question: an unblock followed by a save-and-restore, and a block during the
+        watch of a number the handle blocked itself.
+        All lists: pocs-dbg 1328 PASS, 14 SKIP, 47 XFAIL; pocs-asan 1303 PASS, 40 SKIP, 46 XFAIL; 0
+        unexpected. S1 suites against -3: only the two new tests differ (debug 238, ASAN 237 PASS);
+        `ext-scheduler-hook` 23 of 23 on debug and ASAN. The PR branch alone (debug ZTS): `poll` and
+        `pcntl` tests 137 PASS, 0 FAIL. These runs were on `11b34448352`, which differs from the pushed core
+        only in comments and one equivalent local in `pcntl_sigprocmask()`; on the pushed core the
+        core's `poll` and `pcntl` tests (debug 142, ASAN 138 PASS) and the 33 `signal` tests pass again.
+      Critic 2026-10-08: the first rule (an unblock always kept) unblocked a number the script blocked
+        again during the watch, a regression (run). The take-back rule fixed it; the second Critic found
+        the extension's record of a `zend_sigaction()` unblock could be taken back by a save-and-restore
+        (`signal/034` with the `SIG_SETMASK` probe, red), so that record goes through
+        `php_io_poll_signal_reblocked()`, which no script request takes back. The second Critic's
+        scenario through `pcntl_signal_dispatch()` does not occur on this core: `acc6b34faa3`
+        (`php-src-fixes`) runs the handlers under the script's mask.
 - [ ] S10.4 `Fiber::getCoroutine()` added to `Fiber` by the extension.
       done: `fiber/019`, `023`-`028` pass on debug and ASAN, with an own test that cancels the
         coroutine of a suspended fiber, then its parent

@@ -1796,3 +1796,18 @@ stack options were shown with the code).
 - 2026-10-08 S9.18: `foreach` over a channel ends quietly on an explicit `close()` only when the
   `ChannelException` carries no previous, so a cancellation queued before the close propagates
   (`channel/104`), as `dev/plans/S9-channel.md` section 4 states; TrueAsync's iterator clears it.
+- 2026-10-08 S10.3a, signal masks during a watch (Edmond 19:22 «я бы шёл по малопу пути. пока вообще не
+  трогать маску», 19:46 «ок сделай пока так»): `pcntl_sigprocmask()`'s `$old` stays the real mask; bukka's
+  pcntl filter records the script's unblock of a number it blocked before the watch, the last removal
+  does it, and a later request with the number in the blocked set takes it back
+  (`signal-unblock-at-removal`, `RFC-CHANGES.md` 19). The extension's `reblocked` record is gone:
+  `async_signal_reblock()` records a `zend_sigaction()` unblock through
+  `php_io_poll_signal_reblocked()`, and the core's count decides the unblock, so a number another
+  `SignalHandle` still watches stays blocked (section 4 (c) of `dev/plans/S10.md`, `signal/035`).
+  Why: no script ends worse than before the change; an unblock followed by a save-and-restore, and a
+  block during the watch of a number the handle blocked itself, need the script's mask in `$old`
+  and are questions to bukka.
+- 2026-10-08 `signal/031-reblock_unblocks_with_its_watch.phpt` (ours, S6.9; `changed:2026-10-08`)
+  expects the number unblocked after the watch when the script unblocked it during it, and probes
+  the mask without `SIG_SETMASK`. Why: S10.3a does the unblock the test recorded as lost; a
+  `SIG_SETMASK` probe during the watch is a save-and-restore, which takes the unblock back.

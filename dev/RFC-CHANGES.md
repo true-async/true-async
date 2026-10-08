@@ -81,12 +81,12 @@ State: drafted 2026-10-06 (S6.5), not sent. PR: none. The main part is in bukka'
 since `bdfa5fa7a12` (2026-10-07), in the core from `async-core-io-2026-10-08-2`: `pcntl_signal()` and
 `pcntl_sigprocmask()` leave a number a `SignalHandle` watches blocked, and `exec()` and friends start
 the child with `php_io_poll_signal_child_mask()` (`signal/031`, `032` changed, DECISIONS 2026-10-08).
-Still open: the `PHPAPI` to watch a handle's set without a Context, the record of the extension's own
-block for the child mask, and the count of handles per number.
+Closed by 19 (S10.3a): the record of the extension's own block for the child mask, and the count of
+handles per number. Still open: the `PHPAPI` to watch a handle's set without a Context.
 
 Need: `Async\signal()` takes a signal through a SIGWAIT op on a number an `Io\Poll\SignalHandle`
 blocks while a `Context` watches it (`dev/plans/S6.md` section 8). `zend_sigaction()` unblocks the
-number it installs a handler for (`Zend/zend_signal.c:258-263`), so a `pcntl_signal()` after
+number it installs a handler for (`Zend/zend_signal.c:260-263`), so a `pcntl_signal()` after
 `Async\signal()` lets the next delivery go to the handler alone, and the handle's record of blocked
 numbers (`php_io_poll_signals_blocked_by_handles`, `ext/standard/io_poll.c:997-998`) no longer
 matches the mask. pcntl's request shutdown and `pcntl_sigprocmask()` do the same. The extension
@@ -103,12 +103,8 @@ The scheduler RFC's core has the hook in the first form: `zend_sigaction()` asks
 `zend_async_sigaction_fn` (`ZEND_ASYNC_SIGACTION`, `Zend/zend_signal.c` of true-async/php-src
 `true-async`) whether the reactor owns the number, and leaves its own handler out when it does;
 TrueAsync answers from `libuv_zend_sigaction()` (`libuv_reactor.c:1566`). The same hook over a
-`SignalHandle` would close this one. It would also fix the children: the block the extension takes
-again is in no record of the core's, so `php_io_poll_signal_child_mask()` leaves it to a
-`proc_open()` child started while the watch lives (seen 2026-10-07, S6.9); a `PHPAPI` that records
-such a block with the handle would do as well. The same record would let the extension leave a number
-blocked while another `SignalHandle` of the thread still watches it (a script's own `Context`); today
-its unblock at the watch's end cannot see the core's count of handles per number.
+`SignalHandle` would close this one. The record of the block the extension takes again, for the
+children and the count of handles per number, is 19.
 
 Waits for it: `async_signal_reblock()` in `src/os_signal.c` and its call in `reactor_poll()`
 (`src/reactor.c`); the Context of `async_signal_registry_t`; `signal/032` records the delivery lost
@@ -334,3 +330,24 @@ post there.
 
 Waits for it: the switch in `PHP_MINIT_FUNCTION(true_async)` (`src/true_async.c`) and the drain of a
 select's cancelled pipe poll in `io_provider_run()` (`src/io_provider.c`); `io_provider/028`-`035`.
+
+## 19. IO hooks: the script's unblock of a watched signal at the last removal
+
+State: on `io-hooks-fixes` `2a74924668c` (2026-10-08, S10.3a), in the core from
+`async-core-io-2026-10-08-4`; PR branch `signal-unblock-at-removal` `c44eccf72a` on bukka's
+`566a6833eb5`, PR text in `/mnt/project-files/notes/signal-unblock-at-removal-pr.md`, Edmond opens
+it. PR: none.
+
+Need: bukka's `bdfa5fa7a12` keeps a watched number blocked under `pcntl_sigprocmask()` and
+`pcntl_signal()` but drops the script's unblock, so a number the script blocked before the watch
+stays blocked after it, and a `pcntl_signal()` handler for it never runs (`dev/plans/S10.md`
+section 4 (b)). The extension's own record of the numbers it blocked again unblocked a number another
+`SignalHandle` still watched (section 4 (c)).
+
+Request: `php_io_poll_signal_unblock_at_removal()` records the script's unblock for the last removal,
+`php_io_poll_signal_keep_blocked_at_removal()` takes it back on a later block, and
+`php_io_poll_signal_reblocked()` records an unblock by `zend_sigaction()` outside pcntl that no
+script request takes back. `$old` stays the real mask. Two questions go with it: an unblock
+followed by a save-and-restore, and a block during the watch of a number the handle blocked itself.
+
+Waits for it: `async_signal_reblock()` in `src/os_signal.c`; `signal/031`, `034`, `035`.

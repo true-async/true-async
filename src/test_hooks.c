@@ -28,8 +28,9 @@
  * slot. The class TrueAsync\Test\Event, await_records(), link_into_wait(),
  * subscriber_count() and wait_counters() drive the wait-record layer (dev/plans/S4.md section 2) before any event type
  * of the extension exists; reactor_wait(), reactor_state() and reactor_use_poll_queue() drive the reactor
- * (section 3) before delay(), and set_exit_deadline() shortens D16's deadline. Each says more above
- * its definition. */
+ * (section 3) before delay(), and set_exit_deadline() shortens D16's deadline. zend_sigaction_reinstall()
+ * unblocks a signal number as callers of zend_sigaction() outside pcntl do. Each says more above its
+ * definition. */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -40,6 +41,7 @@
 #include "zend_smart_str.h"
 #include "zend_call_stack.h"
 #include "zend_hrtime.h"
+#include "zend_signal.h"
 #include "php_true_async.h"
 #include "test_hooks.h"
 #include "coroutine.h"
@@ -2024,6 +2026,33 @@ static ZEND_FUNCTION(set_exit_deadline)
 	ASYNC_G(test_exit_deadline_ms) = ms;
 }
 
+#if defined(ZEND_SIGNALS) && !defined(PHP_WIN32)
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_zend_sigaction_reinstall, 0, 1, IS_VOID, 0)
+	ZEND_ARG_TYPE_INFO(0, signo, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
+/* Installs the Zend signal table's handler for `signo` again through zend_sigaction(), which unblocks
+ * the number: what phpdbg and other callers outside pcntl do to a watched number. */
+static ZEND_FUNCTION(zend_sigaction_reinstall)
+{
+	zend_long signo;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_LONG(signo)
+	ZEND_PARSE_PARAMETERS_END();
+
+	if (UNEXPECTED(signo < 1 || signo >= PHP_NSIG)) {
+		zend_argument_value_error(1, "must be a signal number");
+		RETURN_THROWS();
+	}
+
+	struct sigaction current;
+
+	zend_sigaction((int) signo, NULL, &current);
+	zend_sigaction((int) signo, &current, NULL);
+}
+#endif
+
 ///////////////////////////////////////////////////////////////////
 /// Triggers (dev/plans/S4.md 3.6, point 6)
 ///////////////////////////////////////////////////////////////////
@@ -2352,6 +2381,9 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\trigger_stop", ZEND_FN(trigger_stop), arginfo_trigger_none, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\trigger_free", ZEND_FN(trigger_free), arginfo_trigger_none, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\trigger_relay", ZEND_FN(trigger_relay), arginfo_trigger_relay, 0, NULL, NULL)
+#if defined(ZEND_SIGNALS) && !defined(PHP_WIN32)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\zend_sigaction_reinstall", ZEND_FN(zend_sigaction_reinstall), arginfo_zend_sigaction_reinstall, 0, NULL, NULL)
+#endif
 #ifdef ZEND_CHECK_STACK_LIMIT
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\call_on_main_stack", ZEND_FN(call_on_main_stack), arginfo_call_on_main_stack, 0, NULL, NULL)
 #endif

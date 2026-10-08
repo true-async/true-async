@@ -24,3 +24,7 @@ fiber/025-fiber_double_cancel.phpt  ref:60376a4ec5d0f9d88e5b15e57519e4703086d4cd
 fiber/026-fiber_getCoroutine_after_termination.phpt  ref:a1c25149bc2b898a2cf44823ef33d0ea6dadd9cce72515580962a33fb1377f74
 fiber/027-fiber_cancel_in_nested_spawn.phpt  ref:3f3e6698aeeb21b0ad70f4b7f58b200f29195bbe1ca94aa751b60102313e7789
 fiber/028-fiber_exception_vs_cancel.phpt  ref:e4e9a0a5c3c927e157bfb42b3c9f5cdf4b9ef7c4c9d2f8cb57d69b8f695e4f3e
+
+# signal (S10.3a, dev/plans/S10.md section 4)
+signal/034-sigaction_unblock_during_watch_holds_after_it.phpt  own:e25624789a3f74cd6fe7f21aed54e9f3b8ed1d99ead4dd87f0b70e7980acada4  skip-on:*-win(Unix-only)
+signal/035-number_stays_blocked_while_another_handle_watches.phpt  own:8cf6a2a390c3d655f82b69be46d8bd54a7c2285fc1c71f5228514a1cef9207a7  skip-on:*-win(Unix-only)
