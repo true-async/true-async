@@ -55,6 +55,15 @@ cmd /c configure.bat %CONFIG_ARGS% ^
 	--disable-test-ini
 if %errorlevel% neq 0 exit /b 5
 
+rem configure writes the OS caption into PHP_BUILD_SYSTEM in the ANSI code page; on a localized Windows (a
+rem Russian one names itself in CP1251) /utf-8 /WX then stops every file on C4828. Only that line loses its
+rem non-ASCII bytes. sed is php-sdk's, on PATH in its shell; in msys' default UTF-8 locale [^ -~] does not
+rem match bytes invalid in UTF-8, hence LC_ALL=C for sed alone.
+set LC_ALL=C
+sed -i -e "/^#define PHP_BUILD_SYSTEM /{s/[^ -~]//g;s/\" */\"/}" main\config.w32.h
+if %errorlevel% neq 0 exit /b 8
+set LC_ALL=
+
 rem An object depends on its .c file only (win32\build\confutils.js), so after a change to a header
 rem nmake would link this repository's objects built against the old one.
 rem Only the objects go: configure made the directories, and nmake does not make them again.

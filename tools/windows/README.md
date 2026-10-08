@@ -51,6 +51,9 @@ already exists (a copy, or a junction to another checkout) is built as it is.
   pick an older Community install; leave it out.
 - cmake picks its newest known Visual Studio generator; one that does not know Visual Studio 2026
   needs `-Generator "Visual Studio 17 2022"` for ior, which still links with the 2026 build of PHP.
+- On a localized Windows configure writes the OS name into `PHP_BUILD_SYSTEM` of
+  `main\config.w32.h` in the ANSI code page, and `/utf-8 /WX` stops every file on C4828.
+  `build-core.bat` keeps only the ASCII part of that name; a `configure.bat` run by hand does not.
 
 ## Comparing with Linux
 
