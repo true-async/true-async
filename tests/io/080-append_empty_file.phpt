@@ -8,8 +8,8 @@ use function Async\await;
 
 echo "Start\n";
 
-$tmpfile = tempnam(sys_get_temp_dir(), 'async_io_test_');
-unlink($tmpfile); // ensure file does not exist
+$tmpfile = __DIR__ . '/080-append_empty_file.tmp';
+@unlink($tmpfile); // ensure file does not exist
 
 $coroutine = spawn(function() use ($tmpfile) {
     $fp = fopen($tmpfile, 'a');
@@ -30,6 +30,10 @@ await($coroutine);
 unlink($tmpfile);
 echo "End\n";
 
+?>
+--CLEAN--
+<?php
+@unlink(__DIR__ . '/080-append_empty_file.tmp');
 ?>
 --EXPECT--
 Start

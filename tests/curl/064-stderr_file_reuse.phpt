@@ -12,7 +12,7 @@ curl
 include getenv('TRUE_ASYNC_CORE_SRC') . '/ext/curl/tests/server.inc';
 $host = curl_cli_server_start();
 
-$temp_file = tempnam(sys_get_temp_dir(), 'CURL_STDERR');
+$temp_file = __DIR__ . '/064-stderr_file_reuse.tmp';
 
 // First: open file, set as CURLOPT_STDERR, exec curl, close file, unlink
 $handle = fopen($temp_file, 'w');
@@ -53,6 +53,10 @@ if ($handle === false) {
 unset($ch);
 @unlink($temp_file);
 echo "Done\n";
+?>
+--CLEAN--
+<?php
+@unlink(__DIR__ . '/064-stderr_file_reuse.tmp');
 ?>
 --EXPECTF--
 First stderr captured: yes
