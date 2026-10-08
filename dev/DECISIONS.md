@@ -1624,3 +1624,9 @@ stack options were shown with the code).
   it is cancelled unstarted ("timeout coroutine started" missing); a 2 ms `usleep()` between
   `timeout(1)` and `await()` reproduces it every time. 20 ms stays below the coroutine's `delay(50)`;
   the expected output is unchanged.
+- 2026-10-08 The provider answers a POLL whose deadline has passed (`feof()`'s zero timeval the common
+  case) on the core's synchronous path and does not park. Why: on ior's IOCP backend the due link
+  timeout can complete before the poller thread's WSAPoll sees the readiness, so `feof()` on Windows
+  missed a peer reset (`stream/046-write_wakes_on_peer_reset_win`, CI run 37744080113); TrueAsync polls
+  a zero timeout synchronously (`php_poll2_async()`). ior's IOCP backend still races for a deadline not
+  yet passed: PLAN Open questions.

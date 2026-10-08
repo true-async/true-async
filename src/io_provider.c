@@ -262,7 +262,12 @@ static zend_result io_provider_run(php_io_hooks *hooks, php_io_op *op, php_io_op
 		return SUCCESS;
 	}
 
-	if (UNEXPECTED(op->deadline.hrtime == 0)) {
+	/* A poll whose deadline has passed (feof()'s zero timeval) is answered by the core's poll at once: on
+	 * ior's IOCP backend its due link timeout can complete before the poller thread's WSAPoll sees the
+	 * readiness. */
+	if (UNEXPECTED(op->deadline.hrtime == 0 ||
+				   (op->type == PHP_IO_OP_POLL && !php_deadline_is_infinite(&op->deadline) &&
+					op->deadline.hrtime <= zend_hrtime()))) {
 		return SUCCESS;
 	}
 

@@ -387,6 +387,8 @@ io_provider/022-fiber_installs_the_provider.phpt  own:6d960d8946f17de8ce78ccdd03
 io_provider/023-cancelled_socket_read_reads_again.phpt  own:08754be3a4fea07b9f391db16ed23ec4df0cb38afd0da2cc2f47a22230dd2a6b  skip-on:*-win(Unix-only)
 io_provider/024-stream_select_with_except_set.phpt  own:64562947358bf55facfaad5953849f19e3240835987a17459261528738e517ce  core:13  skip-on:*-win(Unix-only)
 io_provider/025-poll_queue_sockets.phpt  own:a1fa0a915175ddfb4dd7222072cb55434849fb0801b6bd3360fb585b8fc904d6  skip-on:*-win(Unix-only)
+io_provider/026-feof_zero_timeout_poll_does_not_park.phpt  own:c1e32b26d23e6df19a3275115035b38fcbf991c73d7fa760e3993580dc556382  skip-on:pocs-win(openssl-not-loaded-until-S6.4)
+io_provider/027-feof_tcp_does_not_park.phpt  own:3fa9675ef23789c84254f5de91120eb6a081825045193a1d65afc1f979d6245e
 signal/024-watch_in_static_outlives_shutdown.phpt  own:e2f00202a4a2e224653698dacffb9153d8fbfb9fbbf6a29b27cf70e171c13839  skip-on:*-win(Unix-only)
 signal/025-fork_rebuilds_two_watches_poll_queue.phpt  own:682436e47cc7a3f41e21bc9635745ba7c06f889ed17ebe344489b8d76df11780  skip-on:*-win(Unix-only)
 signal/026-watch_closes_its_source.phpt  own:7f631142c949dc52fbd833c1233a70f14e49076cea8ece1283298596995708a4  skip-on:*-win(Unix-only)

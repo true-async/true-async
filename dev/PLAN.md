@@ -65,6 +65,12 @@ Waiting for Edmond's call; nothing here is being worked on.
   scheduler's suspend, which the extension does not call by Edmond's rule (`tools/check-gates.py`
   refuses it); the second option is leaving it to the script, the third a core change (pcntl lifts
   its block and mask around a coroutine's suspend), an S8 change-request candidate. Edmond's call.
+- A POLL with a near deadline on ior's IOCP backend (the Critic on the `feof()` fix, 2026-10-08): ior
+  arms the ring's linked timeout when it issues the op and hands the poll to its WSAPoll thread with no
+  check at issue (`ior_iocp.c` `issue_poll()`, `arm_link_timeout()`), so a timeout a few microseconds
+  ahead can in principle complete as TIMEOUT on a ready socket (not seen); io_uring checks readiness at
+  submit. The provider answers a passed deadline itself; a readiness probe at issue in ior, or in the ring as `php_io_ring_group_probe()`
+  does for ANY members, is a change to bukka's code. Edmond's call.
 - Fiber stacks on Windows (the Critic on `scope/058`): `zend_fiber_stack_allocate()` commits the
   whole 2 MB stack (`VirtualAlloc(MEM_COMMIT)`, `Zend/zend_fibers.c:234`), as TrueAsync's core and
   PHP's `Fiber` do, so 20 000 suspended coroutines need about 40 GB of commit; `collector/064`
