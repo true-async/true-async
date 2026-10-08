@@ -186,8 +186,7 @@ io_wait_wake(async_awaitable_t *target, async_event_callback_t *callback, void *
 #define IO_CHAOS(one_in) async_fuzz_io_coin(&ASYNC_G(fuzz), (one_in))
 
 /* C3: the caller has just drained the descriptor and runs the syscall again on a readiness, so a
- * readiness another reader took first is a legal answer. CONNECT carries the flag too, but reads
- * SO_ERROR after it. */
+ * readiness another reader took first is a legal answer. */
 static bool io_chaos_spurious_readiness(const php_io_op *op, php_io_op_result *result)
 {
 	const bool readiness_retried = op->type == PHP_IO_OP_RECV || op->type == PHP_IO_OP_SEND ||
@@ -335,6 +334,17 @@ static zend_result io_provider_run(php_io_hooks *hooks, php_io_op *op, php_io_op
 	if (UNEXPECTED(op->in_flight && op->type != PHP_IO_OP_ANY)) {
 		io_wait_drain(op);
 	}
+#ifdef PHP_WIN32
+	/* A select's cancelled pipe READ poll: a kernel read on the descriptor until its cancel completes
+	 * (php_io_ring_probe_keep) */
+	if (UNEXPECTED(op->type == PHP_IO_OP_ANY)) {
+		for (uint32_t i = 0; i < op->u.any.n; i++) {
+			if (UNEXPECTED(op->u.any.ops[i]->in_flight)) {
+				io_wait_drain(op->u.any.ops[i]);
+			}
+		}
+	}
+#endif
 
 	async_io_event_release(event);
 

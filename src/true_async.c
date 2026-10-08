@@ -18,6 +18,7 @@
 #include "php_ini.h"
 #include "ext/standard/info.h"
 #include "Zend/zend_closures.h"
+#include "main/php_io_hooks.h"
 #include "php_true_async.h"
 #include "coroutine.h"
 #include "collector.h"
@@ -165,6 +166,11 @@ static PHP_MINIT_FUNCTION(true_async)
 	if (UNEXPECTED(!scheduler_registered)) {
 		return SUCCESS;
 	}
+
+#if defined(PHP_WIN32) && defined(HAVE_IOR)
+	/* proc_open() makes pipes the Ring reads and writes without blocking the thread (S6.md 9.1) */
+	php_io_overlapped_pipes = true;
+#endif
 
 	async_register_future_ce(async_ce_completable);
 	async_register_timeout_ce(async_ce_completable);
