@@ -45,11 +45,11 @@ $timeout_coroutine = spawn(function() {
 echo "timeout coroutine spawned\n";
 
 try {
-    $result = await($timeout_coroutine, timeout(1));
+    $result = await($timeout_coroutine, timeout(20));
     echo "timeout await should not succeed\n";
 } catch (\Async\OperationCanceledException $e) {
     echo "timeout cancellation caught: " . get_class($e) . ": " . $e->getMessage() . "\n";
-    $timeout_coroutine->cancel(new \Async\AsyncCancellation("Timeout after 1 milliseconds"));
+    $timeout_coroutine->cancel(new \Async\AsyncCancellation("Timeout after 20 milliseconds"));
 } catch (Throwable $e) {
     echo "timeout unexpected: " . get_class($e) . ": " . $e->getMessage() . "\n";
 }

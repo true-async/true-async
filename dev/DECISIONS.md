@@ -1617,3 +1617,10 @@ stack options were shown with the code).
   object `current_coroutine()` returned there was freed under its holder, and a context made there
   leaked to the request's end (`context/020`). The core's own `zend_async_context_get()` has the same
   window for C callers: `dev/RFC-CHANGES.md` 17.
+- 2026-10-08 `await/069-await_manual_vs_timeout_cancel.phpt`: the second await's token is
+  `timeout(20)`, not `timeout(1)`; Edmond's word in the S9 Context thread. Why: `timeout()` takes its
+  deadline when it returns (D32), so when more than 1 ms passes before the await subscribes (a loaded
+  debug run, 1 in 200 with three busy cores) the await throws at once and the coroutine spawned before
+  it is cancelled unstarted ("timeout coroutine started" missing); a 2 ms `usleep()` between
+  `timeout(1)` and `await()` reproduces it every time. 20 ms stays below the coroutine's `delay(50)`;
+  the expected output is unchanged.
