@@ -1,4 +1,4 @@
-From 4c878aeaa15fa6244f7fbdcccac1f1673f19f707 Mon Sep 17 00:00:00 2001
+From 83416d66d8f671e12f3fe5cdc2e76dd1f1562e6b Mon Sep 17 00:00:00 2001
 From: Edmond <1571649+edmonddantes@users.noreply.github.com>
 Date: Thu, 8 Oct 2026 12:52:49 +0000
 Subject: [PATCH 4/4] Complete a read of part of a message or datagram with the
@@ -29,7 +29,7 @@ a 10-byte datagram into 4 bytes, sent before the recv and after it.
  2 files changed, 153 insertions(+), 4 deletions(-)
 
 diff --git a/src/ior_iocp.c b/src/ior_iocp.c
-index e091d3d..e8d40a4 100644
+index 19201c0..f5a4917 100644
 --- a/src/ior_iocp.c
 +++ b/src/ior_iocp.c
 @@ -1505,7 +1505,19 @@ static BOOL cancel_overlapped_io(ior_ctx_iocp *ctx, ior_iocp_op *op)
@@ -96,7 +96,7 @@ index e091d3d..e8d40a4 100644
  	}
  	live_remove(ctx, op);
 diff --git a/tests/test_iocp_backend.c b/tests/test_iocp_backend.c
-index 3515408..37dde1d 100644
+index 0aae7c8..03fcf81 100644
 --- a/tests/test_iocp_backend.c
 +++ b/tests/test_iocp_backend.c
 @@ -14,6 +14,7 @@
@@ -237,7 +237,7 @@ index 3515408..37dde1d 100644
  /* ===================================================================== */
  /* Releasing a handle                                                    */
  /* ===================================================================== */
-@@ -1172,6 +1296,12 @@ int main(void)
+@@ -1173,6 +1297,12 @@ int main(void)
  		cmocka_unit_test_setup_teardown(test_write_to_closed_pipe_epipe, iocp_setup, iocp_teardown),
  		cmocka_unit_test_setup_teardown(
  				test_read_empty_nowait_pipe_eagain, iocp_setup, iocp_teardown),

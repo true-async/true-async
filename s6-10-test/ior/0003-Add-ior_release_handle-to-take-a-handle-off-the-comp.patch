@@ -1,4 +1,4 @@
-From 395c68e78de051c87e3845fef2d1aebf97ad5005 Mon Sep 17 00:00:00 2001
+From f85273b9b17283ebf5a209e9cdba6f265c23a2ba Mon Sep 17 00:00:00 2001
 From: Edmond <1571649+edmonddantes@users.noreply.github.com>
 Date: Thu, 8 Oct 2026 12:48:19 +0000
 Subject: [PATCH 3/4] Add ior_release_handle() to take a handle off the
@@ -15,29 +15,30 @@ NtSetInformationFile(FileReplaceCompletionInformation) with no port,
 Windows 8.1 and later. It returns -EBUSY while a read, write, send, recv,
 accept or connect of the context on the handle is queued or its
 completion not yet dequeued (such an op may issue on the handle again:
-a multishot accept's next child, an abort replay), or when the kernel
-refuses because a request is pending on the file object; -ENOTSUP where
-ntdll lacks the call or rejects the class (Wine); -EBADF for NULL or
-INVALID_HANDLE_VALUE; -EINVAL for a NULL context or another refusal of
-the kernel (a closed handle); 0 for a handle the context does not own,
-which it leaves as it is. On success the owner
-record goes and the handle-set entry is no longer owned, so the next op
-on the value associates it again. Other backends tie nothing to a
-context and return 0.
+a multishot accept's next child, an abort replay): Windows 11 unties a
+handle even with a request pending on it, and that request's packet
+then reaches no port. -ENOTSUP where ntdll lacks the call or rejects
+the class (Wine); -EBADF for NULL or INVALID_HANDLE_VALUE; -EINVAL for a
+NULL context or a refusal of the kernel (a closed handle); 0 for a
+handle the context does not own, which it leaves as it is. On success
+the owner record goes and the handle-set entry is no longer owned, so
+the next op on the value associates it again. Other backends tie
+nothing to a context and return 0.
 
 test_iocp_backend: after the release another port takes the handle and
 a read issued outside ior posts there, not to the ring; the ring's next
 write binds it again; a pending read of the ring refuses the release
-and still completes; so does one issued outside ior (the kernel's
-refusal); a handle never used, or held by another ring, is left alone.
+and still completes; a read pending outside ior is untied with the
+handle and completes; a handle never used, or held by another ring, is
+left alone.
 ---
  README.md                 |   4 +-
  src/ior.c                 |  13 +++
- src/ior.h                 |  25 ++++++
+ src/ior.h                 |  26 ++++++
  src/ior_backend.h         |   2 +
  src/ior_iocp.c            |  86 ++++++++++++++++++++
- tests/test_iocp_backend.c | 161 ++++++++++++++++++++++++++++++++++++++
- 6 files changed, 290 insertions(+), 1 deletion(-)
+ tests/test_iocp_backend.c | 163 ++++++++++++++++++++++++++++++++++++++
+ 6 files changed, 293 insertions(+), 1 deletion(-)
 
 diff --git a/README.md b/README.md
 index 2dbd7e2..c62e895 100644
@@ -79,10 +80,10 @@ index 6a07833..c71cee7 100644
  ior_sqe *ior_get_sqe(ior_ctx *ctx)
  {
 diff --git a/src/ior.h b/src/ior.h
-index ba83c84..b4158fa 100644
+index ba83c84..904d9b4 100644
 --- a/src/ior.h
 +++ b/src/ior.h
-@@ -454,6 +454,31 @@ void ior_queue_exit(ior_ctx *ctx);
+@@ -454,6 +454,32 @@ void ior_queue_exit(ior_ctx *ctx);
   */
  int ior_queue_forget(ior_ctx *ctx);
  
@@ -99,15 +100,16 @@ index ba83c84..b4158fa 100644
 + *
 + * @param ctx  I/O context.
 + * @param fd   Descriptor about to be handed out.
++ * A request another process has pending on the handle is untied with it:
++ * its completion reaches no port.
++ *
 + * @return 0 when nothing of this context ties @p fd to its port any more,
 + *         as far as ior records (a handle it never associated is left as it
-+ *         is); -EINVAL for a NULL @p ctx, or when the kernel refuses for
-+ *         a reason other than those below (a closed handle); -EBADF for
-+ *         NULL or INVALID_HANDLE_VALUE; -EBUSY while an operation of the
-+ *         context on @p fd is queued or its completion not yet dequeued, or
-+ *         when the kernel refuses because a request is pending on the file
-+ *         object; -ENOTSUP where the system cannot (before Windows 8.1). The
-+ *         handle stays associated on any error.
++ *         is); -EINVAL for a NULL @p ctx, or when the kernel refuses (a
++ *         closed handle); -EBADF for NULL or INVALID_HANDLE_VALUE; -EBUSY
++ *         while an operation of the context on @p fd is queued or its
++ *         completion not yet dequeued; -ENOTSUP where the system cannot
++ *         (before Windows 8.1). The handle stays associated on any error.
 + */
 +int ior_release_handle(ior_ctx *ctx, ior_fd_t fd);
 +
@@ -128,7 +130,7 @@ index e694636..9848a38 100644
  	/* Submission queue operations. get_sqe: 0, -ENOSPC (submission queue
  	 * full), -ENOMEM (no memory for the entry, IOCP). */
 diff --git a/src/ior_iocp.c b/src/ior_iocp.c
-index cafd79c..e091d3d 100644
+index cafd79c..19201c0 100644
 --- a/src/ior_iocp.c
 +++ b/src/ior_iocp.c
 @@ -1270,6 +1270,91 @@ static int iocp_take_over_handle(ior_ctx_iocp *ctx, HANDLE h)
@@ -157,7 +159,9 @@ index cafd79c..e091d3d 100644
 +
 +/*
 + * ior_release_handle(): untie h from ctx's port. Consumer thread, as every
-+ * association, so no op of ctx can bind h meanwhile.
++ * association, so no op of ctx can bind h meanwhile. Windows unties a handle
++ * even with a request pending on it, and that request's packet then reaches
++ * no port, hence the scans for ops of ctx on h.
 + */
 +static int ior_iocp_backend_release_handle(void *backend_ctx, ior_fd_t fd)
 +{
@@ -196,8 +200,6 @@ index cafd79c..e091d3d 100644
 +				h, &iosb, &info, sizeof(info), IOR_FILE_REPLACE_COMPLETION_INFORMATION);
 +		if (NT_SUCCESS(status)) {
 +			ret = 0;
-+		} else if (status == (NTSTATUS) 0xC0000001L) { // STATUS_UNSUCCESSFUL
-+			ret = -EBUSY;
 +		} else if (status != (NTSTATUS) 0xC0000002L // STATUS_NOT_IMPLEMENTED
 +				&& status != (NTSTATUS) 0xC0000003L) { // STATUS_INVALID_INFO_CLASS
 +			ret = -EINVAL;
@@ -232,7 +234,7 @@ index cafd79c..e091d3d 100644
  	.get_features = ior_iocp_backend_get_features,
  	.sq_entries = ior_iocp_backend_sq_entries,
 diff --git a/tests/test_iocp_backend.c b/tests/test_iocp_backend.c
-index 4271a90..3515408 100644
+index 4271a90..0aae7c8 100644
 --- a/tests/test_iocp_backend.c
 +++ b/tests/test_iocp_backend.c
 @@ -14,12 +14,14 @@
@@ -250,7 +252,7 @@ index 4271a90..3515408 100644
  
  #ifdef IOR_HAVE_IOCP
  
-@@ -946,6 +948,160 @@ static void test_read_empty_nowait_pipe_eagain(void **state)
+@@ -946,6 +948,161 @@ static void test_read_empty_nowait_pipe_eagain(void **state)
  	CloseHandle(server);
  }
  
@@ -363,15 +365,16 @@ index 4271a90..3515408 100644
 +	CloseHandle(server);
 +}
 +
-+// A read issued outside ior and still pending makes the kernel refuse.
-+static void test_release_handle_refused(void **state)
++// A read issued outside ior and still pending is untied with the handle: it
++// completes, and its packet reaches no port.
++static void test_release_handle_foreign_pending(void **state)
 +{
 +	iocp_state *const s = (iocp_state *) *state;
 +	HANDLE server, client;
 +	pipe_used_by_ring(s->ctx, &server, &client);
 +	foreign_read *const reads = foreign_reads_issue(server, 1);
 +	const int ret = ior_release_handle(s->ctx, server);
-+	assert_true(ret == -EBUSY || ret == -ENOTSUP);
++	assert_true(ret == 0 || ret == -ENOTSUP);
 +
 +	DWORD got = 0;
 +	assert_true(WriteFile(client, "a", 1, &got, NULL) && got == 1);
@@ -411,14 +414,15 @@ index 4271a90..3515408 100644
  /* ===================================================================== */
  /* Teardown with operations still in flight                              */
  /* ===================================================================== */
-@@ -1016,6 +1172,11 @@ int main(void)
+@@ -1016,6 +1173,12 @@ int main(void)
  		cmocka_unit_test_setup_teardown(test_write_to_closed_pipe_epipe, iocp_setup, iocp_teardown),
  		cmocka_unit_test_setup_teardown(
  				test_read_empty_nowait_pipe_eagain, iocp_setup, iocp_teardown),
 +		cmocka_unit_test_setup_teardown(test_release_handle_unbinds, iocp_setup, iocp_teardown),
 +		cmocka_unit_test_setup_teardown(test_release_handle_rebinds, iocp_setup, iocp_teardown),
 +		cmocka_unit_test_setup_teardown(test_release_handle_busy, iocp_setup, iocp_teardown),
-+		cmocka_unit_test_setup_teardown(test_release_handle_refused, iocp_setup, iocp_teardown),
++		cmocka_unit_test_setup_teardown(
++				test_release_handle_foreign_pending, iocp_setup, iocp_teardown),
 +		cmocka_unit_test_setup_teardown(test_release_handle_not_ours, iocp_setup, iocp_teardown),
  	};
  	return cmocka_run_group_tests(tests, NULL, NULL);
