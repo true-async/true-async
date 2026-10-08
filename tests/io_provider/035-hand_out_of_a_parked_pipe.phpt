@@ -20,11 +20,13 @@ spawn(function () use ($pipes) {
     }
 });
 
-echo "read: ", await($reader), "\n";
+$data = await($reader);
+echo "read: $data\n";
 fclose($pipes[1]);
 echo "exit: ", proc_close($process), "\n";
 ?>
---EXPECT--
+--EXPECTF--
+Warning: proc_open(): Cannot represent a stream of type STDIO as a File Descriptor in %s on line %d
 Error: Concurrent access to a stream
 read: data
 exit: 0
