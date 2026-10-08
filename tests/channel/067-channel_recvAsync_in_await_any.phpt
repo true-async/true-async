@@ -1,7 +1,5 @@
 --TEST--
 Channel: await_any_or_fail with multiple recvAsync Futures — losers must clean up
---XFAIL--
-Not implemented yet: S9.18 of dev/PLAN.md
 --FILE--
 <?php
 

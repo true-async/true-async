@@ -1,7 +1,5 @@
 --TEST--
 Channel: foreach does not take a value already reserved for a woken receiver
---XFAIL--
-Not implemented yet: S9.18 of dev/PLAN.md
 --FILE--
 <?php
 

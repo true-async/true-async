@@ -71,6 +71,14 @@ Waiting for Edmond's call; nothing here is being worked on.
   ahead can in principle complete as TIMEOUT on a ready socket (not seen); io_uring checks readiness at
   submit. The provider answers a passed deadline itself; a readiness probe at issue in ior, or in the ring as `php_io_ring_group_probe()`
   does for ANY members, is a change to bukka's code. Edmond's call.
+- A closed channel's held exception (the re-check Critic of S9.18): the channel keeps its close's
+  `ChannelException` as its outcome for `await_*` (note section 4, as planned), and its trace holds the
+  arguments of the frames that called `close()`, by default (`zend.exception_ignore_args=0`) the
+  channel itself when a function taking it closed it. Such a channel, its unreceived values and their
+  destructors then wait for PHP's cycle collector instead of the last `unset()`; TrueAsync releases the
+  exception at the end of the close. The other option: keep only the reason and build an exception per
+  reader in `await_outcome()`. The `await_*` pass also chains a later item's error under this shared
+  exception as under a Future's. Edmond's call (a departure from the agreed note).
 - Fiber stacks on Windows (the Critic on `scope/058`): `zend_fiber_stack_allocate()` commits the
   whole 2 MB stack (`VirtualAlloc(MEM_COMMIT)`), as TrueAsync's core and PHP's `Fiber` do, so 20 000
   suspended coroutines need about 40 GB of commit; `collector/064` skips on Windows, and `scope/058`
@@ -795,7 +803,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md
-Active: S9.18
+Active: S9.19
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -1028,11 +1036,23 @@ Active: S9.18
         debug 1311 PASS, 9 SKIP, 41 XFAIL; ASAN 1287 PASS, 34 SKIP, 40 XFAIL, before the last
         no-behaviour edits, after which the channel, scope and bailout groups ran again on ASAN (204
         PASS, 19 SKIP, 30 XFAIL); 0 unexpected.
-- [ ] S9.18 `recvAsync()`, `foreach` and `getIterator()`, the channel as an `await_*` item and a token
+- [x] S9.18 `recvAsync()`, `foreach` and `getIterator()`, the channel as an `await_*` item and a token
       (note section 4).
       done: the block's S9.18 tests and the note's S9.18 own tests pass on debug and ASAN; the S3-S7
         lists and layers 1 and 2 pass as before
       tier: T2 · role: Critic
+      handoff: done 2026-10-08: the 14 tests naming S9.18 pass; own tests `channel/099`-`109`, `111`, `112`. A
+        pending `recvAsync()` Future is a queue record with no coroutine plus a subscriber in its event (note
+        section 4, "As built"). `close()` gives each waiter its own `ChannelException` (note section 8, item
+        15) and `foreach` lets a cancellation queued before an explicit close propagate (item 16); both depart
+        from TrueAsync (DECISIONS 2026-10-08). `future.c` frees a dying event's subscribers first: the
+        Critic's use-after-free (`channel/108`). The re-check Critic found two more: a `recvAsync()` awaiter
+        found never to wake while a sleeping producer held the channel, so the collector's edge from a channel
+        to its queued Futures came now, not in S9.19 (`channel/112`; a second Critic moved it to the Future's
+        side, a third gave `foreach`'s iterator a `get_gc`), and the close's walks reading past a queue a
+        freed Future shrank. `channel/088` counts by WeakReference, as the held close exception changed its
+        collected count. Critic, two quality Critics and three re-check Critics. On CORE_REF 3e61b9fc00e:
+        debug 1353 PASS, 14 SKIP, 33 XFAIL; ASAN 1328 PASS, 40 SKIP, 32 XFAIL; 0 unexpected.
 - [ ] S9.19 The per-channel timers, the close at the global deadlock, the owner-scope binding and the
       close of a completed or cancelled scope's channels, CHANNEL's `collector_target`, S7's channel case (note
       sections 5, 6).

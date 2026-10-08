@@ -173,6 +173,9 @@ static zend_always_inline async_event_callback_t **async_callbacks_slots(async_c
 	return ASYNC_CALLBACKS_CAPACITY(vector) == 0 ? &vector->inline_callback : vector->data;
 }
 
+/* A subscriber's callback for a notify it has nothing to do in: it acts in its dispose. */
+void async_callback_ignore(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception);
+
 /* Makes room for `count` more elements; may allocate, and so bail out on OOM. A push into
  * reserved room never allocates: a wait reserves before its first link (section 4, invariant L). */
 void async_callbacks_reserve(async_callbacks_vector_t *vector, uint32_t count);

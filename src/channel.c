@@ -24,6 +24,7 @@
 #include "collector.h"
 #include "coroutine.h"
 #include "exceptions.h"
+#include "future.h"
 #include "scheduler.h"
 #include "channel_arginfo.h"
 
@@ -52,6 +53,25 @@ static zend_object_handlers channel_handlers;
 #define CHANNEL_RECORD_F_DELIVERING (1u << (ASYNC_CALLBACK_F_KIND_SHIFT + 2))
 
 #define CHANNEL_QUEUE_FIRST_CAPACITY 4
+
+/* A pending recvAsync() Future's place in the receivers' queue (channel.c:110-139). The Future's event
+ * disposes `on_future` when it completes or is freed, which frees the waiter, so a dropped Future leaves
+ * the queue. */
+typedef struct
+{
+	async_coroutine_event_callback_t queue_record; /* `event`: the channel while queued, NULL once out */
+	async_event_callback_t on_future;
+	async_future_event_t *future; /* borrowed: the event disposes `on_future` before it goes */
+} channel_future_waiter_t;
+
+#define CHANNEL_FUTURE_WAITER_OF(member_pointer, member) \
+	((channel_future_waiter_t *) ((char *) (member_pointer) - offsetof(channel_future_waiter_t, member)))
+
+/* A recvAsync() Future's queue entry: no coroutine, never reserved. */
+static zend_always_inline bool channel_record_is_future(const async_coroutine_event_callback_t *record)
+{
+	return record->coroutine == NULL;
+}
 
 static zend_always_inline async_channel_t *channel_from_object(zend_object *object)
 {
@@ -259,39 +279,77 @@ static void channel_queue_free(async_channel_queue_t *queue)
 /// Wakes
 ///////////////////////////////////////////////////////////////////
 
-/* The record stays linked for its frame. */
+/* The record stays linked for its frame. Takes `exception`: the waker chains an error it finds pending
+ * under it, so no two waiters may share one. */
 static void channel_record_wake(const async_coroutine_event_callback_t *record, zend_object *exception)
 {
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	async_collector_check_event_wake(record->coroutine);
 #endif
 
-	async_scheduler_enqueue(&record->coroutine->coroutine, exception, false);
+	async_scheduler_enqueue(&record->coroutine->coroutine, exception, true);
 }
 
-/* Promises what was freed to the oldest record of `queue` without a reservation and wakes it; false
- * when there is no such record. The record stays queued, and its coroutine is woken even when a cancel
- * queued it already: its frame then hands the reservation on. */
-static bool channel_promise_first(async_channel_queue_t *queue, uint32_t *reserved_count)
+/* Promises what was freed to `record` and wakes it. The record stays queued, and its coroutine is woken
+ * even when a cancel queued it already: its frame then hands the reservation on. */
+static void channel_promise(async_coroutine_event_callback_t *record, uint32_t *reserved_count)
 {
-	async_coroutine_event_callback_t *const record = channel_queue_first_unreserved(queue);
+	record->event_callback.flags |= CHANNEL_RECORD_F_RESERVED;
+	(*reserved_count)++;
+	channel_record_wake(record, NULL);
+}
+
+static void channel_wake_sender(async_channel_t *channel);
+
+/* The caller owes the freed slot to a sender: channel_wake_sender(). */
+static void channel_future_give_value(async_channel_t *channel, async_future_event_t *future)
+{
+	zval value;
+
+	channel_take_value(channel, &value);
+	async_future_event_resolve(future, &value, NULL);
+	zval_ptr_dtor(&value);
+}
+
+static void channel_future_reject(async_future_event_t *future, const async_channel_close_reason_t reason)
+{
+	zend_object *const exception = channel_exception_new(reason);
+
+	async_future_event_resolve(future, NULL, exception);
+	OBJ_RELEASE(exception);
+}
+
+/* A Future has no later run, so it takes the value at once and reserves nothing (channel.c:448-460). */
+static void channel_future_serve(async_channel_t *channel, async_coroutine_event_callback_t *record)
+{
+	channel_queue_remove(&channel->receivers, record);
+	record->event = NULL;
+	/* Disposes the waiter. */
+	channel_future_give_value(channel, CHANNEL_FUTURE_WAITER_OF(record, queue_record)->future);
+	channel_wake_sender(channel);
+}
+
+/* Gives a free value to the oldest receiver without a reservation: a Future takes it, a coroutine is
+ * promised it. False when there is no such value or receiver (channel.c:431-470). */
+static bool channel_wake_receiver(async_channel_t *channel)
+{
+	if (!channel_has_free_value(channel)) {
+		return false;
+	}
+
+	async_coroutine_event_callback_t *const record = channel_queue_first_unreserved(&channel->receivers);
 
 	if (record == NULL) {
 		return false;
 	}
 
-	record->event_callback.flags |= CHANNEL_RECORD_F_RESERVED;
-	(*reserved_count)++;
-	channel_record_wake(record, NULL);
+	if (UNEXPECTED(channel_record_is_future(record))) {
+		channel_future_serve(channel, record);
+	} else {
+		channel_promise(record, &channel->reserved_receivers);
+	}
 
 	return true;
-}
-
-/* Promises a free value to the oldest receiver without a reservation; false when there is no such
- * value or receiver (channel.c:431-470). */
-static bool channel_wake_receiver(async_channel_t *channel)
-{
-	return channel_has_free_value(channel) && channel_promise_first(&channel->receivers, &channel->reserved_receivers);
 }
 
 /* The rendezvous sender whose value was just taken leaves its queue and is woken: a close before it
@@ -319,16 +377,25 @@ static void channel_wake_sender(async_channel_t *channel)
 {
 	channel_wake_delivered_sender(channel);
 
-	if (channel_has_free_slot(channel)) {
-		channel_promise_first(&channel->senders, &channel->reserved_senders);
+	if (!channel_has_free_slot(channel)) {
+		return;
+	}
+
+	async_coroutine_event_callback_t *const record = channel_queue_first_unreserved(&channel->senders);
+
+	if (record != NULL) {
+		channel_promise(record, &channel->reserved_senders);
 	}
 }
 
-/* Closes the channel once; the first reason stays (channel.c:521-586). Every waiter but a reserved
- * receiver leaves its queue and is woken with the close's exception: a reserved receiver's value is
- * still here and its recv() takes it. The walks go from the tail, so a removal never moves a record
- * they have yet to reach. An uncommitted rendezvous value moves to `dropped`, which the caller releases
- * once the channel is consistent: its destructor may use the channel. */
+/* Closes the channel once; the first reason stays (channel.c:521-586). A reserved receiver stays queued:
+ * its value is still here and its recv() takes it. Each other waiter gets an exception of its own, since
+ * the waker chains a cancellation it finds queued under the one it is given (S9-channel.md 8, item 15).
+ * The walks go from the tail and reread the queue's end at each step: a Future freed while another is
+ * rejected (PHP's collector, a destructor) leaves the receivers' queue from under the walk, and a removal
+ * only moves records down, so none the walk has yet to reach is skipped. An uncommitted
+ * rendezvous value moves to `dropped`, which the caller releases once the channel is consistent: its
+ * destructor may use the channel. */
 static void channel_close(async_channel_t *channel, const async_channel_close_reason_t reason, zval *dropped)
 {
 	if (channel_is_closed(channel)) {
@@ -338,11 +405,18 @@ static void channel_close(async_channel_t *channel, const async_channel_close_re
 	channel->close_reason = reason;
 	channel->base.flags |= ASYNC_EVENT_F_CLOSED;
 
-	zend_object *const exception = channel_exception_new(reason);
+	channel->close_exception = channel_exception_new(reason);
+
 	uint32_t index = channel->receivers.length;
 
 	while (index > 0) {
 		index--;
+
+		if (UNEXPECTED(index >= channel->receivers.length)) {
+			index = channel->receivers.length;
+			continue;
+		}
+
 		async_coroutine_event_callback_t *const record = channel->receivers.records[index];
 
 		if (record->event_callback.flags & CHANNEL_RECORD_F_RESERVED) {
@@ -350,20 +424,32 @@ static void channel_close(async_channel_t *channel, const async_channel_close_re
 		}
 
 		channel_queue_remove_at(&channel->receivers, index);
-		channel_record_wake(record, exception);
+
+		if (UNEXPECTED(channel_record_is_future(record))) {
+			record->event = NULL;
+			/* Disposes the waiter. */
+			channel_future_reject(CHANNEL_FUTURE_WAITER_OF(record, queue_record)->future, reason);
+		} else {
+			channel_record_wake(record, channel_exception_new(reason));
+		}
 	}
 
-	index = channel->senders.length;
+	while (channel->senders.length > 0) {
+		const uint32_t last = channel->senders.length - 1;
+		async_coroutine_event_callback_t *const record = channel->senders.records[last];
 
-	while (index > 0) {
-		index--;
-		async_coroutine_event_callback_t *const record = channel->senders.records[index];
-
-		channel_queue_remove_at(&channel->senders, index);
-		channel_record_wake(record, exception);
+		channel_queue_remove_at(&channel->senders, last);
+		channel_record_wake(record, channel_exception_new(reason));
 	}
 
-	OBJ_RELEASE(exception);
+#ifdef TRUE_ASYNC_TEST_HOOKS
+	async_collector_check_records_wake(&channel->base.callbacks, NULL);
+#endif
+	async_callbacks_notify(
+			(async_awaitable_t *) &channel->base, &channel->base.callbacks, NULL, channel->close_exception);
+	/* A closed channel takes no record, and one that a throwing callback left behind wakes here and reads
+	 * the outcome. */
+	async_callbacks_free((async_awaitable_t *) &channel->base, &channel->base.callbacks);
 	channel_withdraw_rendezvous_value(channel, dropped);
 }
 
@@ -563,8 +649,9 @@ static bool channel_put(async_channel_t *channel, const zval *value)
 		return false;
 	}
 
-	/* The woken receiver has not taken the value yet: a close keeps it for that receiver. */
-	channel->rendezvous_committed = true;
+	/* A woken receiver has not taken the value yet, and a close keeps it for that receiver; a Future took
+	 * it already (channel.c:1146-1151). */
+	channel->rendezvous_committed = channel->rendezvous_has_value;
 
 	return true;
 }
@@ -597,8 +684,9 @@ static void channel_send(async_channel_t *channel, const zval *value, async_awai
 	}
 }
 
-/* TrueAsync's recv() loop (channel.c:1209-1245). */
-static void channel_recv(async_channel_t *channel, zval *return_value, async_awaitable_t *const token)
+/* TrueAsync's recv() loop (channel.c:1209-1245) and its iterator's (974-1012): false with nothing thrown
+ * once the channel is closed and empty, false with an exception when the wait failed. */
+static bool channel_receive(async_channel_t *channel, zval *result, async_awaitable_t *const token)
 {
 	bool has_reservation = false;
 
@@ -606,20 +694,19 @@ static void channel_recv(async_channel_t *channel, zval *return_value, async_awa
 		if (has_reservation || channel_has_free_value(channel)) {
 			ZEND_ASSERT(channel_count(channel) > 0 && "a reservation outlived its value");
 
-			channel_take_value(channel, return_value);
+			channel_take_value(channel, result);
 			channel_wake_sender(channel);
-			return;
+			return true;
 		}
 
 		if (UNEXPECTED(channel_is_closed(channel))) {
-			channel_throw_closed(channel);
-			return;
+			return false;
 		}
 
 		has_reservation = channel_wait(channel, token, 0);
 
 		if (UNEXPECTED(EG(exception) != NULL)) {
-			return;
+			return false;
 		}
 	}
 }
@@ -655,6 +742,207 @@ static void channel_token_release(async_awaitable_t *const token)
 }
 
 ///////////////////////////////////////////////////////////////////
+/// recvAsync() Futures
+///////////////////////////////////////////////////////////////////
+
+/* The Future completed or went: the waiter leaves the queue unless the channel took it out first or
+ * went before it (channel.c:297-320). */
+static void channel_future_waiter_dispose(async_event_callback_t *callback, async_awaitable_t *target)
+{
+	(void) target;
+
+	channel_future_waiter_t *const waiter = CHANNEL_FUTURE_WAITER_OF(callback, on_future);
+	async_channel_t *const channel = (async_channel_t *) waiter->queue_record.event;
+
+	if (channel != NULL) {
+		channel_queue_remove(&channel->receivers, &waiter->queue_record);
+	}
+
+	efree(waiter);
+}
+
+/* Queues a waiter for the pending `future`, which the next free value completes. */
+static void channel_future_wait(async_channel_t *channel, async_future_event_t *future)
+{
+	channel_queue_make_room(&channel->receivers);
+	async_callbacks_reserve(&future->base.callbacks, 1);
+
+	channel_future_waiter_t *const waiter = emalloc(sizeof(channel_future_waiter_t));
+
+	waiter->queue_record.event_callback.flags = 0;
+	waiter->queue_record.event_callback.callback = NULL;
+	waiter->queue_record.event_callback.kind = NULL;
+	waiter->queue_record.coroutine = NULL;
+	waiter->queue_record.event = (async_awaitable_t *) &channel->base;
+	waiter->future = future;
+
+	waiter->on_future.flags = 0;
+	waiter->on_future.callback = async_callback_ignore;
+	waiter->on_future.dispose = channel_future_waiter_dispose;
+
+	async_callbacks_push_reserved(&future->base.callbacks, &waiter->on_future);
+	channel_queue_push(&channel->receivers, &waiter->queue_record);
+}
+
+zend_object *async_channel_of_future_waiter(const async_event_callback_t *subscriber)
+{
+	/* A wait record's union holds its kind, not a dispose. */
+	if (EXPECTED((subscriber->flags & ASYNC_CALLBACK_F_RECORD) ||
+				 subscriber->dispose != channel_future_waiter_dispose)) {
+		return NULL;
+	}
+
+	async_channel_t *const channel =
+			(async_channel_t *) CHANNEL_FUTURE_WAITER_OF(subscriber, on_future)->queue_record.event;
+
+	return channel != NULL ? &channel->std : NULL;
+}
+
+/* Detaches the waiters of Futures that outlive the channel: their dispose must not reach a freed queue.
+ * They stay pending, as the channel's destructor did not run to reject them (after a fatal error;
+ * S9-channel.md 8, item 8). */
+static void channel_future_waiters_detach(async_channel_t *channel)
+{
+	for (uint32_t i = 0; i < channel->receivers.length; i++) {
+		async_coroutine_event_callback_t *const record = channel->receivers.records[i];
+
+		ZEND_ASSERT(channel_record_is_future(record) &&
+					"a parked coroutine holds its channel through its frame");
+		record->event = NULL;
+	}
+
+	channel->receivers.length = 0;
+}
+
+///////////////////////////////////////////////////////////////////
+/// The iterator
+///////////////////////////////////////////////////////////////////
+
+/* foreach over a channel receives as recv() (channel.c:943-1061); `data` holds the channel. */
+typedef struct
+{
+	zend_object_iterator iterator;
+	zval current; /* UNDEF before the first value and after the last */
+	bool started;
+} channel_iterator_t;
+
+static void channel_iterator_dtor(zend_object_iterator *zend_iterator)
+{
+	channel_iterator_t *const iterator = (channel_iterator_t *) zend_iterator;
+
+	zval_ptr_dtor(&iterator->current);
+	zval_ptr_dtor(&zend_iterator->data);
+}
+
+static zend_result channel_iterator_valid(zend_object_iterator *zend_iterator)
+{
+	return Z_ISUNDEF(((channel_iterator_t *) zend_iterator)->current) ? FAILURE : SUCCESS;
+}
+
+static zval *channel_iterator_current(zend_object_iterator *zend_iterator)
+{
+	return &((channel_iterator_t *) zend_iterator)->current;
+}
+
+static void channel_iterator_key(zend_object_iterator *zend_iterator, zval *key)
+{
+	(void) zend_iterator;
+
+	ZVAL_NULL(key);
+}
+
+/* Whether the loop ends quietly on the pending exception: an explicit close() is how a consumer is told
+ * the values are over, while any other close and a cancellation the close found pending propagate. */
+static bool channel_iterator_ends_quietly(const async_channel_t *channel)
+{
+	zend_object *const exception = EG(exception);
+
+	if (exception->ce != async_ce_channel_exception || channel->close_reason != ASYNC_CHANNEL_CLOSE_EXPLICIT) {
+		return false;
+	}
+
+	zval previous_storage;
+	const zval *const previous =
+			zend_read_property_ex(zend_ce_exception, exception, ZSTR_KNOWN(ZEND_STR_PREVIOUS), true, &previous_storage);
+
+	return Z_TYPE_P(previous) == IS_NULL;
+}
+
+static void channel_iterator_move_forward(zend_object_iterator *zend_iterator)
+{
+	channel_iterator_t *const iterator = (channel_iterator_t *) zend_iterator;
+	async_channel_t *const channel = channel_from_object(Z_OBJ(zend_iterator->data));
+
+	zval_ptr_dtor(&iterator->current);
+	ZVAL_UNDEF(&iterator->current);
+
+	if (UNEXPECTED(async_throw_if_unavailable())) {
+		return;
+	}
+
+	if (EXPECTED(channel_receive(channel, &iterator->current, NULL))) {
+		return;
+	}
+
+	if (EG(exception) != NULL && channel_iterator_ends_quietly(channel)) {
+		zend_clear_exception();
+	}
+}
+
+static HashTable *channel_iterator_gc(zend_object_iterator *zend_iterator, zval **table, int *num)
+{
+	channel_iterator_t *const iterator = (channel_iterator_t *) zend_iterator;
+	zend_get_gc_buffer *const gc_buffer = zend_get_gc_buffer_create();
+
+	zend_get_gc_buffer_add_zval(gc_buffer, &zend_iterator->data);
+	zend_get_gc_buffer_add_zval(gc_buffer, &iterator->current);
+	zend_get_gc_buffer_use(gc_buffer, table, num);
+
+	return NULL;
+}
+
+/* Starts the loop once: a second foreach over the same iterator goes on where the first stopped. */
+static void channel_iterator_rewind(zend_object_iterator *zend_iterator)
+{
+	channel_iterator_t *const iterator = (channel_iterator_t *) zend_iterator;
+
+	if (!iterator->started) {
+		iterator->started = true;
+		channel_iterator_move_forward(zend_iterator);
+	}
+}
+
+static const zend_object_iterator_funcs channel_iterator_funcs = {
+	.dtor = channel_iterator_dtor,
+	.valid = channel_iterator_valid,
+	.get_current_data = channel_iterator_current,
+	.get_current_key = channel_iterator_key,
+	.move_forward = channel_iterator_move_forward,
+	.rewind = channel_iterator_rewind,
+	.get_gc = channel_iterator_gc,
+};
+
+static zend_object_iterator *channel_get_iterator(zend_class_entry *class_entry, zval *object, int by_ref)
+{
+	(void) class_entry;
+
+	if (UNEXPECTED(by_ref)) {
+		zend_throw_error(NULL, "Cannot iterate channel by reference");
+		return NULL;
+	}
+
+	channel_iterator_t *const iterator = emalloc(sizeof(channel_iterator_t));
+
+	zend_iterator_init(&iterator->iterator);
+	iterator->iterator.funcs = &channel_iterator_funcs;
+	ZVAL_OBJ_COPY(&iterator->iterator.data, Z_OBJ_P(object));
+	ZVAL_UNDEF(&iterator->current);
+	iterator->started = false;
+
+	return &iterator->iterator;
+}
+
+///////////////////////////////////////////////////////////////////
 /// Objects
 ///////////////////////////////////////////////////////////////////
 
@@ -683,10 +971,16 @@ static void channel_object_free(zend_object *object)
 {
 	async_channel_t *const channel = channel_from_object(object);
 
+	channel_future_waiters_detach(channel);
+	async_callbacks_free((async_awaitable_t *) &channel->base, &channel->base.callbacks);
 	channel_queue_free(&channel->receivers);
 	channel_queue_free(&channel->senders);
 	zval_circular_buffer_dtor(&channel->buffer);
 	zval_ptr_dtor(&channel->rendezvous_value);
+
+	if (EXPECTED(channel->close_exception != NULL)) {
+		OBJ_RELEASE(channel->close_exception);
+	}
 
 	zend_object_std_dtor(object);
 }
@@ -701,6 +995,11 @@ static HashTable *channel_object_gc(zend_object *object, zval **table, int *num)
 	}
 
 	zend_get_gc_buffer_add_zval(gc_buffer, &channel->rendezvous_value);
+
+	if (UNEXPECTED(channel->close_exception != NULL)) {
+		zend_get_gc_buffer_add_obj(gc_buffer, channel->close_exception);
+	}
+
 	zend_get_gc_buffer_use(gc_buffer, table, num);
 
 	return NULL;
@@ -808,15 +1107,35 @@ ZEND_METHOD(Async_Channel, recv)
 		RETURN_THROWS();
 	}
 
-	channel_recv(THIS_CHANNEL, return_value, token);
+	async_channel_t *const channel = THIS_CHANNEL;
+
+	if (UNEXPECTED(!channel_receive(channel, return_value, token) && EG(exception) == NULL)) {
+		channel_throw_closed(channel);
+	}
+
 	channel_token_release(token);
 }
 
+/* A Future of the next free value: completed at once with one, failed on a closed channel, else
+ * pending in the receivers' queue (channel.c:1247-1292). */
 ZEND_METHOD(Async_Channel, recvAsync)
 {
 	ZEND_PARSE_PARAMETERS_NONE();
 
-	zend_throw_error(NULL, "Async\\Channel::recvAsync() is not implemented yet");
+	async_channel_t *const channel = THIS_CHANNEL;
+	async_future_event_t *future;
+	zend_object *const future_object = async_future_new_pending(&future);
+
+	if (channel_has_free_value(channel)) {
+		channel_future_give_value(channel, future);
+		channel_wake_sender(channel);
+	} else if (channel_is_closed(channel)) {
+		channel_future_reject(future, channel->close_reason);
+	} else {
+		channel_future_wait(channel, future);
+	}
+
+	RETURN_OBJ(future_object);
 }
 
 ZEND_METHOD(Async_Channel, close)
@@ -861,11 +1180,13 @@ ZEND_METHOD(Async_Channel, isFull)
 	RETURN_BOOL(channel_free_space(THIS_CHANNEL) == 0);
 }
 
+/* An \Iterator over the same handler; TrueAsync's returns its raw wrapper and fails its own return
+ * type (S9-channel.md 8, item 5). */
 ZEND_METHOD(Async_Channel, getIterator)
 {
 	ZEND_PARSE_PARAMETERS_NONE();
 
-	zend_throw_error(NULL, "Async\\Channel::getIterator() is not implemented yet");
+	zend_create_internal_iterator_zval(return_value, ZEND_THIS);
 }
 
 void async_register_channel_ce(void)
@@ -874,6 +1195,7 @@ void async_register_channel_ce(void)
 	async_ce_channel_exception = register_class_Async_ChannelException(async_ce_async_exception);
 	async_ce_channel = register_class_Async_Channel(async_ce_awaitable, zend_ce_aggregate, zend_ce_countable);
 	async_ce_channel->create_object = channel_object_create;
+	async_ce_channel->get_iterator = channel_get_iterator;
 	async_ce_channel->default_object_handlers = &channel_handlers;
 
 	memcpy(&channel_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));

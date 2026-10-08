@@ -658,15 +658,6 @@ signal_wait_on_token(async_awaitable_t *target, async_event_callback_t *callback
 	OBJ_RELEASE(token_error);
 }
 
-static void
-signal_wait_on_future(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
-{
-	(void) target;
-	(void) callback;
-	(void) result;
-	(void) exception;
-}
-
 static void signal_token_release(async_awaitable_t *token)
 {
 	if (ASYNC_AWAITABLE_IS_TIMEOUT(token)) {
@@ -734,7 +725,7 @@ static zend_object *signal_wait_new(async_signal_watch_t *watch, async_awaitable
 	async_callbacks_push_reserved(&watch->base.callbacks, &wait->on_signal);
 
 	wait->on_future.flags = 0;
-	wait->on_future.callback = signal_wait_on_future;
+	wait->on_future.callback = async_callback_ignore;
 	wait->on_future.dispose = signal_wait_leave;
 	async_callbacks_reserve(&future->base.callbacks, 1);
 	async_callbacks_push_reserved(&future->base.callbacks, &wait->on_future);

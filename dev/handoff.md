@@ -488,6 +488,22 @@ runs again, and `async_wait_end()` aborts a stale one. 63 reference tests pass; 
 (`recvAsync()`, `foreach`, `await_*`; until then those throw and `async_await_awaitable_of()` refuses a
 channel), 16 for S9.19 (timers, deadlock close, owner scope, collector). Next is S9.18.
 
+S9.18 done 2026-10-08: `recvAsync()`, `foreach`/`getIterator()` and the channel as an `await_*` item
+and token. A pending `recvAsync()` Future is a `channel_future_waiter_t` in the receivers' queue: a
+record with no coroutine (`channel_record_is_future()`) plus a subscriber in the Future's event whose
+dispose frees it; a channel freed first detaches them (`channel_future_waiters_detach()`). `close()`
+gives each waiter a `ChannelException` of its own and keeps `close_exception` as the channel's outcome
+for `await_*` (DECISIONS 2026-10-08; Edmond's answer recorded there). `future.c` now frees a dying
+event's subscribers before any PHP code of its release runs (`channel/108`). The collector adds an
+edge from a channel to each Future event its queue holds (`async_collector_report_event_source()`,
+from the Future's reporter), so their awaiters are live while the channel is (`channel/112`); S9.19 keeps the CHANNEL kind's
+`collector_target`, and once a channel's timers close it, a pending `recvAsync()` Future on a timed
+channel needs that timer reported as its outside source too (the third Critic of S9.18). A `foreach` parked in its first receive (`rewind`, before the engine
+stores the iterator) holds the channel through an iterator no frame reports: S9.19's CHANNEL
+`collector_target` must count it, or such a consumer is never found (the last Critic of S9.18). The core's
+`InternalIterator` has no `get_gc`, so a cycle through a held channel iterator is not collected (note
+section 4). Next is S9.19: timers, the close at the global deadlock, the owner scope, the collector.
+
 ## S10
 
 - S10.1 closed 2026-10-08: `dev/plans/S10.md` approved by Edmond (17:40) except output buffers, which

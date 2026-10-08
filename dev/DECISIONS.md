@@ -1788,3 +1788,11 @@ stack options were shown with the code).
   SKIPIF with `@socket_create()`, and their lines take `skip-on:*(no-AF_INET6)`. Why: without IPv6
   the probe's warning comes before "skip" and run-tests reports BORK, and the reference's `CI_NO_IPV6`
   never reaches a test through `tools/test.py` (the Critic of S10.2).
+- 2026-10-08 S9.18: `close()` wakes each waiting coroutine and rejects each pending `recvAsync()` Future
+  with a `ChannelException` of its own; `close_exception`, the channel's outcome as an Awaitable, goes
+  only to the `await_*` items and tokens. Why: the waker chains a cancellation already queued for the
+  waiter under the error it is given, and on one shared object, as TrueAsync's, that cancellation showed
+  as `previous` for every other waiter and the outcome (`channel/103`). Edmond approved it on 2026-10-08.
+- 2026-10-08 S9.18: `foreach` over a channel ends quietly on an explicit `close()` only when the
+  `ChannelException` carries no previous, so a cancellation queued before the close propagates
+  (`channel/104`), as `dev/plans/S9-channel.md` section 4 states; TrueAsync's iterator clears it.

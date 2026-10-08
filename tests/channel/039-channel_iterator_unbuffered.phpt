@@ -1,7 +1,5 @@
 --TEST--
 Channel: foreach on unbuffered (rendezvous) channel reads directly from the rendezvous slot
---XFAIL--
-Not implemented yet: S9.18 of dev/PLAN.md
 --FILE--
 <?php
 

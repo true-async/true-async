@@ -71,33 +71,60 @@ ZEND_END_MODULE_GLOBALS(true_async)
 
 ZEND_EXTERN_MODULE_GLOBALS(true_async)
 
-/* Implemented only by the classes of this extension: a Coroutine or a Future (src/true_async.c). */
+/* Implemented only by the classes of this extension: a Coroutine, a Future or a Channel (src/true_async.c). */
 extern zend_class_entry *async_ce_awaitable;
 extern zend_class_entry *async_ce_completable;
 #define ASYNC_G(v) ZEND_MODULE_GLOBALS_ACCESSOR(true_async, v)
 
+/* Each returns true once it has thrown the Error. */
+
 /* Refuses while no scheduler runs (php -a launches none; after the request's last drain the core
  * turns async off), as TrueAsync. */
+static zend_always_inline bool async_throw_if_async_off(void)
+{
+	if (UNEXPECTED(!ZEND_ASYNC_IS_ACTIVE)) {
+		zend_throw_error(NULL, "The operation cannot be executed while async is off");
+		return true;
+	}
+
+	return false;
+}
+
+static zend_always_inline bool async_throw_if_scheduler_context(void)
+{
+	if (UNEXPECTED(ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) {
+		zend_throw_error(NULL, "The operation cannot be executed in the scheduler context");
+		return true;
+	}
+
+	return false;
+}
+
+/* Both refusals, for a caller outside a ZEND_FUNCTION, where RETURN_THROWS() does not apply. */
+static zend_always_inline bool async_throw_if_unavailable(void)
+{
+	return async_throw_if_async_off() || async_throw_if_scheduler_context();
+}
+
 #define THROW_IF_ASYNC_OFF() \
 	do { \
-		if (UNEXPECTED(!ZEND_ASYNC_IS_ACTIVE)) { \
-			zend_throw_error(NULL, "The operation cannot be executed while async is off"); \
+		if (UNEXPECTED(async_throw_if_async_off())) { \
 			RETURN_THROWS(); \
 		} \
 	} while (0)
 
 #define THROW_IF_SCHEDULER_CONTEXT() \
 	do { \
-		if (UNEXPECTED(ZEND_ASYNC_IN_SCHEDULER_CONTEXT)) { \
-			zend_throw_error(NULL, "The operation cannot be executed in the scheduler context"); \
+		if (UNEXPECTED(async_throw_if_scheduler_context())) { \
 			RETURN_THROWS(); \
 		} \
 	} while (0)
 
 #define THROW_IF_UNAVAILABLE() \
 	do { \
-		THROW_IF_ASYNC_OFF(); \
-		THROW_IF_SCHEDULER_CONTEXT(); \
+		if (UNEXPECTED(async_throw_if_unavailable())) { \
+			RETURN_THROWS(); \
+		} \
 	} while (0)
 
 #if defined(ZTS) && defined(COMPILE_DL_TRUE_ASYNC)

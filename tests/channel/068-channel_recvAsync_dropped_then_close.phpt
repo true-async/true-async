@@ -1,7 +1,5 @@
 --TEST--
 Channel: recvAsync() Future dropped, then channel closes — close path skips freed waiter
---XFAIL--
-Not implemented yet: S9.18 of dev/PLAN.md
 --FILE--
 <?php
 

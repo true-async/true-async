@@ -1,7 +1,5 @@
 --TEST--
 Channel: recvAsync on closed empty channel returns rejected future
---XFAIL--
-Not implemented yet: S9.18 of dev/PLAN.md
 --FILE--
 <?php
 

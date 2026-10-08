@@ -18,6 +18,7 @@
 #include "php_true_async.h"
 #include "Zend/zend_exceptions.h"
 #include "await.h"
+#include "channel.h"
 #include "collector.h"
 #include "coroutine.h"
 #include "exceptions.h"
@@ -211,6 +212,9 @@ void async_future_event_release(async_future_event_t *future)
 		return;
 	}
 
+	/* First, so that the PHP code run below (the release of the outcome, a child's free) finds no
+	 * subscriber that could still complete the dying event, such as a recvAsync() waiter. */
+	async_callbacks_free((async_awaitable_t *) future, &future->base.callbacks);
 	future_event_report_unobserved(future);
 
 	zval_ptr_dtor(&future->result);
@@ -228,7 +232,6 @@ void async_future_event_release(async_future_event_t *future)
 	}
 
 	future_chain_free(&future->chain);
-	async_callbacks_free((async_awaitable_t *) future, &future->base.callbacks);
 	efree(future);
 }
 
@@ -268,6 +271,16 @@ static void future_event_collector_references(async_event_t *event, async_collec
 
 	for (uint32_t i = 0; i < future->chain.length; i++) {
 		async_collector_report_object(collector, future->chain.children[i]);
+	}
+
+	async_event_callback_t *const *const subscribers = async_callbacks_slots(&future->base.callbacks);
+
+	for (uint32_t i = 0; i < future->base.callbacks.length; i++) {
+		zend_object *const channel = async_channel_of_future_waiter(subscribers[i]);
+
+		if (UNEXPECTED(channel != NULL)) {
+			async_collector_report_event_source(collector, channel, event, future_event_collector_references);
+		}
 	}
 }
 

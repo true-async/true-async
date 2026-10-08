@@ -1,7 +1,5 @@
 --TEST--
 Channel: recvAsync with data returns completed future
---XFAIL--
-Not implemented yet: S9.18 of dev/PLAN.md
 --FILE--
 <?php
 

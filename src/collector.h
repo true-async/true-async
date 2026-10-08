@@ -68,6 +68,13 @@ void async_collector_report_live_event(async_collector_t *collector,
 									   async_event_t *event,
 									   async_collector_event_references_t references);
 
+/* For an event's reporter: whoever holds `source` can complete the event, which `source` does not hold
+ * (a channel and its queued recvAsync() Future). The event is live while `source` is. */
+void async_collector_report_event_source(async_collector_t *collector,
+										 zend_object *source,
+										 async_event_t *event,
+										 async_collector_event_references_t references);
+
 /* For a reporter of what a node owns: one reference each. */
 void async_collector_report_object(async_collector_t *collector, zend_object *object);
 void async_collector_report_zval(async_collector_t *collector, zval *value);

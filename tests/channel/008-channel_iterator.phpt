@@ -1,7 +1,5 @@
 --TEST--
 Channel: iterator - foreach support
---XFAIL--
-Not implemented yet: S9.18 of dev/PLAN.md
 --FILE--
 <?php
 

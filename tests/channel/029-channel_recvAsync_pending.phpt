@@ -1,7 +1,5 @@
 --TEST--
 Channel: recvAsync on empty channel returns pending future that resolves when data arrives
---XFAIL--
-Not implemented yet: S9.18 of dev/PLAN.md
 --FILE--
 <?php
 

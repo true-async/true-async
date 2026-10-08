@@ -117,7 +117,8 @@ RESERVED after its suspend and spends or hands on the reservation, as `channel_w
   before it runs does not fail a message the receiver holds (`channel/082`), and the same call grants the
   freed slot to the oldest sender still queued (`channel/085`). A close takes every record out of the
   queues but a reserved receiver's, whose value is still there and which takes it, and enqueues each with
-  the close's `ChannelException` (`channel.c:521-558`); a reserved sender is failed too, and its frame
+  the close's `ChannelException` (`channel.c:521-558`), as built in S9.18 one of its own per waiter
+  (section 8, item 15); a reserved sender is failed too, and its frame
   finds the reservation unspent and, the channel being closed, hands nothing on. A close that reaches a
   coroutine a cancel already queued puts its exception on top of the cancellation, which
   `async_scheduler_enqueue()` does for a queued coroutine (`src/scheduler.c:1435-1440`; the stacking,
@@ -192,7 +193,7 @@ of each of N waiters costs O(N^2) moves in all, which S9.21 measures.
 
 **`recvAsync()`** returns a Future: completed at once with a free value, failed at once on a closed channel,
 else pending in the receivers' queue (`channel.c:1247-1292`). The queue entry is a small heap waiter, as
-TrueAsync's Future payload (`channel.c:118-139`), holding the future event borrowed, and a subscriber in that
+TrueAsync's Future payload (`channel.c:110-139`), holding the future event borrowed, and a subscriber in that
 event's vector whose `dispose` takes the waiter out of the queue when the Future goes before the channel
 serves it: the pattern of S6's `signal()` Future (`src/os_signal.c:78-85`, `680-740`). Every completion of
 the Future disposes that subscriber too (`async_callbacks_free()` at `src/future.c:663`), so the wake and
@@ -228,6 +229,39 @@ and `await_record_report_held_target()` (`src/await.c:275-287`), which reports a
 with the same function as CHANNEL's `collector_target` (section 6), not as a Future. The tokens of
 `delay()`, `Future::await()` and `signal()` are `Completable` (`src/true_async.c:314`, `src/future.c:1305`,
 `src/os_signal.c:767`), which a channel is not.
+
+**As built (S9.18).** The Future waiter (`channel_future_waiter_t`) is a queue entry with no coroutine
+(`channel_record_is_future()`), as TrueAsync's waiter with `future` set; `channel_wake_receiver()` serves it in
+place and the close rejects it, each taking it out of the queue first. A rendezvous `send()` that a
+Future served leaves the slot empty and uncommitted, as TrueAsync's `rendezvous_committed =
+rendezvous_has_value` (`channel.c:1146-1151`). `channel_receive()` is the one receive loop of `recv()`
+and the iterator: a closed, empty channel ends it with nothing thrown, so `recv()` throws there and the
+loop ends, which is TrueAsync's iterator (`channel.c:992-995`) for a channel already closed for any
+reason. The iterator refuses in scheduler context and once async is off at each step, as `recv()` does
+(item 14). The close keeps its exception as `close_exception`, the channel's outcome for the `await_*`
+code, notifies the channel's vector with it and frees the vector, as a Future's completion does
+(`src/future.c:659-663`). Until S9.19 a channel item or token reports to the collector as an outside
+source, the same as the CHANNEL kind without its `collector_target`. The walk of a Channel object's
+queued Futures (section 6) came with S9.18 rather than S9.19, since `recvAsync()` made a coroutine
+awaiting one found never to wake while a sleeping producer held the channel (the re-check Critic,
+`channel/112`). The edge starts from the Future's side, as a scope's completion sources do: a Future
+event's reporter finds its channel waiter among its subscribers (`async_channel_of_future_waiter()`)
+and adds an edge from the channel object to the event (`async_collector_report_event_source()`),
+counting no reference, so a live channel makes the event live even when the walk meets the channel
+only there, or the channel is weakly referenced. The close's walks reread the queue's end at each
+step, since a Future freed while another is rejected (PHP's collector, a destructor) leaves the queue
+from under them. A Future event's last release now
+frees its subscribers first, before the unobserved report and the release of its `map()` children, whose
+destructors run PHP code: a dying Future's waiter was still queued there, and a destructor that sent on
+the channel completed the freed event (the S9.18 Critic, `channel/108`); TrueAsync's waiter leaves the
+queue first too, in its dispose override (`channel.c:297-320`). `getIterator()` cannot make a channel
+holding its own iterator collectable: the core's `InternalIterator` has no `get_gc`
+(`Zend/zend_interfaces.c`). `foreach`'s own iterator reports the channel and its current value
+(`channel_iterator_gc()`), so the collector counts a channel an open `foreach` holds (`channel/112`),
+except while the loop's first receive parks in `rewind`, before the engine stores the iterator (and in
+`iterator_to_array()`): that wait is S9.19's CHANNEL kind, whose `collector_target` must count it;
+one a `getIterator()` object holds looks held from outside, so its waiters are kept, never wrongly
+reported.
 
 ## 5. Closing and the deadlock protections
 
@@ -355,7 +389,7 @@ handed out, which needs the channel's subscriber to be recognisable in the scope
 waiter on a channel bound to a scope whose live member later throws can get a "can never wake" warning, the
 case S7 accepted. A channel item or token of `await_*` reports through the same function. A Channel object is read through its
 `get_gc` and the future events of its queue, as `collector_object_references()` reads a Future's
-(`src/collector.c:597-615`): a coroutine awaiting a `recvAsync()` Future is live while the channel is. The
+(`src/collector.c:612-653`): a coroutine awaiting a `recvAsync()` Future is live while the channel is. The
 global deadlock's close of soft channels is one of the routes S7 leaves out (`dev/plans/S7.md` 2), so it
 marks the waiters it wakes handed out before it closes, as the route's hand-out of a scope's subtree
 (`src/collector.h:110-115`). This is mostly moot, since every registered channel has an armed soft timer, which the walk counts as
@@ -378,9 +412,9 @@ holds waits until the global deadlock (probed `h8.php`).
   channel, which `Scope::awaitCompletion()` and `awaitAfterCancellation()` would otherwise read as a future
   event; the channel's type bit comes with this refusal.
 - S9.18 `recvAsync()`, `foreach` and `getIterator()`, the channel as an `await_*` item and a token
-  (section 4).
+  (section 4); the close's own exception per waiter (section 8, item 15).
 - S9.19 The per-channel timers, the close at the global deadlock, the owner-scope binding and the close of
-  a completed or cancelled scope's channels (section 5), CHANNEL's `collector_target` and the walk of the queued Futures, S7's channel case (sections 5,
+  a completed or cancelled scope's channels (section 5), CHANNEL's `collector_target`, S7's channel case (sections 5,
   6).
 - S9.20 Layer review: the Critic over S9.17-S9.19, coverage of `src/channel.c`, Mull on the layer's diff,
   the fuzz oracle over 100 seeds of the layer's tests and `collector/`, the measurements of section 9.
@@ -421,7 +455,17 @@ holds waits until the global deadlock (probed `h8.php`).
     value would stay uncommitted in the slot for a receiver while `send()` throws; the reference leaves it
     there (`channel.c:688-690`, `1156-1160`).
 14. **`send()` and `recv()` refuse in scheduler context and once async is off even when they would not
-    wait** (section 2), as every wait of ours; the reference fails only an actual park.
+    wait** (section 2), as every wait of ours; the reference fails only an actual park. So does each step
+    of the iterator (S9.18).
+15. **The close wakes each waiter with a `ChannelException` of its own** (S9.18): the reference gives
+    every waiter and Future one object, and the waker of a waiter a cancel queued before the close chains
+    that cancellation under it (`async_coroutine_resume()`, `coroutine.c:811-815`; ours
+    `waker_apply_error()`), so every other waiter and the channel's outcome showed it as `previous`
+    (`channel/103`). One allocation per waiter, at the close only.
+16. **A cancellation queued before an explicit `close()` propagates out of `foreach`** (S9.18): the
+    iterator ends quietly only on a `ChannelException` of `EXPLICIT` without a previous; the reference
+    clears any `EXPLICIT` one and so drops the cancellation under it (`channel.c:999-1008`,
+    `channel/104`).
 
 Kept as TrueAsync and noted: a CHANNEL record linked from its wake until its frame takes it out, its queue
 membership TrueAsync's (an exception to our D26); the reservation rules and the arrival order with its
@@ -459,8 +503,14 @@ for S9.18 and 16 for S9.19. TrueAsync's `fuzzy-tests/` are not ported, as no fuz
   a `close()` from the coroutine that freed its slot; a dropped value whose destructor sends on the channel during a close; `send()` and `recv()`
   refused in scheduler context;
 - S9.18: `h11.php` (`getIterator()` iterates), `h4.php` (an `await_*` item, an `awaitCompletion()` token,
-  `await()` refused); 10 000 rounds of `await_any_or_fail([$channel->recvAsync(), timeout(1)])` with memory
-  flat; a pending `recvAsync()` Future at a fatal error's end, freed after the channel, on ASAN;
+  `await()` refused); 10 000 rounds of `await_any_or_fail([$channel->recvAsync()], timeout(1))` with memory
+  flat (a `Timeout` is a token, not an item); a pending `recvAsync()` Future at a fatal error's end, freed
+  after the channel, on ASAN. As built: `channel/099`-`109`, `111` and `112` (`100` the item, `111` the token), adding a close's exception per waiter (`103`),
+  a cancellation under an explicit close out of `foreach` (`104`), a cancelled pending Future leaving the
+  queue (`105`), a rendezvous `send()` served by a pending Future (`106`), `foreach` refused in
+  scheduler context (`107`), a dying Future's destructors sending on its channel (`108`) and a woken
+  receiver's reservation handed on to a Future (`109`), a `recvAsync()` awaiter live while another holds
+  the channel and found when only it does (`112`);
 - S9.19: `h1.php` (open after the scope's last coroutine ended), `h13.php` rewritten (the receiver outside
   the scope ends in the global deadlock), Sage's `f2a`-`f2d` (`dispose()`, `cancel()`, a `finally` handler,
   a parent's cancel of a completed scope close the channel), `f5` (a channel made in the cancelled global

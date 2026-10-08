@@ -41,7 +41,8 @@ typedef enum
 	ASYNC_CHANNEL_CLOSE_SCOPE_DISPOSED,
 } async_channel_close_reason_t;
 
-/* Parked senders or receivers in arrival order: the CHANNEL records of their coroutines, borrowed. */
+/* Parked senders or receivers in arrival order: the CHANNEL records of their coroutines, borrowed, and
+ * the queue entries of pending recvAsync() Futures. */
 typedef struct
 {
 	async_coroutine_event_callback_t **records;
@@ -59,7 +60,8 @@ typedef struct
 	bool rendezvous_committed; /* a receiver was woken for the slot's value: a close keeps it */
 	bool hard_timeouts;
 	async_channel_close_reason_t close_reason; /* valid once closed */
-	async_channel_queue_t receivers;
+	zend_object *close_exception;              /* once closed: the outcome of the channel as an Awaitable */
+	async_channel_queue_t receivers; /* coroutines and recvAsync() Futures */
 	async_channel_queue_t senders;
 	uint32_t reserved_receivers;    /* values promised to woken receivers that have not run yet */
 	uint32_t reserved_senders;      /* free slots promised to woken senders */
@@ -73,5 +75,8 @@ extern zend_class_entry *async_ce_channel_exception;
 extern zend_class_entry *async_ce_channel_close_reason;
 
 void async_register_channel_ce(void);
+/* The channel object whose queue holds the recvAsync() waiter `subscriber`, else NULL: for the collector
+ * (collector.h), whoever holds the channel can complete the waiter's Future. */
+zend_object *async_channel_of_future_waiter(const async_event_callback_t *subscriber);
 
 #endif /* TRUE_ASYNC_CHANNEL_H */

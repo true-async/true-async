@@ -371,6 +371,23 @@ static void collector_edge_add(async_collector_t *collector, const uint32_t node
 	collector->nodes[node].first_edge = collector->edge_count++;
 }
 
+void async_collector_report_event_source(async_collector_t *collector,
+										 zend_object *source,
+										 async_event_t *event,
+										 async_collector_event_references_t references)
+{
+	/* Once: the spread walks the event again. */
+	if (UNEXPECTED(collector->pass != COLLECTOR_PASS_COUNT)) {
+		return;
+	}
+
+	/* Apart: each lookup may move `nodes`. */
+	const uint32_t event_node = collector_event_node_of(collector, event, references);
+	const uint32_t source_node = collector_node_of(collector, (zend_refcounted *) source);
+
+	collector_edge_add(collector, source_node, event_node);
+}
+
 /* In the wake-edge pass: an edge from the target's node to the candidate whose records report. */
 static void collector_wake_edge_add(async_collector_t *collector, const uint32_t node)
 {

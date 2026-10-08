@@ -81,3 +81,6 @@ can see goes here; tests, tools and CI are in the git history.
   without waiting, and `close()` fails the waiting senders and receivers with a `ChannelException`
   naming the reason, while `recv()` still gets the values left.
   The buffer grows as values arrive, within `memory_limit` ([S9](dev/plans/S9-channel.md)).
+- `Async\Channel::recvAsync()` returns a `Future` of the next value; `foreach` and `getIterator()`
+  receive until the channel is closed, an explicit `close()` ending the loop quietly; a channel is an
+  `await_*` item and a cancellation token that completes when it closes ([S9](dev/plans/S9-channel.md)).

@@ -63,6 +63,14 @@ static zend_always_inline void callbacks_slot_update(async_event_callback_t **sl
 	}
 }
 
+void async_callback_ignore(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
+{
+	(void) target;
+	(void) callback;
+	(void) result;
+	(void) exception;
+}
+
 bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callback_t *callback)
 {
 	async_event_callback_t **slots = async_callbacks_slots(vector);

@@ -1,7 +1,5 @@
 --TEST--
 Channel: recvAsync() Future dropped before channel sends — channel does not write to freed memory
---XFAIL--
-Not implemented yet: S9.18 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -41,13 +41,6 @@ async_awaitable_t *async_await_awaitable_of(zend_object *object)
 		return NULL;
 	}
 
-	/* Until S9.18 the code that takes a reference to an awaitable or reads its outcome would treat a
-	 * channel as a future's event. */
-	if (UNEXPECTED(ASYNC_AWAITABLE_IS_CHANNEL(awaitable))) {
-		zend_throw_error(NULL, "Async\\Channel as an awaitable is not implemented yet");
-		return NULL;
-	}
-
 	return awaitable;
 }
 
@@ -55,6 +48,8 @@ void async_awaitable_addref(async_awaitable_t *awaitable)
 {
 	if (ASYNC_AWAITABLE_IS_COROUTINE(awaitable)) {
 		GC_ADDREF(&((async_coroutine_t *) awaitable)->std);
+	} else if (UNEXPECTED(ASYNC_AWAITABLE_IS_CHANNEL(awaitable))) {
+		GC_ADDREF(&((async_channel_t *) awaitable)->std);
 	} else {
 		((async_event_t *) awaitable)->ref_count++;
 	}
@@ -66,6 +61,8 @@ void async_awaitable_release(async_awaitable_t *awaitable)
 		OBJ_RELEASE(&((async_coroutine_t *) awaitable)->std);
 	} else if (ASYNC_AWAITABLE_IS_TIMEOUT(awaitable)) {
 		async_timeout_release((async_timeout_event_t *) awaitable);
+	} else if (UNEXPECTED(ASYNC_AWAITABLE_IS_CHANNEL(awaitable))) {
+		OBJ_RELEASE(&((async_channel_t *) awaitable)->std);
 	} else {
 		async_future_event_release((async_future_event_t *) awaitable);
 	}
@@ -103,12 +100,21 @@ static bool await_outcome(async_awaitable_t *awaitable, zval **result, zend_obje
 	}
 
 	if (ASYNC_AWAITABLE_IS_TIMEOUT(awaitable)) {
-		const async_timeout_event_t *timeout = (const async_timeout_event_t *) awaitable;
+		const async_timeout_event_t *const timeout = (const async_timeout_event_t *) awaitable;
 
 		*result = NULL;
 		*exception = timeout->exception;
 
 		return (timeout->base.flags & ASYNC_EVENT_F_CLOSED) != 0;
+	}
+
+	if (UNEXPECTED(ASYNC_AWAITABLE_IS_CHANNEL(awaitable))) {
+		const async_channel_t *const channel = (const async_channel_t *) awaitable;
+
+		*result = NULL;
+		*exception = channel->close_exception;
+
+		return (channel->base.flags & ASYNC_EVENT_F_CLOSED) != 0;
 	}
 
 	async_future_event_t *future = (async_future_event_t *) awaitable;
@@ -275,6 +281,10 @@ static zend_string *token_record_info(const async_coroutine_event_callback_t *re
 		return zend_string_init(ZEND_STRL("cancellation: timeout"), 0);
 	}
 
+	if (ASYNC_AWAITABLE_IS_CHANNEL(record->event)) {
+		return zend_string_init(ZEND_STRL("cancellation: channel"), 0);
+	}
+
 	return zend_string_init(ZEND_STRL("cancellation: future"), 0);
 }
 
@@ -288,7 +298,9 @@ static void await_record_report_held_target(const async_coroutine_event_callback
 
 	if (EXPECTED(ASYNC_AWAITABLE_IS_COROUTINE(target))) {
 		async_collector_report_target(collector, &((async_coroutine_t *) target)->std, true);
-	} else if (UNEXPECTED(ASYNC_AWAITABLE_IS_TIMEOUT(target))) {
+	} else if (UNEXPECTED(ASYNC_AWAITABLE_IS_TIMEOUT(target) || ASYNC_AWAITABLE_IS_CHANNEL(target))) {
+		/* A Timeout fires by itself; a channel counts as such a source until S9.19 gives CHANNEL a
+		 * collector_target. */
 		async_collector_report_outside(collector);
 	} else {
 		async_future_collector_target(collector, (async_future_event_t *) target);
@@ -603,6 +615,10 @@ static zend_string *await_record_info(const async_coroutine_event_callback_t *re
 		return zend_strpprintf(0, "await: coroutine #%u", ((const async_coroutine_t *) record->event)->std.handle);
 	}
 
+	if (ASYNC_AWAITABLE_IS_CHANNEL(record->event)) {
+		return zend_string_init(ZEND_STRL("await: channel"), 0);
+	}
+
 	return zend_string_init(ZEND_STRL("await: future"), 0);
 }
 
@@ -738,8 +754,10 @@ static async_awaitable_t *await_trigger_of(zval *item, const async_coroutine_t *
 		return NULL;
 	}
 
-	if (UNEXPECTED(Z_TYPE_P(item) != IS_OBJECT ||
-				   (Z_OBJCE_P(item) != async_ce_coroutine && Z_OBJCE_P(item) != async_ce_future))) {
+	const zend_class_entry *const item_class = Z_TYPE_P(item) == IS_OBJECT ? Z_OBJCE_P(item) : NULL;
+
+	if (UNEXPECTED(item_class != async_ce_coroutine && item_class != async_ce_future &&
+				   item_class != async_ce_channel)) {
 		zend_throw_exception(async_ce_async_exception, "Expected item to be an Async\\Awaitable object", 0);
 		return NULL;
 	}

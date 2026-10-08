@@ -1,7 +1,5 @@
 --TEST--
 Channel: foreach ends cleanly when the channel is closed while the consumer is parked
---XFAIL--
-Not implemented yet: S9.18 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -1,7 +1,5 @@
 --TEST--
 Channel: recvAsync pending future rejects when channel is closed
---XFAIL--
-Not implemented yet: S9.18 of dev/PLAN.md
 --FILE--
 <?php
 
