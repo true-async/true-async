@@ -1673,3 +1673,9 @@ stack options were shown with the code).
   scheduler/087-refused_core_coroutine_not_a_waiter.phpt,
   scheduler/103-deadlock_report_skips_refused_core_coroutine.phpt,
   scope/123-refused_finally_start_leaves_cancel_cascade_whole.phpt.
+- 2026-10-08 `io/080-append_empty_file.phpt` and `curl/064-stderr_file_reuse.phpt` (S6.txt,
+  `changed:2026-10-08`) use a file beside the test instead of a `tempnam()` name; the expected output
+  is unchanged. Why: on Windows `tempnam()` keeps three characters of the prefix and a 16-bit number
+  from the clock, and a name stays reserved only while its file exists; both tests deleted their file
+  and used the path again, so a parallel test could take the same name (`io/074` did, on Edmond's PC).
+  Reversible; the coordinator's call.
