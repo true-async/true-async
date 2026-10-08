@@ -1,7 +1,5 @@
 --TEST--
 Channel: foreach as the first async operation starts the scheduler instead of suspending a NULL coroutine
---XFAIL--
-Not implemented yet: S9.19 of dev/PLAN.md
 --FILE--
 <?php
 

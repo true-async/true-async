@@ -1,7 +1,5 @@
 --TEST--
 Channel: outer var keeps channel alive past scope death — operations throw, no UAF
---XFAIL--
-Not implemented yet: S9.19 of dev/PLAN.md
 --FILE--
 <?php
 

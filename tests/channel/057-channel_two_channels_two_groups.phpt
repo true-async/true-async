@@ -1,7 +1,5 @@
 --TEST--
 Channel: 2 channels + 2 coroutine groups (separate scopes), one scope dies, the other continues
---XFAIL--
-Not implemented yet: S9.19 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -504,7 +504,22 @@ channel needs that timer reported as its outside source too (the third Critic of
 stores the iterator) holds the channel through an iterator no frame reports: S9.19's CHANNEL
 `collector_target` must count it, or such a consumer is never found (the last Critic of S9.18). The core's
 `InternalIterator` has no `get_gc`, so a cycle through a held channel iterator is not collected (note
-section 4). Next is S9.19: timers, the close at the global deadlock, the owner scope, the collector.
+section 4).
+
+S9.19 done 2026-10-08: the channel's timer (`channel_timer_refresh()`, armed at a park, a wake and a
+wait's end; only the park's submit throws), the close of the soft-timer channels in
+`ASYNC_G(deadlock_channels)` before the DeadlockError (`async_channel_resolve_deadlocks()` from
+`scheduler_loop()`), the owner scope's subscriber (`owner_scope_callback`: a notify with an error, the
+completed branch's walk `scope_close_bound_channels()` and the scope's free close it; a completion does
+not) and the collector's channel reach node (`async_channel_collector_sources()`: an armed timer makes it
+live, the owner scope's closers reach it). The rolled-back value of those closes waits in
+`dropped_value`. The collector's frame walk counts `FE_RESET_R`'s operand, and a bound scope's reach
+counts the holders of its child scopes' objects. Own tests `channel/113`-`129`.
+Open for Edmond: the held close exception (S9.18) and a held child scope's channels at a completed
+parent's dispose (PLAN open questions). For S9.20: the fuzz oracle may flag a channel close run inside a
+scope's notify (scheduler context); the timer withdraw pattern now has four copies (timeout.c,
+scope.c, os_signal.c, channel.c); under steady traffic the timer runs from its first arming while any
+waiter starves, as TrueAsync's (the Critic). Next is S9.20, the layer review.
 
 ## S10
 

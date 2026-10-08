@@ -521,6 +521,12 @@ for S9.18 and 16 for S9.19. TrueAsync's `fuzzy-tests/` are not ported, as no fuz
   on debug and ASAN; a hard timer in a forked child; for the collector, a receiver on a channel only it holds found by
   `get_deadlocked_coroutines()`, and not found: a channel a running coroutine holds, an armed timer, a bound
   scope whose object a running coroutine holds, a `recvAsync()` Future awaited while the channel is held.
+  As built: `channel/113`-`128`: `113` `h1.php`, `114` `h13.php`, `115` `f2a`-`f2d`, `116` `f5`, `117` the
+  second `dispose()`, `118` `f7`, `119` item 11's parked receiver, `120` `h9.php`, `121` `h12.php`, `122`
+  and `123` the fatal error's end, `124` the forked child, `125` and `126` the collector (a `foreach` over
+  a new channel or a producer's return parked in its first receive, an aggregate's channel and
+  `iterator_to_array()` found), `127` the rolled-back value, `128` the Critic's Future left starving at a
+  reserved receiver's exit, `129` a cancelled scope's free waiting for a child scope's object.
 
 **Measurements** (S9.20, `dev/BENCHMARKS.md`), against the reference: B15, a rendezvous ping-pong of 100 000
 messages between two coroutines, instructions and allocations per message (D29's allocation, `dev/plans/S3.md`

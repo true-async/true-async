@@ -1,7 +1,5 @@
 --TEST--
 Channel: blocked sender (full buffer) when owner scope disposes — sender wakes with SCOPE_DISPOSED
---XFAIL--
-Not implemented yet: S9.19 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -1796,6 +1796,36 @@ stack options were shown with the code).
 - 2026-10-08 S9.18: `foreach` over a channel ends quietly on an explicit `close()` only when the
   `ChannelException` carries no previous, so a cancellation queued before the close propagates
   (`channel/104`), as `dev/plans/S9-channel.md` section 4 states; TrueAsync's iterator clears it.
+- 2026-10-08 S9.19: a channel's timer is armed at a park, a wake and a wait's end, as TrueAsync's
+  refresh, but only the park's submit may throw (its wait then ends before it parks); elsewhere the arm
+  takes the reactor's errno-returning submit (`async_io_event_try_submit()`,
+  `async_reactor_try_submit_own()`) and a failure leaves the channel without a timer until the next
+  refresh. Why: a wake or a wait's end comes after a value moved, where a pending Error failed a committed
+  `send()` or dropped the Future `recvAsync()` had just filled (the Code Reviewer of S9.19); TrueAsync's
+  start leaves its error pending at every refresh.
+- 2026-10-08 S9.19: `dropped_value` also takes the rendezvous value a timer's or the global deadlock's
+  close rolls back, not only the owner scope's (`dev/plans/S9-channel.md` section 3), and `free_obj`
+  releases it (`channel/127`). Why: the timer's fire and the scheduler's deadlock run in scheduler
+  context, where no destructor may run, as in the scope's walks.
+- 2026-10-08 S9.19: the collector's frame walk counts the TMP operand of a frame parked at
+  `FE_RESET_R`, which keeps it through a `rewind()` or `getIterator()` that suspends while
+  `zend_unfinished_execution_gc_ex()` leaves it out at that opline. Why: `foreach (new Channel(0) as $v)`
+  and `foreach (producer() as $v)` parked in their first receive were never found (`channel/125`). A user
+  `Iterator` whose `rewind()` parks stays a miss: the engine keeps its `zend_user_iterator` in a C local,
+  as it keeps the iterator of `f(...$channel)`, `[...$channel]` and `yield from $channel` (the re-check
+  Critic); a miss only hides a finding.
+- 2026-10-08 S9.19: for a channel bound to a cancelled scope or one without an object, the collector also
+  counts the holders of its child scopes' objects, recursively, as closers: the scope's disposal waits
+  for its last child scope, and releasing a child's object disposes it and then the scope, whose free
+  closes the channel (`scope_dispose()`).
+  Why: without it a receiver was reported never to wake and then woke with `SCOPE_DISPOSED`
+  (`channel/129`, the re-check Critic); `dev/plans/S9-channel.md` section 6 named only the subtree's
+  coroutines.
+- 2026-10-08 S9.19, reversible, not asked: the cancel or dispose of a completed scope closes only the
+  channels bound to that scope, not those of a child scope a held object keeps, since that branch reaches
+  no child, as TrueAsync's silent branch; a running parent's cancel cancels the child and so closes them.
+  Why: Edmond's rule names the channel's own scope; the other reading is in PLAN's open questions (the
+  Critic of S9.19).
 - 2026-10-08 S10.3a, signal masks during a watch (Edmond 19:22 «я бы шёл по малопу пути. пока вообще не
   трогать маску», 19:46 «ок сделай пока так»): `pcntl_sigprocmask()`'s `$old` stays the real mask; bukka's
   pcntl filter records the script's unblock of a number it blocked before the watch, the last removal

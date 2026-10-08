@@ -1,7 +1,5 @@
 --TEST--
 Channel: child scope dies but parent stays alive — only the child-owned channel closes
---XFAIL--
-Not implemented yet: S9.19 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -1,7 +1,5 @@
 --TEST--
 Channel: closes with reason "scope_disposed" when owner scope is disposed
---XFAIL--
-Not implemented yet: S9.19 of dev/PLAN.md
 --FILE--
 <?php
 

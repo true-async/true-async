@@ -79,6 +79,11 @@ Waiting for Edmond's call; nothing here is being worked on.
   exception at the end of the close. The other option: keep only the reason and build an exception per
   reader in `await_outcome()`. The `await_*` pass also chains a later item's error under this shared
   exception as under a Future's. Edmond's call (a departure from the agreed note).
+- A channel bound to a child scope that a held object keeps (the Critic of S9.19): the cancel or dispose
+  of the completed parent closes nothing in the child, since that branch notifies no child, as TrueAsync's
+  silent branch (`src/scope.c:583-607`); a running parent's cancel cancels the child and closes it
+  (`channel/115`). Taken as the rule applies to the channel's own scope (DECISIONS, reversible); the
+  other reading walks the subtree's channels too. Edmond's call.
 - Fiber stacks on Windows (the Critic on `scope/058`): `zend_fiber_stack_allocate()` commits the
   whole 2 MB stack (`VirtualAlloc(MEM_COMMIT)`), as TrueAsync's core and PHP's `Fiber` do, so 20 000
   suspended coroutines need about 40 GB of commit; `collector/064` skips on Windows, and `scope/058`
@@ -669,7 +674,7 @@ cross-thread wakeups are never reported; a run over 10 000 parked coroutines cos
 time, recorded; scheduler fuzz over 100 seeds reports no false positives.
 Tier: T2. Roles: Critic on S7.1, Critic after S7.4 (S7.5).
 Notes: dev/plans/S7.md
-Active: none; the channel case waits for S9's channels
+Active: none; the channel case came with S9.19 (`channel/125`, `126`), the fuzz over it with S9.20
 
 - [x] S7.1 Design note: roots (runnable coroutines, pending external sources: provider ops,
       timers, signals, wakeups, main), edges (waiter → awaitable → completers), when it runs (on
@@ -803,7 +808,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md
-Active: S9.19
+Active: S9.20
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -1053,12 +1058,25 @@ Active: S9.19
         freed Future shrank. `channel/088` counts by WeakReference, as the held close exception changed its
         collected count. Critic, two quality Critics and three re-check Critics. On CORE_REF 3e61b9fc00e:
         debug 1353 PASS, 14 SKIP, 33 XFAIL; ASAN 1328 PASS, 40 SKIP, 32 XFAIL; 0 unexpected.
-- [ ] S9.19 The per-channel timers, the close at the global deadlock, the owner-scope binding and the
+- [x] S9.19 The per-channel timers, the close at the global deadlock, the owner-scope binding and the
       close of a completed or cancelled scope's channels, CHANNEL's `collector_target`, S7's channel case (note
       sections 5, 6).
       done: the block's S9.19 tests and the note's S9.19 own tests pass on debug and ASAN; the S3-S7
         lists and layers 1 and 2 pass as before
       tier: T2 · role: Critic
+      handoff: done 2026-10-08: the 16 tests naming S9.19 pass; own tests `channel/113`-`129`. A timer is
+        armed at a park, a wake and a wait's end; only the park's submit may throw, elsewhere a failed
+        submit leaves no timer (`async_reactor_try_submit_own()`; the Code Reviewer, DECISIONS). The value
+        a timer's, the deadlock's or the scope's close rolls back waits in `dropped_value` for the free
+        (`channel/127`). The collector counts a `foreach` parked in its first receive and
+        `iterator_to_array()` (`CHANNEL_RECORD_F_HOLDS_CHANNEL`) and, in its frame walk, `FE_RESET_R`'s
+        TMP operand, which the live ranges leave out (`channel/125`, DECISIONS); a user `Iterator`
+        whose `rewind()` parks stays a miss. The scope's completion node is shared with the channel's
+        reach (the Code Reviewer). The Critic's timer for a Future left starving at a reserved receiver's
+        exit: `channel/128`. The re-check Critic's false report, a cancelled scope's free waiting for a
+        child scope's object: `channel/129`. Format fixed for S9.18's lines too. Code Reviewer, Critic,
+        two quality Critics, a re-check Critic. On CORE_REF 77dbfc061f3:
+        debug 1388 PASS, 14 SKIP, 17 XFAIL; ASAN 1363 PASS, 40 SKIP, 16 XFAIL; 0 unexpected.
 - [ ] S9.20 Layer review: Critic after S9.17-S9.19, coverage, Mull on the layer's diff, the fuzz
       oracle over 100 seeds, the measurements of note section 9.
       done: the layer's Done when holds on the day; survivors killed or explained

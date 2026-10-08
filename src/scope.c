@@ -20,6 +20,7 @@
 #include "Zend/zend_closures.h"
 #include "php_true_async.h"
 #include "scope.h"
+#include "channel.h"
 #include "exceptions.h"
 #include "scheduler.h"
 #include "await.h"
@@ -534,6 +535,41 @@ void async_scope_remove_coroutine(async_coroutine_t *coroutine)
 /// Cancellation
 ///////////////////////////////////////////////////////////////////
 
+/* The cancel or dispose of a scope that completed or was cancelled before notifies nothing, as
+ * TrueAsync's (scope.c:964-971), and closes the channels bound to it (S9-channel.md 5). The walk keeps a
+ * notify's protocol without waking the other subscribers, an awaitAfterCancellation() waiter among them:
+ * a record that a close's wake removes moves no subscriber past the cursor, and the closes run in
+ * scheduler context. */
+static void scope_close_bound_channels(async_scope_t *scope)
+{
+	async_callbacks_vector_t *const vector = &scope->event.callbacks;
+
+	/* No subscriber of a scope's event cancels a scope; as in async_callbacks_notify(), a notify running on
+	 * the vector would keep its cursor. */
+	ZEND_ASSERT(!(vector->capacity & ASYNC_CALLBACKS_F_NOTIFYING));
+
+	if (EXPECTED(vector->length == 0) || UNEXPECTED(vector->capacity & ASYNC_CALLBACKS_F_NOTIFYING)) {
+		return;
+	}
+
+	vector->capacity |= ASYNC_CALLBACKS_F_NOTIFYING;
+	vector->cursor = 0;
+
+	const bool was_in_scheduler_context = ZEND_ASYNC_IN_SCHEDULER_CONTEXT;
+	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
+
+	while (vector->cursor < vector->length) {
+		async_event_callback_t *const subscriber = async_callbacks_slots(vector)[vector->cursor++];
+
+		if (async_channel_is_owner_scope_subscriber(subscriber)) {
+			async_channel_close_for_owner_scope(subscriber);
+		}
+	}
+
+	vector->capacity &= ~ASYNC_CALLBACKS_F_NOTIFYING;
+	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = was_in_scheduler_context;
+}
+
 void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_error, const bool is_safely)
 {
 	if (UNEXPECTED(scope->event.flags & ASYNC_SCOPE_F_CLOSED)) {
@@ -548,6 +584,7 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 		scope->event.flags |= ASYNC_SCOPE_F_CLOSED;
 		/* Its fire would find the scope closed. */
 		scope_dispose_timer_disarm(scope);
+		scope_close_bound_channels(scope);
 
 		if (error != NULL && transfer_error) {
 			OBJ_RELEASE(error);
@@ -709,7 +746,8 @@ static void scope_hand_out_found(async_scope_t *scope)
 		}
 	}
 
-	/* The waiters in awaitCompletion(), wherever they run: the cancels that follow wake them. */
+	/* The waiters in awaitCompletion() and on the scope's channels, wherever they run: the cancels that
+	 * follow wake them. */
 	async_event_callback_t **callback_slots = async_callbacks_slots(&scope->event.callbacks);
 
 	for (uint32_t i = 0; i < scope->event.callbacks.length; i++) {
@@ -719,6 +757,8 @@ static void scope_hand_out_found(async_scope_t *scope)
 			if (UNEXPECTED(waiter->flags & ASYNC_COROUTINE_F_DEADLOCK_FOUND)) {
 				waiter->flags |= ASYNC_COROUTINE_F_HANDED_OUT;
 			}
+		} else if (async_channel_is_owner_scope_subscriber(callback_slots[i])) {
+			async_channel_hand_out_found(callback_slots[i]);
 		}
 	}
 
@@ -794,11 +834,12 @@ bool async_scope_catch(async_coroutine_t *coroutine, zend_object *error)
 	return is_handled;
 }
 
-void async_scope_collector_reach(async_collector_t *collector, async_coroutine_t *coroutine, const uint32_t node)
+/* The reach of `scope` and its parents, with an edge from the scope's node to `node`. */
+static void scope_collector_reach_from(async_collector_t *collector, async_scope_t *scope, const uint32_t node)
 {
 	uint32_t reached_node = node;
 
-	for (async_scope_t *scope = coroutine->scope; scope != NULL; scope = scope->parent_scope) {
+	for (; scope != NULL; scope = scope->parent_scope) {
 		bool is_new_node;
 		const uint32_t scope_node = async_collector_reach_node(collector, &scope->coroutines, &is_new_node);
 
@@ -825,6 +866,11 @@ void async_scope_collector_reach(async_collector_t *collector, async_coroutine_t
 
 		reached_node = scope_node;
 	}
+}
+
+void async_scope_collector_reach(async_collector_t *collector, async_coroutine_t *coroutine, const uint32_t node)
+{
+	scope_collector_reach_from(collector, coroutine->scope, node);
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -1425,6 +1471,22 @@ static zend_string *scope_record_info(const async_coroutine_event_callback_t *re
 	return zend_strpprintf(0, "await: scope created at %s:%" PRIu32, ZSTR_VAL(scope->filename), scope->lineno);
 }
 
+static void
+scope_report_completion_sources(const async_scope_t *scope, async_collector_t *collector, const uint32_t node);
+
+/* An edge from `scope`'s completion node to `node`, the node's sources reported once per run. */
+static void scope_report_completion_reach(const async_scope_t *scope, async_collector_t *collector, const uint32_t node)
+{
+	bool is_new_node;
+	const uint32_t completion_node = async_collector_reach_node(collector, &scope->event, &is_new_node);
+
+	async_collector_report_reach(collector, completion_node, node);
+
+	if (is_new_node) {
+		scope_report_completion_sources(scope, collector, completion_node);
+	}
+}
+
 /* The scope's completion node, live once a coroutine of its subtree is, zombies included: any of them
  * may wake a waiter, by finishing or by an error whose route passes the scope (S9-scope.md 6). One per
  * scope and run, so the edges grow with the members and the waiters, not their product. */
@@ -1436,15 +1498,7 @@ scope_report_completion_sources(const async_scope_t *scope, async_collector_t *c
 	}
 
 	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
-		const async_scope_t *child_scope = scope->child_scopes.data[i];
-		bool is_new_node;
-		const uint32_t child_node = async_collector_reach_node(collector, &child_scope->event, &is_new_node);
-
-		async_collector_report_reach(collector, child_node, node);
-
-		if (is_new_node) {
-			scope_report_completion_sources(child_scope, collector, child_node);
-		}
+		scope_report_completion_reach(scope->child_scopes.data[i], collector, node);
 	}
 }
 
@@ -1456,6 +1510,52 @@ static void scope_record_collector_target(const async_coroutine_event_callback_t
 
 	if (is_new_node) {
 		scope_report_completion_sources(scope, collector, node);
+	}
+}
+
+/* The child scopes' objects: the parent's disposal waits until its last child scope is gone (scope_dispose()),
+ * and releasing a child's object disposes it, cancelled or not. Once a node per scope and run. */
+static void
+scope_report_child_scope_holders(const async_scope_t *scope, async_collector_t *collector, const uint32_t node)
+{
+	bool is_new_node;
+	const uint32_t holders_node = async_collector_reach_node(collector, &scope->child_scopes, &is_new_node);
+
+	async_collector_report_reach(collector, holders_node, node);
+
+	if (EXPECTED(!is_new_node)) {
+		return;
+	}
+
+	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
+		const async_scope_t *const child_scope = scope->child_scopes.data[i];
+
+		if (child_scope->scope_object != NULL) {
+			async_collector_report_holder(collector, child_scope->scope_object, holders_node);
+		}
+
+		scope_report_child_scope_holders(child_scope, collector, holders_node);
+	}
+}
+
+void async_scope_collector_bound_channel_reach(async_collector_t *collector, async_scope_t *scope, const uint32_t node)
+{
+	scope_collector_reach_from(collector, scope, node);
+
+	const bool is_cancelled = (scope->event.flags & ASYNC_SCOPE_F_CANCELLED) != 0;
+
+	if (scope->scope_object != NULL && !is_cancelled) {
+		return;
+	}
+
+	/* Its last member's end frees it, through the completion node its awaiters share, or the release of a
+	 * child scope's object. */
+	scope_report_completion_reach(scope, collector, node);
+	scope_report_child_scope_holders(scope, collector, node);
+
+	/* The fire of a cancelled scope's timer closes it, which closes its channels. */
+	if (UNEXPECTED(is_cancelled && scope_dispose_timer_is_armed(scope))) {
+		async_collector_report_live_reach(collector, node);
 	}
 }
 

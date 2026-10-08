@@ -63,7 +63,10 @@ static zend_always_inline void callbacks_slot_update(async_event_callback_t **sl
 	}
 }
 
-void async_callback_ignore(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
+void async_callback_ignore(async_awaitable_t *target,
+						   async_event_callback_t *callback,
+						   void *result,
+						   zend_object *exception)
 {
 	(void) target;
 	(void) callback;

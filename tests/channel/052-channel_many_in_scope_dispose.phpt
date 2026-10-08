@@ -1,7 +1,5 @@
 --TEST--
 Channel: many channels share an owner scope — scope dispose closes them all
---XFAIL--
-Not implemented yet: S9.19 of dev/PLAN.md
 --FILE--
 <?php
 

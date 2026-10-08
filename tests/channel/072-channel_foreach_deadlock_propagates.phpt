@@ -1,7 +1,5 @@
 --TEST--
 Channel: foreach propagates a deadlock instead of reporting a clean end of stream
---XFAIL--
-Not implemented yet: S9.19 of dev/PLAN.md
 --FILE--
 <?php
 

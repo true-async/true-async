@@ -154,6 +154,12 @@ bool async_scope_catch(async_coroutine_t *coroutine, zend_object *error);
  * those of its child scopes. */
 void async_scope_collector_reach(async_collector_t *collector, async_coroutine_t *coroutine, uint32_t node);
 
+/* For a channel bound to `scope` (S9-channel.md 6): the reach node `node` is live once something can
+ * cancel the scope, as async_scope_collector_reach() reports it from there, or, for a scope that its last
+ * member's end frees (no object, or cancelled), once a coroutine of its subtree can run or a child
+ * scope's object can be released. */
+void async_scope_collector_bound_channel_reach(async_collector_t *collector, async_scope_t *scope, uint32_t node);
+
 /* Starts the callable in a new coroutine of `scope`, the body of spawn(), Scope::spawn() and
  * spawn_with(): the cache comes from Z_PARAM_FUNC_NO_TRAMPOLINE_FREE and goes with the coroutine, or
  * is released on refusal. A `spawn_strategy` has its hooks called around the enqueue. Returns the

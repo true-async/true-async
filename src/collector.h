@@ -92,6 +92,9 @@ void async_collector_report_holder(async_collector_t *collector, zend_object *ho
 /* A source the walk does not reach that may cancel through the reach node `node` (a scope's
  * disposeAfterTimeout() timer): the node is live. */
 void async_collector_report_live_reach(async_collector_t *collector, uint32_t node);
+/* A live reach node `from` makes `object` live: what reaches the node can complete the waits on the
+ * object without holding it (a channel's timer and owner scope). */
+void async_collector_report_reach_to_object(async_collector_t *collector, uint32_t from, zend_object *object);
 
 /* Runs the walk now and returns the coroutines that can never wake, in registry order, as an array
  * of borrowed pointers the caller frees with efree(); NULL when there is none. Runs no PHP code. A

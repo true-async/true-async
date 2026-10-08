@@ -1,7 +1,5 @@
 --TEST--
 Channel: producer in scope A, consumer in scope B, channel owned by A — A dispose closes recv in B
---XFAIL--
-Not implemented yet: S9.19 of dev/PLAN.md
 --FILE--
 <?php
 

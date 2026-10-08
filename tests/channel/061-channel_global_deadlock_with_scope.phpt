@@ -1,7 +1,5 @@
 --TEST--
 Channel: global deadlock detector resolves channels in a custom scope, scope still cleans up
---XFAIL--
-Not implemented yet: S9.19 of dev/PLAN.md
 --FILE--
 <?php
 

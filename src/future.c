@@ -280,6 +280,7 @@ static void future_event_collector_references(async_event_t *event, async_collec
 
 		if (UNEXPECTED(channel != NULL)) {
 			async_collector_report_event_source(collector, channel, event, future_event_collector_references);
+			async_channel_collector_sources(collector, channel);
 		}
 	}
 }

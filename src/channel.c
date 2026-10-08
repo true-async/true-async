@@ -26,6 +26,7 @@
 #include "exceptions.h"
 #include "future.h"
 #include "scheduler.h"
+#include "scope.h"
 #include "channel_arginfo.h"
 
 /* Ports TrueAsync's channel (channel.c of ext/async, cited below by line) onto this extension's wait records.
@@ -51,6 +52,9 @@ static zend_object_handlers channel_handlers;
 #define CHANNEL_RECORD_F_RESERVED (1u << (ASYNC_CALLBACK_F_KIND_SHIFT + 1))
 /* A rendezvous sender parked on its own value in the slot: it reserves nothing. */
 #define CHANNEL_RECORD_F_DELIVERING (1u << (ASYNC_CALLBACK_F_KIND_SHIFT + 2))
+/* The iterator lives in a C local the collector's walk does not read (channel_iterator_is_c_local()):
+ * the wait owns its reference to the channel. */
+#define CHANNEL_RECORD_F_HOLDS_CHANNEL (1u << (ASYNC_CALLBACK_F_KIND_SHIFT + 3))
 
 #define CHANNEL_QUEUE_FIRST_CAPACITY 4
 
@@ -276,6 +280,181 @@ static void channel_queue_free(async_channel_queue_t *queue)
 }
 
 ///////////////////////////////////////////////////////////////////
+/// The deadlock timer
+///////////////////////////////////////////////////////////////////
+
+/* TrueAsync's per-channel timer (channel.c:323-422): while a side waits with no reservation, its timeout
+ * closes the channel with NO_PRODUCERS or NO_CONSUMERS. A hard timer is a Timer op on the reactor's
+ * waits, so a script that ends by itself waits for it, as Scope::disposeAfterTimeout()'s; a soft one is
+ * one of the reactor's own ops, which fires while anything else keeps the loop running and keeps nothing
+ * from the global deadlock, where async_channel_resolve_deadlocks() closes its channel (S9-channel.md 5). */
+
+static void channel_close(async_channel_t *channel, async_channel_close_reason_t reason, zval *dropped);
+
+/* A forked child's rebuild drops a hard timer unrun (scope.c's check). */
+static zend_always_inline bool channel_timer_is_armed(const async_channel_t *channel)
+{
+	return channel->timer != NULL && channel->timer->reactor_link.prev != NULL;
+}
+
+/* A completed op withdraws as nothing. */
+static void channel_timer_withdraw(async_channel_t *channel)
+{
+	async_io_event_t *const timer = channel->timer;
+
+	channel->timer = NULL;
+	async_io_event_orphan(timer);
+	async_callbacks_remove(&timer->base.callbacks, &channel->timer_callback);
+	async_io_event_release(timer);
+}
+
+static void channel_deadlock_registry_remove(const async_channel_t *channel)
+{
+	if (EXPECTED(!channel->hard_timeouts)) {
+		zend_hash_index_del(&ASYNC_G(deadlock_channels), channel->std.handle);
+	}
+}
+
+static void channel_timer_disarm(async_channel_t *channel)
+{
+	if (EXPECTED(channel->timer == NULL)) {
+		return;
+	}
+
+	channel_deadlock_registry_remove(channel);
+	channel_timer_withdraw(channel);
+}
+
+/* In scheduler context: the rolled-back value waits for the channel's free. */
+static void
+channel_timer_fire(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
+{
+	(void) target;
+	(void) result;
+	(void) exception;
+
+	async_channel_t *const channel =
+			(async_channel_t *) ((char *) callback - offsetof(async_channel_t, timer_callback));
+
+	channel_close(channel, channel->timer_reason, &channel->dropped_value);
+}
+
+/* Arms nothing once async is off: a destructor run from `released_values` may still send or receive.
+ * `may_throw`: a failed submit leaves its Error pending; otherwise it leaves only no timer. */
+static void channel_timer_arm(async_channel_t *channel, const async_channel_close_reason_t reason, const bool may_throw)
+{
+	const int32_t timeout_ms = reason == ASYNC_CHANNEL_CLOSE_NO_PRODUCERS ? channel->no_producer_timeout_ms
+																		  : channel->no_consumer_timeout_ms;
+
+	if (timeout_ms == 0 || UNEXPECTED(channel_is_closed(channel) || !ZEND_ASYNC_IS_ACTIVE)) {
+		return;
+	}
+
+	/* A Timer op never completes in its submit (reactor.c, queue_push). */
+	async_io_event_t *const timer = async_io_event_new();
+
+	php_io_op_timer(&timer->op, async_reactor_deadline_from_ms(timeout_ms));
+	async_callbacks_reserve(&timer->base.callbacks, 1);
+	async_callbacks_push_reserved(&timer->base.callbacks, &channel->timer_callback);
+
+	/* The entry first: after a bailout in its insert there is no timer, and after one in the submit
+	 * RSHUTDOWN's walk withdraws it, as an op not submitted withdraws as nothing. */
+	if (EXPECTED(!channel->hard_timeouts)) {
+		zend_hash_index_add_new_ptr(&ASYNC_G(deadlock_channels), channel->std.handle, channel);
+	}
+
+	channel->timer = timer;
+	channel->timer_reason = reason;
+
+	bool is_submitted;
+
+	if (may_throw) {
+		is_submitted =
+				(channel->hard_timeouts ? async_io_event_submit(timer) : async_reactor_submit_own(timer)) == SUCCESS;
+	} else {
+		is_submitted =
+				(channel->hard_timeouts ? async_io_event_try_submit(timer) : async_reactor_try_submit_own(timer)) == 0;
+	}
+
+	if (UNEXPECTED(!is_submitted)) {
+		channel->timer = NULL;
+		channel_deadlock_registry_remove(channel);
+		async_callbacks_remove(&timer->base.callbacks, &channel->timer_callback);
+		async_io_event_release(timer);
+	}
+}
+
+/* Whether a side waits with no reservation, and the close its timer makes: a reserved waiter is not
+ * starving. Queued recvAsync() Futures count as receivers. */
+static bool channel_has_starving_side(const async_channel_t *channel, async_channel_close_reason_t *reason)
+{
+	if (channel->receivers.length > channel->reserved_receivers) {
+		*reason = ASYNC_CHANNEL_CLOSE_NO_PRODUCERS;
+		return true;
+	}
+
+	if (channel->senders.length > channel->reserved_senders) {
+		*reason = ASYNC_CHANNEL_CLOSE_NO_CONSUMERS;
+		return true;
+	}
+
+	return false;
+}
+
+/* After a park, a wake or a wait's end, not when a Future is queued or leaves (channel.c:401-422), so
+ * pending Futures alone arm a timer only once a wake or a wait's end finds them starving. A timer runs
+ * from its first arming while its side keeps starving. Only a park's arm may throw, as its wait then ends
+ * before it parks: elsewhere a value may have moved, and a failed submit leaves the channel without a
+ * timer until the next refresh. */
+static void channel_timer_refresh(async_channel_t *channel, const bool may_throw)
+{
+	async_channel_close_reason_t reason;
+
+	if (EXPECTED(channel->no_producer_timeout_ms == 0 && channel->no_consumer_timeout_ms == 0)) {
+		return;
+	}
+
+	if (!channel_has_starving_side(channel, &reason)) {
+		channel_timer_disarm(channel);
+		return;
+	}
+
+	if (channel->timer != NULL) {
+		/* The rebuild runs lazily, so it goes before the check; it resubmits a soft timer itself. */
+		if (UNEXPECTED(channel->hard_timeouts)) {
+			async_reactor_check_fork();
+		}
+
+		if (EXPECTED(channel->timer_reason == reason && channel_timer_is_armed(channel))) {
+			return;
+		}
+
+		channel_timer_disarm(channel);
+	}
+
+	channel_timer_arm(channel, reason, may_throw);
+}
+
+void async_channel_request_startup(void)
+{
+	zend_hash_init(&ASYNC_G(deadlock_channels), 8, NULL, NULL, false);
+}
+
+/* After a fatal error no destructor closed the channels, and free_obj comes after RSHUTDOWN. */
+void async_channel_request_shutdown(void)
+{
+	async_channel_t *channel;
+
+	ZEND_HASH_FOREACH_PTR(&ASYNC_G(deadlock_channels), channel)
+	{
+		channel_timer_withdraw(channel);
+	}
+	ZEND_HASH_FOREACH_END();
+
+	zend_hash_destroy(&ASYNC_G(deadlock_channels));
+}
+
+///////////////////////////////////////////////////////////////////
 /// Wakes
 ///////////////////////////////////////////////////////////////////
 
@@ -349,6 +528,8 @@ static bool channel_wake_receiver(async_channel_t *channel)
 		channel_promise(record, &channel->reserved_receivers);
 	}
 
+	channel_timer_refresh(channel, false);
+
 	return true;
 }
 
@@ -377,15 +558,15 @@ static void channel_wake_sender(async_channel_t *channel)
 {
 	channel_wake_delivered_sender(channel);
 
-	if (!channel_has_free_slot(channel)) {
-		return;
+	if (channel_has_free_slot(channel)) {
+		async_coroutine_event_callback_t *const record = channel_queue_first_unreserved(&channel->senders);
+
+		if (record != NULL) {
+			channel_promise(record, &channel->reserved_senders);
+		}
 	}
 
-	async_coroutine_event_callback_t *const record = channel_queue_first_unreserved(&channel->senders);
-
-	if (record != NULL) {
-		channel_promise(record, &channel->reserved_senders);
-	}
+	channel_timer_refresh(channel, false);
 }
 
 /* Closes the channel once; the first reason stays (channel.c:521-586). A reserved receiver stays queued:
@@ -404,6 +585,7 @@ static void channel_close(async_channel_t *channel, const async_channel_close_re
 
 	channel->close_reason = reason;
 	channel->base.flags |= ASYNC_EVENT_F_CLOSED;
+	channel_timer_disarm(channel);
 
 	channel->close_exception = channel_exception_new(reason);
 
@@ -463,6 +645,166 @@ static void channel_close_and_release(async_channel_t *channel, const async_chan
 }
 
 ///////////////////////////////////////////////////////////////////
+/// The owner scope
+///////////////////////////////////////////////////////////////////
+
+/* TrueAsync's binding (channel.c:592-638): the channel closes with SCOPE_DISPOSED when its scope is
+ * cancelled or freed, not when it completes (S9-channel.md 5). The closes run inside the scope's walks,
+ * where no PHP code may run. */
+
+static zend_always_inline async_channel_t *channel_of_owner_scope_callback(const async_event_callback_t *callback)
+{
+	return (async_channel_t *) ((char *) callback - offsetof(async_channel_t, owner_scope_callback));
+}
+
+void async_channel_close_for_owner_scope(const async_event_callback_t *subscriber)
+{
+	async_channel_t *const channel = channel_of_owner_scope_callback(subscriber);
+
+	channel_close(channel, ASYNC_CHANNEL_CLOSE_SCOPE_DISPOSED, &channel->dropped_value);
+}
+
+/* The scope's cancel and its error route notify with an error; its completion notifies without one. */
+static void channel_owner_scope_notified(async_awaitable_t *target,
+										 async_event_callback_t *callback,
+										 void *result,
+										 zend_object *exception)
+{
+	(void) target;
+	(void) result;
+
+	if (exception != NULL) {
+		async_channel_close_for_owner_scope(callback);
+	}
+}
+
+/* The scope is freed before the channel. Once async is off, RSHUTDOWN's free of the request's scopes and a scope
+ * object's free in zend_deactivate() leave the channel to its own free. */
+static void channel_owner_scope_dispose(async_event_callback_t *callback, async_awaitable_t *target)
+{
+	(void) target;
+
+	async_channel_t *const channel = channel_of_owner_scope_callback(callback);
+
+	channel->owner_scope = NULL;
+
+	if (EXPECTED(ZEND_ASYNC_IS_ACTIVE)) {
+		async_channel_close_for_owner_scope(callback);
+	}
+}
+
+/* To the current scope, the global one at the top level; none once the global scope is gone (a
+ * destructor run from `released_values`) or when the scope is closed (channel.c:611-627). */
+static void channel_bind_to_owner_scope(async_channel_t *channel)
+{
+	async_scope_t *const scope = async_scope_current();
+
+	if (UNEXPECTED(scope == NULL || (scope->event.flags & ASYNC_SCOPE_F_CLOSED))) {
+		return;
+	}
+
+	async_callbacks_reserve(&scope->event.callbacks, 1);
+	async_callbacks_push_reserved(&scope->event.callbacks, &channel->owner_scope_callback);
+	channel->owner_scope = scope;
+}
+
+/* At the channel's free only: a close leaves the subscriber in place, since the scope's teardown walks
+ * its vector with swap removals and would skip a subscriber that another removed. */
+static void channel_unbind_from_owner_scope(async_channel_t *channel)
+{
+	async_scope_t *const scope = channel->owner_scope;
+
+	if (scope != NULL) {
+		channel->owner_scope = NULL;
+		async_callbacks_remove(&scope->event.callbacks, &channel->owner_scope_callback);
+	}
+}
+
+bool async_channel_is_owner_scope_subscriber(const async_event_callback_t *subscriber)
+{
+	return !(subscriber->flags & ASYNC_CALLBACK_F_RECORD) && subscriber->callback == channel_owner_scope_notified;
+}
+
+///////////////////////////////////////////////////////////////////
+/// The global deadlock
+///////////////////////////////////////////////////////////////////
+
+#ifdef TRUE_ASYNC_TEST_HOOKS
+static void channel_hand_out_found_record(const async_coroutine_event_callback_t *record)
+{
+	zend_coroutine_t *const waiter = &record->coroutine->coroutine;
+
+	if (UNEXPECTED(waiter->flags & ASYNC_COROUTINE_F_DEADLOCK_FOUND)) {
+		waiter->flags |= ASYNC_COROUTINE_F_HANDED_OUT;
+	}
+}
+
+static void channel_hand_out_found_records(async_callbacks_vector_t *callbacks)
+{
+	async_event_callback_t **const callback_slots = async_callbacks_slots(callbacks);
+
+	for (uint32_t i = 0; i < callbacks->length; i++) {
+		if (EXPECTED(callback_slots[i]->flags & ASYNC_CALLBACK_F_RECORD)) {
+			channel_hand_out_found_record((const async_coroutine_event_callback_t *) callback_slots[i]);
+		}
+	}
+}
+
+/* Every waiter a close would wake: the queued coroutines, the awaiters of the queued Futures and the
+ * channel's await_* items and tokens. */
+static void channel_hand_out_found_waiters(async_channel_t *channel)
+{
+	const async_channel_queue_t *const queues[] = { &channel->receivers, &channel->senders };
+
+	for (uint32_t queue_index = 0; queue_index < sizeof(queues) / sizeof(queues[0]); queue_index++) {
+		const async_channel_queue_t *const queue = queues[queue_index];
+
+		for (uint32_t i = 0; i < queue->length; i++) {
+			const async_coroutine_event_callback_t *const record = queue->records[i];
+
+			if (UNEXPECTED(channel_record_is_future(record))) {
+				channel_hand_out_found_records(&CHANNEL_FUTURE_WAITER_OF(record, queue_record)->future->base.callbacks);
+			} else {
+				channel_hand_out_found_record(record);
+			}
+		}
+	}
+
+	channel_hand_out_found_records(&channel->base.callbacks);
+}
+
+void async_channel_hand_out_found(const async_event_callback_t *subscriber)
+{
+	channel_hand_out_found_waiters(channel_of_owner_scope_callback(subscriber));
+}
+#endif
+
+/* TrueAsync's async_channel_resolve_deadlocks() (channel.c:640-674). A close leaves the registry, so the
+ * walk takes the first entry until none is left. The global deadlock is a route the collector leaves out
+ * (S7.md 2): what it found there is handed out first. */
+bool async_channel_resolve_deadlocks(void)
+{
+	HashTable *const registry = &ASYNC_G(deadlock_channels);
+
+	if (EXPECTED(zend_hash_num_elements(registry) == 0)) {
+		return false;
+	}
+
+	while (zend_hash_num_elements(registry) != 0) {
+		zend_hash_internal_pointer_reset(registry);
+
+		async_channel_t *const channel = zend_hash_get_current_data_ptr(registry);
+
+#ifdef TRUE_ASYNC_TEST_HOOKS
+		channel_hand_out_found_waiters(channel);
+#endif
+		channel_close(channel, ASYNC_CHANNEL_CLOSE_DEADLOCK, &channel->dropped_value);
+	}
+
+	return true;
+}
+
+///////////////////////////////////////////////////////////////////
 /// The CHANNEL wait kind
 ///////////////////////////////////////////////////////////////////
 
@@ -516,23 +858,74 @@ static zend_string *channel_record_info(const async_coroutine_event_callback_t *
 }
 
 /* For a frame that never runs again: a bailout's unwinding or the request's end, where nothing may be
- * queued and no PHP code may run. The record leaves its queue and gives its reservation back without
- * waking anyone; a delivering sender's value stays in the slot for the next receiver. */
+ * queued and no PHP code may run; and for a park that failed before it suspended (channel_wait_link()). The record
+ * leaves its queue and gives its reservation back without waking anyone; a delivering sender's value stays in the slot
+ * for the next receiver. The timer goes with the last starving waiter, and none is armed here. */
 static void channel_record_abort(async_coroutine_event_callback_t *record)
 {
+	async_channel_t *const channel = channel_of_record(record);
 	bool had_reservation;
+	async_channel_close_reason_t reason;
 
 	channel_record_leave(record, &had_reservation);
+
+	if (!channel_has_starving_side(channel, &reason)) {
+		channel_timer_disarm(channel);
+	}
+}
+
+/* What closes the channel without a holder (S9-channel.md 6): an armed timer fires by itself, and the
+ * owner scope closes it once something can cancel the scope or, for a scope that its last member's end
+ * frees, once a coroutine of its subtree can run. Either makes the channel live, and with it the
+ * coroutines parked on it and the awaiters of its queued Futures. The request's two scopes are left
+ * out: only exit() and an unhandled error cancel them, routes the collector leaves out. */
+void async_channel_collector_sources(async_collector_t *collector, zend_object *channel_object)
+{
+	async_channel_t *const channel = channel_from_object(channel_object);
+	bool is_new_node;
+	const uint32_t node = async_collector_reach_node(collector, &channel->owner_scope_callback, &is_new_node);
+
+	/* Once per run: every pass meets the channel again. */
+	if (EXPECTED(!is_new_node)) {
+		return;
+	}
+
+	async_collector_report_reach_to_object(collector, node, channel_object);
+
+	if (channel_timer_is_armed(channel)) {
+		async_collector_report_live_reach(collector, node);
+	}
+
+	async_scope_t *const scope = channel->owner_scope;
+
+	if (scope != NULL && !(scope->event.flags & ASYNC_SCOPE_F_REQUEST_LIFETIME)) {
+		async_scope_collector_bound_channel_reach(collector, scope, node);
+	}
+}
+
+/* Whoever holds the channel can send, receive or close. */
+void async_channel_collector_target(async_collector_t *collector, async_channel_t *channel, const bool owned)
+{
+	async_collector_report_target(collector, &channel->std, owned);
+	async_channel_collector_sources(collector, &channel->std);
+}
+
+static void channel_record_collector_target(const async_coroutine_event_callback_t *record,
+											async_collector_t *collector)
+{
+	async_channel_collector_target(
+			collector, channel_of_record(record), (record->event_callback.flags & CHANNEL_RECORD_F_HOLDS_CHANNEL) != 0);
 }
 
 static const async_wait_kind_t channel_wait_kind = {
 	.info = channel_record_info,
 	.abort = channel_record_abort,
+	.collector_target = channel_record_collector_target,
 };
 
 /* Links the current coroutine's record into its role's queue and its token record and returns the
- * queue's record; NULL with an exception, nothing linked, when there is no coroutine to park or the
- * token refuses. */
+ * queue's record; NULL with an exception, nothing linked, when there is no coroutine to park, the
+ * token refuses or the timer's submit fails. */
 static async_coroutine_event_callback_t *
 channel_wait_link(async_channel_t *channel, async_awaitable_t *const token, const uint32_t role)
 {
@@ -570,12 +963,20 @@ channel_wait_link(async_channel_t *channel, async_awaitable_t *const token, cons
 		async_await_token_link(&waiter->waker.records[1], waiter, token);
 	}
 
+	channel_timer_refresh(channel, true);
+
+	/* The timer's submit failed: the wait ends before it parks. */
+	if (UNEXPECTED(EG(exception) != NULL)) {
+		async_wait_end(waiter);
+		return NULL;
+	}
+
 	return record;
 }
 
-/* Parks the current coroutine in its role's queue (`role`: the record's SENDER and DELIVERING bits)
- * until a value or a slot is promised to it, or a delivering sender until its value is taken
- * (channel.c:676-786).
+/* Parks the current coroutine in its role's queue (`role`: the record's SENDER, DELIVERING and
+ * HOLDS_CHANNEL bits) until a value or a slot is promised to it, or a delivering sender until its value
+ * is taken (channel.c:676-786).
  *
  * True only when it came back holding a reservation, which the caller spends at once: the counter is
  * given back here, so nothing may run in between. Otherwise an exception is pending, or something else
@@ -620,6 +1021,7 @@ static bool channel_wait(async_channel_t *channel, async_awaitable_t *const toke
 		}
 	}
 
+	channel_timer_refresh(channel, false);
 	zval_ptr_dtor(&dropped);
 
 	return had_reservation && !is_failed;
@@ -684,11 +1086,39 @@ static void channel_send(async_channel_t *channel, const zval *value, async_awai
 	}
 }
 
+/* Whether the iterator lives only in a local of the C code that drives it, so that no slot the
+ * collector's walk reads reports it: the engine's foreach between its rewind and storing the iterator
+ * (zend_fe_reset_iterator()), and spl_iterator_apply() of iterator_to_array(), iterator_count() and
+ * iterator_apply(). Its one reference to the channel then counts as the wait's: a step clears `current`
+ * before it receives. */
+static bool channel_iterator_is_c_local(void)
+{
+	const zend_execute_data *const frame = EG(current_execute_data);
+
+	if (UNEXPECTED(frame == NULL || frame->func == NULL)) {
+		return false;
+	}
+
+	if (EXPECTED(ZEND_USER_CODE(frame->func->type))) {
+		return frame->opline->opcode == ZEND_FE_RESET_R;
+	}
+
+	const zend_string *const function_name = frame->func->common.function_name;
+
+	return frame->func->common.scope == NULL && function_name != NULL &&
+			(zend_string_equals_literal(function_name, "iterator_to_array") ||
+			 zend_string_equals_literal(function_name, "iterator_count") ||
+			 zend_string_equals_literal(function_name, "iterator_apply"));
+}
+
 /* TrueAsync's recv() loop (channel.c:1209-1245) and its iterator's (974-1012): false with nothing thrown
- * once the channel is closed and empty, false with an exception when the wait failed. */
-static bool channel_receive(async_channel_t *channel, zval *result, async_awaitable_t *const token)
+ * once the channel is closed and empty, false with an exception when the wait failed. `is_iterator`: an
+ * iterator's step, whose iterator may hold the channel where the collector does not look. */
+static bool
+channel_receive(async_channel_t *channel, zval *result, async_awaitable_t *const token, const bool is_iterator)
 {
 	bool has_reservation = false;
+	const uint32_t role = is_iterator && channel_iterator_is_c_local() ? CHANNEL_RECORD_F_HOLDS_CHANNEL : 0;
 
 	while (true) {
 		if (has_reservation || channel_has_free_value(channel)) {
@@ -703,7 +1133,7 @@ static bool channel_receive(async_channel_t *channel, zval *result, async_awaita
 			return false;
 		}
 
-		has_reservation = channel_wait(channel, token, 0);
+		has_reservation = channel_wait(channel, token, role);
 
 		if (UNEXPECTED(EG(exception) != NULL)) {
 			return false;
@@ -806,8 +1236,7 @@ static void channel_future_waiters_detach(async_channel_t *channel)
 	for (uint32_t i = 0; i < channel->receivers.length; i++) {
 		async_coroutine_event_callback_t *const record = channel->receivers.records[i];
 
-		ZEND_ASSERT(channel_record_is_future(record) &&
-					"a parked coroutine holds its channel through its frame");
+		ZEND_ASSERT(channel_record_is_future(record) && "a parked coroutine holds its channel through its frame");
 		record->event = NULL;
 	}
 
@@ -880,7 +1309,7 @@ static void channel_iterator_move_forward(zend_object_iterator *zend_iterator)
 		return;
 	}
 
-	if (EXPECTED(channel_receive(channel, &iterator->current, NULL))) {
+	if (EXPECTED(channel_receive(channel, &iterator->current, NULL, true))) {
 		return;
 	}
 
@@ -953,6 +1382,10 @@ static zend_object *channel_object_create(zend_class_entry *class_entry)
 	memset(channel, 0, offsetof(async_channel_t, std));
 	async_event_init_in_object(&channel->base, ASYNC_CHANNEL_F_CHANNEL, offsetof(async_channel_t, std));
 	ZVAL_UNDEF(&channel->rendezvous_value);
+	ZVAL_UNDEF(&channel->dropped_value);
+	channel->timer_callback.callback = channel_timer_fire;
+	channel->owner_scope_callback.callback = channel_owner_scope_notified;
+	channel->owner_scope_callback.dispose = channel_owner_scope_dispose;
 
 	zend_object_std_init(&channel->std, class_entry);
 	object_properties_init(&channel->std, class_entry);
@@ -971,12 +1404,15 @@ static void channel_object_free(zend_object *object)
 {
 	async_channel_t *const channel = channel_from_object(object);
 
+	channel_unbind_from_owner_scope(channel);
+	channel_timer_disarm(channel);
 	channel_future_waiters_detach(channel);
 	async_callbacks_free((async_awaitable_t *) &channel->base, &channel->base.callbacks);
 	channel_queue_free(&channel->receivers);
 	channel_queue_free(&channel->senders);
 	zval_circular_buffer_dtor(&channel->buffer);
 	zval_ptr_dtor(&channel->rendezvous_value);
+	zval_ptr_dtor(&channel->dropped_value);
 
 	if (EXPECTED(channel->close_exception != NULL)) {
 		OBJ_RELEASE(channel->close_exception);
@@ -995,6 +1431,7 @@ static HashTable *channel_object_gc(zend_object *object, zval **table, int *num)
 	}
 
 	zend_get_gc_buffer_add_zval(gc_buffer, &channel->rendezvous_value);
+	zend_get_gc_buffer_add_zval(gc_buffer, &channel->dropped_value);
 
 	if (UNEXPECTED(channel->close_exception != NULL)) {
 		zend_get_gc_buffer_add_obj(gc_buffer, channel->close_exception);
@@ -1046,6 +1483,7 @@ ZEND_METHOD(Async_Channel, __construct)
 	channel->no_consumer_timeout_ms = (int32_t) no_consumer_timeout;
 	channel->hard_timeouts = hard_timeouts;
 	channel->base.flags |= ASYNC_CHANNEL_F_CONSTRUCTED;
+	channel_bind_to_owner_scope(channel);
 }
 
 ZEND_METHOD(Async_Channel, send)
@@ -1109,7 +1547,7 @@ ZEND_METHOD(Async_Channel, recv)
 
 	async_channel_t *const channel = THIS_CHANNEL;
 
-	if (UNEXPECTED(!channel_receive(channel, return_value, token) && EG(exception) == NULL)) {
+	if (UNEXPECTED(!channel_receive(channel, return_value, token, false) && EG(exception) == NULL)) {
 		channel_throw_closed(channel);
 	}
 

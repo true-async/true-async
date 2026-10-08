@@ -448,6 +448,15 @@ void async_collector_report_live_reach(async_collector_t *collector, const uint3
 	}
 }
 
+void async_collector_report_reach_to_object(async_collector_t *collector, const uint32_t from, zend_object *object)
+{
+	if (UNEXPECTED(from == COLLECTOR_NONE)) {
+		return;
+	}
+
+	collector_edge_add(collector, from, collector_node_of(collector, (zend_refcounted *) object));
+}
+
 void async_collector_report_target(async_collector_t *collector, zend_object *target, const bool owned)
 {
 	if (EXPECTED(collector->pass != COLLECTOR_PASS_WAKE_EDGES)) {
@@ -584,9 +593,11 @@ static void collector_stack_references(async_collector_t *collector, const async
 			continue;
 		}
 
+		const zend_op *const opline = frame->opline;
+
 		/* A frame unwinding an exception finds its position through EG(opline_before_exception),
 		 * which belongs to the running context, not to this parked one. */
-		if (UNEXPECTED(frame->opline->opcode == ZEND_HANDLE_EXCEPTION)) {
+		if (UNEXPECTED(opline->opcode == ZEND_HANDLE_EXCEPTION)) {
 			continue;
 		}
 
@@ -596,6 +607,12 @@ static void collector_stack_references(async_collector_t *collector, const async
 
 		for (zval *value = collector->frame_buffer.start; value < collector->frame_buffer.cur; value++) {
 			collector_reference(collector, value);
+		}
+
+		/* FE_RESET_R keeps its TMP operand through a rewind or a getIterator() that suspends, and the
+		 * frame's live ranges end before that opline. */
+		if (UNEXPECTED(opline->opcode == ZEND_FE_RESET_R && opline->op1_type == IS_TMP_VAR)) {
+			collector_reference(collector, ZEND_CALL_VAR(frame, opline->op1.var));
 		}
 
 		/* The global scope is a root: what a global variable holds stays live. */

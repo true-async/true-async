@@ -41,6 +41,7 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	async_wake_pair_t wake_pair;            /* the reactor's wake descriptors: the thread's, not a request's */
 	async_io_provider_t io_provider;        /* registered from the first trigger to RSHUTDOWN */
 	async_signal_registry_t *signals;       /* Async\signal()'s watches; NULL while there is none */
+	HashTable deadlock_channels;            /* the channels with an armed soft timer, by object handle; borrowed */
 	async_coroutine_t *interrupt_coroutine; /* runs the VM interrupt for an idle scheduler; NULL when none is alive */
 	async_scope_t *global_scope;            /* where spawn() puts a coroutine at the top level (scope.h) */
 	async_scope_t *engine_scope;            /* the coroutines of the core's gc_new_coroutine slot */

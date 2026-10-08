@@ -822,7 +822,7 @@ static zend_result reactor_submit(async_reactor_t *reactor, async_io_event_t *ev
 	return SUCCESS;
 }
 
-/* The body of async_io_event_try_submit(). */
+/* The body of async_io_event_try_submit() and async_reactor_try_submit_own(). */
 static int reactor_try_submit(async_reactor_t *reactor, async_io_event_t *event, async_reactor_link_t *list)
 {
 	php_io_queue_completion completion;
@@ -884,6 +884,13 @@ int async_io_event_try_submit(async_io_event_t *event)
 	async_reactor_t *reactor = &ASYNC_G(reactor);
 
 	return reactor_try_submit(reactor, event, &reactor->waits);
+}
+
+int async_reactor_try_submit_own(async_io_event_t *event)
+{
+	async_reactor_t *const reactor = &ASYNC_G(reactor);
+
+	return reactor_try_submit(reactor, event, &reactor->own);
 }
 
 void async_io_event_orphan(async_io_event_t *event)

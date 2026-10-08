@@ -84,3 +84,10 @@ can see goes here; tests, tools and CI are in the git history.
 - `Async\Channel::recvAsync()` returns a `Future` of the next value; `foreach` and `getIterator()`
   receive until the channel is closed, an explicit `close()` ending the loop quietly; a channel is an
   `await_*` item and a cancellation token that completes when it closes ([S9](dev/plans/S9-channel.md)).
+- `Async\Channel`'s `noProducerTimeout` and `noConsumerTimeout` close a channel whose receivers or
+  senders wait too long, with `NO_PRODUCERS` or `NO_CONSUMERS`; with `hardTimeouts` the timers keep the
+  script running, without it a script with nothing else to run closes such channels with `DEADLOCK`
+  instead of ending in a `DeadlockError`. A channel closes with `SCOPE_DISPOSED` when the scope it was
+  made in is cancelled, takes an error, is disposed or is freed, not when its coroutines merely end. The
+  partial deadlock collector finds coroutines parked on a channel no one else can reach
+  ([S9](dev/plans/S9-channel.md)).

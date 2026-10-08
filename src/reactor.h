@@ -131,6 +131,9 @@ zend_result async_reactor_submit_own(async_io_event_t *event);
  * when no queue can be created. */
 int async_io_event_try_submit(async_io_event_t *event);
 
+/* The same for one of the reactor's own ops. */
+int async_reactor_try_submit_own(async_io_event_t *event);
+
 /* Withdraws a submitted op that has not completed: no completion comes for it. */
 void async_io_event_orphan(async_io_event_t *event);
 

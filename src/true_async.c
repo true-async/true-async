@@ -208,6 +208,7 @@ static PHP_RINIT_FUNCTION(true_async)
 		async_io_provider_request_startup();
 		ASYNC_G(signals) = NULL;
 		async_collector_request_startup();
+		async_channel_request_startup();
 	}
 
 #ifdef TRUE_ASYNC_TEST_HOOKS
@@ -238,6 +239,7 @@ static PHP_RSHUTDOWN_FUNCTION(true_async)
 #ifndef PHP_WIN32
 		async_signal_request_shutdown();
 #endif
+		async_channel_request_shutdown();
 		async_reactor_request_shutdown();
 
 #ifdef TRUE_ASYNC_TEST_HOOKS

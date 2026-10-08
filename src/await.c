@@ -298,10 +298,11 @@ static void await_record_report_held_target(const async_coroutine_event_callback
 
 	if (EXPECTED(ASYNC_AWAITABLE_IS_COROUTINE(target))) {
 		async_collector_report_target(collector, &((async_coroutine_t *) target)->std, true);
-	} else if (UNEXPECTED(ASYNC_AWAITABLE_IS_TIMEOUT(target) || ASYNC_AWAITABLE_IS_CHANNEL(target))) {
-		/* A Timeout fires by itself; a channel counts as such a source until S9.19 gives CHANNEL a
-		 * collector_target. */
+	} else if (UNEXPECTED(ASYNC_AWAITABLE_IS_TIMEOUT(target))) {
+		/* A Timeout fires by itself. */
 		async_collector_report_outside(collector);
+	} else if (UNEXPECTED(ASYNC_AWAITABLE_IS_CHANNEL(target))) {
+		async_channel_collector_target(collector, (async_channel_t *) target, true);
 	} else {
 		async_future_collector_target(collector, (async_future_event_t *) target);
 	}

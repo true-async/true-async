@@ -46,6 +46,7 @@
 #include "Zend/zend_observer.h"
 #include "scheduler.h"
 #include "await.h"
+#include "channel.h"
 #include "coroutine.h"
 #include "collector.h"
 #include "exceptions.h"
@@ -907,6 +908,11 @@ static bool scheduler_loop(void)
 			if (EXPECTED(waiting == 0)) {
 				exit_deadline_withdraw();
 				return false;
+			}
+
+			/* Before the DeadlockError (S9-channel.md 5). */
+			if (UNEXPECTED(async_channel_resolve_deadlocks())) {
+				continue;
 			}
 
 			/* The cancellations queue every waiting coroutine. */
