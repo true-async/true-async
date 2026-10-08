@@ -78,6 +78,10 @@ Waiting for Edmond's call; nothing here is being worked on.
   `win-fiber-stack-on-demand`): reserve the stack, commit 32 KiB, let the kernel grow it; 2074 to
   41 KiB per suspended coroutine on Edmond's PC. Once it is in the pinned core: `scope/058` back to
   20 000 and `collector/064` unskipped on Windows.
+- `PHP_BUILD_SYSTEM` on a localized Windows (2026-10-08): php-src `win32/build/confutils.js:134`
+  writes `os.Caption` into `main\config.w32.h` in the ANSI code page, and `/utf-8 /WX` stops every
+  file on C4828. `tools/windows/build-core.bat` strips the non-ASCII bytes (e28ec4c); the fix itself
+  is a one-line change for an official php/php-src PR. Edmond's call.
 - The scope of a Future's `map()`, `catch()` and `finally()` callbacks (S9.12, the Critic): S5's
   chain drain runs them in the global scope, so their `current_context()` is the root context
   (`context/039`); TrueAsync runs the mapper in the scope captured at `map()` (`future.c:1593-1600`).
