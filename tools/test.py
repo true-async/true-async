@@ -103,6 +103,8 @@ CLI_SERVER_WORKERS = '4'
 
 # Test groups that talk to the MySQL fixture; a run without them starts no server.
 MYSQL_GROUPS = ('mysqli', 'pdo_mysql')
+# What the Windows lane's tests need besides the extension
+WIN_EXTENSIONS = ('sockets', 'openssl', 'curl')
 
 # Seconds a private mysqld may take to say it is ready for connections, or to stop.
 MYSQL_START_TIMEOUT = 60
@@ -133,6 +135,9 @@ class Lane:
             win_build = Path(require_env('TRUE_ASYNC_WIN_BUILD', 'the directory with php.exe'))
             self.php = win_build / 'php.exe'
             self.module = win_build / 'php_true_async.dll'
+            # A snapshot build (CI's Release_TS) makes them shared; a Debug_TS build links them in
+            self.win_extension_dlls = [dll for dll in (win_build / f'php_{name}.dll' for name in WIN_EXTENSIONS)
+                                       if dll.is_file()]
             self.runner = Path(require_env('TRUE_ASYNC_CORE_SRC', 'the core checkout')) / 'run-tests.php'
             return
 
@@ -432,6 +437,10 @@ def run_tests(lane, entries, jobs, sched=None):
     if sched is not None:
         env['TRUE_ASYNC_SCHED'] = sched
         cmd += ['-d', 'true_async.partial_deadlock_interval=0']
+
+    if lane.tree == 'win':
+        for dll in lane.win_extension_dlls:
+            cmd += ['-d', f'extension={dll}']
 
     if lane.tree == 'asan':
         cmd[2:2] = ['--asan', '-x']

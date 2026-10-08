@@ -16,8 +16,8 @@ permissions:
 
 env:
   # async-core-io in true-async/php-src and ior, as pinned in dev/WORKFLOW.md ("Pinned core").
-  CORE_REF: 662dfe91919bd691ed916db18ed9937de3b86dcb
-  IOR_REF: 2bfd23198962f5d6a0de8e3aa959998c644d4294
+  CORE_REF: c803683148a5ad106f3370ea469aac6c4e18d20c
+  IOR_REF: 574afcd79013368c2b7dfdc6734fdf21ca5da816
 
 jobs:
   lists:
