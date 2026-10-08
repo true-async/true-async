@@ -39,8 +39,7 @@ $client = spawn(function () use ($address, $peer) {
     echo "after feof\n";
 
     fwrite($socket, 'x');
-    // A close with the server's session tickets unread resets the connection, which on Windows can
-    // discard the handshake's last record before the peer's accept reads it.
+    // On Windows the peer's TLS accept fails when the client closes first
     await($peer);
     fclose($socket);
 });

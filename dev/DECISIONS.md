@@ -1717,3 +1717,15 @@ stack options were shown with the code).
   `TRUE_ASYNC_WIN_BUILD` when they exist (a snapshot build, CI's Release_TS, makes them shared; a
   Debug_TS build of `tools/windows` links them in), and the `skip-on:pocs-win(...-not-loaded-until-S6.x)`
   tags are dropped from the lists. Why: S6.10's done line.
+- 2026-10-08 `dns/005-dns_error_handling.phpt` (reference; `changed:2026-10-08`) skips on Windows, with
+  `skip-on:pocs-win`. Why: Windows resolves an empty host name to the local host's addresses, and
+  PHP without the extension prints the same (`php -n`, Edmond's PC, S6.10); the test expects `''`
+  and `false`. A tag alone only allows the skip, so the test's `--SKIPIF--` gives it.
+- 2026-10-08 `io_provider/026-feof_zero_timeout_poll_does_not_park.phpt` (ours, S6.8;
+  `changed:2026-10-08`): the client waits for the peer before it closes. Why: on Windows the peer's
+  TLS accept failed in 20 of 20 runs when the client closed first, and passed in 5 of 5 with the
+  socket kept open (Edmond's PC, S6.10); the test checks `feof()`, not the close.
+- 2026-10-08 `stream/001-fread_fwrite_simple.phpt` and `stream/002-fwrite_simple.phpt` (Windows only)
+  stay `--XFAIL--`, now by design: a socket write the kernel takes at once returns without
+  suspending the coroutine, since the core sends first and submits an op only after `EAGAIN`
+  (S6.md section 4); TrueAsync's fork waits for every libuv write on Windows.
