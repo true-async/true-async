@@ -1,0 +1,327 @@
+From d46649f642506c46e649d7470f756be31fce99f8 Mon Sep 17 00:00:00 2001
+From: Edmond <1571649+edmonddantes@users.noreply.github.com>
+Date: Thu, 8 Oct 2026 12:52:49 +0000
+Subject: [PATCH 4/4] Complete a read of part of a message or datagram with the
+ bytes read
+
+A read of part of a message (a message-mode pipe) or of a datagram
+larger than the buffer ends with STATUS_BUFFER_OVERFLOW, a warning
+status, and its packet says ERROR_MORE_DATA. That completed the op with
+-EIO and no bytes, though the buffer held them. A READ or RECV now
+completes with the bytes read, as recv() reports a truncated datagram;
+the rest of a pipe message stays for the next read.
+
+Windows 11 reports such a read as pending; Wine fails it at once with
+ERROR_MORE_DATA or WSAEMSGSIZE and still queues the packet. issue_read
+and issue_recv count both errors as started when the OVERLAPPED holds
+STATUS_BUFFER_OVERFLOW, so no synthetic packet is posted beside the
+kernel's; an error status that maps to the same Win32 code still gets
+one.
+
+test_iocp_backend: a message-mode pipe read in parts, with the message
+written before the read and after it, and with the pump; a UDP recv of
+a 10-byte datagram into 4 bytes, sent before the recv and after it.
+---
+ src/ior_iocp.c            |  28 ++++++--
+ tests/test_iocp_backend.c | 142 +++++++++++++++++++++++++++++++++++---
+ 2 files changed, 158 insertions(+), 12 deletions(-)
+
+diff --git a/src/ior_iocp.c b/src/ior_iocp.c
+index 9a06c0f..ab4baa5 100644
+--- a/src/ior_iocp.c
++++ b/src/ior_iocp.c
+@@ -1232,6 +1232,7 @@ typedef NTSTATUS(NTAPI *ior_nt_set_information_file_fn)(
+ #define IOR_FILE_REPLACE_COMPLETION_INFORMATION 61
+ #define IOR_STATUS_NOT_IMPLEMENTED ((NTSTATUS) 0xC0000002L)
+ #define IOR_STATUS_INVALID_INFO_CLASS ((NTSTATUS) 0xC0000003L)
++#define IOR_STATUS_BUFFER_OVERFLOW ((NTSTATUS) 0x80000005L)
+ #ifndef NT_SUCCESS
+ #define NT_SUCCESS(status) (((NTSTATUS) (status)) >= 0)
+ #endif
+@@ -1489,6 +1490,14 @@ static BOOL cancel_overlapped_io(ior_ctx_iocp *ctx, ior_iocp_op *op)
+ 	return CancelIoEx((HANDLE) op->fd, &op->overlapped);
+ }
+ 
++// A read of part of a message or a datagram that the kernel still queues a
++// packet for: STATUS_BUFFER_OVERFLOW, a warning, left in the OVERLAPPED.
++static bool iocp_partial_read_queued(const ior_iocp_op *op, DWORD err)
++{
++	return (err == ERROR_MORE_DATA || err == WSAEMSGSIZE)
++			&& (NTSTATUS) op->overlapped.Internal == IOR_STATUS_BUFFER_OVERFLOW;
++}
++
+ /*
+  * issue_read / issue_write
+  *
+@@ -1508,6 +1517,10 @@ static BOOL cancel_overlapped_io(ior_ctx_iocp *ctx, ior_iocp_op *op)
+  * Special case: ERROR_HANDLE_EOF means the read reached end-of-file. Windows
+  * still posts a completion packet for this on overlapped handles, so we treat
+  * it the same as a successful async start.
++ *
++ * So does a read of part of a message (ERROR_MORE_DATA, a datagram's
++ * WSAEMSGSIZE for a recv) when the status the kernel left in the OVERLAPPED
++ * is STATUS_BUFFER_OVERFLOW (iocp_partial_read_queued).
+  */
+ static int issue_read(ior_ctx_iocp *ctx, ior_iocp_op *op)
+ {
+@@ -1534,7 +1547,7 @@ static int issue_read(ior_ctx_iocp *ctx, ior_iocp_op *op)
+ 	}
+ 
+ 	DWORD err = GetLastError();
+-	if (err == ERROR_IO_PENDING || err == ERROR_HANDLE_EOF) {
++	if (err == ERROR_IO_PENDING || err == ERROR_HANDLE_EOF || iocp_partial_read_queued(op, err)) {
+ 		// Async in progress, or EOF - completion packet will be posted
+ 		atomic_fetch_add(&ctx->active_count, 1);
+ 		return 0;
+@@ -1585,6 +1598,8 @@ static int issue_write(ior_ctx_iocp *ctx, ior_iocp_op *op)
+  * ReadFile/WriteFile with respect to IOCP: a completion packet is posted for
+  * both synchronous success (return 0) and asynchronous start (WSA_IO_PENDING).
+  * Any other Winsock error means no packet is posted, so we synthesize one.
++ * A recv's WSAEMSGSIZE with STATUS_BUFFER_OVERFLOW in the OVERLAPPED is the
++ * exception, as ERROR_MORE_DATA is for a read (iocp_partial_read_queued).
+  *
+  * The op's fd is an ior_fd_t (HANDLE); sockets created with WSA_FLAG_OVERLAPPED
+  * are valid IOCP targets, so we cast the handle to SOCKET for the Winsock call.
+@@ -1637,7 +1652,7 @@ static int issue_recv(ior_ctx_iocp *ctx, ior_iocp_op *op)
+ 	}
+ 
+ 	int err = WSAGetLastError();
+-	if (err == WSA_IO_PENDING) {
++	if (err == WSA_IO_PENDING || iocp_partial_read_queued(op, (DWORD) err)) {
+ 		atomic_fetch_add(&ctx->active_count, 1);
+ 		return 0;
+ 	}
+@@ -4554,8 +4569,13 @@ static int dequeue_one_completion(ior_ctx_iocp *ctx, DWORD timeout_ms)
+ 			// Back in flight; nothing completed from the caller's view.
+ 			return -EAGAIN;
+ 		}
+-		op->error_code = gle;
+-		op->bytes_transferred = ok ? bytes_transferred : 0;
++
++		// Part of a message or a datagram: the bytes read, as recv() reports
++		// a truncated datagram.
++		const bool partial = gle == ERROR_MORE_DATA
++				&& (op->opcode == IOR_OP_READ || op->opcode == IOR_OP_RECV);
++		op->error_code = partial ? ERROR_SUCCESS : gle;
++		op->bytes_transferred = (ok || partial) ? bytes_transferred : 0;
+ 		atomic_store(&op->state, IOCP_OP_DONE);
+ 	}
+ 	live_remove(ctx, op);
+diff --git a/tests/test_iocp_backend.c b/tests/test_iocp_backend.c
+index 5b1eaa5..31d0c66 100644
+--- a/tests/test_iocp_backend.c
++++ b/tests/test_iocp_backend.c
+@@ -14,6 +14,7 @@
+  *     recycled handle values, requests pending elsewhere and racing rings
+  *   - pipes: another process's packets on a handle passed to it, ops on a
+  *     duplicate of the handle, and the errno of a closed or empty pipe
++ *   - a read of part of a message or of a datagram
+  *   - a handle taken off the port before it is handed out
+  *
+  * The whole file compiles to an empty (passing) cmocka group on non-IOCP
+@@ -682,15 +683,17 @@ static void test_handle_takeover_race(void **state)
+ /* Pipes                                                                 */
+ /* ===================================================================== */
+ 
+-// An overlapped duplex named pipe: *server for the ring, *client synchronous.
+-static void make_pipe_pair(HANDLE *server, HANDLE *client)
++// An overlapped duplex named pipe of the given PIPE_TYPE_*, read in the same
++// mode: *server for the ring, *client synchronous.
++static void make_pipe_pair(DWORD type, HANDLE *server, HANDLE *client)
+ {
+ 	static unsigned pairs = 0;
+ 	char name[64];
+ 	snprintf(name, sizeof(name), "\\\\.\\pipe\\ior-test-%lu-%u", GetCurrentProcessId(), pairs++);
++	const DWORD read_mode = type == PIPE_TYPE_MESSAGE ? PIPE_READMODE_MESSAGE : PIPE_READMODE_BYTE;
+ 	*server = CreateNamedPipeA(name,
+ 			PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE,
+-			PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, 1, 4096, 4096, 0, NULL);
++			type | read_mode | PIPE_WAIT, 1, 4096, 4096, 0, NULL);
+ 	assert_true(*server != INVALID_HANDLE_VALUE);
+ 	*client = CreateFileA(name, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+ 	assert_true(*client != INVALID_HANDLE_VALUE);
+@@ -776,7 +779,7 @@ static void foreign_reads_check_and_free(HANDLE server, foreign_read *reads, uns
+ // A pipe the ring wrote to once, with the byte read back.
+ static void pipe_used_by_ring(ior_ctx *ctx, HANDLE *server, HANDLE *client)
+ {
+-	make_pipe_pair(server, client);
++	make_pipe_pair(PIPE_TYPE_BYTE, server, client);
+ 	char byte = 'x';
+ 	assert_int_equal(pipe_op_once(ctx, *server, &byte, 1, true), 1);
+ 	DWORD got = 0;
+@@ -898,7 +901,7 @@ static void test_duplicate_handle_ops_complete(void **state)
+ {
+ 	iocp_state *const s = (iocp_state *) *state;
+ 	HANDLE server, client, dup;
+-	make_pipe_pair(&server, &client);
++	make_pipe_pair(PIPE_TYPE_BYTE, &server, &client);
+ 	assert_true(DuplicateHandle(GetCurrentProcess(), server, GetCurrentProcess(), &dup, 0, FALSE,
+ 			DUPLICATE_SAME_ACCESS));
+ 
+@@ -928,7 +931,7 @@ static void test_write_to_closed_pipe_epipe(void **state)
+ {
+ 	iocp_state *const s = (iocp_state *) *state;
+ 	HANDLE server, client;
+-	make_pipe_pair(&server, &client);
++	make_pipe_pair(PIPE_TYPE_BYTE, &server, &client);
+ 	CloseHandle(client);
+ 
+ 	char byte = 'x';
+@@ -941,7 +944,7 @@ static void test_read_empty_nowait_pipe_eagain(void **state)
+ {
+ 	iocp_state *const s = (iocp_state *) *state;
+ 	HANDLE server, client;
+-	make_pipe_pair(&server, &client);
++	make_pipe_pair(PIPE_TYPE_BYTE, &server, &client);
+ 	DWORD mode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
+ 	assert_true(SetNamedPipeHandleState(server, &mode, NULL, NULL));
+ 
+@@ -951,6 +954,123 @@ static void test_read_empty_nowait_pipe_eagain(void **state)
+ 	CloseHandle(server);
+ }
+ 
++// A message-mode pipe holding the message "0123456789", read through the
++// ring 4 bytes at a time: a read gets part of the message, the next the rest.
++static void message_read_in_parts(ior_ctx *ctx, bool pending)
++{
++	HANDLE server, client;
++	make_pipe_pair(PIPE_TYPE_MESSAGE, &server, &client);
++	DWORD got = 0;
++	if (!pending) {
++		assert_true(WriteFile(client, "0123456789", 10, &got, NULL) && got == 10);
++	}
++
++	char buf[4];
++	ior_sqe *const sqe = ior_get_sqe(ctx);
++	assert_non_null(sqe);
++	ior_prep_read(ctx, sqe, server, buf, sizeof(buf), IOR_OFF_NONE);
++	assert_true(ior_submit(ctx) >= 0);
++	if (pending) {
++		assert_true(WriteFile(client, "0123456789", 10, &got, NULL) && got == 10);
++	}
++
++	ior_cqe *cqe = NULL;
++	ior_timespec timeout = { .tv_sec = 2, .tv_nsec = 0 };
++	assert_return_code(ior_wait_cqe_timeout(ctx, &cqe, &timeout), 0);
++	assert_int_equal(ior_cqe_get_res(ctx, cqe), 4);
++	assert_memory_equal(buf, "0123", 4);
++	ior_cqe_seen(ctx, cqe);
++	assert_int_equal(ior_peek_cqe(ctx, &cqe), -EAGAIN);
++
++	char rest[16];
++	assert_int_equal(pipe_op_once(ctx, server, rest, sizeof(rest), false), 6);
++	assert_memory_equal(rest, "456789", 6);
++	CloseHandle(client);
++	CloseHandle(server);
++}
++
++// The message is in the pipe before the read, which Wine fails at once with
++// ERROR_MORE_DATA and Windows 11 reports pending: the op completes once, with
++// the bytes read.
++static void test_message_pipe_partial_read(void **state)
++{
++	iocp_state *const s = (iocp_state *) *state;
++	message_read_in_parts(s->ctx, false);
++}
++
++// The read waits for the message and completes with part of it.
++static void test_message_pipe_partial_read_pending(void **state)
++{
++	iocp_state *const s = (iocp_state *) *state;
++	message_read_in_parts(s->ctx, true);
++}
++
++// With the completion pump the op is staged once, and the next op on the
++// slot gets its own packet.
++static void test_message_pipe_partial_read_by_pump(void **state)
++{
++	iocp_state *const s = (iocp_state *) *state;
++	assert_true(ior_notify_fd(s->ctx) != IOR_INVALID_FD);
++	message_read_in_parts(s->ctx, false);
++	message_read_in_parts(s->ctx, false);
++}
++
++// A recv of a datagram larger than its buffer gets the first bytes, whether
++// the datagram is queued already (on Wine WSAEMSGSIZE at once) or arrives
++// later.
++static void test_udp_recv_truncated(void **state)
++{
++	iocp_state *const s = (iocp_state *) *state;
++	WSADATA wsa;
++	assert_int_equal(WSAStartup(MAKEWORD(2, 2), &wsa), 0);
++	const SOCKET rx = WSASocketW(AF_INET, SOCK_DGRAM, IPPROTO_UDP, NULL, 0, WSA_FLAG_OVERLAPPED);
++	assert_true(rx != INVALID_SOCKET);
++	const SOCKET tx = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
++	assert_true(tx != INVALID_SOCKET);
++	struct sockaddr_in addr = { 0 };
++	addr.sin_family = AF_INET;
++	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
++	assert_int_equal(bind(rx, (struct sockaddr *) &addr, sizeof(addr)), 0);
++	int addr_len = sizeof(addr);
++	assert_int_equal(getsockname(rx, (struct sockaddr *) &addr, &addr_len), 0);
++
++	for (int pending = 0; pending < 2; pending++) {
++		if (!pending) {
++			assert_int_equal(
++					sendto(tx, "0123456789", 10, 0, (struct sockaddr *) &addr, sizeof(addr)), 10);
++			u_long queued = 0;
++			for (int tries = 0; tries < 200 && queued == 0; tries++) {
++				Sleep(10);
++				assert_int_equal(ioctlsocket(rx, FIONREAD, &queued), 0);
++			}
++
++			assert_true(queued > 0);
++		}
++
++		char buf[4];
++		ior_sqe *const sqe = ior_get_sqe(s->ctx);
++		assert_non_null(sqe);
++		ior_prep_recv(s->ctx, sqe, (ior_fd_t) rx, buf, sizeof(buf), 0);
++		assert_true(ior_submit(s->ctx) >= 0);
++		if (pending) {
++			assert_int_equal(
++					sendto(tx, "0123456789", 10, 0, (struct sockaddr *) &addr, sizeof(addr)), 10);
++		}
++
++		ior_cqe *cqe = NULL;
++		ior_timespec timeout = { .tv_sec = 2, .tv_nsec = 0 };
++		assert_return_code(ior_wait_cqe_timeout(s->ctx, &cqe, &timeout), 0);
++		assert_int_equal(ior_cqe_get_res(s->ctx, cqe), 4);
++		assert_memory_equal(buf, "0123", 4);
++		ior_cqe_seen(s->ctx, cqe);
++		assert_int_equal(ior_peek_cqe(s->ctx, &cqe), -EAGAIN);
++	}
++
++	closesocket(tx);
++	closesocket(rx);
++	WSACleanup();
++}
++
+ /* ===================================================================== */
+ /* Releasing a handle                                                    */
+ /* ===================================================================== */
+@@ -1076,7 +1196,7 @@ static void test_release_handle_not_ours(void **state)
+ {
+ 	iocp_state *const s = (iocp_state *) *state;
+ 	HANDLE server, client;
+-	make_pipe_pair(&server, &client);
++	make_pipe_pair(PIPE_TYPE_BYTE, &server, &client);
+ 	assert_int_equal(ior_release_handle(s->ctx, server), 0);
+ 	assert_int_equal(ior_release_handle(s->ctx, INVALID_HANDLE_VALUE), -EBADF);
+ 
+@@ -1167,6 +1287,12 @@ int main(void)
+ 		cmocka_unit_test_setup_teardown(test_write_to_closed_pipe_epipe, iocp_setup, iocp_teardown),
+ 		cmocka_unit_test_setup_teardown(
+ 				test_read_empty_nowait_pipe_eagain, iocp_setup, iocp_teardown),
++		cmocka_unit_test_setup_teardown(test_message_pipe_partial_read, iocp_setup, iocp_teardown),
++		cmocka_unit_test_setup_teardown(
++				test_message_pipe_partial_read_pending, iocp_setup, iocp_teardown),
++		cmocka_unit_test_setup_teardown(
++				test_message_pipe_partial_read_by_pump, iocp_setup, iocp_teardown),
++		cmocka_unit_test_setup_teardown(test_udp_recv_truncated, iocp_setup, iocp_teardown),
+ 		cmocka_unit_test_setup_teardown(test_release_handle_unbinds, iocp_setup, iocp_teardown),
+ 		cmocka_unit_test_setup_teardown(test_release_handle_rebinds, iocp_setup, iocp_teardown),
+ 		cmocka_unit_test_setup_teardown(test_release_handle_busy, iocp_setup, iocp_teardown),
+-- 
+2.43.0
+
