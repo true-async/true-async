@@ -77,7 +77,7 @@ io/040-pipe_read_timeout_then_success.phpt  ref:e7b005d28a0860483af63fb0d9fb368a
 io/041-pipe_read_no_timeout.phpt  ref:43ba20ae270c5db89b36391f2b05ae9cbe9718f03f03b36934f34e85c2851347
 io/042-pipe_timeout_concurrent_coroutines.phpt  ref:3d9ffd763be928d7508e709b422f2aa296029b829052ecf39d43938e4cb16515
 io/043-pipe_fread_timeout.phpt  ref:cff039c14f81f60c9fe02988f15a5409d85404b24d81ebd62b329b0e8798ab72
-io/044-nonblocking_pipe_read_no_data.phpt  ref:391189767291b70227f34b6546eab00d1217e2d5fcc3cf918659da8081692350  xfail-on:pocs-win(S6.10)
+io/044-nonblocking_pipe_read_no_data.phpt  ref:391189767291b70227f34b6546eab00d1217e2d5fcc3cf918659da8081692350
 io/045-nonblocking_pipe_write_broken.phpt  ref:0b3b491caacb634896ae3cd89fb8124c4de502176a0886c6c9e986351aa2f71f
 io/046-nonblocking_pipe_read_with_data.phpt  ref:66218c85a2c301613fde47e38d3b214c2bd9bb20fb47342819dde1c71a4eadd9
 io/047-nonblocking_pipe_write_success.phpt  ref:7318de4d2fba4a36b7cd16a24938e72ed3f1e0c8349108294a0dbc8de6e37e63
@@ -157,39 +157,39 @@ stream/021-stream_select_microsecond_timeout.phpt  ref:0ecd5b814c32f46f8002f28ea
 stream/022-stream_select_write_ready.phpt  ref:dcd516ea07afcfad96638c731045a7e2b063ecf53e28e3f30c430ab414bf61e0
 stream/023-stream_select_large_sets.phpt  ref:29c8cbedb8381f7cb7759ef6e64609beab99719ada8e3aa4e9675aff0c581eb6
 stream/024-stream_select_remote_disconnect.phpt  ref:30e4acc05c434e9426d8474ed8c45e7090ecc126030745a984a36780bcb253a1
-stream/025-ssl_stream_socket_accept_timeout.phpt  ref:fbd3c0a4e0a2a04ac55f188e611dd02f2d3535dc2e9a172ce635fa90a906b94b  skip-on:pocs-win(openssl-not-loaded-until-S6.4)
-stream/026-ssl_client_server_async.phpt  ref:aaa66f60ff173dd534989f7070e21f5632a83c94ca31975fe20469d856f63624  skip-on:pocs-win(openssl-not-loaded-until-S6.4)
-stream/027-ssl_concurrent_accept.phpt  ref:53aa43227e480d15d4874361606a75dfb7eabc65234c4e711130a30a9c9ae912  skip-on:pocs-win(openssl-not-loaded-until-S6.4)
+stream/025-ssl_stream_socket_accept_timeout.phpt  ref:fbd3c0a4e0a2a04ac55f188e611dd02f2d3535dc2e9a172ce635fa90a906b94b
+stream/026-ssl_client_server_async.phpt  ref:aaa66f60ff173dd534989f7070e21f5632a83c94ca31975fe20469d856f63624
+stream/027-ssl_concurrent_accept.phpt  ref:53aa43227e480d15d4874361606a75dfb7eabc65234c4e711130a30a9c9ae912
 stream/028-udp_basic_operations.phpt  ref:5c98951aee1fc30e902988d06db4fc65e6a55a1af789af62b69df7919ead0474  changed:2026-10-06:c51bab2a278fe495337a9031695c4b50284f3fbe0805577f0851abdfc9778c57
 stream/029-udp_concurrent_operations.phpt  ref:df8e9f606b4a0162b51128efa467caa98c187259ea54a4b9b328d3990a1432dc
 stream/030-udp_timeout_operations.phpt  ref:794776850a7230f0952fdefebcd17a9cca9d4d7d9de2eac33432c3c471830133
 stream/031-tcp_timeout_operations.phpt  ref:b1aaca79435b0a7240786d7e564ed5188296f6428a199e3c176607412027e5b5
 stream/032-stream_select_null_timeout.phpt  ref:1ada2a5b2b95be2d8cb5d99fa72403dc4dd791d9bba84fc68968e71d3ba60a3b
-stream/033-stream_select_pipe_basic.phpt  ref:7427888912331a4783887790b56db1a2c2253169be41890a04d727291b2697f3  xfail-on:pocs-win(S6.10)
+stream/033-stream_select_pipe_basic.phpt  ref:7427888912331a4783887790b56db1a2c2253169be41890a04d727291b2697f3
 stream/034-stream_select_pipe_timeout.phpt  ref:1d01cc45808bb50b8006442261f9784d3436b9411324c70681dcfd79bf27e349
-stream/035-stream_select_pipe_multiple.phpt  ref:1d8e0b559a04813cf8027718970c5116888741404a7a099fcccf5df58bae7b5e  xfail-on:pocs-win(S6.10)
-stream/036-stream_select_pipe_fallback.phpt  ref:7f2727bf1a8c3024931d4897fd8e0f64a0d33989a90a553a0350ee265afd2cfc  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)  xfail-on:pocs-win(S6.10)
+stream/035-stream_select_pipe_multiple.phpt  ref:1d8e0b559a04813cf8027718970c5116888741404a7a099fcccf5df58bae7b5e
+stream/036-stream_select_pipe_fallback.phpt  ref:7f2727bf1a8c3024931d4897fd8e0f64a0d33989a90a553a0350ee265afd2cfc  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)
 stream/037-stream_select_buffered_data.phpt  ref:d5750e7d9c61b4347b70020dcc8281c87e4e17bd24c645a3b41a019caf8ce387
 stream/046-write_wakes_on_peer_reset.phpt  ref:9ea0d39c9c18250cba6f0cf7f10dc8018255fa180a02410507a417d7c9219fc6  skip-on:*-win(Unix-only)
 stream/046-write_wakes_on_peer_reset_win.phpt  ref:8f0405cc00dd9b86f6d43ec5c94718499fc3ef0d5aa263eecafff08ca999815f  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)
 
 # socket_ext
-socket_ext/001-socket_read_async.phpt  ref:6d60074c22037dbdd02e96228fe93b88fc536c1320fccc0f305b664d701f47c5  skip-on:pocs-win(sockets-not-loaded-until-S6.4)
-socket_ext/002-socket_recv_send_async.phpt  ref:6a47e6f370629764678363c9f21e2c3697d2f2988e6f2007e3b17a4f654ec265  skip-on:pocs-win(sockets-not-loaded-until-S6.4)
-socket_ext/003-socket_sendto_recvfrom_async.phpt  ref:711ee230e84827765d7fae59edb8ddade838efca44de626c12f943dec320a202  skip-on:pocs-win(sockets-not-loaded-until-S6.4)
-socket_ext/004-socket_connect_async.phpt  ref:50859f1fcf8d5dca64e8dcdd4fb7c48fde98ef686b7055002929f725937aff52  skip-on:pocs-win(sockets-not-loaded-until-S6.4)
-socket_ext/005-socket_accept_multiple.phpt  ref:d5da07d7966eb4d108e3fed688a70907a194c8abc7fcf304519b04fd8c7e3005  skip-on:pocs-win(sockets-not-loaded-until-S6.4)
-socket_ext/006-socket_hostname_resolution.phpt  ref:17127e21cd4dab2d114983be622988fb936cb4b5ee0281c43ce2672901f10a5c  skip-on:pocs-win(sockets-not-loaded-until-S6.4)
+socket_ext/001-socket_read_async.phpt  ref:6d60074c22037dbdd02e96228fe93b88fc536c1320fccc0f305b664d701f47c5
+socket_ext/002-socket_recv_send_async.phpt  ref:6a47e6f370629764678363c9f21e2c3697d2f2988e6f2007e3b17a4f654ec265
+socket_ext/003-socket_sendto_recvfrom_async.phpt  ref:711ee230e84827765d7fae59edb8ddade838efca44de626c12f943dec320a202
+socket_ext/004-socket_connect_async.phpt  ref:50859f1fcf8d5dca64e8dcdd4fb7c48fde98ef686b7055002929f725937aff52
+socket_ext/005-socket_accept_multiple.phpt  ref:d5da07d7966eb4d108e3fed688a70907a194c8abc7fcf304519b04fd8c7e3005
+socket_ext/006-socket_hostname_resolution.phpt  ref:17127e21cd4dab2d114983be622988fb936cb4b5ee0281c43ce2672901f10a5c
 
 # dns
 dns/001-gethostbyname_basic.phpt  ref:d7df0e4ad62a56889c9fccbbb2de9fe6e51c4e8c3864491c7fbc9b26e837f4de
 dns/002-gethostbyaddr_basic.phpt  ref:afd9d30b29e92527307cec70ea05de62e0b9d15c0ce90837284b063b16019a20
 dns/003-gethostbynamel_basic.phpt  ref:ab30f00c76407a7d9cb5fe52b5e6a3df83b54e18db9eef920b4b68c62242db18
 dns/004-concurrent_dns_lookups.phpt  ref:b4349ba4424858c91e55c8eba2772de83913e4d964ad5b2ff2f44dcf914fa1a9
-dns/005-dns_error_handling.phpt  ref:ec92b506931f200830f35d216cb814b1bbf2b4778420a085c27b0e3451b598f2  xfail-on:pocs-win(S6.10)
+dns/005-dns_error_handling.phpt  ref:ec92b506931f200830f35d216cb814b1bbf2b4778420a085c27b0e3451b598f2  changed:2026-10-08:6473082ba1109129d5ed57a670acd350fc7d4948b3dbc36f6b51770828632ec7  skip-on:pocs-win(empty_host_name=local_addresses_on_Windows)
 dns/006-dns_timeout_handling.phpt  ref:dfecdee68b279c4f8a30f0d1affaef0e807ebe35ca1fdae50e36a7d5d2b332da
 dns/007-dns_vs_sync_comparison.phpt  ref:a2864b26aedbbd63b6eb9c0d74c20c92e5ca5ee5b180c7e701ae0e158e58bdc7
-dns/008-dns_ipv6_support.phpt  ref:70f76914707f909b5dbdb0cce685ca0e2f1503bb999df0fd760047b6223f62a8  skip-on:pocs-win(sockets-not-loaded-until-S6.4)
+dns/008-dns_ipv6_support.phpt  ref:70f76914707f909b5dbdb0cce685ca0e2f1503bb999df0fd760047b6223f62a8
 dns/009-dns_memory_stress.phpt  ref:2d604b206a75358b9a857c8fef35d068c5db4340fc997a473b4424590c0a6b06
 dns/010-dns_cancellation.phpt  ref:05cf40180ef37e858f65934223804d36395bfda9710fa170809c0cd31ac1b11d
 dns/011-dns_concurrent_resolve_cancel.phpt  ref:24e4d1e9638a8ba5136dabc03bb1dbd58676702769a56877d1c9d4e2d09b4b8d
@@ -197,75 +197,75 @@ dns/011-dns_platform_specific.phpt  ref:3d2a2073b4da33b9eacce46f666dedb704625791
 dns/012-dns_windows_specific.phpt  ref:2987c6afabf3d9137221005e62550306aef6592d7aed579302930483f734231c  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)
 dns/013-dns_unix_specific.phpt  ref:f12b5d2a3aea249852bd994fd1d00d5d1a1f9d3ad938d33dd4d305b90bdb5c66  skip-on:*-win(Unix-only)
 dns/014-dns_check_record.phpt  ref:77bbb4ca6ed895e27daf7a98663b92411bce9df93a6d0ed8ea7dbc23c68734d2
-dns/015-dns_ipv6.phpt  ref:e145b518fc40a67cebd0c1512047b485282fc1ea014b289bda1fee98cd22407c  skip-on:pocs-win(sockets-not-loaded-until-S6.4)
+dns/015-dns_ipv6.phpt  ref:e145b518fc40a67cebd0c1512047b485282fc1ea014b289bda1fee98cd22407c
 
 # curl
-curl/001-curl_exec_basic.phpt  ref:8cadc5acd0c04d7e780d3c6fb6080c1c380ec3e6e8e125fbc9b8378ecb7b6465  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/002-concurrent_requests.phpt  ref:e95910b630a3ba8fc7841089f4777d87a031b964dcef163ce9f5325de184ea5c  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/003-multi_handle_async.phpt  ref:53e3c20e005f0276b1c6f3e130b2ecb9689a085d458bee0b3b9bc7ea930ff576  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/004-post_request.phpt  ref:26bb94cebc607061e29dc3638bc8a26d62a6b416559887dd5cb407654ec15aa7  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/005-error_handling.phpt  ref:db45f571470c3a0b83f351d3162567303b4c618cda734a5cb61c559c9336f8ca  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/006-timeout_handling.phpt  ref:a23fa9cd6c28882fda46f4fc458e9413caf6db8e2a0ed838b67602e79af7e4b3  changed:2026-10-07:7c47baf6fd69642adfcd2391bfb42b58a2b11d3cd807a5a70c1bed461b8fb2e1  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/007-large_response.phpt  ref:6432e547b3a9bc2d7545bb46aee8375add07e329b6044324e112fc0084c7d618  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/008-mixed_sync_async.phpt  ref:d9634f910bea828767c46a96fe345b2b101a866bd1e8c9ac2030bf9a0e7892d0  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/009-curl_with_coroutines.phpt  ref:0f43df5ba3d2e51190b0daf77e05464399f0da7373fa0305a4b8302fa1f7c27c  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/010-multi_select_async.phpt  ref:166e643dc81b445f1b72df4feac1f5133cb27885eb1bc98f9b9078601fa82a35  changed:2026-10-07:67420f95922ae4d833665a73aa060f5f9225f7dde71571ed4daefeb66c77c451  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/011-curl_file_upload.phpt  ref:99492cfd38971d20f0d2c8f44b1577faf32a1d793ba17218264236fb58fb85b7  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/012-write_file_basic.phpt  ref:339751f5fda6f2c0a06e588cfada73fb6e5948b0432a88e4b3c01f77dd39fcbc  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/013-write_file_large.phpt  ref:b0b91042f15b41eefc64d9c2bc8714842e4362eca6066ce47bfb4e9279dea008  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/014-write_user_basic.phpt  ref:ef5059f2b3fc979110cb7bf1626e64885337783e335cfd0cb83be3bb419dd7ff  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/015-write_user_large.phpt  ref:94ba810a6c465931501dbfee7c6547347f4275924964cee9d5b3d113ab17df84  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/016-write_user_return_value.phpt  ref:adc2767412517596216b2259c55a1702007d96ac1d350469200ab2b0232968fc  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/017-write_user_async_io.phpt  ref:b07330506e5d8bf348394ca6132e044c138994208dce0369b6b9bb5f0a81b9b4  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/018-write_file_concurrent.phpt  ref:ab2d1dcba304b62ff8f23ac48a24c0e1e8e9663f1ccbd067c398c153ada3dbf1  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/019-write_user_concurrent.phpt  ref:28a8fc382410c12f00ae09ce44b5900de0438a98867e554c0b30bbcb667001de  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/020-write_mixed_concurrent.phpt  ref:3525dba7eb060dd144a6b717ca8aee2e6f3addb5ff1ffe44e0804f76ec3e12ea  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/021-write_user_json.phpt  ref:21a6b5de4b068af42be0e0df971ccb87ba44adaa4c4e892dca2e6c301432831f  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/022-write_file_json.phpt  ref:ab0f6743469e20b9a627614c41955751516535e447a8e380788efa3854673c99  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/023-write_user_exception.phpt  ref:3c82bec105c3ab119165f2129e022b43a67a1c97d5d3cb7797bef4bf14e3cfdb  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/024-upload_nonexistent_file.phpt  ref:bfa5c2941b6d3a543f50a14e3b24f77f839284583a637a341633fd586eae6aaa  skip-on:pocs-win(curl-not-loaded-until-S6.6)
+curl/001-curl_exec_basic.phpt  ref:8cadc5acd0c04d7e780d3c6fb6080c1c380ec3e6e8e125fbc9b8378ecb7b6465
+curl/002-concurrent_requests.phpt  ref:e95910b630a3ba8fc7841089f4777d87a031b964dcef163ce9f5325de184ea5c
+curl/003-multi_handle_async.phpt  ref:53e3c20e005f0276b1c6f3e130b2ecb9689a085d458bee0b3b9bc7ea930ff576
+curl/004-post_request.phpt  ref:26bb94cebc607061e29dc3638bc8a26d62a6b416559887dd5cb407654ec15aa7
+curl/005-error_handling.phpt  ref:db45f571470c3a0b83f351d3162567303b4c618cda734a5cb61c559c9336f8ca
+curl/006-timeout_handling.phpt  ref:a23fa9cd6c28882fda46f4fc458e9413caf6db8e2a0ed838b67602e79af7e4b3  changed:2026-10-07:7c47baf6fd69642adfcd2391bfb42b58a2b11d3cd807a5a70c1bed461b8fb2e1
+curl/007-large_response.phpt  ref:6432e547b3a9bc2d7545bb46aee8375add07e329b6044324e112fc0084c7d618
+curl/008-mixed_sync_async.phpt  ref:d9634f910bea828767c46a96fe345b2b101a866bd1e8c9ac2030bf9a0e7892d0
+curl/009-curl_with_coroutines.phpt  ref:0f43df5ba3d2e51190b0daf77e05464399f0da7373fa0305a4b8302fa1f7c27c
+curl/010-multi_select_async.phpt  ref:166e643dc81b445f1b72df4feac1f5133cb27885eb1bc98f9b9078601fa82a35  changed:2026-10-07:67420f95922ae4d833665a73aa060f5f9225f7dde71571ed4daefeb66c77c451
+curl/011-curl_file_upload.phpt  ref:99492cfd38971d20f0d2c8f44b1577faf32a1d793ba17218264236fb58fb85b7
+curl/012-write_file_basic.phpt  ref:339751f5fda6f2c0a06e588cfada73fb6e5948b0432a88e4b3c01f77dd39fcbc
+curl/013-write_file_large.phpt  ref:b0b91042f15b41eefc64d9c2bc8714842e4362eca6066ce47bfb4e9279dea008
+curl/014-write_user_basic.phpt  ref:ef5059f2b3fc979110cb7bf1626e64885337783e335cfd0cb83be3bb419dd7ff
+curl/015-write_user_large.phpt  ref:94ba810a6c465931501dbfee7c6547347f4275924964cee9d5b3d113ab17df84
+curl/016-write_user_return_value.phpt  ref:adc2767412517596216b2259c55a1702007d96ac1d350469200ab2b0232968fc
+curl/017-write_user_async_io.phpt  ref:b07330506e5d8bf348394ca6132e044c138994208dce0369b6b9bb5f0a81b9b4
+curl/018-write_file_concurrent.phpt  ref:ab2d1dcba304b62ff8f23ac48a24c0e1e8e9663f1ccbd067c398c153ada3dbf1
+curl/019-write_user_concurrent.phpt  ref:28a8fc382410c12f00ae09ce44b5900de0438a98867e554c0b30bbcb667001de
+curl/020-write_mixed_concurrent.phpt  ref:3525dba7eb060dd144a6b717ca8aee2e6f3addb5ff1ffe44e0804f76ec3e12ea
+curl/021-write_user_json.phpt  ref:21a6b5de4b068af42be0e0df971ccb87ba44adaa4c4e892dca2e6c301432831f
+curl/022-write_file_json.phpt  ref:ab0f6743469e20b9a627614c41955751516535e447a8e380788efa3854673c99
+curl/023-write_user_exception.phpt  ref:3c82bec105c3ab119165f2129e022b43a67a1c97d5d3cb7797bef4bf14e3cfdb
+curl/024-upload_nonexistent_file.phpt  ref:bfa5c2941b6d3a543f50a14e3b24f77f839284583a637a341633fd586eae6aaa
 curl/025-write_file_broken_pipe.phpt  ref:78c64e1a18fa2de63908f206e67e717f146f23a774e0f1f65f0552b83274134e  changed:2026-10-07:acacecc1d0f4f3e039d0c003cb17e111cc5383a50e5cb0fd550257f57e2c10fc  skip-on:*-win(Unix-only)
-curl/026-header_file_basic.phpt  ref:3f82f542edbe2d4676d195444b62a1470e0d8ff0ff5eb0a7b6d43a10747b4e86  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/027-header_user_basic.phpt  ref:6a63bb9d284332b4285b163703340f86c3e051b9d8ee8d02efffd311e66868cd  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/028-read_file_basic.phpt  ref:1f8d2a4e776eeced97a3d20f6756a299316608a3df11c2f09a747de7614a307c  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/029-read_user_basic.phpt  ref:19649f814ee6bb44a6f095cd34e2be1448c0447768c49bccc06be6f6b89fc8de  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/030-read_file_large.phpt  ref:8a9210450b14de44b1bf7bd9cb4769ae12230a552e9575a49dd6f1e54bdf94d7  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/031-progress_callback.phpt  ref:a984687de085b9dc55440ee6adef3619e3d45a643bef3db0b6e6ae66b07be2b8  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/032-debug_callback.phpt  ref:f41a00663e4165ec1a0e5fe0580145bbbb0124c24621660bbefa0b443f8ed100  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/033-read_user_exception.phpt  ref:bd91fe80088f64ae94dfe24c5f4d10726321bc98df6af13b3723e4b21d3f605d  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/034-header_user_exception.phpt  ref:f94b33d2d96993e3050af2bd6a941d5d8b9a1b08f4ff584ac8f5a1d64e699acd  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/035-progress_exception.phpt  ref:ebe56b9c6bf0ddaf19f1cb92b18e035a329bbe9e8fdebf0e8af7a0cb56cab5a5  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/036-multi_curlfile_upload.phpt  ref:fb916fb3d97a2a86bc65722c7f2bc19f70e378f517bbead9fcad3d78c3ff9294  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/037-multi_write_user.phpt  ref:4083e075579844e9b666f8543b1e1cea23fe7e93c6074ce6795b474ae970c0b1  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/038-multi_write_file.phpt  ref:a9bd2ad9434b763e0eed391c62161827a913b0937946e7e7bd42cddeeac72933  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/039-multi_header_user.phpt  ref:b65fe248ced57ef86c75e7f1460b33808000b4894bfd4ae88ad500a8b31fa347  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/040-multi_header_file.phpt  ref:fc0a10e27ed0af52102c3cc3c01f0c7a12692f65679b78d14fe38859bbf5be52  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/041-multi_read_file.phpt  ref:f2d5947d1385dc1189b01005528621bf68c055b186a86ef671c0a49c70671777  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/042-multi_read_user.phpt  ref:e07be8d101e7c2c978b16ba3c9045d6d8f20d4c8f5581f328d603f6dc2599a21  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/043-multi_write_user_exception.phpt  ref:5352efed4adea900fa18c885491442305adad1131e33cf95dd8298ea49ba9e12  changed:2026-10-07:9e432054759bed71b4737a36909d37cdbd257dd44dc5f3ac2856a14dea5feaa5  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/044-multi_curlfile_concurrent.phpt  ref:ddf9928de5b840d3826665421d72202ee05baa12992c91522e20230bf3d4bfbd  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/045-multi_mixed_callbacks.phpt  ref:fea951601b669e9bf918c7ad6afc17dd891b61cf1719d252459c68247a1eb057  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/046-multi_concurrent_coroutines.phpt  ref:90459d07d226fca79d981a241746ed5ac67057b4b1fd5fe25f195bebed85ad68  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/047-multi_concurrent_callbacks.phpt  ref:995cb91c6c53f9ea920727377f3e2d5d515eeb0d6dabc6c099e3dc79fb42cc73  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/048-multi_mixed_single_multi.phpt  ref:462a4a64374760124d3589f8c5cff0725e47d22ed458903987447475f42b09ff  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/049-multi_concurrent_curlfile.phpt  ref:0395569c69589c31ef505776bf373d9874f25645e6a6de2993c111431e87b7dc  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/050-multi_concurrent_exception_isolation.phpt  ref:f05f47c2b011aa0a02f52c7f5495f6e0ae9c674e7f3a94629c7357c1fd682414  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/051-multi_read_user_exception.phpt  ref:a475c85ccd249876d71293da0e32a08ff5a5ee44b555ec05ba2b1d05749e11de  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/052-multi_header_user_exception.phpt  ref:ee40d212e3ca730989ebd8b2d47a4d6427d6c2e2b781accf848ce0a1247d4d9b  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/053-multi_curlfile_nonexistent.phpt  ref:db6bdb1422ff543cea777fe269a734d7c00c031633125fe25eb62235ebbdba11  skip-on:pocs-win(curl-not-loaded-until-S6.6)
+curl/026-header_file_basic.phpt  ref:3f82f542edbe2d4676d195444b62a1470e0d8ff0ff5eb0a7b6d43a10747b4e86
+curl/027-header_user_basic.phpt  ref:6a63bb9d284332b4285b163703340f86c3e051b9d8ee8d02efffd311e66868cd
+curl/028-read_file_basic.phpt  ref:1f8d2a4e776eeced97a3d20f6756a299316608a3df11c2f09a747de7614a307c
+curl/029-read_user_basic.phpt  ref:19649f814ee6bb44a6f095cd34e2be1448c0447768c49bccc06be6f6b89fc8de
+curl/030-read_file_large.phpt  ref:8a9210450b14de44b1bf7bd9cb4769ae12230a552e9575a49dd6f1e54bdf94d7
+curl/031-progress_callback.phpt  ref:a984687de085b9dc55440ee6adef3619e3d45a643bef3db0b6e6ae66b07be2b8
+curl/032-debug_callback.phpt  ref:f41a00663e4165ec1a0e5fe0580145bbbb0124c24621660bbefa0b443f8ed100
+curl/033-read_user_exception.phpt  ref:bd91fe80088f64ae94dfe24c5f4d10726321bc98df6af13b3723e4b21d3f605d
+curl/034-header_user_exception.phpt  ref:f94b33d2d96993e3050af2bd6a941d5d8b9a1b08f4ff584ac8f5a1d64e699acd
+curl/035-progress_exception.phpt  ref:ebe56b9c6bf0ddaf19f1cb92b18e035a329bbe9e8fdebf0e8af7a0cb56cab5a5
+curl/036-multi_curlfile_upload.phpt  ref:fb916fb3d97a2a86bc65722c7f2bc19f70e378f517bbead9fcad3d78c3ff9294
+curl/037-multi_write_user.phpt  ref:4083e075579844e9b666f8543b1e1cea23fe7e93c6074ce6795b474ae970c0b1
+curl/038-multi_write_file.phpt  ref:a9bd2ad9434b763e0eed391c62161827a913b0937946e7e7bd42cddeeac72933
+curl/039-multi_header_user.phpt  ref:b65fe248ced57ef86c75e7f1460b33808000b4894bfd4ae88ad500a8b31fa347
+curl/040-multi_header_file.phpt  ref:fc0a10e27ed0af52102c3cc3c01f0c7a12692f65679b78d14fe38859bbf5be52
+curl/041-multi_read_file.phpt  ref:f2d5947d1385dc1189b01005528621bf68c055b186a86ef671c0a49c70671777
+curl/042-multi_read_user.phpt  ref:e07be8d101e7c2c978b16ba3c9045d6d8f20d4c8f5581f328d603f6dc2599a21
+curl/043-multi_write_user_exception.phpt  ref:5352efed4adea900fa18c885491442305adad1131e33cf95dd8298ea49ba9e12  changed:2026-10-07:9e432054759bed71b4737a36909d37cdbd257dd44dc5f3ac2856a14dea5feaa5
+curl/044-multi_curlfile_concurrent.phpt  ref:ddf9928de5b840d3826665421d72202ee05baa12992c91522e20230bf3d4bfbd
+curl/045-multi_mixed_callbacks.phpt  ref:fea951601b669e9bf918c7ad6afc17dd891b61cf1719d252459c68247a1eb057
+curl/046-multi_concurrent_coroutines.phpt  ref:90459d07d226fca79d981a241746ed5ac67057b4b1fd5fe25f195bebed85ad68
+curl/047-multi_concurrent_callbacks.phpt  ref:995cb91c6c53f9ea920727377f3e2d5d515eeb0d6dabc6c099e3dc79fb42cc73
+curl/048-multi_mixed_single_multi.phpt  ref:462a4a64374760124d3589f8c5cff0725e47d22ed458903987447475f42b09ff
+curl/049-multi_concurrent_curlfile.phpt  ref:0395569c69589c31ef505776bf373d9874f25645e6a6de2993c111431e87b7dc
+curl/050-multi_concurrent_exception_isolation.phpt  ref:f05f47c2b011aa0a02f52c7f5495f6e0ae9c674e7f3a94629c7357c1fd682414
+curl/051-multi_read_user_exception.phpt  ref:a475c85ccd249876d71293da0e32a08ff5a5ee44b555ec05ba2b1d05749e11de
+curl/052-multi_header_user_exception.phpt  ref:ee40d212e3ca730989ebd8b2d47a4d6427d6c2e2b781accf848ce0a1247d4d9b
+curl/053-multi_curlfile_nonexistent.phpt  ref:db6bdb1422ff543cea777fe269a734d7c00c031633125fe25eb62235ebbdba11
 curl/054-multi_write_file_broken_pipe.phpt  ref:b1a7a1afbc71e6a26e64d62f5e12850d1ed9b0c9a42688c04f1fbd3bca8f72d4  changed:2026-10-07:a564b0599361212cb93dffc09bf1ce1f32d10d8e88bc0c67d51a22a0914bee56  skip-on:*-win(Unix-only)
-curl/055-multi_connection_error.phpt  ref:a90e506c44b4221265dc56594d736e3530aaf5555489cf27d94631da4ff51b0b  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/056-multi_progress_exception.phpt  ref:6ca6c834ed1892348b6da3c9913c0ce194426b4b2cc1b5b83996f0731dec8a67  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/057-curl_handle_reuse_file.phpt  ref:b3e9f71bbae5de56905b63fae8e6d967c5f261bc8a2e0a433e0608d8e35efcfe  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/058-curl_early_fclose.phpt  ref:e97609f6be9d315a40c05deee991be938ffb85a58f0172fdc8f0b4b703943669  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/059-curl_handle_reuse_different_fp.phpt  ref:ef4be1d0cb87005ea95bc0d73d7aed6a60b6b67030cd277ddffea7a17603ff9a  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/060-curl_concurrent_reuse_file.phpt  ref:f89826f904d3da05a583b675b05eb102685db36532c106859e6a92fd70540a2a  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/062-read_callback_socket_source_win.phpt  ref:8b29a644f4d1d5a1673949ed1965e8184233d288d6929cee2b1146ded3ad1fc1  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/065-write_trampoline.phpt  ref:e902c03765a1f6d660b112c0eb77167c05713628bfc087b164b55188a685e48a  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/066-writeheader_trampoline.phpt  ref:93c060a4b5345e792a69104849572b6a15aaad3e192f55c282e41444564edaa3  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/067-multi_gc_cleanup_uaf.phpt  ref:ff8f0d89658f6ad98393d5a52b11fbc03921412bafe8ddcfb303a77785aec801  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/068-multi_perform_loop_no_coroutine.phpt  ref:e6e5826db8ac1bc313e22c0555e32592ef8a4793b4e2a7595f4f5ae1f862de4c  skip-on:pocs-win(curl-not-loaded-until-S6.6)
-curl/069-multi_select_cancel_uaf.phpt  ref:d465d917682ac73a1b0e1b5c383ab493fc1bc456d8ef920b7308d9a6ae25f4da  skip-on:pocs-win(curl-not-loaded-until-S6.6)
+curl/055-multi_connection_error.phpt  ref:a90e506c44b4221265dc56594d736e3530aaf5555489cf27d94631da4ff51b0b
+curl/056-multi_progress_exception.phpt  ref:6ca6c834ed1892348b6da3c9913c0ce194426b4b2cc1b5b83996f0731dec8a67
+curl/057-curl_handle_reuse_file.phpt  ref:b3e9f71bbae5de56905b63fae8e6d967c5f261bc8a2e0a433e0608d8e35efcfe
+curl/058-curl_early_fclose.phpt  ref:e97609f6be9d315a40c05deee991be938ffb85a58f0172fdc8f0b4b703943669
+curl/059-curl_handle_reuse_different_fp.phpt  ref:ef4be1d0cb87005ea95bc0d73d7aed6a60b6b67030cd277ddffea7a17603ff9a
+curl/060-curl_concurrent_reuse_file.phpt  ref:f89826f904d3da05a583b675b05eb102685db36532c106859e6a92fd70540a2a
+curl/062-read_callback_socket_source_win.phpt  ref:8b29a644f4d1d5a1673949ed1965e8184233d288d6929cee2b1146ded3ad1fc1  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)
+curl/065-write_trampoline.phpt  ref:e902c03765a1f6d660b112c0eb77167c05713628bfc087b164b55188a685e48a
+curl/066-writeheader_trampoline.phpt  ref:93c060a4b5345e792a69104849572b6a15aaad3e192f55c282e41444564edaa3
+curl/067-multi_gc_cleanup_uaf.phpt  ref:ff8f0d89658f6ad98393d5a52b11fbc03921412bafe8ddcfb303a77785aec801
+curl/068-multi_perform_loop_no_coroutine.phpt  ref:e6e5826db8ac1bc313e22c0555e32592ef8a4793b4e2a7595f4f5ae1f862de4c
+curl/069-multi_select_cancel_uaf.phpt  ref:d465d917682ac73a1b0e1b5c383ab493fc1bc456d8ef920b7308d9a6ae25f4da
 
 # exec
 exec/001-proc_open_basic.phpt  ref:9b0b32056233d9effd5c67063f9dd7e9f60dc28d3cc850f043350a8206bcbaea  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)
@@ -359,7 +359,7 @@ io_provider/009-cancel_after_completion.phpt  own:7c7fa89d5721374431f090c7777318
 io_provider/010-cancelled_pipe_read_reads_again.phpt  own:293421b6b2f09026d17c72b39a3e6358fb11cb51192c33b9e7fec1eb81ddfd94  skip-on:*-win(Unix-only)
 io_provider/011-io_after_bailout_in_shutdown_function.phpt  own:31f01d304c7da9462d9829243291e40297072cdd8b5bb796564b58f4ae251471  skip-on:*-win(Unix-only)
 io_provider/012-cancel_parked_stream_select.phpt  own:aae6a829a811826f25a6548b3d76fca0538d694a96e09c4d9ad7ad1f9fd2e7a0
-io_provider/013-cancel_parked_socket_select.phpt  own:7a1488fced6b64b2e7eddd69ff11a5a4616e9542e7f75e37e11772f72e70d365  skip-on:pocs-win(sockets-not-loaded-until-S6.5)
+io_provider/013-cancel_parked_socket_select.phpt  own:7a1488fced6b64b2e7eddd69ff11a5a4616e9542e7f75e37e11772f72e70d365
 io_provider/014-registration_before_the_queue.phpt  own:7b851a3989d35a366036d602d8702a269d18b54f389a89f652cd5464710c7313  skip-on:*-win(no-registrations-on-IOCP)  changed:2026-10-07:799ae4eae772d8fa605d1a04ee20d95267578e449a4606b19781e44e679a4f26
 io_provider/015-select_sees_pending_connections.phpt  own:5f74c81f2c02d13ffc6e78406c00158d9a09986d104b84419b13401c351b02df
 
@@ -367,9 +367,9 @@ io_provider/015-select_sees_pending_connections.phpt  own:5f74c81f2c02d13ffc6e78
 # ($TRUE_ASYNC_CORE_SRC, dev/DECISIONS.md 2026-10-07), and the shutdown windows (dev/plans/S6.md section 10).
 io/082-http_negative_timeout_poll_leak.phpt  ref:c2e6c65f51c804e137b4c969dcd60140ca02e05dd0c68d6c52e5cf7115b5d4de  changed:2026-10-07:ed09254c80951dc03768be1277fdb727b2ce0817a9fe2af4dcbbeafb13bb71ea
 stream/003-file_get_contents_http.phpt  ref:a4f6939bc208b1e1a6732c9cc43095b77bf01f416b6cd2599dc71351d7466e45  changed:2026-10-07:e3962358beedc06f56b506e91777c1ae164947742c5277459c8441be5ae4a6ed
-curl/063-readdata_no_callback.phpt  ref:8a689d5b17a5e13c6516445a35ea61f0fe8b45be200ec4de13896f3318b9cf21  changed:2026-10-07:6c39263361c5a878bb6be3fe93c24ce85dee7432e71f1ba9530559e262e0da1b  skip-on:pocs-win(curl-not-loaded-until-S6.10)
-curl/064-stderr_file_reuse.phpt  ref:af668fe01c50245c12c2f9293917f71319516c42e4cf28a135ea66c0a10ed3a4  changed:2026-10-07:b1f8faf2ad335d67ca84b246048e5779c40d627a5e5f458692a4f3de4c66e3c7  changed:2026-10-08:82877b6b98bb6392535046c0cf9712419c3af4ec6b368ef47be30b9ceba068e7  skip-on:pocs-win(curl-not-loaded-until-S6.10)
-curl/070-read_takes_only_its_completion.phpt  ref:15d803801effb470d78a392e16ff9f5ff198fcfdf2d9d337f70a4ff3e27a39c1  changed:2026-10-07:22f495aa679a4c58602472a16ba7cdc5aef2c4e1ab16cecc1e30909fcc129406  skip-on:pocs-win(curl-not-loaded-until-S6.10)
+curl/063-readdata_no_callback.phpt  ref:8a689d5b17a5e13c6516445a35ea61f0fe8b45be200ec4de13896f3318b9cf21  changed:2026-10-07:6c39263361c5a878bb6be3fe93c24ce85dee7432e71f1ba9530559e262e0da1b
+curl/064-stderr_file_reuse.phpt  ref:af668fe01c50245c12c2f9293917f71319516c42e4cf28a135ea66c0a10ed3a4  changed:2026-10-07:b1f8faf2ad335d67ca84b246048e5779c40d627a5e5f458692a4f3de4c66e3c7  changed:2026-10-08:82877b6b98bb6392535046c0cf9712419c3af4ec6b368ef47be30b9ceba068e7
+curl/070-read_takes_only_its_completion.phpt  ref:15d803801effb470d78a392e16ff9f5ff198fcfdf2d9d337f70a4ff3e27a39c1  changed:2026-10-07:22f495aa679a4c58602472a16ba7cdc5aef2c4e1ab16cecc1e30909fcc129406
 curl/071-upload_stream_closed_mid_read.phpt  ref:98799f2c09fa5426733bb80b033f17cd4a988a35c98a2d96adca9fd29d89de4e  changed:2026-10-07:e372cf7a7d639180f0e4a8c74d395565670446fbb88635a3f6fd63ed9c1cb41d  skip-on:*(libcurl-8.11.1-needed)
 curl/072-fnmatch_exception.phpt  ref:eeb85553db6aed5e01e60d93ece2ec11c62294dfe16157ae3f8ac0da6e1dce3f  changed:2026-10-07:e8f2b4e55aa829c2072060493847f334b26a54ce59767fd1795551002520e1b5  skip-on:*-win(no-fork)
 io_provider/016-session_write_in_rshutdown.phpt  own:000d577e28a46a826e6a6c3cf8f7120a373463187cb7977dc6c6e6d5c630b30f
@@ -387,8 +387,16 @@ io_provider/022-fiber_installs_the_provider.phpt  own:6d960d8946f17de8ce78ccdd03
 io_provider/023-cancelled_socket_read_reads_again.phpt  own:08754be3a4fea07b9f391db16ed23ec4df0cb38afd0da2cc2f47a22230dd2a6b  skip-on:*-win(Unix-only)
 io_provider/024-stream_select_with_except_set.phpt  own:64562947358bf55facfaad5953849f19e3240835987a17459261528738e517ce  core:13  skip-on:*-win(Unix-only)
 io_provider/025-poll_queue_sockets.phpt  own:a1fa0a915175ddfb4dd7222072cb55434849fb0801b6bd3360fb585b8fc904d6  skip-on:*-win(Unix-only)
-io_provider/026-feof_zero_timeout_poll_does_not_park.phpt  own:c1e32b26d23e6df19a3275115035b38fcbf991c73d7fa760e3993580dc556382  skip-on:pocs-win(openssl-not-loaded-until-S6.4)
+io_provider/026-feof_zero_timeout_poll_does_not_park.phpt  own:c1e32b26d23e6df19a3275115035b38fcbf991c73d7fa760e3993580dc556382  changed:2026-10-08:cc5bcfc7d4f96bfac2c7928952808703ad71a484a674a4ba0acdca4ac1b39592
 io_provider/027-feof_tcp_does_not_park.phpt  own:3fa9675ef23789c84254f5de91120eb6a081825045193a1d65afc1f979d6245e
+io_provider/028-pipe_passed_on_after_select.phpt  own:db61c8d9eb82fdf7dbed9c5070defe0d8b606010aec47969e86a25d137e8d4f7
+io_provider/029-select_pipe_and_socket.phpt  own:acda2d382956748c599ce89e97a30972887facc9a07fd2c4140cedbbd0fb21ff
+io_provider/030-select_pipe_write_end.phpt  own:a79486d6b0c8a101a97e4f29402afa130bfc73f025bfe8f476a4668c8a5c7db6  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)
+io_provider/031-twenty_children_read_at_once.phpt  own:e90b018af123cfd7ddf8e3b4cce41240b0aad0cf70e026150143cb1a3ffb438c
+io_provider/032-cancelled_pipe_reads_lose_no_bytes.phpt  own:8f462a3ae743d74de2d6b5d5dd619795d6af364940a7af052d81aa6630b86117
+io_provider/033-copy_file_into_pipe.phpt  own:3a9abc7179836aebdf19b4fa64632feb9f6a628662f58ccc09662c751f259a23
+io_provider/034-select_pipe_outside_coroutine.phpt  own:c682d08fb2677a818e9c1dbe0b1189a6149cf3b0ab2e9494fad9ab01517275c3
+io_provider/035-hand_out_of_a_parked_pipe.phpt  own:2a0ccbcdc49bfdf656f7242ee5e312474d3a15807d20a3e86ec71ec27ce59c90  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)
 signal/024-watch_in_static_outlives_shutdown.phpt  own:e2f00202a4a2e224653698dacffb9153d8fbfb9fbbf6a29b27cf70e171c13839  skip-on:*-win(Unix-only)
 signal/025-fork_rebuilds_two_watches_poll_queue.phpt  own:682436e47cc7a3f41e21bc9635745ba7c06f889ed17ebe344489b8d76df11780  skip-on:*-win(Unix-only)
 signal/026-watch_closes_its_source.phpt  own:7f631142c949dc52fbd833c1233a70f14e49076cea8ece1283298596995708a4  skip-on:*-win(Unix-only)
@@ -396,6 +404,6 @@ signal/027-exit_leaves_held_future.phpt  own:97a31e9a58b8b6c3c0d71fdffeb745f1124
 signal/028-uncaught_exception_leaves_held_future.phpt  own:08ec2d88e91dcfaf994cad257cdbf3f89e881f66c45aa6f14c1e870a428a3cb2  skip-on:*-win(Unix-only)
 signal/029-exit_delivers_arrived_signal.phpt  own:04a2e46d46ff8cb6277f649a3e6cfb45c39a75ddf3eeba9e14b1b61ad6182c63  skip-on:*-win(Unix-only)
 signal/030-script_end_waits_for_held_watch.phpt  own:283d0a78274d23a88bb13920efdac3be4ac294340cc36bee0091925d8cc3b6e6  skip-on:*-win(Unix-only)
-signal/031-reblock_unblocks_with_its_watch.phpt  own:da8552f7d6adea2d5b7786fca5f31e55e454d542736814e5444752ee1b66f7ad  skip-on:*-win(Unix-only)
-signal/032-pcntl_signal_unblocks_until_the_next_poll.phpt  own:70dbe1beb0e0b2471f6c0b1d12a15eddf49d5f6a536b3233cb968e5816d9f300  skip-on:*-win(Unix-only)
+signal/031-reblock_unblocks_with_its_watch.phpt  own:da8552f7d6adea2d5b7786fca5f31e55e454d542736814e5444752ee1b66f7ad  changed:2026-10-08:d1257616a0c86abec96add4309462849b7507f464e2443fc85f4d9528f9cd77a  skip-on:*-win(Unix-only)
+signal/032-pcntl_signal_unblocks_until_the_next_poll.phpt  own:70dbe1beb0e0b2471f6c0b1d12a15eddf49d5f6a536b3233cb968e5816d9f300  changed:2026-10-08:6c54eb7bebde5d5affcbb1e01d5db3d3ceda359b1a7d9ebcd943a721f4019df7  skip-on:*-win(Unix-only)
 signal/033-watch_dropped_in_pcntl_handler_unblocks.phpt  own:2e0405c750a7a98b4e93356b641d74b297e68cde0b861d8a8e392314b33f4d77  skip-on:*-win(Unix-only)

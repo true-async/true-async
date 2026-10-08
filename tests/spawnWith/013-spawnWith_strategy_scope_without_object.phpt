@@ -11,10 +11,12 @@ use function Async\await_all;
 use function Async\delay;
 use function Async\spawn;
 use function Async\spawn_with;
+use function Async\suspend;
 
 class GlobalScopeStrategy implements SpawnStrategy
 {
     public ?Scope $seen = null;
+    private static int $hooks_waiting = 0;
 
     public function __construct(private bool $waits = false) {}
 
@@ -33,6 +35,12 @@ class GlobalScopeStrategy implements SpawnStrategy
     public function afterCoroutineEnqueue(Coroutine $coroutine, Scope $scope): void
     {
         if ($this->waits) {
+            /* Under load one hook's timer could end before the other hook began */
+            self::$hooks_waiting++;
+            while (self::$hooks_waiting < 2) {
+                suspend();
+            }
+
             delay(10);
             echo "after the wait: ", var_export($scope->isClosed(), true), "\n";
         }

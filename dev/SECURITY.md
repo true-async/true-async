@@ -349,6 +349,18 @@ finding left open gets an owner step in `PLAN.md`.
 - 2026-10-08 Seen in S9.15, not a defect of ours: an object with `__destruct` made in RSHUTDOWN's final
   release and kept in a static gets "Couldn't execute method ...::__destruct" from `zend_deactivate`,
   as one made in an output handler does without the extension.
+- 2026-10-08 S6.10 changes what a Windows `proc_open()` exposes when the extension is loaded: each
+  `'pipe'` descriptor is a named pipe (`io-hooks-fixes` `424116620a7`, `create_overlapped_pipe()` in
+  `ext/standard/proc_open.c`). Another process cannot take the child's end: the name carries 64
+  random bits and the pid, the pipe allows one instance and is made with
+  `FILE_FLAG_FIRST_PIPE_INSTANCE` (a name already taken fails and a new one is drawn),
+  `PIPE_REJECT_REMOTE_CLIENTS`; the child's end is opened right after, and a client that got there
+  first makes `proc_open()` fail. A pipe
+  handed to a child is taken off the Ring's completion port before `CreateProcessW()`, and ior drops
+  any packet whose `OVERLAPPED` is not one of its ops with a request in flight, so a child's own I/O
+  cannot make ior write through an address of the child's (the packet filter's limit is in
+  `dev/plans/S6.md` 9.1). CI: the Windows lane loads `php_sockets.dll`, `php_openssl.dll`,
+  `php_curl.dll` from the build directory.
 
 ## Open findings
 
