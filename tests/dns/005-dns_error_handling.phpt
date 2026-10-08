@@ -1,5 +1,8 @@
 --TEST--
 DNS error handling in async context
+--SKIPIF--
+<?php if (PHP_OS_FAMILY === 'Windows') echo 'skip Windows resolves an empty host name to the addresses of the local host';
+?>
 --FILE--
 <?php
 

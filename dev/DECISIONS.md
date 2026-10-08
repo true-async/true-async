@@ -1722,3 +1722,54 @@ stack options were shown with the code).
   `async_wait_link()`'s push could not be used either, and a flag of its own states the case in one test;
   the behaviour Edmond agreed to is the same. `async_wait_end()`, which ends the wait of a frame that
   never ran again, aborts such a record first, since the unlink leaves it (the S9.17 Critic).
+- 2026-10-08 S6.10 builds S6.md 9.1 as agreed (Edmond «согласен», 07:25): the switch
+  `php_io_overlapped_pipes`, set in MINIT when the extension is built with ior; STDIN and `exec`
+  pipes unchanged. A pipe handed to a child is taken off the Ring's completion port right before
+  `CreateProcessW()` through the new queue op `release()` and `ior_release_handle()`, and ior keeps
+  dropping packets that are not its ops (Edmond's choice on the card, 14:31, after his objections to
+  the filter alone: an address can match a slot by chance, and one process's I/O should not reach
+  another's port). The filter does not compare the completion key: an op on a recycled handle value
+  can complete under another key, and a key check would drop its packet and hang it (the Critic).
+  The Ring ignores the release's answer (`-EBUSY`, `-ENOTSUP`: the filter covers those); a pipe with
+  an op in flight fails `proc_open()` as a concurrent access, as the cast does. Not done: a free
+  list that keeps a recycled op slot from matching a stale packet (the Critic), since with the
+  release only a hand-out the core does not see posts there.
+- 2026-10-08 `signal/031-reblock_unblocks_with_its_watch.phpt` and
+  `signal/032-pcntl_signal_unblocks_until_the_next_poll.phpt` (ours, S6.9 and S6.5;
+  `changed:2026-10-08`) expect a watched number to stay blocked under `pcntl_sigprocmask()` and
+  `pcntl_signal()`: bukka's `bdfa5fa7a12`, in the core from `async-core-io-2026-10-08-2`, keeps it
+  blocked in pcntl, the main part of `RFC-CHANGES.md` 5. `032`'s delivery now reaches the Future and
+  not the handler. Why: the tests recorded the gap the core change closes (Edmond 08:12, «если тест
+  устарел - меняй его»). `async_signal_reblock()` stays: other callers of `zend_sigaction()` and
+  pcntl's request shutdown still unblock.
+- 2026-10-08 `awaitable_gets_implemented()` returns void: `interface_gets_implemented` does since the
+  php-src master that bukka's `io_hooks_poc` head merges.
+- 2026-10-08 The `pocs-win` lane loads `php_sockets.dll`, `php_openssl.dll` and `php_curl.dll` from
+  `TRUE_ASYNC_WIN_BUILD` when they exist (a snapshot build, CI's Release_TS, makes them shared; a
+  Debug_TS build of `tools/windows` links them in), and the `skip-on:pocs-win(...-not-loaded-until-S6.x)`
+  tags are dropped from the lists. Why: S6.10's done line.
+- 2026-10-08 `dns/005-dns_error_handling.phpt` (reference; `changed:2026-10-08`) skips on Windows, with
+  `skip-on:pocs-win`. Why: Windows resolves an empty host name to the local host's addresses, and
+  PHP without the extension prints the same (`php -n`, Edmond's PC, S6.10); the test expects `''`
+  and `false`. A tag alone only allows the skip, so the test's `--SKIPIF--` gives it.
+- 2026-10-08 `io_provider/026-feof_zero_timeout_poll_does_not_park.phpt` (ours, S6.8;
+  `changed:2026-10-08`): the client waits for the peer before it closes. Why: on Windows the peer's
+  TLS accept failed in 20 of 20 runs when the client closed first, and passed in 5 of 5 with the
+  socket kept open (Edmond's PC, S6.10); the test checks `feof()`, not the close.
+- 2026-10-08 `stream/001-fread_fwrite_simple.phpt` and `stream/002-fwrite_simple.phpt` (Windows only)
+  stay `--XFAIL--`, now by design: a socket write the kernel takes at once returns without
+  suspending the coroutine, since the core sends first and submits an op only after `EAGAIN`
+  (S6.md section 4); TrueAsync's fork waits for every libuv write on Windows.
+- 2026-10-08 `collector/027-future_state_kept_by_running_coroutine.phpt` and
+  `collector/036-waiter_with_timeout_keeps_state_of_other_waiter.phpt` (ours, S7;
+  `changed:2026-10-08`): two `suspend()` calls after the main script's `delay()`, before it prints
+  `end`. Why: under load on Windows the main script printed `end` before the waiter the first
+  coroutine woke (each failed once in two `pocs-win` runs and passed 10 of 10 alone, Edmond's PC,
+  S6.10); inferred cause: both timers fire in one tick, and the wake of the waiter queues behind
+  the main script. The tests check what the collector reports, not the order of the two timers.
+- 2026-10-08 `spawnWith/013-spawnWith_strategy_scope_without_object.phpt` (ours, S9;
+  `changed:2026-10-08`): the two waiting hooks start their `delay(10)` only once both are in
+  `afterCoroutineEnqueue()`. Why: on Release_TS under load the first hook's timer ended before the
+  second hook began, which printed its `before:` line after the first `after the wait:` (once in a
+  `pocs-win` run, 10 of 10 alone, Edmond's PC, S6.10); the test checks that the stand-in stays
+  usable while two hooks wait on it, which needs both waiting at once.

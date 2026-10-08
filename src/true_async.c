@@ -18,6 +18,7 @@
 #include "php_ini.h"
 #include "ext/standard/info.h"
 #include "Zend/zend_closures.h"
+#include "main/php_io_hooks.h"
 #include "php_true_async.h"
 #include "channel.h"
 #include "coroutine.h"
@@ -111,19 +112,17 @@ static bool scheduler_registered = false;
 /* Only this extension's classes implement Awaitable: generic wait code reads an awaitable's memory
  * as a coroutine or an event (dev/plans/S3.md, section 13, bug 10). Completable extends it, so
  * this covers both. */
-static int awaitable_gets_implemented(zend_class_entry *interface, zend_class_entry *class_entry)
+static void awaitable_gets_implemented(zend_class_entry *interface, zend_class_entry *class_entry)
 {
 	if (EXPECTED(class_entry->type == ZEND_INTERNAL_CLASS &&
 				 class_entry->info.internal.module == &true_async_module_entry)) {
-		return SUCCESS;
+		return;
 	}
 
 	zend_error_noreturn(E_ERROR,
 						"Class %s cannot implement interface %s: only the classes of true_async implement it",
 						ZSTR_VAL(class_entry->name),
 						ZSTR_VAL(interface->name));
-
-	return FAILURE;
 }
 
 static PHP_GINIT_FUNCTION(true_async)
@@ -166,6 +165,11 @@ static PHP_MINIT_FUNCTION(true_async)
 	if (UNEXPECTED(!scheduler_registered)) {
 		return SUCCESS;
 	}
+
+#if defined(PHP_WIN32) && defined(HAVE_IOR)
+	/* proc_open() makes pipes the Ring reads and writes without blocking the thread (S6.md 9.1) */
+	php_io_overlapped_pipes = true;
+#endif
 
 	async_register_future_ce(async_ce_completable);
 	async_register_timeout_ce(async_ce_completable);

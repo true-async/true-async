@@ -1,5 +1,5 @@
 --TEST--
-Async\signal(): a delivery between pcntl_signal() and the next poll misses the Future (known, dev/RFC-CHANGES.md 5)
+Async\signal(): a delivery right after pcntl_signal() goes to the Future, not to the handler
 --EXTENSIONS--
 pcntl
 posix
@@ -10,8 +10,8 @@ if (PHP_OS_FAMILY === 'Windows') echo "skip Unix-only test";
 --FILE--
 <?php
 
-// zend_sigaction() in pcntl_signal() unblocks SIGUSR1 until the next poll blocks it again. With the
-// core hook of dev/RFC-CHANGES.md 5 the Future gets this delivery.
+// zend_sigaction() in pcntl_signal() unblocks SIGUSR1; the core blocks a watched number again at
+// once, so the delivery waits for the next poll (dev/RFC-CHANGES.md 5).
 
 use Async\Signal;
 use function Async\await;
@@ -40,6 +40,5 @@ spawn(function () {
 
 ?>
 --EXPECT--
-handler
 pending
 future: SIGUSR1

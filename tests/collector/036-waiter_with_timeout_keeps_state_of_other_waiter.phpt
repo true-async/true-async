@@ -35,6 +35,9 @@ for ($i = 0; $i < 4; $i++) {
 
 echo count(get_deadlocked_coroutines()), " found\n";
 delay(60);
+/* Both timers may fire in one tick, and the other waiter's wake then takes two more passes */
+suspend();
+suspend();
 echo "end\n";
 ?>
 --EXPECT--
