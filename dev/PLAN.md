@@ -935,3 +935,13 @@ Active: S9.12
 One decision per fork feature that needs core changes: PDO pool, per-coroutine output buffers,
 pgsql, `Fiber::getCoroutine()`, `zend_sigaction` hook, thread pool, Windows. Each becomes an RFC
 change, an upstream fix, an extension-level design, or "not in the first version".
+
+## S11 — Namespace `Async` renamed to `TrueAsync`  [ ]
+
+Edmond 2026-10-08: the extension's PHP namespace becomes `TrueAsync` instead of `Async`. Recorded
+only: no design, no start gate yet.
+Where `Async\` is used (counted 2026-10-08 on `78f87d6`): the stubs `src/*.stub.php` (7 files) and
+their `*_arginfo.h`; 95 class and function names in C strings under `src/`; 1216 of the 1238 tests
+under `tests/`; 26 files in `dev/` and `README.md`; the docs `true-async-doc` (18 files), the site
+`true-async.github.io` (2194 files), the RFC text `php-async-core-rfc` (5 files); two comments in
+the core's `Zend/zend_async_API.h`. The bridge `ext-scheduler-hook` not looked at.
