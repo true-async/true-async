@@ -3,6 +3,36 @@
 The results journal: every measurement with its date, builds and outcome. The method and the
 benchmarks are `dev/plans/S3.md`, section 12; the scripts are `bench/`, the runner `tools/bench.py`.
 
+## 2026-10-08, S9.14: find() up the scopes, and a coroutine's context
+
+**Builds.** Release, ZTS, `-O2`, gcc 13.3, run with `-n`, no opcache; one count per side, the child
+pinned to one CPU (cachegrind counts).
+
+- `ours`: the pinned core `662dfe91919` (`async-core-io-2026-10-08`) and our extension as a `phpize`
+  module of `7e82c15` with S9.14's changes (a comment in `src/context.c`), the test hooks off.
+- `ref`: the fork core `863f6dd90cf` with `ext/async` `1fdacf8` built in.
+
+`B13-1`, `B13-10` and `B13-1000` call `find()` of a missing key from a scope 1, 10 and 1 000 levels
+below a scope of the script, each level's context holding one key (`bench/b13.php`); one operation is
+one `find()`. `B14-1000` is `B1-1000` with `coroutine_context()->set()` and `get()` in every coroutine
+(`bench/b14.php`); one operation is one coroutine.
+
+| Bench | ours | ref | ours / ref |
+|---|---|---|---|
+| B1 | 2,965.0 / 1.020 | 3,129.0 / 2.030 | 0.948 |
+| B1-1000 | 2,945.2 / 1.002 | 4,233.4 / 2.006 | 0.696 |
+| B13-1 | 272.0 / 0 | 298.0 / 0 | 0.913 |
+| B13-10 | 641.0 / 0 | 748.0 / 0 | 0.857 |
+| B13-1000 | 41,230.9 / 0 | 50,247.9 / 0 | 0.821 |
+| B14-1000 | 4,232.3 / 3.002 | 5,465.6 / 4.006 | 0.774 |
+
+Instructions / allocations per operation. Known answer: `B1-known` (3,335.0 / 2.020 and 3,501.1 /
+3.030) adds one `new stdClass` per spawn and counts +370.0 / +1.000 over `B1` on `ours`, +372.1 /
++1.000 on `ref`. `find()` costs about 41 instructions per level on `ours` and 50 on `ref`, and
+allocates nothing on either. A coroutine's context with one `set()` and one `get()` costs `ours`
+1,287 instructions and 2 allocations over `B1-1000`, `ref` 1,232 and 2. Page faults and system calls
+per operation are 0.
+
 ## 2026-10-07, S9.7: spawn to finish with the scope, and awaitCompletion()
 
 **Builds.** Release, ZTS, `-O2`, gcc 13.3, run with `-n`, no opcache; one count per side, the child

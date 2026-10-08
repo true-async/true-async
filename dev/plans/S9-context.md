@@ -346,7 +346,8 @@ TrueAsync's `fuzzy-tests/context/context.feature` is not ported, as no fuzzy tes
   walks, layer 1 note, section 9, item 26), `current_context()` and `root_context()` refused in
   scheduler context (a finish handler's notify), `request_context()` null (`c8.php`), `current_context()`
   in a Fiber (`c4.php`, by the answer to question 1);
-- S9.13: an output handler's object whose destructor throws at RSHUTDOWN, the teardown completing.
+- S9.13: an output handler's object whose destructor throws at RSHUTDOWN, the teardown completing
+  (as built: a value set by a coroutine spawned from a shutdown destructor, section 4).
 
 **Core dependencies**: the context API is in the pinned core (`R:556-625`, API version 3).
 `dev/RFC-CHANGES.md` 16: the string-key replace of `zend_async_context_entry_set` corrupts the heap

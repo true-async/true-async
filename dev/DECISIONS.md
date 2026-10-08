@@ -1608,7 +1608,8 @@ stack options were shown with the code).
   in `free_obj`, after `zend_object_std_dtor` clears the WeakReferences, and `get_gc` reports every
   key object and value (note section 7, item 2; `context/014`-`016`). `coroutine_context()` with no
   current coroutine throws AsyncException "The current coroutine is not defined", as
-  `current_coroutine()`; `Coroutine::getContext()` checks nothing, as TrueAsync's.
+  `current_coroutine()`; `Coroutine::getContext()` checks nothing, as TrueAsync's (but for the
+  object being freed, next entry).
 - 2026-10-08 `current_coroutine()` and `coroutine_context()` throw "The current coroutine is not
   defined" while the current coroutine's object is being freed (`IS_OBJ_FREE_CALLED`), and
   `Coroutine::getContext()` on that object throws "The coroutine is being freed". Why: finalize
@@ -1679,3 +1680,14 @@ stack options were shown with the code).
   from the clock, and a name stays reserved only while its file exists; both tests deleted their file
   and used the path again, so a parallel test could take the same name (`io/074` did, on Edmond's PC).
   Reversible; the coordinator's call.
+- 2026-10-08 S9.14: `current_context()`'s refusal in a finished coroutine's release window (S9.12)
+  stays, as TrueAsync, whose reference build prints the same uncaught "The current scope is not
+  defined" for a context value's destructor, which ends the request there too (probed). It covers
+  only that window: a scope's values released by `dispose()` or `unset()` from main read the root
+  context (probed on both builds), by a GC run the engine scope's, and a `spawn()` inside the window
+  joins the global scope; a released value's destructor sees the context of whoever releases it (the
+  layer review's Critic).
+- 2026-10-08 S9.14: `tests/context/025-coroutine_context_made_while_values_released.phpt` (ours, S9.11)
+  waits in a loop for the destructor instead of one `suspend()`: under the fuzz oracle's random order
+  the coroutine had not run yet (the layer 1 test gotcha). Expected output unchanged; 100 of 100
+  seeds print it.

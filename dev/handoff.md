@@ -452,4 +452,9 @@ S9.13 done 2026-10-08: `async_scheduler_request_shutdown()` and `async_scope_req
 the user values they drop into one array that `PHP_RSHUTDOWN` releases after the reactor's teardown;
 a throwing destructor there no longer skips the IO provider, signal and reactor teardown.
 `future_drain_spawn()` and `Scope::disposeAfterTimeout()` do nothing while async is not active.
-Test hook `TrueAsync\Test\print_at_teardown()`. Next is S9.14: the layer review.
+Test hook `TrueAsync\Test\print_at_teardown()`.
+
+S9.14 done 2026-10-08: the layer review. Mull's one survivor (`scope.c:203`) is killed by
+`scope/131`; four are explained in PLAN. `context/025` waits in a loop (the fuzz order). Benchmarks
+B13 (`find()` up the scopes) and B14 (a coroutine's context) are in `dev/BENCHMARKS.md`. Next is
+S9.15: the security pass by `dev/SECURITY.md`.

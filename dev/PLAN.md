@@ -775,7 +775,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md
-Active: S9.14
+Active: S9.15
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -950,10 +950,23 @@ Active: S9.14
         both now do nothing while async is not active (`context/041`, `043`). Each test fails with its
         fix taken out. On CORE_REF 662dfe91919: debug 1233 PASS, 9 SKIP, 11 XFAIL; ASAN 1209 PASS, 34
         SKIP, 10 XFAIL; 0 unexpected.
-- [ ] S9.14 Layer review: Critic after S9.11-S9.13, coverage, Mull on the layer's diff, the fuzz
+- [x] S9.14 Layer review: Critic after S9.11-S9.13, coverage, Mull on the layer's diff, the fuzz
       oracle over 100 seeds, the measurements of note section 8.
       done: the layer's Done when holds on the day; survivors killed or explained
       tier: T2 · role: Critic
+      handoff: done 2026-10-08. Critic: no memory or refcount defect; `current_context()`'s refusal
+        kept as TrueAsync's (DECISIONS). Coverage on pocs-dbg-cov: src 7296 of 7724 lines, the
+        layer's added lines 259 of 264; `scope/128`-`130` cover the handler release paths. Mull: 38
+        mutants on the layer's lines, one survivor killed by `scope/131` (`scope.c:203`), four
+        explained: `scope.c:234` (active equal to zombie above 0 needs a spawn into a closed scope),
+        `scope.c:239` (needs a disposable child scope left in the vector), `scope.c:1583` (S9.5's
+        line, an early wake masked by the do-while re-check), `true_async.c:255` (MSHUTDOWN, which
+        no phpt observes); `scope.c:439`, the give-back walk's continuation, stays uncovered: a
+        scope it would reach is disposed instead. Fuzz: 100 seeds over 54 tests, 0 failed after
+        `context/025` waits in a loop. B13 and B14 in `dev/BENCHMARKS.md`: `find()` 41 instructions
+        per level (ref 50), a coroutine's context 1,287 instructions and 2 allocations (ref 1,232
+        and 2). On CORE_REF 662dfe91919: debug 1237 PASS, 9 SKIP, 11 XFAIL; ASAN 1213 PASS, 34 SKIP,
+        10 XFAIL; 0 unexpected.
 - [ ] S9.15 Security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item; findings fixed with a test or recorded
       tier: T2 · role: —

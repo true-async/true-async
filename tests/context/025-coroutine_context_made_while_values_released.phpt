@@ -20,7 +20,9 @@ class Value
 spawn(function () {
     coroutine_context()->set('key', new Value());
 });
-suspend();
+while (!isset($weak_context)) {
+    suspend();
+}
 
 var_dump($weak_context->get());
 echo "end\n";

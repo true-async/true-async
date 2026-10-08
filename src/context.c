@@ -71,8 +71,8 @@ void async_context_detach_scope(zend_object *object)
 }
 
 /* The tables go after zend_object_std_dtor, which clears the WeakReferences: a value's destructor that
- * reaches the Context through one would write into a table being destroyed. TrueAsync destroys them in
- * dtor_obj, where a destructor that runs later at shutdown finds them destroyed. */
+ * reaches the Context through one would write into a table being destroyed. Not in dtor_obj: a
+ * destructor that runs later at shutdown would find them destroyed. */
 static void context_object_free(zend_object *object)
 {
 	zend_object_std_dtor(object);

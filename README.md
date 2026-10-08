@@ -98,7 +98,7 @@ flowchart TB
 | ▶ **S6 · IO hooks provider** | `█████████░` | 90 % |
 | ✓ S7 · Async object collector | `██████████` | 100 % |
 | S8 · Review checks and RFC change list | `░░░░░░░░░░` | 0 % |
-| ▶ **S9 · Higher layers, one at a time** | `█████████░` | 87 % |
+| ▶ **S9 · Higher layers, one at a time** | `█████████░` | 93 % |
 | S10 · Beyond the RFCs | `░░░░░░░░░░` | 0 % |
 | S11 · Namespace `Async` renamed to `TrueAsync` | `░░░░░░░░░░` | 0 % |
 
