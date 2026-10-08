@@ -334,13 +334,15 @@ static zend_result io_provider_run(php_io_hooks *hooks, php_io_op *op, php_io_op
 	if (UNEXPECTED(op->in_flight && op->type != PHP_IO_OP_ANY)) {
 		io_wait_drain(op);
 	}
+
 #ifdef PHP_WIN32
-	/* A select's cancelled pipe READ poll: a kernel read on the descriptor until its cancel completes
-	 * (php_io_ring_probe_keep) */
+	/* A select's cancelled pipe READ poll stays a read in the kernel until its cancel completes: the
+	 * member comes back in flight (PHP_IO_OP_F_PIPE) and is drained here */
 	if (UNEXPECTED(op->type == PHP_IO_OP_ANY)) {
 		for (uint32_t i = 0; i < op->u.any.n; i++) {
-			if (UNEXPECTED(op->u.any.ops[i]->in_flight)) {
-				io_wait_drain(op->u.any.ops[i]);
+			php_io_op *const member = op->u.any.ops[i];
+			if (UNEXPECTED(member->in_flight)) {
+				io_wait_drain(member);
 			}
 		}
 	}

@@ -15,7 +15,7 @@ $reader = spawn(function () use ($pipes) {
     while (!feof($pipes[1])) {
         try {
             $data .= fread($pipes[1], 7);
-        } catch (Async\AsyncCancellation $e) {
+        } catch (Async\AsyncCancellation) {
             $cancelled++;
         }
     }

@@ -1,5 +1,5 @@
 --TEST--
-Passing to proc_open() a pipe another coroutine is parked reading fails with "Concurrent access to a stream", and the reader still gets its data
+proc_open() given a pipe another coroutine is parked reading from throws "Concurrent access to a stream", and the reader still gets its data
 --SKIPIF--
 <?php if (PHP_OS_FAMILY !== 'Windows') echo 'skip Windows-only: a POSIX descriptor is handed out under a read';
 ?>

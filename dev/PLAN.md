@@ -496,7 +496,7 @@ Notes: dev/plans/S5.md
         `pocs-dbg` 953 PASS, 9 SKIP, 12 XFAIL, `pocs-asan` 937 PASS, 26 SKIP, 11 XFAIL, 6 left out by
         `core:` tags, 0 unexpected.
 
-## S6 — IO hooks provider  [ ]
+## S6 — IO hooks provider  [x]
 
 Goal: blocking PHP functions suspend the coroutine through `run()` on the reactor; signals and
 children through the same contract.
@@ -505,7 +505,7 @@ Done when: S3–S6 lists (from `sleep`, `io`, `stream`, `socket_ext`, `dns`, `cu
 over 100 seeds; tests that fail because of the hooks design are listed against the review item;
 `dns` counted only on the Ring configuration (the Poll queue answers Unsupported for lookups).
 Tier: T2. Roles: Critic on S6.2, Critic after S6.7 (S6.8).
-Active: S6.10
+Active: none; stage closed with S6.10
 
 - [x] S6.1 Fixtures: MySQL with two connections and an HTTP server with
       `PHP_CLI_SERVER_WORKERS`, started by `tools/test.py` locally and by the CI lanes.
@@ -628,10 +628,25 @@ Active: S6.10
         reblock. CI's MySQL image pinned by digest. The Critic twice, the Sage on two disputes; Edmond
         asked for the check against PHP's global signal handler: the forward reaches `SIGG(handlers)`,
         FPM's included.
-- [ ] S6.10 Windows (once S1.5 gives a Windows agent): the `proc_open()` pipe core commit
+- [x] S6.10 Windows (once S1.5 gives a Windows agent): the `proc_open()` pipe core commit
       (`dev/plans/S6.md` section 9), the Windows lane's socket expectations from S6.4.
       done: `sockets` and `openssl` load in `pocs-win`; no `xfail-on` tag or `--XFAIL--` names
         S6.10; the frozen `skip-on:pocs-win(...-until-S6.4)` and `(...-until-S6.5)` tags skip nothing
+      handoff: done 2026-10-08 on core `bbbbe010dd4` (`async-core-io-2026-10-08-2`: bukka's head
+        `566a6833eb5`, `io-hooks-fixes` `60ec85a2fb4`, `php-src-fixes` `acc6b34faa3`) and ior
+        `e13c369400e` (`release-handle` in true-async/ior): `pocs-dbg` 1243 PASS, 11 SKIP, 11 XFAIL;
+        `pocs-asan` 1219 PASS, 36 SKIP, 10 XFAIL; 7 left out by `core:` tags; 0 unexpected. On
+        Edmond's PC, `pocs-win` Release_TS and Debug_TS each 1151 PASS, 102 SKIP, 12 XFAIL, 0
+        unexpected, with `sockets`, `openssl` and `curl` loaded (curl 69 PASS). S6.md 9.1 as built:
+        overlapped named pipes when the extension asks at MINIT (`RFC-CHANGES.md` 18), each pipe
+        handed to a child taken off the Ring's port before `CreateProcessW()`
+        (`ior_release_handle()`) and ior's filter of foreign packets kept, Edmond's choice; ior also
+        completes a partial message or datagram read with its bytes. Own tests
+        `io_provider/028`-`035`. Changed: `signal/031`, `032` (bukka's pcntl keeps a watched signal
+        blocked, `RFC-CHANGES.md` 5's main part), `io_provider/026` (a close before the peer's TLS
+        accept broke it on Windows), `dns/005` skips on Windows (an empty host name resolves there,
+        as without the extension); `stream/001`, `002` XFAIL by design. PR texts for bukka and
+        libior/ior in `/mnt/project-files/notes/s6-10/`, Edmond opens them. Closes S6.
 
 ## S7 — Async object collector  [ ]
 

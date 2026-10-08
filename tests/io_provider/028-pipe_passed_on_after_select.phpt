@@ -1,5 +1,5 @@
 --TEST--
-A pipe a select waited on, then passed to a second child: the child reads it all, the select's wait being over
+A pipe passed to a second child after a stream_select() on it timed out: the child reads all of it
 --FILE--
 <?php
 use function Async\spawn;

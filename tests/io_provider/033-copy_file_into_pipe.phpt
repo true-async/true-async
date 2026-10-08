@@ -17,7 +17,8 @@ await(spawn(function () use ($pipes, $file, $body) {
     echo "copied: ", stream_copy_to_stream($source, $pipes[0]), "\n";
     fclose($source);
     fclose($pipes[0]);
-    echo "child: ", stream_get_contents($pipes[1]) === strlen($body) . " " . md5($body) ? "same" : "different", "\n";
+    $expected = strlen($body) . " " . md5($body);
+    echo "child: ", stream_get_contents($pipes[1]) === $expected ? "same" : "different", "\n";
 }));
 
 fclose($pipes[1]);

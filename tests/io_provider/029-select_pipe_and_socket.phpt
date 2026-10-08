@@ -15,7 +15,7 @@ spawn(function () use ($peer) {
     fwrite($peer, "s");
 });
 
-await(spawn(function () use ($pipes, $sock, $peer) {
+await(spawn(function () use ($pipes, $sock) {
     $show = function (array $ready) use ($pipes) {
         return implode(',', array_map(fn ($s) => $s === $pipes[1] ? 'pipe' : 'socket', $ready));
     };

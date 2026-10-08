@@ -7,7 +7,7 @@ Written 2026-10-06. S3 closed: S3.24 re-ran its Done when on the final core; S4,
 
 ## State
 
-- Core pinned: `async-core-io-2026-10-06` (`1ee473ff67b`), ior `2bfd2319896`. CI gates every lane on every list; a
+- Core pinned: `async-core-io-2026-10-08-2` (`bbbbe010dd4`), ior `e13c369400e` (2026-10-08, S6.10). CI gates every lane on every list; a
   test that cannot pass yet carries `--XFAIL--` naming its step, and the commit that makes it pass
   removes the section. run-tests (`tools/run-tests.patch`) fails a test the timeout killed.
 - S3.3-S3.6a: internal API, classes, the `Coroutine` object, the core's slots, the FIFO run queue,
@@ -269,8 +269,11 @@ of `src/`; S7.5 scoped it to the collector tests with a scratch script (DECISION
 
 ## S6
 
-Written 2026-10-07. S6.9 (security pass) done, journal in `dev/SECURITY.md`; S6.10 (Windows) is
-the stage's last step.
+Written 2026-10-07, updated 2026-10-08. Stage closed with S6.10 (Windows): `proc_open()` pipes are
+overlapped named pipes when the extension asks (S6.md 9.1), `pocs-win` loads `sockets`, `openssl`
+and `curl`. A pipe handed to a child goes off the Ring's port through the queue op `release()` and
+ior's `ior_release_handle()`; ior's filter still drops packets that are not its ops. Edmond opens the
+PRs to bukka and libior/ior from `/mnt/project-files/notes/s6-10/`.
 
 - Signal mask: `async_signal_reblock()` records in the registry's `reblocked` the watched numbers it
   blocked itself, and `signal_watch_free()` unblocks them (`signal/031`). `pcntl_signal_dispatch()`
@@ -298,7 +301,12 @@ the stage's last step.
   the copy of an ACCEPT op into a POLL (note section 4). The Ring's multishot accept hid pending
   connections from `stream_select()`; that Ring bug goes to bukka (a pull request is being
   prepared in the S6.4 thread, `dev/WORKFLOW.md` "Ownership").
-- The core is `async-core-io-2026-10-08` (`662dfe91919`): `async-core-io-2026-10-07-6` with
+- The core is `async-core-io-2026-10-08-2` (`bbbbe010dd4`): `async-core-io-2026-10-08` with bukka's
+  head `566a6833eb5` (a newer php-src master: `interface_gets_implemented` returns void; his
+  `bdfa5fa7a12` keeps a watched signal blocked under pcntl), `io-hooks-fixes` `60ec85a2fb4` (the
+  pipes) and `php-src-fixes` `acc6b34faa3` merged; ior `e13c369400e` (true-async/ior
+  `release-handle`; CI fetches it by SHA through libior/ior's URL, which serves the fork's
+  commits). `async-core-io-2026-10-08` (`662dfe91919`) was `async-core-io-2026-10-07-6` with
   `async-core` `b7c70909437` (a context value's replace and the context's destroy release the old
   value last, `dev/RFC-CHANGES.md` 16) merged. -6 is `async-core-io-2026-10-07-5` with
   `php-src-fixes` `74a581afc06` (the pcntl dispatch fix) and `async-core` `f6f3eb6e44b` (a test
@@ -307,10 +315,9 @@ the stage's last step.
   the queue, API version 3, DECISIONS 2026-10-07); `io-hooks-fixes` `c43e1d5797a`. The
   seven tests that include a php-src helper need `TRUE_ASYNC_CORE_SRC` (the core's checkout);
   `tools/test.py` stops without it, so a Mull `--diff-ref` run needs it too.
-- S6.10 takes the Windows lane's socket expectations: load `sockets` and `openssl` in `pocs-win`,
-  then settle the `xfail-on:pocs-win(S6.10)` tags and `stream/001`, `002`, `046-…_win`, `exec/001`,
-  `003`. The `skip-on:pocs-win(...-until-S6.4)` and `(...-until-S6.5)` tags are frozen text; they
-  mean S6.10.
+- Windows: `stream/001`, `002` stay XFAIL by design (a socket write the kernel takes at once does
+  not suspend); `dns/005` skips there (an empty host name resolves to the local addresses, as
+  without the extension).
 - `Async\signal()` is `src/os_signal.c` (note section 8): a watch per number with a SignalHandle in a
   Context the thread keeps while any number is watched, one SIGWAIT op on `waits`; a child renews
   handles and sources in `async_signal_rebuild()` and leaves no exception (S4.6's rule). The

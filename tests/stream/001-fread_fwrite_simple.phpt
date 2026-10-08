@@ -9,7 +9,7 @@ if (PHP_OS_FAMILY !== 'Windows') {
 }
 ?>
 --XFAIL--
-By design: a socket write the kernel takes at once returns without suspending the coroutine, since the core sends first and submits an op only after EAGAIN (dev/plans/S6.md section 4), where TrueAsync's fork on Windows waits for every libuv write to complete
+By design: a socket write the kernel takes at once returns without suspending the coroutine, since the core sends first and submits an op only after EAGAIN (dev/plans/S6.md section 4), whereas TrueAsync's fork on Windows waits for every libuv write to complete
 --FILE--
 <?php
 
