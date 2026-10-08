@@ -1,14 +1,5 @@
 # S6: reference tests of the S6 groups not ported in S6, one reason each (dev/plans/S2.md, section 3).
 
-# stream
-stream/038-feof_live_socket.phpt  component:S9 (Channel)
-stream/039-feof_after_connect.phpt  component:S9 (Channel)
-stream/040-feof_after_send.phpt  component:S9 (Channel)
-stream/041-feof_after_recv.phpt  component:S9 (Channel)
-stream/042-feof_after_remote_close.phpt  component:S9 (Channel)
-stream/043-feof_after_send_then_remote_close.phpt  component:S9 (Channel)
-stream/044-feof_with_pending_data.phpt  component:S9 (Channel)
-
 # curl
 curl/061-read_callback_socket_source.phpt  fixture:none (its SKIPIF always skips in the reference)
 

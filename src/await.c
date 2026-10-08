@@ -19,6 +19,7 @@
 #include "zend_interfaces.h"
 #include "php_true_async.h"
 #include "await.h"
+#include "channel.h"
 #include "collector.h"
 #include "coroutine.h"
 #include "exceptions.h"
@@ -37,6 +38,14 @@ async_awaitable_t *async_await_awaitable_of(zend_object *object)
 
 	if (UNEXPECTED(awaitable == NULL)) {
 		zend_throw_exception(async_ce_async_exception, "Future has no state", 0);
+		return NULL;
+	}
+
+	/* Until S9.18 the code that takes a reference to an awaitable or reads its outcome would treat a
+	 * channel as a future's event. */
+	if (UNEXPECTED(ASYNC_AWAITABLE_IS_CHANNEL(awaitable))) {
+		zend_throw_error(NULL, "Async\\Channel as an awaitable is not implemented yet");
+		return NULL;
 	}
 
 	return awaitable;

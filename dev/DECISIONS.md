@@ -1712,3 +1712,13 @@ stack options were shown with the code).
   find them (`channel/048`, `050`-`053`, `063` fail otherwise, probed on the reference by the Sage), and
   `abort` reaches only linked records (S3 4.4's bailout case). Details: `dev/plans/S9-channel.md`
   section 3.
+- 2026-10-08 S9.17: `edge_cases/015-deadlock-caught-still-terminates.phpt` sets `true_async.debug_deadlock`
+  instead of `async.debug_deadlock`, as `edge_cases/001`-`003` and `010` did. Why: INI names take the
+  module prefix (2026-10-01).
+- 2026-10-08 S9.17: the CHANNEL record that stays linked for its frame (the entry above) is linked by
+  `async_wait_link_outside()` with the record flag `ASYNC_CALLBACK_F_FRAME_UNLINKS`, which
+  `async_wait_record_unlink()` leaves. The alternative was an `F_TYPED` kind whose unlink does nothing,
+  plus an exemption in the assert that follows that unlink. Why: the record is in no vector, so
+  `async_wait_link()`'s push could not be used either, and a flag of its own states the case in one test;
+  the behaviour Edmond agreed to is the same. `async_wait_end()`, which ends the wait of a frame that
+  never ran again, aborts such a record first, since the unlink leaves it (the S9.17 Critic).

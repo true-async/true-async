@@ -212,6 +212,21 @@ void async_wait_link(async_coroutine_event_callback_t *record,
 	async_callbacks_push_reserved(async_awaitable_callbacks(target), &record->event_callback);
 }
 
+void async_wait_link_outside(async_coroutine_event_callback_t *record,
+							 async_coroutine_t *waiter,
+							 async_awaitable_t *target,
+							 const async_wait_kind_t *kind)
+{
+	ZEND_ASSERT(record->event == NULL && "a record links once per wait");
+	ZEND_ASSERT(kind->abort != NULL && "only abort removes a record its frame never removed");
+
+	record->event_callback.flags = ASYNC_CALLBACK_F_RECORD | ASYNC_CALLBACK_F_FRAME_UNLINKS;
+	record->event_callback.callback = NULL;
+	record->event_callback.kind = kind;
+	record->coroutine = waiter;
+	record->event = target;
+}
+
 void async_wait_record_remove(async_coroutine_event_callback_t *record)
 {
 	const bool removed = async_callbacks_remove(async_awaitable_callbacks(record->event), &record->event_callback);
@@ -225,6 +240,10 @@ void async_wait_record_unlink(async_coroutine_event_callback_t *record)
 	async_awaitable_t *target = record->event;
 
 	if (target == NULL) {
+		return;
+	}
+
+	if (UNEXPECTED(record->event_callback.flags & ASYNC_CALLBACK_F_FRAME_UNLINKS)) {
 		return;
 	}
 
@@ -250,18 +269,24 @@ void async_wait_unlink_linked(async_coroutine_t *coroutine)
 	}
 }
 
-void async_wait_abort(async_coroutine_t *coroutine)
+/* Runs the abort of each linked inline record that has one and carries every bit of `required`. */
+static void wait_abort_records(async_coroutine_t *coroutine, const uint32_t required)
 {
-	async_waker_t *waker = &coroutine->waker;
+	async_waker_t *const waker = &coroutine->waker;
 
 	for (uint32_t i = 0; i < ASYNC_WAKER_INLINE_RECORDS; i++) {
-		async_coroutine_event_callback_t *record = &waker->records[i];
+		async_coroutine_event_callback_t *const record = &waker->records[i];
 
-		if (record->event != NULL && UNEXPECTED(record->event_callback.kind->abort != NULL)) {
+		if (record->event != NULL && (record->event_callback.flags & required) == required &&
+			UNEXPECTED(record->event_callback.kind->abort != NULL)) {
 			record->event_callback.kind->abort(record);
 		}
 	}
+}
 
+void async_wait_abort(async_coroutine_t *coroutine)
+{
+	wait_abort_records(coroutine, 0);
 	async_wait_unlink(coroutine);
 }
 
@@ -294,6 +319,10 @@ async_wait_block_t *async_wait_take_block(async_coroutine_t *coroutine)
 
 void async_wait_end(async_coroutine_t *coroutine)
 {
+	if (UNEXPECTED(!async_wait_is_empty(coroutine))) {
+		wait_abort_records(coroutine, ASYNC_CALLBACK_F_FRAME_UNLINKS);
+	}
+
 	async_wait_unlink(coroutine);
 
 	async_wait_block_t *block = coroutine->waker.block;

@@ -1,0 +1,35 @@
+--TEST--
+Channel: recvAsync() Future dropped, then channel closes — close path skips freed waiter
+--XFAIL--
+Not implemented yet: S9.18 of dev/PLAN.md
+--FILE--
+<?php
+
+use function Async\spawn;
+use function Async\await;
+
+$ch = new Async\Channel(0);
+
+$future = $ch->recvAsync();
+$future->ignore();
+unset($future);
+echo "future dropped\n";
+
+// channel_close() walks all queued future waiters and rejects them. With the
+// fix, the dropped future already removed its waiter from the queue, so the
+// close-time iteration is empty. The close runs in a coroutine of its own and
+// is awaited rather than timed: what matters is that it happens after the
+// future is gone, not how long either takes.
+$closer = spawn(function () use ($ch) {
+    $ch->close();
+    echo "channel closed\n";
+});
+
+await($closer);
+echo "ok\n";
+
+?>
+--EXPECT--
+future dropped
+channel closed
+ok

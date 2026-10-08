@@ -467,4 +467,13 @@ entry. A debug build of the reference (the fork at `863f6dd90cf` with `ext/async
 S9.1 above describes) passes the 93 tests of the list; probes `h1.php`-`h14.php` in
 `/mnt/project-files/s9/probes/s9.channel/`. Edmond decided the note's two questions (DECISIONS
 2026-10-08: the scope's cancel and destruction close its channels, its completion does not; a CHANNEL
-record stays linked until its frame runs). S9.17 starts once he agrees to the plan.
+record stays linked until its frame runs). Edmond approved the plan on 2026-10-08.
+
+S9.17 done 2026-10-08: `Async\Channel`, `ChannelException`, `ChannelCloseReason` in `src/channel.c`;
+the buffer is `src/internal/zval_circular_buffer.c`, which grows by doubling up to `capacity`. A parked
+`send()`/`recv()` links its waker's first record with the CHANNEL kind through
+`async_wait_link_outside()` (`ASYNC_CALLBACK_F_FRAME_UNLINKS`) and puts it in the role's queue; the
+frame takes it out after its suspend (`channel_record_leave()`), the kind's `abort` for a frame that never
+runs again, and `async_wait_end()` aborts a stale one. 63 reference tests pass; 14 wait for S9.18
+(`recvAsync()`, `foreach`, `await_*`; until then those throw and `async_await_awaitable_of()` refuses a
+channel), 16 for S9.19 (timers, deadlock close, owner scope, collector). Next is S9.18.

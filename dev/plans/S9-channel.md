@@ -35,7 +35,7 @@ the `collector_target` slot S7 left for it (`dev/plans/S7.md` 4, 10).
 typedef struct {
 	async_event_t event;              /* CLOSED once closed; `callbacks`: the Awaitable subscribers only */
 	int32_t capacity;                 /* 0: a rendezvous */
-	async_channel_buffer_t buffer;    /* capacity > 0: the values, oldest first, grown on demand */
+	zval_circular_buffer_t buffer;    /* capacity > 0: the values, oldest first, grown on demand */
 	zval rendezvous_value;            /* capacity 0: the one value in the slot */
 	bool rendezvous_has_value;
 	bool rendezvous_committed;        /* send() matched a receiver and returned: close() keeps the value */
@@ -63,12 +63,12 @@ nobody was told was delivered and keeps a committed one for its receiver (`chann
 
 **The buffer** holds zvals in a ring that starts small and doubles up to `capacity`, from `emalloc`.
 TrueAsync allocates `capacity + 1` slots rounded up to a power of two at construction, from the persistent
-allocator (`channel.c:1101-1108`, `internal/circular_buffer.c:97-127`): probed (`h6.php`), `new
-Channel(1 << 24)` under `memory_limit=64M` grows `memory_get_usage()` by 0 KB and the RSS past 200 MB, and
-`new Channel(2147483647)` ends the request with "Out of memory". Ours costs nothing until values come and
+allocator (`channel.c:1101-1108`, `internal/circular_buffer.c:97-127`): probed (`h6.php`),
+`new Channel(1 << 24)` under `memory_limit=64M` grows `memory_get_usage()` by 0 KB and the RSS past 200 MB, and `new
+Channel(2147483647)` ends the request with "Out of memory". Ours costs nothing until values come and
 counts against `memory_limit` (section 8, item 3). The ring is our own type, a sibling of the pointer ring
-`src/internal/circular_buffer.c` for zvals, as TrueAsync's `zval_circular_buffer` is of its
-`circular_buffer`.
+`src/internal/circular_buffer.c` for zvals (`src/internal/zval_circular_buffer.c`), as TrueAsync's
+`zval_circular_buffer` is of its `circular_buffer`.
 
 **Methods**, as TrueAsync (`channel.c:1067-1343`): the constructor refuses a capacity or a timeout outside
 `0..INT32_MAX` with `ValueError` "must be between 0 and 2147483647"; `send()` and `recv()` on a closed
@@ -95,15 +95,17 @@ coroutine with the CHANNEL kind, and a cancellation token `waker.records[1]` wit
 (`async_await_token_link()`, `src/await.h`). The queue of its side holds a pointer to that record, so a
 parked send or receive allocates nothing: TrueAsync allocates its waiter (`channel.c:692`), D29 asked for
 one allocation fewer, and the waker records live in the coroutine, not on the frame, since S3
-(`src/true_async_API.h:376-389`), so a bailout that unwinds the frame leaves the entry valid. The kind is
-`F_TYPED`: the record is in the channel's queue, not in a callbacks vector, and the channel's own vector
-holds only the Awaitable subscribers of section 4. `close()` walks the two queues, as TrueAsync's
+(`src/true_async_API.h:376-389`), so a bailout that unwinds the frame leaves the entry valid. The record
+is in the channel's queue, not in a callbacks vector, and the channel's own vector holds only the
+Awaitable subscribers of section 4. `close()` walks the two queues, as TrueAsync's
 `channel_wake_all()` does before its notify (`channel.c:529-561`).
 
 The record's flags word carries two bits of the kind, TrueAsync's waiter fields (`channel.c:110-116`):
 RESERVED, set by the wake that promised the coroutine a value or a slot, and DELIVERING, a rendezvous
-sender parked on its own value. The frame reads RESERVED after its suspend and spends or hands on the
-reservation, as `channel_wait_for()` after `ZEND_ASYNC_SUSPEND()` (`channel.c:719-786`).
+sender parked on its own value; as built, a third, SENDER, tells `abort` which queue and which counter
+the record belongs to (TrueAsync's frame knows its queue, `abort` has only the record). The frame reads
+RESERVED after its suspend and spends or hands on the reservation, as `channel_wait_for()` after
+`ZEND_ASYNC_SUSPEND()` (`channel.c:719-786`).
 
 **The kind's operations:**
 
@@ -119,9 +121,9 @@ reservation, as `channel_wait_for()` after `ZEND_ASYNC_SUSPEND()` (`channel.c:71
   finds the reservation unspent and, the channel being closed, hands nothing on. A close that reaches a
   coroutine a cancel already queued puts its exception on top of the cancellation, which
   `async_scheduler_enqueue()` does for a queued coroutine (`src/scheduler.c:1435-1440`; the stacking,
-  `189-219`), as TrueAsync's
-  (`coroutine.c:811-815`): that is how `channel/048`, `050`-`053` and `063` see `SCOPE_DISPOSED` after their
-  scope's cancel, which queues its coroutines before it notifies (section 5);
+  `189-219`), as TrueAsync's (`coroutine.c:811-815`): that is how `channel/048`, `050`-`053` and `063`
+  see `SCOPE_DISPOSED` after their scope's cancel, which queues its coroutines before it notifies
+  (section 5);
 - `unlink`, the enqueue's unlink of a wake by something else (a cancel, a token), leaves the record linked
   and in its queue. Every CHANNEL record stays linked (`event` set) from its wake until its frame takes it
   out, right after its suspend returns and before it runs anything else; whether it is still in its queue
@@ -131,10 +133,11 @@ reservation, as `channel_wait_for()` after `ZEND_ASYNC_SUSPEND()` (`channel.c:71
   value wake: "the channel's wake removes the vector entry and leaves the queue entry … the frame removes
   it after resume". So the enqueue's unlink of the whole wait removes the token record and leaves the
   CHANNEL one. This is an exception to D26 and to S4's `unlink` contract, which clear every record at the
-  enqueue (Edmond 2026-10-08, DECISIONS, question 2 of section 10): `async_wait_record_unlink()` exempts
-  the kind from its assert (`src/true_async_API.c:233`). The record stays linked also because `abort`
-  runs only for linked records (`async_wait_abort()`, `src/true_async_API.c:253-264`), and a coroutine
-  woken and never run again is the case `abort` exists for (below). The callers of
+  enqueue (Edmond 2026-10-08, DECISIONS, question 2 of section 10). As built (S9.17): the record is linked
+  by `async_wait_link_outside()`, which sets `ASYNC_CALLBACK_F_FRAME_UNLINKS` instead of pushing it into a
+  vector, and `async_wait_record_unlink()` leaves a record with that flag. The record also stays linked
+  because `abort` runs only for linked records (`async_wait_abort()`, `src/true_async_API.c:253-264`), and
+  a coroutine woken and never run again is the case `abort` exists for (below). The callers of
   `async_wait_is_empty()` hold: `src/io_provider.c:297` asserts on a running coroutine, which has removed
   its record by then; `src/collector.c:1017` looks only at suspended coroutines; `src/coroutine.c:411`
   aborts the wait of a frame a bailout unwound, which is wanted. A woken coroutine that has not run yet
@@ -144,21 +147,24 @@ reservation, as `channel_wait_for()` after `ZEND_ASYNC_SUSPEND()` (`channel.c:71
 - `abort`, for a frame that never runs again (a bailout's transfer U4, `src/scheduler.c:1842`, `1863`,
   `1873`; RSHUTDOWN's U6, `2335`; the finalize after a bailout, `src/coroutine.c:405-413`): it runs inside
   a bailout's unwinding or in RSHUTDOWN, where it may neither enqueue nor start PHP code
-  (`src/scheduler.c:2312-2317`, `2361-2362`), so it only gives back what the frame held, for a record in any state, woken or not, queued or
-  not. A RESERVED record returns its reservation and nobody is woken; the record leaves its queue if it
-  is there; RESERVED and DELIVERING are
-  cleared and `abort` clears `event` itself, so the generic unlink after it (`src/true_async_API.c:265`)
-  and the finalize's second look (`src/coroutine.c:411`) find nothing; the timer is disarmed when no
-  unreserved waiter is left, and never armed, since every abort site is terminal. A DELIVERING sender's
-  value stays in the slot for whoever receives next, and `free_obj` releases it if nobody does, as
-  TrueAsync after a bailout. Shutdown functions run after U4 and the finalize, so this passes the test
-  `dev/plans/S3.md` 4.4 names: a receiver woken with a value and cancelled before it runs, the value
-  reaching the next receiver (the frame hands the reservation on); the same with a bailout in place of the
-  cancel, the value reaching a `recv()` in a shutdown function (the reservation was returned). A
-  `recvAsync()` Future queued behind the aborted receiver stays pending, and such a `recv()` takes the value
-  ahead of it: serving the Future there would enqueue inside the bailout;
-- `info`: TrueAsync's line, `Channel(capacity=0, receivers=1, senders=0, reserved=0/0)`
-  (`channel.c:825-836`), for `getAwaitingInfo()` and the deadlock report;
+  (`src/scheduler.c:2312-2317`, `2361-2362`), so it only gives back what the frame held, for a record in
+  any state, woken or not, queued or not. A RESERVED record returns its reservation and nobody is woken;
+  the record leaves its queue if it is there; `abort` clears `event` itself, so the generic unlink after
+  it (`src/true_async_API.c:265`) and the finalize's second look (`src/coroutine.c:411`) find nothing; the
+  timer is disarmed when no unreserved waiter is left, and never armed, since every abort site is
+  terminal. A DELIVERING sender's value stays in the slot for whoever receives next, and `free_obj`
+  releases it if nobody does, as TrueAsync after a bailout. As built, `async_wait_end()` aborts such a
+  record too, at the next wait of a coroutine whose frame a caught bailout unwound: the reservation
+  returns there without a hand-on, so a waiter parked behind it waits for the channel's next send, receive
+  or close. Shutdown functions run after U4 and the finalize, so this passes the test `dev/plans/S3.md`
+  4.4 names: a receiver woken with a value and cancelled before it runs, the value reaching the next
+  receiver (the frame hands the reservation on); the same with a bailout in place of the cancel, the value
+  reaching a `recv()` in a shutdown function (the reservation was returned). A `recvAsync()` Future queued
+  behind the aborted receiver stays pending, and such a `recv()` takes the value ahead of it: serving the
+  Future there would enqueue inside the bailout;
+- `info`: TrueAsync's line (`channel.c:825-836`) with the reservations named, `Channel(capacity=0,
+  receivers=1, senders=0, reserved receivers=0, reserved senders=0)`, for `getAwaitingInfo()` and the
+  deadlock report;
 - `collector_target`: section 6.
 
 **The wait.** Every `send()` and `recv()` is TrueAsync's retry loop (`channel.c:1113-1245`): take a free
@@ -171,9 +177,11 @@ are released after the queues are consistent again: their destructors run PHP co
 the same channel must find it whole (section 8, item 7). A close the owner scope makes runs inside the
 scope's own walks (its cancel's loops, `src/scope.c:581-587`, the error route's, `773-779`, and its free,
 `366`), where no PHP code may run (`src/scope.c:579-580`, `337-339`): the uncommitted rendezvous value
-that close rolls back (`channel.c:581-585`) moves to `dropped_value`, out of the slot, so no later `recv()`
-receives it; `get_gc` reports it and `free_obj` releases it. A close runs once, so there is at most one. TrueAsync releases them in place
-(`channel.c:738-742`, `581-585`).
+that close rolls back (`channel.c:581-585`) is to move to a `dropped_value` field, out of the slot, so no
+later `recv()` receives it, and `get_gc` is to report it and `free_obj` to release it (S9.19). A close
+runs once, so the field holds at most one value. As built in S9.17, `channel_close()` hands that value
+to its caller, and `close()` and the destructor release it once the queues are consistent. TrueAsync
+releases such values in place (`channel.c:738-742`, `581-585`).
 
 Kept as TrueAsync: a `send()` whose value was taken and whose coroutine is cancelled before it runs reports
 the cancellation (`channel.c:745-752`; clearing it leaves the coroutine marked cancelled with nothing to
@@ -365,7 +373,10 @@ holds waits until the global deadlock (probed `h8.php`).
 - S9.17 The list block for layer 3 in `tests/lists/S9.txt` (section 9), with `--XFAIL--` naming S9.17,
   S9.18 or S9.19; the channel, its buffer, `send()`, `sendAsync()`, `recv()`, `close()` and the readers, the
   reservations, the CHANNEL kind with its `unlink`, `abort` and `info`, cancellation tokens, the destructor
-  and `free_obj`, `ChannelException` and `ChannelCloseReason` (sections 2, 3, 5).
+  and `free_obj`, `ChannelException` and `ChannelCloseReason` (sections 2, 3, 5). As built: until S9.18,
+  `recvAsync()` and `getIterator()` throw "not implemented yet", and `async_await_awaitable_of()` refuses a
+  channel, which `Scope::awaitCompletion()` and `awaitAfterCancellation()` would otherwise read as a future
+  event; the channel's type bit comes with this refusal.
 - S9.18 `recvAsync()`, `foreach` and `getIterator()`, the channel as an `await_*` item and a token
   (section 4).
 - S9.19 The per-channel timers, the close at the global deadlock, the owner-scope binding and the close of
@@ -404,14 +415,19 @@ holds waits until the global deadlock (probed `h8.php`).
     section 5. A cancel or a dispose of a completed or cancelled scope closes its channels, where
     TrueAsync's closed them at the completion.
 12. **A channel made in a cancelled scope closes at the scope's next cancel, dispose, error route or free**
-    (section 5); the reference
-    closes it at the scope's next member's end.
+    (section 5); the reference closes it at the scope's next member's end.
+13. **A rendezvous send whose wait fails before it parks withdraws its value** (S9.17, the Critic): a
+    `Timeout` token whose deadline passed after the entry's check refuses the delivering wait, and the
+    value would stay uncommitted in the slot for a receiver while `send()` throws; the reference leaves it
+    there (`channel.c:688-690`, `1156-1160`).
+14. **`send()` and `recv()` refuse in scheduler context and once async is off even when they would not
+    wait** (section 2), as every wait of ours; the reference fails only an actual park.
 
-Kept as TrueAsync and noted: a CHANNEL record linked from its wake until its frame takes it out, its
-queue membership TrueAsync's (an exception to our D26); the reservation rules and the arrival order with its O(n) removal; constructor
-defaults of 0 (no timers); `count()` counting promised values; a cancellation after delivery reported by
-`send()`; the first close reason staying; the global deadlock closing soft channels before it raises
-DeadlockError; a top-level channel open until the request's end (`h12.php`).
+Kept as TrueAsync and noted: a CHANNEL record linked from its wake until its frame takes it out, its queue
+membership TrueAsync's (an exception to our D26); the reservation rules and the arrival order with its
+O(n) removal; constructor defaults of 0 (no timers); `count()` counting promised values; a cancellation
+after delivery reported by `send()`; the first close reason staying; the global deadlock closing soft
+channels before it raises DeadlockError; a top-level channel open until the request's end (`h12.php`).
 
 ## 9. Tests and measurements
 
@@ -426,7 +442,11 @@ reference build above (2026-10-08):
 By what each uses: `recvAsync()` (`019`, `020`, `029`, `030`, `066`-`068`, `077`) and `foreach` over a channel
 (`008`, `017`, `039`, `040`, `070`, `079`) name S9.18, 14 tests; a timer (`041`, `042`, `044`, `046`, `047`,
 `071`, `072`) or a scope's close (`048`-`057`, `061`-`063`) name S9.19, 20 tests; the other 59 need only
-S9.17. TrueAsync's `fuzzy-tests/` are not ported, as no fuzzy test is.
+S9.17. As built, `044`, `049`, `056` and `062` pass with S9.17 alone and carry no `--XFAIL--`: each checks
+that something does not happen (a timer firing early, a completion closing, a free leaving a dangling
+subscriber, a later close replacing the reason), which holds while nothing exists to do it; they prove
+S9.19's work only once it is built, so S9.19 does not count them as its tests: 63 pass in S9.17, 14 wait
+for S9.18 and 16 for S9.19. TrueAsync's `fuzzy-tests/` are not ported, as no fuzzy test is.
 
 **Own tests**, written in the step that needs them:
 

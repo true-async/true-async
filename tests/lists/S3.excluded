@@ -3,9 +3,6 @@
 # gc
 gc/018-gc_threshold_stable_without_coroutine.phpt  component:S6 (stream read switches the reference GC to async; see report)
 
-# edge_cases
-edge_cases/015-deadlock-caught-still-terminates.phpt  component:S9 (Channel)
-
 # include
 include/008-file_get_contents_in_coroutine.phpt  component:S6 (file IO in a coroutine)
 

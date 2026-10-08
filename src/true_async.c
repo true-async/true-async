@@ -19,6 +19,7 @@
 #include "ext/standard/info.h"
 #include "Zend/zend_closures.h"
 #include "php_true_async.h"
+#include "channel.h"
 #include "coroutine.h"
 #include "collector.h"
 #include "context.h"
@@ -170,6 +171,7 @@ static PHP_MINIT_FUNCTION(true_async)
 	async_register_timeout_ce(async_ce_completable);
 	async_register_scope_ce();
 	async_register_context_ce();
+	async_register_channel_ce();
 	zend_async_new_context_fn = async_context_new;
 
 	if (UNEXPECTED(zend_register_functions(NULL, ext_functions, NULL, type) == FAILURE)) {

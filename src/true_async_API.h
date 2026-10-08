@@ -90,6 +90,12 @@ typedef void (*async_event_callback_dispose_fn)(async_event_callback_t *callback
 #define ASYNC_CALLBACK_F_TYPED (1u << 1)
 /* One object pushed into vectors of several threads: it keeps no slot and is found by a search. */
 #define ASYNC_CALLBACK_F_SHARED (1u << 2)
+/* A record its target keeps outside its vector (a channel's queue entry): the unlinks of this layer
+ * leave it linked, and its waiting frame removes it after its suspend returns; when that frame never
+ * runs again, its kind's abort removes it and clears `event` (dev/plans/S9-channel.md, section 3). */
+#define ASYNC_CALLBACK_F_FRAME_UNLINKS (1u << 3)
+/* Bits 8-31 of a record's flags belong to its kind. */
+#define ASYNC_CALLBACK_F_KIND_SHIFT 8
 
 typedef struct _async_wait_kind_s async_wait_kind_t;
 typedef struct _async_collector_s async_collector_t;
@@ -219,6 +225,7 @@ void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *v
 
 /* Event flags at the positions of TrueAsync's fork (dev/plans/S3.md 3.7); bits 13-30 are an event
  * type's own. */
+/* A type tells its events apart by one top bit: 30 Timeout, 29 Channel. */
 #define ASYNC_EVENT_F_CLOSED (1u << 0)            /* a one-shot event fired; a new waiter reads its outcome */
 #define ASYNC_EVENT_F_RESULT_USED (1u << 1)       /* somebody took the outcome */
 #define ASYNC_EVENT_F_EXC_CAUGHT (1u << 2)        /* somebody took the exception */
@@ -258,6 +265,16 @@ static zend_always_inline void async_event_init(async_event_t *event, const uint
 {
 	event->flags = ASYNC_AWAITABLE_F_EVENT | type_flags;
 	event->ref_count = 1;
+	memset(&event->callbacks, 0, sizeof(event->callbacks));
+}
+
+/* Starts an event that lives inside its zend_object, `object_offset` bytes before it: the object's
+ * references count for it. */
+static zend_always_inline void
+async_event_init_in_object(async_event_t *event, const uint32_t type_flags, const uint32_t object_offset)
+{
+	event->flags = ASYNC_AWAITABLE_F_EVENT | ASYNC_EVENT_F_ZEND_OBJ | type_flags;
+	event->object_offset = object_offset;
 	memset(&event->callbacks, 0, sizeof(event->callbacks));
 }
 
@@ -402,12 +419,21 @@ void async_wait_link(async_coroutine_event_callback_t *record,
 					 const async_wait_kind_t *kind,
 					 async_event_callback_fn wake);
 
+/* Links `record` of `waiter`'s wait to `target` without its vector, as ASYNC_CALLBACK_F_FRAME_UNLINKS:
+ * the target's own code holds it and wakes the waiter. Allocates nothing; the rules of async_wait_link()
+ * apply. */
+void async_wait_link_outside(async_coroutine_event_callback_t *record,
+							 async_coroutine_t *waiter,
+							 async_awaitable_t *target,
+							 const async_wait_kind_t *kind);
+
 /* Removes a linked record from its target's vector and clears its `event`: the generic unlink, and
  * the part a kind's unlink shares with it. */
 void async_wait_record_remove(async_coroutine_event_callback_t *record);
 
 /* Unlinks one record when it is linked: its kind's unlink, or the removal from the target's vector.
- * A block's ops->unlink calls it for its records, the target's teardown for a record left there. */
+ * A block's ops->unlink calls it for its records, the target's teardown for a record left there.
+ * A record its frame unlinks (ASYNC_CALLBACK_F_FRAME_UNLINKS) is left linked. */
 void async_wait_record_unlink(async_coroutine_event_callback_t *record);
 
 /* async_wait_unlink() (coroutine.h) past its check that nothing is linked: unlinks the waker's
@@ -431,7 +457,8 @@ void async_wait_walk(async_coroutine_t *coroutine,
 async_wait_block_t *async_wait_take_block(async_coroutine_t *coroutine);
 
 /* Ends a wait its frame never ended: the unlink, then the waiter's reference to a block left in the
- * waker. A new wait and the coroutine's finish call it after a bailout cut a wait short. */
+ * waker. A new wait and the coroutine's finish call it after a bailout cut a wait short.
+ * A record its frame unlinks is aborted first: that frame never runs again. */
 void async_wait_end(async_coroutine_t *coroutine);
 
 ///////////////////////////////////////////////////////////////////

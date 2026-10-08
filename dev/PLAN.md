@@ -778,7 +778,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md
-Active: none; S9.17 starts once Edmond agrees to layer 3's plan (S9.16)
+Active: S9.18
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -991,12 +991,26 @@ Active: none; S9.17 starts once Edmond agrees to layer 3's plan (S9.16)
         the Sage ran the scope rule and the D26 case on the reference. Probes `h1.php`-`h14.php`,
         `f1a.php`-`f7.php`, `t048.php`-`t063.php` in `/mnt/project-files/s9/probes/s9.channel/`.
         93 reference tests for the list.
-- [ ] S9.17 The list block for layer 3, the channel, its buffer, `send()`, `sendAsync()`, `recv()`,
+- [x] S9.17 The list block for layer 3, the channel, its buffer, `send()`, `sendAsync()`, `recv()`,
       `close()` and the readers, the reservations, the CHANNEL kind, cancellation tokens, the destructor,
       `ChannelException` and `ChannelCloseReason` (note sections 2, 3, 5, 9).
       done: the block's S9.17 tests and the note's S9.17 own tests pass on debug and ASAN; the S3-S7
         lists and layers 1 and 2 pass as before
       tier: T2 · role: Critic
+      handoff: done 2026-10-08: `src/channel.c`, `channel.h`, `channel.stub.php` and the ring
+        `src/internal/zval_circular_buffer.c`. The layer 3 block of `tests/lists/S9.txt`: 93 reference
+        tests, 63 passing in S9.17, 14 with `--XFAIL--` naming S9.18 and 16 naming S9.19 (`channel/044`,
+        `049`, `056`, `062` pass early, note section 9); own tests `channel/088`-`098`; `channel/058`,
+        `059` wait for TaskGroup in `S9.excluded`. The record is linked by `async_wait_link_outside()`
+        with `ASYNC_CALLBACK_F_FRAME_UNLINKS`, and `async_wait_end()` aborts such a record (DECISIONS).
+        Until S9.18, `recvAsync()` and `getIterator()` throw and `async_await_awaitable_of()` refuses a
+        channel. Note section 8 gains items 13 (a delivering wait refused before it parks withdraws its
+        value) and 14 (`send()`/`recv()` refuse in scheduler context up front). The collector's oracle
+        call stays in the channel's wake. Critic (one major finding fixed: stale records at
+        `async_wait_end()`), Code Reviewer, two quality Critics and a re-check. On CORE_REF 662dfe91919:
+        debug 1311 PASS, 9 SKIP, 41 XFAIL; ASAN 1287 PASS, 34 SKIP, 40 XFAIL, before the last
+        no-behaviour edits, after which the channel, scope and bailout groups ran again on ASAN (204
+        PASS, 19 SKIP, 30 XFAIL); 0 unexpected.
 - [ ] S9.18 `recvAsync()`, `foreach` and `getIterator()`, the channel as an `await_*` item and a token
       (note section 4).
       done: the block's S9.18 tests and the note's S9.18 own tests pass on debug and ASAN; the S3-S7

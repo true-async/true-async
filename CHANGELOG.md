@@ -75,3 +75,9 @@ can see goes here; tests, tools and CI are in the git history.
   or ends the request; one handler's error goes up from that child scope as itself, several as an
   `Async\CompositeException`; a handler added to a finished coroutine or a gone scope runs at once
   ([S9](dev/plans/S9-scope.md)).
+- `Async\Channel`, `Async\ChannelException` and `Async\ChannelCloseReason`: `send()` and `recv()`
+  pass values between coroutines through a buffer of `capacity` values, or hand each one over
+  directly when the capacity is 0; both take an optional cancellation token, `sendAsync()` sends
+  without waiting, and `close()` fails the waiting senders and receivers with a `ChannelException`
+  naming the reason, while `recv()` still gets the values left.
+  The buffer grows as values arrive, within `memory_limit` ([S9](dev/plans/S9-channel.md)).

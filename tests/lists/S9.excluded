@@ -1,0 +1,5 @@
+# S9: reference tests of the S9 groups not ported in S9, one reason each (dev/plans/S2.md, section 3).
+
+# channel
+channel/058-channel_taskgroup_dispose.phpt  component:S9 (TaskGroup)
+channel/059-channel_taskgroup_cancel.phpt  component:S9 (TaskGroup)

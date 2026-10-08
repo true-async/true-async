@@ -86,7 +86,7 @@ flowchart TB
 ## Roadmap
 
 <!-- roadmap:begin -->
-![Progress 70%](https://img.shields.io/badge/progress-70%25-2ea44f.svg) ![Current stage S6](https://img.shields.io/badge/current%20stage-S6-orange.svg)
+![Progress 70%](https://img.shields.io/badge/progress-70%25-2ea44f.svg) ![Current stage S6](https://img.shields.io/badge/current%20stage-S6-orange.svg) ![Current stage S9](https://img.shields.io/badge/current%20stage-S9-orange.svg)
 
 | Stage | Progress | Done |
 |---|---|---:|
@@ -98,7 +98,7 @@ flowchart TB
 | ▶ **S6 · IO hooks provider** | `█████████░` | 90 % |
 | ✓ S7 · Async object collector | `██████████` | 100 % |
 | S8 · Review checks and RFC change list | `░░░░░░░░░░` | 0 % |
-| S9 · Higher layers, one at a time | `████████░░` | 76 % |
+| ▶ **S9 · Higher layers, one at a time** | `████████░░` | 81 % |
 | S10 · Beyond the RFCs | `░░░░░░░░░░` | 0 % |
 | S11 · Namespace `Async` renamed to `TrueAsync` | `░░░░░░░░░░` | 0 % |
 
