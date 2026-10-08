@@ -1,0 +1,517 @@
+From d10b4c2476ae335f743f3775ff207a98918291ae Mon Sep 17 00:00:00 2001
+From: Edmond <1571649+edmonddantes@users.noreply.github.com>
+Date: Thu, 8 Oct 2026 10:09:52 +0000
+Subject: [PATCH 2/2] Drop completion packets that are not this context's ops
+
+A handle passed to another process stays associated with the port of
+the context that used it, so that process's own overlapped I/O on it
+posts to this port, with an OVERLAPPED that is an address in the other
+process. The dequeue, the completion pump and the teardown drain took
+every packet's OVERLAPPED for one of their ops and wrote through it.
+
+iocp_packet_op() now decides at all three. ior posts its own packets
+with key 0, which no other process can. A packet with another key must
+name an op slot of one of the context's chunks with a request in flight
+(IOCP_OP_IO or IOCP_OP_IO_CANCEL), and each request takes one packet
+(packet_taken, cleared as the request starts), so the pump cannot stage
+an op twice. A foreign packet whose OVERLAPPED lands exactly on a slot
+with a request in flight is still taken for it, and that request's own
+packet then for the slot's next request: nothing in a packet tells them
+apart. The key is not compared: an op on a duplicate handle takes the
+association over under its own key, and later ops on the first handle
+complete under that key.
+
+A dropped packet is not counted. A dequeue that drops one waits again
+with the time left; after 64 drops it returns -EAGAIN, so a peek
+returns however fast such packets come. The chunk list is published
+with release, as the walk takes no lock while the poller thread may grow
+the pool. The README says that
+Windows completes such foreign I/O only when the ring dequeues its
+packet, unless its event has the low-order bit set.
+
+test_iocp_backend: overlapped reads issued outside ior on the ring's
+pipe handle stand in for the other process. At each of the three sites
+their packets are dropped, the reads complete and the memory past
+their OVERLAPPED stays as it was; one 0 ms peek finds the ring's own
+write behind three of them, and a peek gives up after 64 of 70. Ops
+taking turns on a pipe handle and its duplicate all complete.
+---
+ README.md                 |   7 ++
+ src/ior_iocp.c            | 111 ++++++++++++++++----
+ tests/test_iocp_backend.c | 210 +++++++++++++++++++++++++++++++++++++-
+ 3 files changed, 307 insertions(+), 21 deletions(-)
+
+diff --git a/README.md b/README.md
+index 68b8a5b..082e89a 100644
+--- a/README.md
++++ b/README.md
+@@ -169,6 +169,13 @@ int main() {
+ > not ior's; while that ring lives, another one gets `-EBUSY` for the handle,
+ > since the first may still have requests on it, as it does for a handle with
+ > requests still pending on a port that is not ior's.
++>
++> A handle passed to another process stays tied to the ring's port; that
++> process's own overlapped I/O on it posts there, and the ring drops those
++> packets. Windows completes such I/O only when its packet is dequeued, so
++> it waits until the ring next dequeues; the same holds for overlapped I/O
++> this process issues outside ior on a handle the ring uses. I/O whose
++> `hEvent` has the low-order bit set queues no packet and is not held.
+ 
+ ### Operation Chaining Example
+ 
+diff --git a/src/ior_iocp.c b/src/ior_iocp.c
+index 2d87585..b1a7afe 100644
+--- a/src/ior_iocp.c
++++ b/src/ior_iocp.c
+@@ -238,6 +238,7 @@ typedef struct ior_iocp_op {
+ 	uint32_t accept_nchildren;
+ 
+ 	_Atomic int state; // IOCP_OP_*
++	_Atomic bool packet_taken; // so the pump cannot stage the op twice (iocp_packet_op)
+ 
+ 	// Free list linkage (preserved across prep_*)
+ 	struct ior_iocp_op *next_free;
+@@ -349,6 +350,10 @@ typedef struct iocp_pump {
+ // Completion key of the packet that tells the pump thread to exit.
+ #define IOCP_PUMP_STOP_KEY ((ULONG_PTR) - 2)
+ 
++// Foreign packets (iocp_packet_op) one dequeue drops before it returns
++// -EAGAIN, so a 0 ms peek returns however fast they come.
++#define IOCP_FOREIGN_PACKETS_MAX 64
++
+ /* QPC frequency, initialized once during backend init.
+  *
+  * Stored as an atomic so that the publishing thread's write is observed with
+@@ -365,8 +370,10 @@ typedef struct ior_ctx_iocp {
+ 	HANDLE iocp_handle;
+ 
+ 	// Operation pool: grown in chunks as more ops are staged or in flight,
+-	// which nothing bounds but memory, as on io_uring.
+-	iocp_op_chunk *op_chunks;
++	// which nothing bounds but memory, as on io_uring. Published with release:
++	// iocp_packet_op walks the chunks without pool_lock while the poller thread
++	// may grow the pool.
++	_Atomic(iocp_op_chunk *) op_chunks;
+ 	uint32_t pool_size; // ops in all chunks
+ 
+ 	/*
+@@ -696,12 +703,12 @@ static int grow_op_pool(ior_ctx_iocp *ctx, uint32_t size)
+ 		return -ENOMEM;
+ 	}
+ 	chunk->count = size;
+-	chunk->next = ctx->op_chunks;
+-	ctx->op_chunks = chunk;
++	chunk->next = atomic_load_explicit(&ctx->op_chunks, memory_order_relaxed);
+ 	for (uint32_t i = 0; i < size; i++) {
+ 		chunk->ops[i].next_free = ctx->free_list_head;
+ 		ctx->free_list_head = &chunk->ops[i];
+ 	}
++	atomic_store_explicit(&ctx->op_chunks, chunk, memory_order_release);
+ 	ctx->pool_size += size;
+ 	ctx->free_count += size;
+ 	return 0;
+@@ -709,11 +716,56 @@ static int grow_op_pool(ior_ctx_iocp *ctx, uint32_t size)
+ 
+ static void free_op_pool(ior_ctx_iocp *ctx)
+ {
+-	while (ctx->op_chunks) {
+-		iocp_op_chunk *next = ctx->op_chunks->next;
+-		free(ctx->op_chunks);
+-		ctx->op_chunks = next;
++	iocp_op_chunk *chunk = atomic_load_explicit(&ctx->op_chunks, memory_order_relaxed);
++	while (chunk) {
++		iocp_op_chunk *next = chunk->next;
++		free(chunk);
++		chunk = next;
+ 	}
++	atomic_store_explicit(&ctx->op_chunks, NULL, memory_order_relaxed);
++}
++
++/*
++ * The op a packet dequeued from the port completes, or NULL for a foreign
++ * packet: a handle passed to another process stays associated with this
++ * port, so that process's overlapped I/O on it posts here, with an
++ * OVERLAPPED that is an address in its memory. Nothing in a packet tells
++ * one that lands exactly on a slot with a request in flight from that
++ * request's own; such a one is taken for it.
++ */
++static ior_iocp_op *iocp_packet_op(ior_ctx_iocp *ctx, ULONG_PTR key, LPOVERLAPPED overlapped)
++{
++	ior_iocp_op *const op = (ior_iocp_op *) overlapped;
++	// ior posts with key 0; a kernel packet carries the association key, a
++	// handle value
++	if (key == 0) {
++		return op;
++	}
++
++	const uintptr_t addr = (uintptr_t) op;
++	for (const iocp_op_chunk *chunk = atomic_load_explicit(&ctx->op_chunks, memory_order_acquire);
++			chunk; chunk = chunk->next) {
++		const uintptr_t first = (uintptr_t) chunk->ops;
++		if (addr < first || addr >= first + (uintptr_t) chunk->count * sizeof(ior_iocp_op)) {
++			continue;
++		}
++		if ((addr - first) % sizeof(ior_iocp_op) != 0) {
++			return NULL;
++		}
++		const int state = atomic_load_explicit(&op->state, memory_order_acquire);
++		if (state != IOCP_OP_IO && state != IOCP_OP_IO_CANCEL) {
++			return NULL;
++		}
++		return atomic_exchange(&op->packet_taken, true) ? NULL : op;
++	}
++
++	return NULL;
++}
++
++static void iocp_op_start_io(ior_iocp_op *op)
++{
++	atomic_store_explicit(&op->packet_taken, false, memory_order_relaxed);
++	atomic_store(&op->state, IOCP_OP_IO);
+ }
+ 
+ static ior_iocp_op *alloc_op(ior_ctx_iocp *ctx)
+@@ -1379,7 +1431,7 @@ static int issue_read(ior_ctx_iocp *ctx, ior_iocp_op *op)
+ 	uint64_t offset = op->offset == IOR_OFF_NONE ? 0 : op->offset;
+ 	op->overlapped.Offset = (DWORD) (offset & 0xFFFFFFFF);
+ 	op->overlapped.OffsetHigh = (DWORD) (offset >> 32);
+-	atomic_store(&op->state, IOCP_OP_IO);
++	iocp_op_start_io(op);
+ 
+ 	BOOL result = ReadFile(h, op->buf, op->len, NULL, &op->overlapped);
+ 	if (result) {
+@@ -1413,7 +1465,7 @@ static int issue_write(ior_ctx_iocp *ctx, ior_iocp_op *op)
+ 	// thing an overlapped handle has to a current position.
+ 	op->overlapped.Offset = (DWORD) (op->offset & 0xFFFFFFFF);
+ 	op->overlapped.OffsetHigh = (DWORD) (op->offset >> 32);
+-	atomic_store(&op->state, IOCP_OP_IO);
++	iocp_op_start_io(op);
+ 
+ 	BOOL result = WriteFile(h, op->buf, op->len, NULL, &op->overlapped);
+ 	if (result) {
+@@ -1453,7 +1505,7 @@ static int issue_send(ior_ctx_iocp *ctx, ior_iocp_op *op)
+ 
+ 	op->wsabuf.buf = (CHAR *) op->buf;
+ 	op->wsabuf.len = op->len;
+-	atomic_store(&op->state, IOCP_OP_IO);
++	iocp_op_start_io(op);
+ 
+ 	int rc = WSASend((SOCKET) op->fd, &op->wsabuf, 1, NULL, op->sock_flags, &op->overlapped, NULL);
+ 	if (rc == 0) {
+@@ -1480,7 +1532,7 @@ static int issue_recv(ior_ctx_iocp *ctx, ior_iocp_op *op)
+ 
+ 	op->wsabuf.buf = (CHAR *) op->buf;
+ 	op->wsabuf.len = op->len;
+-	atomic_store(&op->state, IOCP_OP_IO);
++	iocp_op_start_io(op);
+ 
+ 	// sock_flags is an in/out parameter for WSARecv and must remain valid for
+ 	// the whole async operation, hence it lives in the op.
+@@ -1560,7 +1612,7 @@ static int issue_accept(ior_ctx_iocp *ctx, ior_iocp_op *op)
+ 	}
+ 	op->accept_sock = as;
+ 	op->accept_recvd = 0;
+-	atomic_store(&op->state, IOCP_OP_IO);
++	iocp_op_start_io(op);
+ 
+ 	// No data is received with the accept (dwReceiveDataLength 0), so the
+ 	// completion arrives as soon as a connection is there.
+@@ -1620,7 +1672,7 @@ static int issue_connect(ior_ctx_iocp *ctx, ior_iocp_op *op)
+ 		}
+ 	}
+ 
+-	atomic_store(&op->state, IOCP_OP_IO);
++	iocp_op_start_io(op);
+ 	BOOL ok = ctx->fn_connectex(s, op->sa, (int) op->sa_len_val, NULL, 0, NULL, &op->overlapped);
+ 	if (ok) {
+ 		atomic_fetch_add(&ctx->active_count, 1);
+@@ -3877,8 +3929,8 @@ static void ior_iocp_backend_destroy(void *backend_ctx)
+ 			break;
+ 		}
+ 
+-		if (overlapped) {
+-			ior_iocp_op *op = (ior_iocp_op *) overlapped;
++		ior_iocp_op *const op = overlapped ? iocp_packet_op(ctx, key, overlapped) : NULL;
++		if (op) {
+ 			atomic_fetch_sub(&ctx->active_count, 1);
+ 			free_op(ctx, op);
+ 		}
+@@ -4155,7 +4207,10 @@ static DWORD WINAPI iocp_pump_thread_main(LPVOID arg)
+ 			continue; // stray packet (external PostQueuedCompletionStatus)
+ 		}
+ 
+-		ior_iocp_op *op = (ior_iocp_op *) overlapped;
++		ior_iocp_op *const op = iocp_packet_op(ctx, key, overlapped);
++		if (!op) {
++			continue;
++		}
+ 		op->pump_bytes = bytes;
+ 		op->pump_error = err;
+ 		op->pump_next = NULL;
+@@ -4356,9 +4411,25 @@ static int dequeue_one_completion(ior_ctx_iocp *ctx, DWORD timeout_ms)
+ 		gle = e.error;
+ 		ok = gle == ERROR_SUCCESS;
+ 	} else {
+-		ok = GetQueuedCompletionStatus(
+-				ctx->iocp_handle, &bytes_transferred, &completion_key, &overlapped, timeout_ms);
+-		gle = ok ? ERROR_SUCCESS : GetLastError();
++		const uint64_t deadline_ns
++				= timeout_ms == INFINITE ? 0 : qpc_now_ns() + (uint64_t) timeout_ms * 1000000;
++		DWORD wait_ms = timeout_ms;
++		for (int dropped = 0;;) {
++			ok = GetQueuedCompletionStatus(
++					ctx->iocp_handle, &bytes_transferred, &completion_key, &overlapped, wait_ms);
++			gle = ok ? ERROR_SUCCESS : GetLastError();
++			if (!overlapped || iocp_packet_op(ctx, completion_key, overlapped)) {
++				break;
++			}
++			if (++dropped == IOCP_FOREIGN_PACKETS_MAX) {
++				return -EAGAIN;
++			}
++			if (timeout_ms != INFINITE) {
++				const uint64_t now_ns = qpc_now_ns();
++				wait_ms = now_ns < deadline_ns ? (DWORD) ((deadline_ns - now_ns + 999999) / 1000000)
++											   : 0;
++			}
++		}
+ 	}
+ 
+ 	if (!ok) {
+diff --git a/tests/test_iocp_backend.c b/tests/test_iocp_backend.c
+index 3bddc7e..ff0694a 100644
+--- a/tests/test_iocp_backend.c
++++ b/tests/test_iocp_backend.c
+@@ -12,7 +12,8 @@
+  *   - teardown while operations are still in flight
+  *   - a handle moving between rings (one completion port per handle), with
+  *     recycled handle values, requests pending elsewhere and racing rings
+- *   - the errno of a closed or empty pipe
++ *   - pipes: another process's packets on a handle passed to it, ops on a
++ *     duplicate of the handle, and the errno of a closed or empty pipe
+  *
+  * The whole file compiles to an empty (passing) cmocka group on non-IOCP
+  * builds, so it is harmless to register unconditionally in CMake - but the
+@@ -710,6 +711,206 @@ static int32_t pipe_op_once(ior_ctx *ctx, HANDLE h, void *buf, unsigned len, int
+ 	return res;
+ }
+ 
++/*
++ * A handle passed to another process stays associated with the ring's port,
++ * and that process's own overlapped I/O on it posts there, with an OVERLAPPED
++ * that is not one of the ring's ops. Reads issued here outside ior on the
++ * ring's handle stand in for that process; the bytes past each OVERLAPPED
++ * must stay as they are.
++ */
++#define FOREIGN_TAIL 512
++
++typedef struct foreign_read {
++	OVERLAPPED ov;
++	char byte;
++	unsigned char tail[FOREIGN_TAIL];
++} foreign_read;
++
++// n one-byte reads on server, pending until the client writes n bytes.
++static foreign_read *foreign_reads_issue(HANDLE server, unsigned n)
++{
++	foreign_read *const reads = calloc(n, sizeof(*reads));
++	assert_non_null(reads);
++	for (unsigned i = 0; i < n; i++) {
++		memset(reads[i].tail, 0xAB, sizeof(reads[i].tail));
++		reads[i].ov.hEvent = CreateEventA(NULL, TRUE, FALSE, NULL);
++		assert_non_null(reads[i].ov.hEvent);
++		const BOOL ok = ReadFile(server, &reads[i].byte, 1, NULL, &reads[i].ov);
++		assert_true(ok || GetLastError() == ERROR_IO_PENDING);
++	}
++	return reads;
++}
++
++/*
++ * Windows queues the reads' packets inside the client's WriteFile and, as
++ * documented, completes the reads only when the ring dequeues them. Wine
++ * completes them at once and queues each packet just after setting its
++ * event.
++ */
++static void foreign_reads_queued(foreign_read *reads, unsigned n)
++{
++	WaitForSingleObject(reads[n - 1].ov.hEvent, 100);
++	Sleep(10);
++}
++
++// Dropping a packet completes the read it belongs to.
++static void foreign_reads_check_and_free(HANDLE server, foreign_read *reads, unsigned n)
++{
++	for (unsigned i = 0; i < n; i++) {
++		DWORD got = 0;
++		assert_true(GetOverlappedResult(server, &reads[i].ov, &got, FALSE) && got == 1);
++		for (unsigned j = 0; j < FOREIGN_TAIL; j++) {
++			assert_int_equal(reads[i].tail[j], 0xAB);
++		}
++		CloseHandle(reads[i].ov.hEvent);
++	}
++	free(reads);
++}
++
++// Foreign packets for n reads are in the ring's port, the packet of a write
++// of the ring's behind them (a kernel one: a NOP may skip the port).
++static foreign_read *foreign_packets_before_write(
++		ior_ctx *ctx, HANDLE server, HANDLE client, unsigned n)
++{
++	char byte = 'x';
++	assert_int_equal(pipe_op_once(ctx, server, &byte, 1, 1), 1);
++	DWORD got = 0;
++	assert_true(ReadFile(client, &byte, 1, &got, NULL) && got == 1);
++
++	foreign_read *const reads = foreign_reads_issue(server, n);
++	char *const data = malloc(n);
++	assert_non_null(data);
++	memset(data, 'a', n);
++	assert_true(WriteFile(client, data, n, &got, NULL) && got == n);
++	free(data);
++	foreign_reads_queued(reads, n);
++
++	ior_sqe *const sqe = ior_get_sqe(ctx);
++	assert_non_null(sqe);
++	ior_prep_write(ctx, sqe, server, "w", 1, IOR_OFF_NONE);
++	ior_sqe_set_data(ctx, sqe, (void *) 0x400);
++	assert_true(ior_submit(ctx) >= 0);
++	return reads;
++}
++
++// One 0 ms peek drops the foreign packets and finds the write behind them.
++static void test_foreign_packets_dropped(void **state)
++{
++	iocp_state *s = (iocp_state *) *state;
++	HANDLE server, client;
++	make_pipe_pair(&server, &client);
++	foreign_read *const reads = foreign_packets_before_write(s->ctx, server, client, 3);
++
++	ior_cqe *cqe = NULL;
++	assert_int_equal(ior_peek_cqe(s->ctx, &cqe), 0);
++	assert_ptr_equal(ior_cqe_get_data(s->ctx, cqe), (void *) 0x400);
++	ior_cqe_seen(s->ctx, cqe);
++	assert_int_equal(ior_peek_cqe(s->ctx, &cqe), -EAGAIN);
++
++	foreign_reads_check_and_free(server, reads, 3);
++	CloseHandle(client);
++	CloseHandle(server);
++}
++
++// A peek gives up after 64 foreign packets; the next one goes on.
++static void test_foreign_packets_bounded(void **state)
++{
++	iocp_state *s = (iocp_state *) *state;
++	HANDLE server, client;
++	make_pipe_pair(&server, &client);
++	foreign_read *const reads = foreign_packets_before_write(s->ctx, server, client, 70);
++
++	ior_cqe *cqe = NULL;
++	assert_int_equal(ior_peek_cqe(s->ctx, &cqe), -EAGAIN);
++	assert_int_equal(ior_peek_cqe(s->ctx, &cqe), 0);
++	assert_ptr_equal(ior_cqe_get_data(s->ctx, cqe), (void *) 0x400);
++	ior_cqe_seen(s->ctx, cqe);
++
++	foreign_reads_check_and_free(server, reads, 70);
++	CloseHandle(client);
++	CloseHandle(server);
++}
++
++// The completion pump drops them before it stages a packet.
++static void test_foreign_packets_dropped_by_pump(void **state)
++{
++	iocp_state *s = (iocp_state *) *state;
++	assert_true(ior_notify_fd(s->ctx) != IOR_INVALID_FD);
++	HANDLE server, client;
++	make_pipe_pair(&server, &client);
++	foreign_read *const reads = foreign_packets_before_write(s->ctx, server, client, 3);
++
++	ior_cqe *cqe = NULL;
++	assert_return_code(ior_wait_cqe(s->ctx, &cqe), 0);
++	assert_ptr_equal(ior_cqe_get_data(s->ctx, cqe), (void *) 0x400);
++	ior_cqe_seen(s->ctx, cqe);
++	assert_int_equal(ior_peek_cqe(s->ctx, &cqe), -EAGAIN);
++
++	foreign_reads_check_and_free(server, reads, 3);
++	CloseHandle(client);
++	CloseHandle(server);
++}
++
++// The teardown drain drops them while it waits for the ring's own read.
++static void test_foreign_packets_dropped_at_teardown(void **state)
++{
++	(void) state; /* tears its own ctx down */
++	ior_ctx *ctx = NULL;
++	assert_return_code(ior_queue_init(32, &ctx), 0);
++	HANDLE server, client;
++	make_pipe_pair(&server, &client);
++	char byte = 'x';
++	assert_int_equal(pipe_op_once(ctx, server, &byte, 1, 1), 1);
++	DWORD got = 0;
++	assert_true(ReadFile(client, &byte, 1, &got, NULL) && got == 1);
++
++	foreign_read *const reads = foreign_reads_issue(server, 3);
++	char ring_byte;
++	ior_sqe *const sqe = ior_get_sqe(ctx);
++	assert_non_null(sqe);
++	ior_prep_read(ctx, sqe, server, &ring_byte, 1, IOR_OFF_NONE);
++	assert_true(ior_submit(ctx) >= 0);
++	assert_true(WriteFile(client, "abcd", 4, &got, NULL) && got == 4);
++	foreign_reads_queued(reads, 3);
++
++	ior_queue_exit(ctx);
++	foreign_reads_check_and_free(server, reads, 3);
++	CloseHandle(client);
++	CloseHandle(server);
++}
++
++// Ops on a duplicate of the ring's handle and on the handle itself, in turn,
++// all complete: one on the duplicate takes the association over under its
++// own key, which the packets of later ops on the first handle then carry.
++static void test_duplicate_handle_ops_complete(void **state)
++{
++	iocp_state *s = (iocp_state *) *state;
++	HANDLE server, client, dup;
++	make_pipe_pair(&server, &client);
++	assert_true(DuplicateHandle(GetCurrentProcess(), server, GetCurrentProcess(), &dup, 0, FALSE,
++			DUPLICATE_SAME_ACCESS));
++
++	const HANDLE turns[] = { server, dup, server, dup };
++	for (unsigned i = 0; i < sizeof(turns) / sizeof(turns[0]); i++) {
++		char byte = 'x';
++		ior_sqe *const sqe = ior_get_sqe(s->ctx);
++		assert_non_null(sqe);
++		ior_prep_write(s->ctx, sqe, turns[i], &byte, 1, IOR_OFF_NONE);
++		assert_true(ior_submit(s->ctx) >= 0);
++		ior_cqe *cqe = NULL;
++		ior_timespec timeout = { .tv_sec = 2, .tv_nsec = 0 };
++		assert_return_code(ior_wait_cqe_timeout(s->ctx, &cqe, &timeout), 0);
++		assert_int_equal(ior_cqe_get_res(s->ctx, cqe), 1);
++		ior_cqe_seen(s->ctx, cqe);
++		DWORD got = 0;
++		assert_true(ReadFile(client, &byte, 1, &got, NULL) && got == 1);
++	}
++
++	CloseHandle(dup);
++	CloseHandle(client);
++	CloseHandle(server);
++}
++
+ // A write to a pipe whose other end is closed fails with EPIPE, as on POSIX.
+ static void test_write_to_closed_pipe_epipe(void **state)
+ {
+@@ -798,6 +999,13 @@ int main(void)
+ 		cmocka_unit_test_setup_teardown(test_handle_foreign_pending_busy, iocp_setup, iocp_teardown),
+ 		cmocka_unit_test_setup_teardown(test_handle_socket_moves, iocp_setup, iocp_teardown),
+ 		cmocka_unit_test_setup_teardown(test_handle_takeover_race, iocp_setup, iocp_teardown),
++		cmocka_unit_test_setup_teardown(test_foreign_packets_dropped, iocp_setup, iocp_teardown),
++		cmocka_unit_test_setup_teardown(test_foreign_packets_bounded, iocp_setup, iocp_teardown),
++		cmocka_unit_test_setup_teardown(
++				test_foreign_packets_dropped_by_pump, iocp_setup, iocp_teardown),
++		cmocka_unit_test(test_foreign_packets_dropped_at_teardown),
++		cmocka_unit_test_setup_teardown(
++				test_duplicate_handle_ops_complete, iocp_setup, iocp_teardown),
+ 		cmocka_unit_test_setup_teardown(test_write_to_closed_pipe_epipe, iocp_setup, iocp_teardown),
+ 		cmocka_unit_test_setup_teardown(
+ 				test_read_empty_nowait_pipe_eagain, iocp_setup, iocp_teardown),
+-- 
+2.43.0
+
