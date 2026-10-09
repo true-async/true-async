@@ -764,8 +764,9 @@ run: a handler that waits hangs the script.
    re-check and quality Critics). Not on a safe scope (`ASYNC_SCOPE_F_DISPOSE_SAFELY`, every
    `Scope::inherit()` made from the global scope): its cancel turns started members into zombies that run
    on, so a zombie's handlers run when it finishes (`scope/164`); without this a member that finished its
-   work would lose its cleanup (the design Critic; probed on the debug build). Asked of Edmond,
-   2026-10-09; the default until he answers. Never on a request-lifetime scope
+   work would lose its cleanup (the design Critic; probed on the debug build). Edmond agreed, 2026-10-09
+   10:04 («да»), after keeping the global scope safe, as TrueAsync's (10:03, «да остаётся мягким»), so a
+   top-level `Scope::inherit()` is safe too. Never on a request-lifetime scope
    (`ASYNC_SCOPE_F_REQUEST_LIFETIME`): a SpawnStrategy's stand-in of the global scope can clear its safe bit
    with `asNotSafely()` and arm a timer, and the flag would then drop every finally handler for the rest
    of the request (`scope/167`, the code Critic). The flag is S's, for its whole subtree: once one member is

@@ -1941,16 +1941,15 @@ stack options were shown with the code).
   handlers are released where they were before (the code Critic: a refused start released them inside a
   finished coroutine). A departure from TrueAsync (`coroutine.c:1281`, `scope.c:1203-1236`);
   `dev/plans/S9-scope.md` section 14.
-- 2026-10-09 S9.24, the default until Edmond answers (asked 2026-10-09): a safe scope's fire sets no flag on
-  the scope. Why: its cancel leaves started members running as zombies, so a member that finished its work
-  would lose its cleanup (the design Critic; probed on the debug build). For the same reason a fire whose
-  cancel interrupts no member (members that all returned, only a finally run running below, a cancelled scope
-  whose cascade reaches no coroutine) sets none; `scope_deadline_interrupts_member()` follows the cancel's
-  branches (the re-check and quality Critics). The flag covers S's whole subtree, so a survivor below S (a
-  member of a cancelled child that goes on) loses its handlers once another member was interrupted; a per-scope
-  flag waits for the same answer. A request-lifetime scope never takes it: a SpawnStrategy's stand-in of the
-  global scope can make it unsafe and arm a timer, and every handler of the request would be dropped (the code
-  Critic).
+- 2026-10-09 S9.24: a safe scope's fire sets no flag on the scope. Why: Edmond, 10:04, «да»; its cancel leaves
+  started members running as zombies, so a member that finished its work would lose its cleanup (the design
+  Critic; probed on the debug build). For the same reason a fire whose cancel interrupts no member (members
+  that all returned, only a finally run running below, a cancelled scope whose cascade reaches no coroutine)
+  sets none; `scope_deadline_interrupts_member()` follows the cancel's branches (the re-check and quality
+  Critics). The flag covers S's whole subtree, so a survivor below S (a member of a cancelled child that goes
+  on) loses its handlers once another member was interrupted; a per-scope flag is Edmond's call. A
+  request-lifetime scope never takes it: a SpawnStrategy's stand-in of the global scope can make it unsafe and
+  arm a timer, and every handler of the request would be dropped (the code Critic).
 - 2026-10-09 `scope/151-deadline_runs_finally_of_idle_child_its_cancel_closes.phpt` (ours, S9.23;
   `changed:2026-10-09`) expects the fire that closes an idle child scope not to call the child's
   `Scope::finally()` handler. Why: Edmond's S9.24 rule drops every finally handler after a deadline that
@@ -1964,3 +1963,7 @@ stack options were shown with the code).
   must not repeat a timer wait thousands of times. Each round waited one timer tick, 1.1 ms on Linux
   (11 s in all) and by computation the 15.6 ms system tick on Windows (`ior_iocp.c:3028`), so pocs-win
   killed it at 60 s since S9.18.
+- 2026-10-09: the global scope stays safe (`ASYNC_SCOPE_F_DISPOSE_SAFELY`, `src/scope.c:2148`), so a
+  `Scope::inherit()` made from it is safe too, as TrueAsync's (`scope.c:186-189`, `scope.c:1331-1341`). Why:
+  Edmond, 10:03, «да остаётся мягким»; a TaskGroup's own scope does not inherit the mode (his TaskGroup
+  decision, 2026-10-09).

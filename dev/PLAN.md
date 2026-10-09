@@ -91,11 +91,10 @@ Waiting for Edmond's call; nothing here is being worked on.
   left running once its run ended (the S9.23 code Critic), which the deadline does not reach either. Since
   S9.23 a finally run's scope carries `ASYNC_SCOPE_F_FINALLY_RUN`, so cancelling such a child no longer stops
   a running handler (`scope/140`). Edmond's call.
-- A safe scope's deadline (every `Scope::inherit()` made from the global scope) leaves its members running
-  as zombies; S9.24 lets their finally handlers run when they finish (`scope/164`), the default until
-  Edmond answers (asked 2026-10-09). The flag is the scope's, for its whole subtree, so a survivor below it
-  (a member of a cancelled child that goes on) loses its handlers once another member was interrupted; a
-  per-scope flag would keep them (the S9.24 re-check Critic).
+- The S9.24 deadline flag is the scope's, for its whole subtree, so a survivor below it (a member of a
+  cancelled child that goes on) loses its finally handlers once another member was interrupted; a per-scope
+  flag would keep them (the S9.24 re-check Critic). Edmond agreed that a safe scope's zombies keep theirs
+  (2026-10-09 10:04); whether a survivor below an interrupting deadline keeps them too is his call.
 - A coroutine spawned into a scope after its deadline fired (the scope is cancelled, not closed), or into a
   `Scope::inherit()` made under it then, runs unbounded while none of its finally handlers is called (the
   S9.24 re-check Critic; read from code, not run). Close the scope at the fire, or skip only the targets
@@ -1181,12 +1180,12 @@ Active: none; layer 3 done, the next layer needs its plan agreed with Edmond
         an unsafe, not request-lifetime scope whose cancel interrupts a member, and by the fire's walk on every
         finally run it stops; `finally_handler_call()` calls nothing under it, and the run still releases the
         handlers where it did. Own tests `scope/158`-`172`; `scope/151` (ours, `changed:2026-10-09`) now
-        expects the idle child's handler not called. Open for Edmond (PLAN open questions): the safe-scope
-        default, a coroutine spawned into the scope after the fire. Found on the way: a finally handler's
-        captured object's destructor cannot wait (S9.25). Critics: one on the design, one on the code, three
-        re-checks, two quality Critics. On CORE_REF 77dbfc061f3, over S10.4 (17b6d11): debug 1456 PASS, 14
-        SKIP, 11 XFAIL; ASAN 1431 PASS, 40 SKIP, 10 XFAIL; 0 unexpected on both; 30 fuzz seeds over the 16 new
-        and changed tests fail none.
+        expects the idle child's handler not called. Edmond agreed the safe-scope default (2026-10-09 10:04).
+        Open for Edmond (PLAN open questions): the subtree-wide default, a coroutine spawned into the scope
+        after the fire. Found on the way: a finally handler's captured object's destructor cannot wait (S9.25).
+        Critics: one on the design, one on the code, three re-checks, two quality Critics. On CORE_REF
+        77dbfc061f3, over S10.4 (17b6d11): debug 1456 PASS, 14 SKIP, 11 XFAIL; ASAN 1431 PASS, 40 SKIP, 10
+        XFAIL; 0 unexpected on both; 30 fuzz seeds over the 16 new and changed tests fail none.
 
 - [ ] S9.25 A finally run releases its handlers where a destructor may wait.
       done: a destructor of an object a finally handler holds may suspend, with and without a deadline

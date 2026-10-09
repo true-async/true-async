@@ -552,9 +552,9 @@ a coroutine a handler left running under a cancelled scope.
 
 S9.24 done 2026-10-09 (Edmond 07:57; PLAN result line; `dev/plans/S9-scope.md` section 14):
 `ASYNC_SCOPE_F_DEADLINE_PASSED`, set by a fire that interrupts the scope's members and by the fire's walk on
-the runs it stops; `finally_handler_call()` calls nothing under it. Open for Edmond: the safe-scope default
-(asked, a reply in the thread), a coroutine spawned into the scope after the fire. Next: S9.25, a finally
-handler's captured object's destructor cannot wait.
+the runs it stops; `finally_handler_call()` calls nothing under it. Edmond agreed the safe-scope default
+(10:04) and kept the global scope safe (10:03). Open for Edmond: the subtree-wide flag, a coroutine spawned
+into the scope after the fire. Next: S9.25, a finally handler's captured object's destructor cannot wait.
 
 ## S10
 
