@@ -2332,3 +2332,7 @@ stack options were shown with the code).
   finish handler throws, or the U6 teardown skips the handlers, the kept fiber lives to the request's
   end. `fiber/033`-`035` keep their outcomes. The transfer slot's value is detached before its release
   although no PHP trigger re-enters there: the body's frame holds a yielded value while it parks.
+- 2026-10-09 S8.1c: `Fiber::getReturn()` of a fiber destroyed while suspended throws FiberError "Cannot
+  get fiber return value: The fiber was destroyed", keyed on the undefined result as
+  `Generator::getReturn()`, so a destroyed fiber whose `finally` returns a value still returns it. TrueAsync's
+  coroutine branch returns null there instead; an error tells the programmer the fiber never returned.

@@ -653,5 +653,7 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   its tests and texts is `/mnt/project-files/s8/S8.2-wip.patch` (project files); its tests
   `io_provider/038`-`042` become `042`-`046`.
 - S8.1a closed 2026-10-09: core `async-core-io-2026-10-09-2` (`a60017a0ec0`). S8.1b closed the same
-  day: core `async-core-io-2026-10-09-3` (`c53c17cfd47`), `RFC-CHANGES.md` 25. Next: S8.1c, a
-  php/php-src fix branch and PR text for `getReturn()` of a force-closed fiber.
+  day: core `async-core-io-2026-10-09-3` (`c53c17cfd47`), `RFC-CHANGES.md` 25.
+- S8.1c closed 2026-10-09: branch `fiber-getreturn-destroyed`, picked onto `php-src-fixes`
+  (`e7d2d9a25a9`, not in the pinned core yet); PR text `notes/fiber-getreturn-destroyed-pr.md` in
+  project files, Edmond opens the PR. Next: S8.1d, `exit()` in the `finally` of a destroyed fiber.
