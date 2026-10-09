@@ -1967,3 +1967,9 @@ stack options were shown with the code).
   `Scope::inherit()` made from it is safe too, as TrueAsync's (`scope.c:186-189`, `scope.c:1331-1341`). Why:
   Edmond, 10:03, «да остаётся мягким»; a TaskGroup's own scope does not inherit the mode (his TaskGroup
   decision, 2026-10-09).
+- 2026-10-09 `scope/170-deadline_of_idle_scope_runs_its_scope_finally.phpt` (ours, S9.24; `changed:2026-10-09`)
+  awaits its member and arms the timer on a scope kept by an idle child scope, then awaits a Future its
+  handler completes, instead of `delay(5)`, `disposeAfterTimeout(50)` and `delay(100)`. Why: under the
+  parallel pocs-win run the member's 5 ms wait could outlast the 50 ms timer, the fire then interrupted it
+  and the handler was rightly dropped (Edmond's PC, relayed by the coordinator); the test now waits on
+  nothing but the fire.

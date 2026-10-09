@@ -3,17 +3,22 @@ Scope: the disposeAfterTimeout() fire of a scope whose members all returned call
 --FILE--
 <?php
 
-use function Async\delay;
+use Async\Future;
+use Async\FutureState;
+use function Async\await;
 
 $scope = new Async\Scope();
-$scope->finally(function () {
+$state = new FutureState();
+$scope->finally(function () use ($state) {
     echo "scope finally runs\n";
+    $state->complete(null);
 });
-$scope->spawn(function () {
-    delay(5);
-});
-$scope->disposeAfterTimeout(50);
-delay(100);
+await($scope->spawn(function () {
+}));
+// An idle child scope keeps the timer from being refused on an empty scope.
+$child = Async\Scope::inherit($scope);
+$scope->disposeAfterTimeout(10);
+await(new Future($state));
 echo "end\n";
 ?>
 --EXPECT--
