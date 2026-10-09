@@ -139,6 +139,14 @@ the section is removed in that step's commit. `check-lists.py` hashes a test wit
   discipline, no gate.
 - Finished commits are pushed to `main` without asking Edmond for an OK on the diff (Edmond,
   2026-10-02). Held by discipline, no gate.
+- After the push, the thread watches the `push` run of its commit in CI (`actions/runs?head_sha=<sha>`;
+  in the cloud container through the GitHub MCP Actions tools, since `gh` there has no login) until
+  every job ends, and reports the step done or starts the next one only after that. A job red in
+  this run and green in the parent commit's run is the commit's: its fix is a commit of its own,
+  pushed at once. Any other red job (another thread's commit, a runner that never started) is
+  reported to that thread or to Edmond with the job's link. Edmond, 2026-10-09, after the lists job
+  stayed red unnoticed from S9.24 (8432655) to 8b9ba78; it replaces the habit "threads do not wait
+  for CI" (`dev/HEALTH.md`, 2026-10-05). Held by discipline, no gate.
 - `CHANGELOG.md` at the root, Keep a Changelog 1.1.0: every user-visible change gets a line under
   `[Unreleased]` in the commit that makes it; tests, tools and CI do not. Held by discipline, no gate.
 - `dev/DECISIONS.md`: as short as possible, a line for the decision and a line for the reason.
