@@ -560,6 +560,13 @@ static zend_result finally_handler_call(async_iterator_t *iterator, zval *handle
 	(void) key;
 
 	finally_run_t *run = (finally_run_t *) iterator;
+
+	/* Past a deadline the run still proceeds, so that its handlers are released where any run releases them,
+	 * but calls no handler (S9-scope.md 14). */
+	if (UNEXPECTED(async_scope_is_past_deadline(iterator->scope))) {
+		return SUCCESS;
+	}
+
 	zval argument;
 	zval retval;
 

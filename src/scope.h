@@ -56,6 +56,10 @@ typedef struct
  * an ancestor's deadline stops it (S9-scope.md 13). Set and cleared by the run alone; no PHP API sets or
  * reads it. */
 #define ASYNC_SCOPE_F_FINALLY_RUN (1u << (ASYNC_EVENT_F_TYPE_SHIFT + 5))
+/* The scope's dispose timer has fired and interrupted its members, or the scope is a finally run a deadline
+ * stopped: no finally run at or below this scope calls another handler (S9-scope.md 14). Never cleared; no
+ * PHP API sets or reads it. */
+#define ASYNC_SCOPE_F_DEADLINE_PASSED (1u << (ASYNC_EVENT_F_TYPE_SHIFT + 6))
 
 struct _async_scope_s
 {
@@ -148,6 +152,9 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 /* Called by the iterator as a finally run's last worker leaves: the run's scope takes scope cancels again.
  * Any other iterator's scope is left alone. */
 void async_scope_finally_run_end(async_scope_t *scope);
+
+/* True once `scope` or an ancestor carries ASYNC_SCOPE_F_DEADLINE_PASSED. */
+bool async_scope_is_past_deadline(const async_scope_t *scope);
 
 /* The route of an unhandled error of `coroutine`, which belongs to a scope (S9-scope.md 4, TrueAsync's
  * catch_or_cancel in CATCH mode, scope.c:942-1080): from the coroutine's scope up to its root, each

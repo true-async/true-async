@@ -91,9 +91,20 @@ Waiting for Edmond's call; nothing here is being worked on.
   left running once its run ended (the S9.23 code Critic), which the deadline does not reach either. Since
   S9.23 a finally run's scope carries `ASYNC_SCOPE_F_FINALLY_RUN`, so cancelling such a child no longer stops
   a running handler (`scope/140`). Edmond's call.
-- A finally run that starts after its scope's deadline fired (the S9.23 design Critic): a member the fire
-  cancelled unwinds and only then starts its handlers, which nothing bounds; bounding it needs the scope to
-  remember that its deadline passed (asked 2026-10-09).
+- A safe scope's deadline (every `Scope::inherit()` made from the global scope) leaves its members running
+  as zombies; S9.24 lets their finally handlers run when they finish (`scope/164`), the default until
+  Edmond answers (asked 2026-10-09). The flag is the scope's, for its whole subtree, so a survivor below it
+  (a member of a cancelled child that goes on) loses its handlers once another member was interrupted; a
+  per-scope flag would keep them (the S9.24 re-check Critic).
+- A coroutine spawned into a scope after its deadline fired (the scope is cancelled, not closed), or into a
+  `Scope::inherit()` made under it then, runs unbounded while none of its finally handlers is called (the
+  S9.24 re-check Critic; read from code, not run). Close the scope at the fire, or skip only the targets
+  that existed at it? Edmond's call.
+- The collector gives an armed dispose timer no live reach on a cancelled scope (`src/scope.c:960-961`, S9.23),
+  though the fire's cancel can still reach a member in a grandchild made under it after its cancel
+  (`scope/172`): with no object left, a member parked on nothing else could be reported or cancelled as a
+  deadlock before the fire (the S9.24 re-check Critic; read from code, not run). Check with a test, then
+  keep only CLOSED in that exclusion.
 - A handler that catches the deadline's cancellation and waits again outlives one fire (the S9.23 design
   Critic); a second `disposeAfterTimeout()` stops it (`scope/150`), and D16's exit repeats an uncatchable one.
   Edmond's call.
@@ -1161,6 +1172,31 @@ Active: none; layer 3 done, the next layer needs its plan agreed with Edmond
         77dbfc061f3: debug 1430 PASS, 14 SKIP, 17 XFAIL; ASAN 1405 PASS, 40 SKIP, 16 XFAIL; 0 unexpected on
         both; after the quality fixes `scope/`, `coroutine/`, `spawnWith/` and `collector/` pass on debug
         (291) and ASAN (288, 3 SKIP), and 30 fuzz seeds over the 18 new and changed tests fail none.
+
+- [x] S9.24 After a scope's deadline interrupts its members, no finally handler is called under it.
+      done: the flag built with tests; Critic on the design, the code, re-checks, two quality Critics
+      tier: T2 · role: Critic
+      handoff: done 2026-10-09: Edmond 07:57 ("the flag says no other finally starts any more"); design in
+        `dev/plans/S9-scope.md` section 14. `ASYNC_SCOPE_F_DEADLINE_PASSED`, set by a dispose timer's fire on
+        an unsafe, not request-lifetime scope whose cancel interrupts a member, and by the fire's walk on every
+        finally run it stops; `finally_handler_call()` calls nothing under it, and the run still releases the
+        handlers where it did. Own tests `scope/158`-`172`; `scope/151` (ours, `changed:2026-10-09`) now
+        expects the idle child's handler not called. Open for Edmond (PLAN open questions): the safe-scope
+        default, a coroutine spawned into the scope after the fire. Found on the way: a finally handler's
+        captured object's destructor cannot wait (S9.25). Critics: one on the design, one on the code, three
+        re-checks, two quality Critics. On CORE_REF 77dbfc061f3, over S10.4 (17b6d11): debug 1456 PASS, 14
+        SKIP, 11 XFAIL; ASAN 1431 PASS, 40 SKIP, 10 XFAIL; 0 unexpected on both; 30 fuzz seeds over the 16 new
+        and changed tests fail none.
+
+- [ ] S9.25 A finally run releases its handlers where a destructor may wait.
+      done: a destructor of an object a finally handler holds may suspend, with and without a deadline
+      tier: T1 · role: Critic
+      handoff: found 2026-10-09 in S9.24 (probed on 31fec2b): the run's handlers are released in the
+        scheduler's context, so `delay()` in such a destructor throws "The operation cannot be executed in
+        the scheduler context" and ends the request. Probe: a `Coroutine::finally()` closure that captures an
+        object whose `__destruct` calls `delay(1)`, its member cancelled by `disposeAfterTimeout(10)` (a
+        handler that runs fails the same way); the same with `Scope::finally()`. Check TrueAsync's release
+        point first.
 
 ## S10 — Beyond the RFCs  [in progress]
 

@@ -676,14 +676,14 @@ returns at once on a closed scope.
    SpawnStrategy's hook gets for R reaches `async_scope_cancel()` and `disposeAfterTimeout()`, which
    return at once on a flagged scope (`scope/154`, `155`).
 2. The cascades skip a flagged child: the cancelling branch of `async_scope_cancel()` and the error
-   route's loop in `async_scope_catch()` (`scope.c:886-892`) test the flag; the completed branch skips any
+   route's loop in `async_scope_catch()` (`src/scope.c:893-899`) test the flag; the completed branch skips any
    child with coroutines, and a flagged R always holds its worker, while `async_scope_cancel()` returns at
    once on a flagged scope. R and its subtree are then out of reach of any cancel of S or of S's
    ancestors; the flag holds from the run's start, before its workers exist. An error of a coroutine a
    handler spawned routes from R and cancels R's coroutines, the worker included, as any scope's: a
    failure inside the cleanup, not a cancel from outside it.
 3. The deadline has its own cancel. `scope_dispose_timer_fire()` first walks S's subtree; on every
-   flagged scope it sets `ASYNC_SCOPE_F_CLOSED` (no new worker, `iterator.c:125`) and cancels every
+   flagged scope it sets `ASYNC_SCOPE_F_CLOSED` (no new worker, `src/iterator.c:127`) and cancels every
    coroutine of that scope and of the scopes below it with `is_safely = false`, whatever their state, so
    a second fire reaches a handler that caught the first, and a zombie stops. It does not go through
    `async_scope_cancel()`, so no completed branch closes an idle scope there and starts its handlers.
@@ -696,10 +696,10 @@ returns at once on a closed scope.
    one ended still needs it (`scope/156`); the script waits for it, at most the timeout the caller
    gave, as it waits for an open scope's.
 5. The collector counts a flagged scope's node as live reach while an ancestor's dispose timer is armed,
-   and an armed timer of a closed scope no longer makes its own node live (`scope.c:953-960`; `scope/157`).
+   and an armed timer of a closed scope no longer makes its own node live (`src/scope.c:958-963`; `scope/157`).
 6. Unchanged, and recorded as what stops a handler besides the deadline: exit and graceful shutdown
    (`scheduler_cancel_all()`, then D16 after `ASYNC_EXIT_DEADLINE_MS`), the deadlock resolution
-   (`scheduler.c:807`), the collector's cancel policy (`collector.c:1109`), and a `cancel()` of the
+   (`src/scheduler.c:808`), the collector's cancel policy (`src/collector.c:1109`), and a `cancel()` of the
    worker's own Coroutine object (reachable through `Async\get_coroutines()` or a scope handler's
    `$coroutine` argument): the shield is against scope cancels.
 7. Not in this step: the completed branch's cascade of a child made under S after S's cancel (PLAN open
@@ -709,22 +709,109 @@ returns at once on a closed scope.
 
 **Open for Edmond.** (a) A run that starts after the deadline fired (a member the fire cancelled unwinds
 and then starts its handlers): bounding it needs S to remember that its deadline passed (asked
-2026-10-09). (b) A handler that catches the deadline's cancellation and waits again outlives one fire;
-D16's exit repeats an uncatchable one.
+2026-10-09; answered 07:57, section 14). (b) A handler that catches the deadline's cancellation and waits
+again outlives one fire; D16's exit repeats an uncatchable one.
 
 **Departure from TrueAsync** (section 9): TrueAsync cancels a running finally run from its scope's or an
 ancestor's cancel, and its dispose timer does not reach a cancelled scope's children.
 
-**Tests**, one case each: a member that returned by itself, its handler waiting, then `cancel()` of its
-scope: the handler ends (`scope/142`); the parent's cancel (`143`); a sibling's unhandled error routed
-through S (`144`); two handlers on one target, the fast one ended (`145`); a `Scope::finally()` run after
-the object's release and the parent's cancel (`146`); `disposeAfterTimeout()` on a cancelled scope stops a
-hanging handler (`147`), under `allowZombies()` too (`148`), after `cancel()` and `dispose()` closed the
-scope (`149`), and a second timer after a handler caught the first fire (`150`); the fire still runs an
-idle child's `Scope::finally()`, which guards the walk's order (`151`, passes before S9.23); a held inner
-scope left by an ended run is closed by S's cancel, which guards the flag's clear (`152`); `dispose()`
-keeps the timer for the `Scope::finally()` run it starts (`153`); a stand-in's `cancel()` and
-`disposeAfterTimeout()` leave the run alone (`154`, `155`); a closed scope's timer stops a run its
-worker's own handlers start after the first run ended (`156`); the collector does not report a handler a
-deadline below will stop (`157`). `scope/117` (ours) cancelled its waiting handler with `cancel()`; it
-moves to `disposeAfterTimeout()`, which keeps its case (a cancellation among the handlers' errors).
+**Tests**, one case each: a member that returned by itself, its handler waiting, then `cancel()` of its scope:
+the handler ends (`scope/142`); the parent's cancel (`143`); a sibling's unhandled error routed through S
+(`144`); two handlers on one target, the fast one ended (`145`); a `Scope::finally()` run after the object's
+release and the parent's cancel (`146`); `disposeAfterTimeout()` on a cancelled scope stops a hanging handler
+(`147`), under `allowZombies()` too (`148`), after `cancel()` and `dispose()` closed the scope (`149`), and a
+second timer after a handler caught the first fire (`150`); the fire still runs an idle child's
+`Scope::finally()`, which guards the walk's order (`151`, passes before S9.23; reversed in S9.24, section 14);
+a held inner scope left by an ended run is closed by S's cancel, which guards the flag's clear (`152`);
+`dispose()` keeps the timer for the `Scope::finally()` run it starts (`153`); a stand-in's `cancel()` and
+`disposeAfterTimeout()` leave the run alone (`154`, `155`); a closed scope's timer stops a run its worker's
+own handlers start after the first run ended (`156`); the collector does not report a handler a deadline below
+will stop (`157`). `scope/117` (ours) cancelled its waiting handler with `cancel()`; it moves to
+`disposeAfterTimeout()`, which keeps its case (a cancellation among the handlers' errors).
+
+## 14. After a scope's deadline interrupts its members, no finally handler is called under it (S9.24)
+
+Edmond agreed, 2026-10-09 07:57 («да именно.. и видимо в этом случае флаг говорит никакие другие finallly
+больше не стартуют!»), answering section 13's open question (a): once a scope's dispose timer has fired, no
+finally handler starts under that scope or under any scope below it.
+
+**Before S9.24.** The fire cancels the members of S (section 13, item 3). A member that unwinds afterwards
+starts its `Coroutine::finally()` handlers in a new run under S when it finishes (`src/coroutine.c:510-519`);
+so does S's own `Scope::finally()` when S completes and its disposal starts the handlers
+(`scope_finally_start()`), and an idle child scope's handlers that the fire's own cancel starts when it
+closes the child (the completed branch, `scope/151`). The timer is gone by then, so nothing bounds such a
+run: a handler that waits hangs the script.
+
+**Design** (revised after the design Critic, the code Critic, its re-check and two quality Critics).
+
+1. `ASYNC_SCOPE_F_DEADLINE_PASSED` (`src/scope.h`, `ASYNC_EVENT_F_TYPE_SHIFT + 6`, the next free bit of the
+   scope's range 13-28). It is never cleared; no PHP API sets or reads it; `disposeAfterTimeout()` still arms
+   a second timer, whose fire cancels the runs that caught the first (`scope/150`). Two places set it:
+   - `scope_dispose_timer_fire()` on S, before the walk over the runs below and the cancel of S, only when
+     that cancel interrupts a member (item 2);
+   - the fire's walk (section 13, item 3) on every finally run's scope it closes, whatever S is, so the
+     stopped run calls none of its handlers not yet called and the runs its workers start call none
+     (`scope/161`, `165`).
+2. Only when the fire interrupts a member: `scope_deadline_interrupts_member()` follows the branches of
+   `async_scope_cancel()` (a closed scope and a finally run's scope return at once, a completed one, a
+   cancelled one counting, passes the cancel only to its child scopes without coroutines, any other cancels
+   its coroutines, zombies included, and every child scope but a finally run's) and tells whether the cancel reaches a
+   coroutine. A member made under a cancelled S after its cancel, in a grandchild scope the cascade
+   reaches, is such a member (`scope/172`, the second re-check Critic). Without a member
+   to interrupt, the deadline bounds nothing, so S's own `Scope::finally()` after its members returned
+   (`scope/170`) or after the fire stopped the only run below it (`171`), a zombie `disposeSafely()` made
+   (`166`) and a member of a cancelled child that went on after catching (`168`) keep their handlers (the
+   re-check and quality Critics). Not on a safe scope (`ASYNC_SCOPE_F_DISPOSE_SAFELY`, every
+   `Scope::inherit()` made from the global scope): its cancel turns started members into zombies that run
+   on, so a zombie's handlers run when it finishes (`scope/164`); without this a member that finished its
+   work would lose its cleanup (the design Critic; probed on the debug build). Asked of Edmond,
+   2026-10-09; the default until he answers. Never on a request-lifetime scope
+   (`ASYNC_SCOPE_F_REQUEST_LIFETIME`): a SpawnStrategy's stand-in of the global scope can clear its safe bit
+   with `asNotSafely()` and arm a timer, and the flag would then drop every finally handler for the rest
+   of the request (`scope/167`, the code Critic). The flag is S's, for its whole subtree: once one member is
+   interrupted, a survivor elsewhere below S (a member of a cancelled child that catches and goes on, a
+   zombie of a child disposed safely) loses its handlers too (the re-check Critic; read from code, not
+   run). A per-scope flag would keep them; it waits for Edmond's answer on the safe-scope default.
+3. A run under a flagged scope calls no handler: `finally_handler_call()` returns at once when
+   `async_scope_is_past_deadline()` (a walk up `parent_scope` from the run's scope) finds the flag. The check
+   is at each call, not at the start: the run still starts, as before, and its worker releases the handlers
+   as it does after calling them, so every caller (a coroutine's finish, a member cancelled before it ran, a
+   scope's disposal, the completed branch) keeps its path. A refusal at the start would instead release the
+   handlers inside a finished coroutine's finalize, and the scope's put-back would keep them past the
+   scope's cancel (the code Critic).
+4. The walk still goes before the cancel of S: on an S left unflagged (item 2), the runs that the cancel
+   starts, for S itself and for its idle child scopes, call their handlers, and a walk after it would stop
+   them (`scope/169`, `170`, the quality Critics).
+5. Unchanged: `Coroutine::finally()` on a finished coroutine and `Scope::finally()` on a disposed scope call
+   the handler at once in the caller's coroutine (`src/coroutine.c:930-938`, `src/scope.c:2018-2022`);
+   that is a call, not a run under S. A run started before the fire is stopped by the fire's walk as in
+   section 13. A coroutine spawned into a flagged S after the fire calls none of its handlers either,
+   though nothing bounds its body: when the fire takes the cancelling branch, S is cancelled, not closed,
+   and accepts spawns (read from `async_scope_spawn()`, not run); when it takes the completed branch, as in
+   `scope/172`, S is closed and `spawn()` throws, but a `Scope::inherit()` made under it still accepts them
+   (the re-check Critics). PLAN open question.
+6. Found on the way, not S9.24's: a finally run releases its handlers in the scheduler's context, so a
+   destructor of what a handler holds cannot wait ("The operation cannot be executed in the scheduler
+   context"), with or without a deadline (probed on 31fec2b). The next step, S9.25.
+
+**Departure from TrueAsync**: TrueAsync calls every finally handler whatever the deadline
+(`coroutine.c:1281`, `scope.c:1203-1236`).
+
+**Tests**, one case each, each failing before S9.24 unless marked: a member the deadline cancelled, its
+`Coroutine::finally()` handler not called (`scope/158`); the scope's own `Scope::finally()` after its member
+unwound from the deadline (`159`); a member of a child scope cancelled by its parent's deadline (`160`); a
+finally worker's own `Coroutine::finally()` added in a run the deadline stopped (`161`), and the same in a
+safe scope (`165`); a dropped handler's closure is released and its captured object's destructor runs before
+the script goes on (`162`, passes before); a child scope's deadline leaves its parent's `Scope::finally()` to
+run (`163`, passes before); a safe scope's zombie keeps its handler (`164`, passes before); a zombie that
+`disposeSafely()` made keeps its handler after a later fire (`166`, passes before); a fire through an unsafe
+stand-in of the global scope leaves a later coroutine's handler to run (`167`, passes before); a completed
+parent's fire leaves the handler of a cancelled child's member that went on (`168`, passes before); a safe
+scope's fire runs an idle child's `Scope::finally()` (`169`, passes before); an idle scope's fire runs its own
+`Scope::finally()` (`170`, passes before), and so does the fire of a scope whose only running coroutine is a
+finally worker (`171`, passes before); a member of a grandchild made under a cancelled scope, cancelled by
+that scope's fire (`172`). Each guard but 162 and 163 fails without its part of the change (checked by undoing
+it). `scope/151` (ours, S9.23) expected the fire to run an idle child's `Scope::finally()`; under Edmond's
+rule the fire of an unsafe scope with a running member drops it, so 151 now expects no output from the handler
+(`changed:`); the walk's order it guarded is guarded by 169. Its file name still says "runs": a list line is
+frozen once pushed.

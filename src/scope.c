@@ -153,8 +153,9 @@ zend_object *async_scope_context(async_scope_t *scope)
 
 /* No coroutine of the scope or of its children runs, zombies counted or not; a closed or cancelled
  * scope counts as completed whatever runs in it (TrueAsync's can_be_disposed without the object check,
- * scope.c:1503-1555): isFinished(), and cancel()'s test for a scope with nothing left to cancel. A
- * `completed_child_scope` the caller found completed is not walked again. */
+ * scope.c:1503-1555): isFinished(), and cancel()'s test for the branch that closes the scope and passes
+ * the cancel only to its idle child scopes. A `completed_child_scope` the caller found completed is not
+ * walked again. */
 static bool
 scope_is_completed(const async_scope_t *scope, const bool with_zombies, const async_scope_t *completed_child_scope)
 {
@@ -327,15 +328,15 @@ static bool scope_has_finally_run_below(const async_scope_t *scope)
 
 /* The deadline's cancel of every coroutine in the finally runs below the scope, whatever their state, and
  * never safely: unlike a scope cancel it reaches a run, a handler that caught an earlier one, and a zombie
- * (S9-scope.md 13). A closed run takes no new worker. A cancel only queues, so no PHP code changes the
- * vectors under the loops. */
+ * (S9-scope.md 13). A closed run takes no new worker; it and the runs its workers start call no more handlers
+ * (S9-scope.md 14). A cancel only queues, so no PHP code changes the vectors under the loops. */
 static void scope_deadline_cancel_finally_runs(async_scope_t *scope, zend_object *error, const bool is_under_run)
 {
 	const bool is_in_run = is_under_run || scope_is_finally_run(scope);
 
 	if (UNEXPECTED(is_in_run)) {
 		if (scope_is_finally_run(scope)) {
-			scope->event.flags |= ASYNC_SCOPE_F_CLOSED;
+			scope->event.flags |= ASYNC_SCOPE_F_CLOSED | ASYNC_SCOPE_F_DEADLINE_PASSED;
 		}
 
 		for (uint32_t i = 0; i < scope->coroutines.length; i++) {
@@ -351,6 +352,17 @@ static void scope_deadline_cancel_finally_runs(async_scope_t *scope, zend_object
 void async_scope_finally_run_end(async_scope_t *scope)
 {
 	scope->event.flags &= ~ASYNC_SCOPE_F_FINALLY_RUN;
+}
+
+bool async_scope_is_past_deadline(const async_scope_t *scope)
+{
+	for (const async_scope_t *level = scope; level != NULL; level = level->parent_scope) {
+		if (UNEXPECTED((level->event.flags & ASYNC_SCOPE_F_DEADLINE_PASSED) != 0)) {
+			return true;
+		}
+	}
+
+	return false;
 }
 
 /* Moves the references `handler` holds into `released_values`, made on the first one; the copy of a
@@ -1407,6 +1419,34 @@ ZEND_METHOD(Async_Scope, disposeSafely)
 	}
 }
 
+/* Whether async_scope_cancel() of the scope cancels a coroutine, following its branches: a closed scope and
+ * a finally run's scope return at once; a completed one (a cancelled one counts) passes the cancel only to
+ * its child scopes without coroutines of their own; any other cancels its coroutines, zombies included,
+ * and passes the cancel to every child scope but a finally run's. */
+static bool scope_deadline_interrupts_member(const async_scope_t *scope)
+{
+	if (UNEXPECTED(scope->event.flags & (ASYNC_SCOPE_F_CLOSED | ASYNC_SCOPE_F_FINALLY_RUN))) {
+		return false;
+	}
+
+	const bool is_cancelling = !scope_is_completed(scope, true, NULL);
+
+	if (EXPECTED(is_cancelling && scope->coroutines.length > 0)) {
+		return true;
+	}
+
+	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
+		const async_scope_t *child_scope = scope->child_scopes.data[i];
+
+		if (EXPECTED(is_cancelling || child_scope->coroutines.length == 0) &&
+			scope_deadline_interrupts_member(child_scope)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 /* The timer's completion, in its notify. The cancel only queues, so it runs here; TrueAsync spawns a
  * coroutine of the global scope to make it (scope.c:676-723). */
 static void scope_dispose_timer_fire(async_awaitable_t *target,
@@ -1424,9 +1464,21 @@ static void scope_dispose_timer_fire(async_awaitable_t *target,
 
 	zend_object *error = async_new_exception(async_ce_cancellation, "Scope has been disposed due to timeout");
 
-	/* Before the scope's cancel, so the finally runs its close starts in idle child scopes are not stopped. */
+	const bool is_safely = (scope->event.flags & ASYNC_SCOPE_F_DISPOSE_SAFELY) != 0;
+
+	/* When the cancel below interrupts a member, every finally run at or below the scope calls nothing from now
+	 * on, the ones that cancel starts too. A safe scope's cancel lets its members run on as zombies, and one
+	 * that reaches no member bounds none: their handlers still run. A request-lifetime scope (the global one is
+	 * reachable through a stand-in) would keep the flag for the whole request. */
+	if (EXPECTED(!is_safely && !(scope->event.flags & ASYNC_SCOPE_F_REQUEST_LIFETIME) &&
+				 scope_deadline_interrupts_member(scope))) {
+		scope->event.flags |= ASYNC_SCOPE_F_DEADLINE_PASSED;
+	}
+
+	/* Before the scope's cancel: on a scope left unflagged, the runs that cancel starts, for the scope itself
+	 * and for its idle child scopes, call their handlers, and the walk would stop them. */
 	scope_deadline_cancel_finally_runs(scope, error, false);
-	async_scope_cancel(scope, error, true, (scope->event.flags & ASYNC_SCOPE_F_DISPOSE_SAFELY) != 0);
+	async_scope_cancel(scope, error, true, is_safely);
 }
 
 /* The Timer op is on the reactor's waits, so a script that ends by itself waits for it, as TrueAsync's

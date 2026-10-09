@@ -1,12 +1,12 @@
 --TEST--
-Scope: the disposeAfterTimeout() fire of a scope with a running member does not call the Scope::finally() handler of the idle child scope it closes
+Scope: the disposeAfterTimeout() fire of a safe scope that closes an idle child scope runs the child's Scope::finally() handler
 --FILE--
 <?php
 
 use function Async\delay;
 use function Async\suspend;
 
-$parent = new Async\Scope();
+$parent = Async\Scope::inherit();
 $child = Async\Scope::inherit($parent);
 $child->finally(function () {
     echo "child finally ends\n";
@@ -14,7 +14,7 @@ $child->finally(function () {
 $started = false;
 $parent->spawn(function () use (&$started) {
     $started = true;
-    delay(100000);
+    delay(100);
 });
 
 while (!$started) {
@@ -26,4 +26,5 @@ delay(60);
 echo "end\n";
 ?>
 --EXPECT--
+child finally ends
 end

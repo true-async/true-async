@@ -1933,3 +1933,27 @@ stack options were shown with the code).
   `resume()`, the parent gets its own cancellation and the fiber's is dropped, not chained
   (`fiber/031`). Why: the fiber hands its exception to a waker that already holds the parent's
   cancellation, and a wake never brings a cancellation over a pending error (`scheduler.c:210-215`).
+- 2026-10-09 S9.24: once a scope's dispose timer has fired and interrupted its members, no finally handler is
+  called under that scope or any scope below it, nor under a finally run the fire's walk stopped: a run still
+  starts and releases its handlers, but `finally_handler_call()` calls none. Why: Edmond 07:57, «да именно.. и
+  видимо в этом случае флаг говорит никакие другие finallly больше не стартуют!»; a run that started after the
+  fire had no deadline left and could hang the script. The check is per call, not a refused start, so the
+  handlers are released where they were before (the code Critic: a refused start released them inside a
+  finished coroutine). A departure from TrueAsync (`coroutine.c:1281`, `scope.c:1203-1236`);
+  `dev/plans/S9-scope.md` section 14.
+- 2026-10-09 S9.24, the default until Edmond answers (asked 2026-10-09): a safe scope's fire sets no flag on
+  the scope. Why: its cancel leaves started members running as zombies, so a member that finished its work
+  would lose its cleanup (the design Critic; probed on the debug build). For the same reason a fire whose
+  cancel interrupts no member (members that all returned, only a finally run running below, a cancelled scope
+  whose cascade reaches no coroutine) sets none; `scope_deadline_interrupts_member()` follows the cancel's
+  branches (the re-check and quality Critics). The flag covers S's whole subtree, so a survivor below S (a
+  member of a cancelled child that goes on) loses its handlers once another member was interrupted; a per-scope
+  flag waits for the same answer. A request-lifetime scope never takes it: a SpawnStrategy's stand-in of the
+  global scope can make it unsafe and arm a timer, and every handler of the request would be dropped (the code
+  Critic).
+- 2026-10-09 `scope/151-deadline_runs_finally_of_idle_child_its_cancel_closes.phpt` (ours, S9.23;
+  `changed:2026-10-09`) expects the fire that closes an idle child scope not to call the child's
+  `Scope::finally()` handler. Why: Edmond's S9.24 rule drops every finally handler after a deadline that
+  interrupts a member, including the run the fire's cancel starts in an idle child; the walk's order it guarded
+  is guarded by `scope/169` (a safe scope). The file keeps its name, which says "runs": a list line is frozen
+  once pushed.

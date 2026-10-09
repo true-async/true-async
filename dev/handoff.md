@@ -550,6 +550,12 @@ a dispose timer's fire cancels the runs below it (`scope_deadline_cancel_finally
 a run that starts after the deadline fired (asked), a handler that catches the deadline and waits again, and
 a coroutine a handler left running under a cancelled scope.
 
+S9.24 done 2026-10-09 (Edmond 07:57; PLAN result line; `dev/plans/S9-scope.md` section 14):
+`ASYNC_SCOPE_F_DEADLINE_PASSED`, set by a fire that interrupts the scope's members and by the fire's walk on
+the runs it stops; `finally_handler_call()` calls nothing under it. Open for Edmond: the safe-scope default
+(asked, a reply in the thread), a coroutine spawned into the scope after the fire. Next: S9.25, a finally
+handler's captured object's destructor cannot wait.
+
 ## S10
 
 - S10.1 closed 2026-10-08: `dev/plans/S10.md` approved by Edmond (17:40) except output buffers, which
