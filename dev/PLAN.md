@@ -71,6 +71,12 @@ true-async/
 
 Waiting for Edmond's call; nothing here is being worked on.
 
+- The gate "the event embedded in a coroutine" of `tools/check-gates.py` (S3.md section 11) greps
+  `->event.` and lets through only pointers named `*scope`: it failed main on a scope's own event
+  twice (S9.2 `scope->event.`, fixed in the gate on 2026-10-07; S9.24 `level->event.`, fixed by
+  walking the chain on `scope`), and `ancestor->event.` would fail it again. The other option:
+  check that `struct _async_coroutine_s` in `src/coroutine.h` declares no `async_event_t` member,
+  which the compiler then enforces for every access. Edmond's call (a change of S3's gate list).
 - A `signal()` Future no coroutine awaits, when the script ends by itself (S6.8): the script waits
   for the signal, as TrueAsync; after `exit()` or an uncaught exception it ends. Edmond 2026-10-07:
   the async collector should close such a watch; to be thought over in another task.

@@ -356,8 +356,8 @@ void async_scope_finally_run_end(async_scope_t *scope)
 
 bool async_scope_is_past_deadline(const async_scope_t *scope)
 {
-	for (const async_scope_t *level = scope; level != NULL; level = level->parent_scope) {
-		if (UNEXPECTED((level->event.flags & ASYNC_SCOPE_F_DEADLINE_PASSED) != 0)) {
+	for (; scope != NULL; scope = scope->parent_scope) {
+		if (UNEXPECTED((scope->event.flags & ASYNC_SCOPE_F_DEADLINE_PASSED) != 0)) {
 			return true;
 		}
 	}
