@@ -198,7 +198,7 @@ serves it: the pattern of S6's `signal()` Future (`src/os_signal.c:78-85`, `680-
 the Future disposes that subscriber too (`async_callbacks_free()` at `src/future.c:663`), so the wake and
 the close take the waiter out of the queue before they complete or reject the Future, the `dispose` alone
 frees the waiter, and its removal accepts a waiter no longer queued. So a dropped Future
-takes no value (`channel/066`-`068`), and a loop of `await_any_or_fail([$channel->recvAsync(), timeout(1)])`
+takes no value (`channel/066`-`068`), and a Future abandoned after `await_any_or_fail([$channel->recvAsync()], timeout(1))`
 leaves nothing behind in the queue. A Future waiter reserves nothing: the wake completes it in place
 (`channel.c:448-460`).
 
@@ -506,8 +506,8 @@ for S9.18 and 16 for S9.19. TrueAsync's `fuzzy-tests/` are not ported, as no fuz
   a `close()` from the coroutine that freed its slot; a dropped value whose destructor sends on the channel during a close; `send()` and `recv()`
   refused in scheduler context;
 - S9.18: `h11.php` (`getIterator()` iterates), `h4.php` (an `await_*` item, an `awaitCompletion()` token,
-  `await()` refused); 10 000 rounds of `await_any_or_fail([$channel->recvAsync()], timeout(1))` with memory
-  flat (a `Timeout` is a token, not an item); a pending `recvAsync()` Future at a fatal error's end, freed
+  `await()` refused); one `await_any_or_fail([$channel->recvAsync()], timeout(1))` whose abandoned Future is freed and
+  leaves the queue (a `Timeout` is a token, not an item); a pending `recvAsync()` Future at a fatal error's end, freed
   after the channel, on ASAN. As built: `channel/099`-`109`, `111` and `112` (`100` the item, `111` the token), adding a close's exception per waiter (`103`),
   a cancellation under an explicit close out of `foreach` (`104`), a cancelled pending Future leaving the
   queue (`105`), a rendezvous `send()` served by a pending Future (`106`), `foreach` refused in

@@ -1957,3 +1957,10 @@ stack options were shown with the code).
   interrupts a member, including the run the fire's cancel starts in an idle child; the walk's order it guarded
   is guarded by `scope/169` (a safe scope). The file keeps its name, which says "runs": a list line is frozen
   once pushed.
+- 2026-10-09 `channel/101-channel_recvAsync_timeout_rounds_leave_nothing.phpt` (ours, S9.18;
+  `changed:2026-10-09`) abandons one `recvAsync()` Future after `timeout(1)` and checks that it is freed
+  and leaves the queue, instead of 10 100 rounds with `memory_get_usage()`: `freed:` shows the Future is
+  released, ASAN catches a leaked or stale waiter. Lost, knowingly: growth that is freed only at shutdown. Why: Edmond, 09:36, «тест говно. такие тесты нельзя делать!»: a test
+  must not repeat a timer wait thousands of times. Each round waited one timer tick, 1.1 ms on Linux
+  (11 s in all) and by computation the 15.6 ms system tick on Windows (`ior_iocp.c:3028`), so pocs-win
+  killed it at 60 s since S9.18.
