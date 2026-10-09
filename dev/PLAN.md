@@ -1275,8 +1275,8 @@ Active: S9.28
         `Completable` tokens, `timeout()` returns `Completable`, the item message names `Completable`; the channel's
         type bit, its branches in `await.c` and the notify of its event vector are gone, with debug asserts in
         their place (DECISIONS 2026-10-09 S9.27). Own tests `channel/142`-`144`, `await/145` open S9.txt's layer
-        4 block; the group's refusals come in S9.28. Critic, Sage and two quality Critics on the commit; for
-        Edmond: `channel/134` now overlaps `channel/132` and `await/115`.
+        4 block; the group's refusals come in S9.28. Critic, Sage and two quality Critics on the commit;
+        `channel/134`, which only overlapped `channel/132` and `await/115`, removed (Edmond, 12:48).
 - [ ] S9.28 The layer 4 list block extended and `src/task_group.c` without its waits.
       done: after S9.25; the layer 4 block S9.27 opened in `S9.txt` extended, with `--XFAIL--` naming S9.28 or
         S9.29, `channel/059` out

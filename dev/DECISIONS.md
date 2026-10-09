@@ -2083,3 +2083,7 @@ stack options were shown with the code).
   vector) stand where the channel's branches were; the step's own tests open S9.txt's layer 4 block, which S9.28
   extends. Why: no code is left for a channel as an awaitable, and a non-Completable object that slipped past a
   parameter would be read as a Future's event. The refusal of a group comes in S9.28 (note section 9).
+- 2026-10-09 `channel/134-channel_closed_item_previous_not_kept_across_waits.phpt` (ours, S9.20, changed in
+  S9.27) is removed. Why: Edmond, 12:48 («если тест не нужен удали»); on `recvAsync()` Futures it checks only that
+  each Future of a closed channel has an exception of its own, which `channel/132` checks, and the chaining of an
+  earlier item's error, which `await/115` checks.
