@@ -535,6 +535,195 @@ void async_task_group_collector_sources(async_collector_t *collector, zend_objec
 }
 
 ///////////////////////////////////////////////////////////////////
+/// The TASK_GROUP wait kind
+///////////////////////////////////////////////////////////////////
+
+/* Bits of a TASK_GROUP record's flags. A spawn() parked on a full queue waits in `slot_waiters`; a foreach step
+ * and, with COMPLETION, an awaitCompletion() caller in `waiters` (section 4). */
+#define TASK_GROUP_RECORD_F_SPAWNER (1u << ASYNC_CALLBACK_F_KIND_SHIFT)
+#define TASK_GROUP_RECORD_F_COMPLETION (1u << (ASYNC_CALLBACK_F_KIND_SHIFT + 1))
+/* The iterator lives in a C local the collector's walk does not read (async_collector_iterator_is_c_local()):
+ * the wait owns its reference to the group, as a step releases its previous pair before it waits. */
+#define TASK_GROUP_RECORD_F_HOLDS_GROUP (1u << (ASYNC_CALLBACK_F_KIND_SHIFT + 2))
+/* A spawner woken to take the room there is, counted in `passed_spawners` until it runs. */
+#define TASK_GROUP_RECORD_F_PASSED_ROOM (1u << (ASYNC_CALLBACK_F_KIND_SHIFT + 3))
+
+static zend_always_inline async_task_group_t *task_group_of_record(const async_coroutine_event_callback_t *record)
+{
+	return (async_task_group_t *) record->event;
+}
+
+static zend_always_inline async_wait_queue_t *task_group_queue_of_role(async_task_group_t *group, const uint32_t role)
+{
+	return (role & TASK_GROUP_RECORD_F_SPAWNER) ? &group->slot_waiters : &group->waiters;
+}
+
+static zend_string *task_group_record_info(const async_coroutine_event_callback_t *record)
+{
+	const async_task_group_t *const group = task_group_of_record(record);
+	const uint32_t flags = record->event_callback.flags;
+	const char *wait = "foreach";
+
+	if (UNEXPECTED(flags & TASK_GROUP_RECORD_F_SPAWNER)) {
+		wait = "spawn() on a full queue";
+	} else if (UNEXPECTED(flags & TASK_GROUP_RECORD_F_COMPLETION)) {
+		wait = "awaitCompletion()";
+	}
+
+	return zend_strpprintf(0,
+						   "%s(total=%u, active=%u, queued=%u): %s",
+						   task_group_is_task_set(group) ? "TaskSet" : "TaskGroup",
+						   zend_hash_num_elements(&group->tasks),
+						   group->active_count,
+						   group->queued_count,
+						   wait);
+}
+
+/* The wake's enqueue unlinks the waiter's wait (D26): the record leaves its queue. So do a cancel's, a bailout's
+ * and a suspend's refusal. */
+static void task_group_record_unlink(async_coroutine_event_callback_t *record)
+{
+	async_task_group_t *const group = task_group_of_record(record);
+	const bool is_removed =
+			async_wait_queue_remove(task_group_queue_of_role(group, record->event_callback.flags), record);
+
+	ZEND_ASSERT(is_removed && "a linked record is in its group's queue");
+	(void) is_removed;
+	record->event = NULL;
+}
+
+/* Whoever holds the group can spawn, close or cancel, which wakes every waiter, and a running task wakes them
+ * as it ends (section 6). */
+static void task_group_record_collector_target(const async_coroutine_event_callback_t *record,
+											   async_collector_t *collector)
+{
+	async_task_group_t *const group = task_group_of_record(record);
+
+	async_collector_report_target(
+			collector, &group->std, (record->event_callback.flags & TASK_GROUP_RECORD_F_HOLDS_GROUP) != 0);
+	async_task_group_collector_sources(collector, &group->std);
+}
+
+static const async_wait_kind_t task_group_wait_kind = {
+	.info = task_group_record_info,
+	.unlink = task_group_record_unlink,
+	.collector_target = task_group_record_collector_target,
+};
+
+/* Parks the current coroutine in its role's queue (`role`: the record's bits) until a wake; false with an
+ * exception. The caller has refused the scheduler context and checks the group again after any wake, as
+ * TrueAsync's loops do (task_group.c:1153-1249, 1461-1486, 1823-1857). A parked wait allocates nothing (D29). */
+static bool task_group_wait(async_task_group_t *group, const uint32_t role)
+{
+	async_coroutine_t *const waiter = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
+
+	if (UNEXPECTED(waiter == NULL)) {
+		zend_throw_error(NULL, "There is no coroutine to suspend");
+		return false;
+	}
+
+	async_wait_queue_t *const queue = task_group_queue_of_role(group, role);
+	async_coroutine_event_callback_t *const record = &waiter->waker.records[0];
+
+	async_wait_end(waiter);
+	async_wait_queue_make_room(queue);
+	async_wait_link_outside(record, waiter, (async_awaitable_t *) &group->base, &task_group_wait_kind);
+	record->event_callback.flags |= role;
+	async_wait_queue_push(queue, record);
+
+	ZEND_ASYNC_SUSPEND();
+	ZEND_ASSERT(record->event == NULL && "every way back from the park unlinks the wait");
+
+	if (UNEXPECTED(record->event_callback.flags & TASK_GROUP_RECORD_F_PASSED_ROOM)) {
+		group->passed_spawners--;
+	}
+
+	return EG(exception) == NULL;
+}
+
+static void task_group_record_wake(const async_coroutine_event_callback_t *record)
+{
+#ifdef TRUE_ASYNC_TEST_HOOKS
+	async_collector_check_event_wake(record->coroutine);
+#endif
+
+	async_scheduler_enqueue(&record->coroutine->coroutine, NULL, false);
+}
+
+/* Wakes every record of `queue` that carries none of the `skipped` bits, oldest first; each wake takes its
+ * record out of the queue. */
+static void task_group_wake(async_wait_queue_t *queue, const uint32_t skipped)
+{
+	uint32_t i = 0;
+
+	while (i < queue->length) {
+		const async_coroutine_event_callback_t *const record = queue->records[i];
+
+		if (UNEXPECTED(record->event_callback.flags & skipped)) {
+			i++;
+			continue;
+		}
+
+		task_group_record_wake(record);
+
+		/* An enqueue the scheduler refused left the record in place. */
+		if (UNEXPECTED(i < queue->length && queue->records[i] == record)) {
+			i++;
+		}
+	}
+}
+
+/* The foreach steps after an entry settled; at the completion every waiter. */
+static void task_group_wake_waiters(async_task_group_t *group)
+{
+	task_group_wake(&group->waiters, (group->base.flags & TASK_GROUP_F_COMPLETED) ? 0 : TASK_GROUP_RECORD_F_COMPLETION);
+}
+
+static zend_always_inline bool task_group_queue_is_full(const async_task_group_t *group)
+{
+	return group->queue_limit != 0 && group->queued_count >= group->queue_limit;
+}
+
+/* The free slots and queue places together: a start from the queue moves a task between them. A spawner parks
+ * only while both limits are set. */
+static uint32_t task_group_free_room(const async_task_group_t *group)
+{
+	const uint32_t free_slots = group->concurrency > group->active_count ? group->concurrency - group->active_count : 0;
+	const uint32_t free_places =
+			group->queue_limit > group->queued_count ? group->queue_limit - group->queued_count : 0;
+
+	return free_slots + free_places;
+}
+
+/* Wakes the oldest parked spawners, one for each free room no spawner woken before has yet taken: after a queued
+ * task starts, and as a spawner leaves the park, by going on or by an exception, so no spawner stays parked with
+ * room free (section 8, item 19). Until they run, newcomers wait behind them. */
+static void task_group_pass_room(async_task_group_t *group)
+{
+	while (group->slot_waiters.length > 0 && task_group_free_room(group) > group->passed_spawners) {
+		async_coroutine_event_callback_t *const record = group->slot_waiters.records[0];
+
+		task_group_record_wake(record);
+
+		/* An enqueue the scheduler refused left the record parked. */
+		if (UNEXPECTED(record->event != NULL)) {
+			return;
+		}
+
+		record->event_callback.flags |= TASK_GROUP_RECORD_F_PASSED_ROOM;
+		group->passed_spawners++;
+	}
+}
+
+/* close(), cancel(), dispose() and the destructor: spawn() is refused from now on, and every parked spawner
+ * wakes to throw so (section 4). */
+static void task_group_seal(async_task_group_t *group)
+{
+	group->base.flags |= TASK_GROUP_F_SEALED;
+	task_group_wake(&group->slot_waiters, 0);
+}
+
+///////////////////////////////////////////////////////////////////
 /// Answers
 ///////////////////////////////////////////////////////////////////
 
@@ -908,6 +1097,7 @@ static void task_group_task_ended_dispose(async_event_callback_t *callback, asyn
 
 	task_group_drain(group);
 	task_group_update(group);
+	task_group_wake_waiters(group);
 
 	OBJ_RELEASE(&group->std);
 	async_exception_restore_fast(&EG(exception), &saved_exception);
@@ -942,14 +1132,21 @@ static zend_always_inline bool task_group_scope_is_stopped(const async_scope_t *
 }
 
 /* Starts queued tasks from the head while slots are free. A scope cancelled or closed from outside starts
- * nothing: the group cancels as cancel() does (section 5; TrueAsync's drain starts them, task_group.c:848-889). */
+ * nothing: at the first task end that finds it so, queue or not, the group cancels as cancel() does, which wakes
+ * its waiters (section 5; TrueAsync's drain starts them, task_group.c:848-889). */
 static void task_group_drain(async_task_group_t *group)
 {
-	while (group->queued_head != NULL && task_group_has_slot(group)) {
-		async_scope_t *scope = task_group_scope(group);
+	while (true) {
+		async_scope_t *const scope = task_group_scope(group);
 
-		if (UNEXPECTED(task_group_scope_is_stopped(scope))) {
+		/* Checked again after each release, which may run a destructor. */
+		if (UNEXPECTED(task_group_scope_is_stopped(scope) &&
+					   !(group->base.flags & (TASK_GROUP_F_COMPLETED | TASK_GROUP_F_CANCELLED)))) {
 			task_group_cancel(group, async_new_exception(async_ce_cancellation, "TaskGroup cancelled"));
+			return;
+		}
+
+		if (EXPECTED(group->queued_head == NULL || !task_group_has_slot(group))) {
 			return;
 		}
 
@@ -978,6 +1175,9 @@ static void task_group_drain(async_task_group_t *group)
 			task_group_entry_list_append(&group->settled_head, &group->settled_tail, entry);
 		}
 
+		/* The place it left in the queue goes to the oldest parked spawner (section 4). */
+		task_group_pass_room(group);
+
 		/* After the entry has its new state: a destructor the release runs finds the group as it is. */
 		task_group_call_release(&entry->fci, &entry->fcc);
 	}
@@ -994,7 +1194,8 @@ static void task_group_cancel(async_task_group_t *group, zend_object *cancellati
 		return;
 	}
 
-	group->base.flags |= TASK_GROUP_F_SEALED | TASK_GROUP_F_CANCELLED;
+	group->base.flags |= TASK_GROUP_F_CANCELLED;
+	task_group_seal(group);
 	GC_ADDREF(&group->std);
 
 	/* The queued entries end first, and their calls are released after the answers: the release may run
@@ -1022,13 +1223,19 @@ static void task_group_cancel(async_task_group_t *group, zend_object *cancellati
 
 	async_scope_t *scope = task_group_scope(group);
 
-	if (scope != NULL) {
+	/* A scope cancelled from outside has cancelled the tasks already; a second cancel would close it and start its
+	 * finally handlers while they unwind (src/scope.c:672). */
+	if (EXPECTED(scope != NULL && !(scope->event.flags & (ASYNC_SCOPE_F_CANCELLED | ASYNC_SCOPE_F_CLOSED)))) {
 		async_scope_cancel(scope, cancellation, true, false);
 	} else {
 		OBJ_RELEASE(cancellation);
 	}
 
 	task_group_update(group);
+
+	if (EXPECTED(unstarted_count > 0)) {
+		task_group_wake_waiters(group);
+	}
 
 	for (uint32_t i = 0; i < unstarted_count; i++) {
 		task_group_call_release_unstarted(&unstarted[i].fci, &unstarted[i].fcc);
@@ -1094,6 +1301,7 @@ static void task_group_complete(async_task_group_t *group)
 {
 	group->base.flags |= TASK_GROUP_F_COMPLETED;
 	task_group_reject_set_reads(group);
+	task_group_wake_waiters(group);
 
 	HashTable *finally_handlers = group->finally_handlers;
 
@@ -1310,7 +1518,8 @@ static void task_group_object_destroy(zend_object *object)
 	async_exception_save_fast(&EG(exception), &saved_exception);
 
 	GC_ADDREF(object);
-	group->base.flags |= TASK_GROUP_F_CLOSING | TASK_GROUP_F_SEALED;
+	group->base.flags |= TASK_GROUP_F_CLOSING;
+	task_group_seal(group);
 	task_group_reject_set_reads(group);
 
 	if (group->base.flags & TASK_GROUP_F_COMPLETED) {
@@ -1339,6 +1548,8 @@ static void task_group_object_free(zend_object *object)
 
 	zend_object_std_dtor(object);
 	task_group_future_waiters_detach(&group->futures);
+	async_wait_queue_free(&group->slot_waiters);
+	async_wait_queue_free(&group->waiters);
 	group->queued_head = NULL;
 	group->queued_tail = NULL;
 	group->settled_head = NULL;
@@ -1413,16 +1624,213 @@ static HashTable *task_group_object_gc(zend_object *object, zval **table, int *n
 	return NULL;
 }
 
-/* foreach takes a TASK_GROUP wait, which the next step brings (dev/PLAN.md S9.29). */
+///////////////////////////////////////////////////////////////////
+/// The iterator
+///////////////////////////////////////////////////////////////////
+
+/* foreach yields `key => [$result, null]` or `key => [null, $error]` in completion order and waits while no
+ * entry is left to yield until a task ends, or ends with the completed group (section 3; TrueAsync's walks the
+ * spawn order, task_group.c:1143-1250). `data` holds the group. */
+typedef struct
+{
+	zend_object_iterator iterator;
+	/* A TaskGroup's: the last entry yielded, NULL before the first. The group keeps its entries while the
+	 * iterator holds it; a TaskSet's step takes the oldest settled entry instead. */
+	async_task_group_entry_t *last_entry;
+	zval key;
+	zval current; /* UNDEF before the first entry and after the last */
+	bool started;
+} task_group_iterator_t;
+
+static void task_group_iterator_dtor(zend_object_iterator *zend_iterator)
+{
+	task_group_iterator_t *const iterator = (task_group_iterator_t *) zend_iterator;
+
+	zval_ptr_dtor(&iterator->current);
+	zval_ptr_dtor(&iterator->key);
+	zval_ptr_dtor(&zend_iterator->data);
+}
+
+static zend_result task_group_iterator_valid(zend_object_iterator *zend_iterator)
+{
+	return Z_ISUNDEF(((task_group_iterator_t *) zend_iterator)->current) ? FAILURE : SUCCESS;
+}
+
+static zval *task_group_iterator_current(zend_object_iterator *zend_iterator)
+{
+	return &((task_group_iterator_t *) zend_iterator)->current;
+}
+
+static void task_group_iterator_key(zend_object_iterator *zend_iterator, zval *key)
+{
+	ZVAL_COPY(key, &((task_group_iterator_t *) zend_iterator)->key);
+}
+
+/* The next entry to yield, or NULL. */
+static async_task_group_entry_t *task_group_iterator_next(const task_group_iterator_t *iterator,
+														  const async_task_group_t *group)
+{
+	if (UNEXPECTED(task_group_is_task_set(group) || iterator->last_entry == NULL)) {
+		return group->settled_head;
+	}
+
+	return iterator->last_entry->next;
+}
+
+/* Stores the entry's pair and key; its error needs no report from now on, and a TaskSet's entry leaves it. */
+static void
+task_group_iterator_yield(task_group_iterator_t *iterator, async_task_group_t *group, async_task_group_entry_t *entry)
+{
+	zval value;
+	zend_object *exception;
+
+	task_group_entry_outcome(entry, &value, &exception);
+	array_init_size(&iterator->current, 2);
+
+	if (EXPECTED(exception == NULL)) {
+		add_next_index_zval(&iterator->current, &value);
+		add_next_index_null(&iterator->current);
+	} else {
+		add_next_index_null(&iterator->current);
+		add_next_index_object(&iterator->current, exception);
+	}
+
+	ZVAL_COPY(&iterator->key, &entry->key);
+	entry->is_handled = true;
+
+	if (UNEXPECTED(task_group_is_task_set(group))) {
+		task_group_entry_take(group, entry);
+	} else {
+		iterator->last_entry = entry;
+	}
+}
+
+static void task_group_iterator_move_forward(zend_object_iterator *zend_iterator)
+{
+	task_group_iterator_t *const iterator = (task_group_iterator_t *) zend_iterator;
+	async_task_group_t *const group = task_group_from_object(Z_OBJ(zend_iterator->data));
+
+	/* Taken out before their release: a destructor that steps the same iterator, or suspends so that another
+	 * coroutine's step runs meanwhile, would release them again. */
+	zval previous_value;
+	zval previous_key;
+
+	ZVAL_COPY_VALUE(&previous_value, &iterator->current);
+	ZVAL_COPY_VALUE(&previous_key, &iterator->key);
+	ZVAL_UNDEF(&iterator->current);
+	ZVAL_UNDEF(&iterator->key);
+	zval_ptr_dtor(&previous_value);
+	zval_ptr_dtor(&previous_key);
+
+	/* The previous entry's destructor threw: a step now would yield an entry the loop never sees. */
+	if (UNEXPECTED(EG(exception) != NULL)) {
+		return;
+	}
+
+	if (UNEXPECTED(async_throw_if_unavailable())) {
+		return;
+	}
+
+	const uint32_t role = async_collector_iterator_is_c_local() ? TASK_GROUP_RECORD_F_HOLDS_GROUP : 0;
+
+	while (true) {
+		async_task_group_entry_t *const entry = task_group_iterator_next(iterator, group);
+
+		if (EXPECTED(entry != NULL)) {
+			/* A destructor's own step or another coroutine's step may have stored an entry meanwhile. */
+			ZVAL_COPY_VALUE(&previous_value, &iterator->current);
+			ZVAL_COPY_VALUE(&previous_key, &iterator->key);
+			task_group_iterator_yield(iterator, group, entry);
+			zval_ptr_dtor(&previous_value);
+			zval_ptr_dtor(&previous_key);
+			return;
+		}
+
+		if (UNEXPECTED(group->base.flags & TASK_GROUP_F_COMPLETED)) {
+			return;
+		}
+
+		if (UNEXPECTED(!task_group_wait(group, role))) {
+			return;
+		}
+	}
+}
+
+static HashTable *task_group_iterator_gc(zend_object_iterator *zend_iterator, zval **table, int *num)
+{
+	task_group_iterator_t *const iterator = (task_group_iterator_t *) zend_iterator;
+	zend_get_gc_buffer *const gc_buffer = zend_get_gc_buffer_create();
+
+	zend_get_gc_buffer_add_zval(gc_buffer, &zend_iterator->data);
+	zend_get_gc_buffer_add_zval(gc_buffer, &iterator->key);
+	zend_get_gc_buffer_add_zval(gc_buffer, &iterator->current);
+	zend_get_gc_buffer_use(gc_buffer, table, num);
+
+	return NULL;
+}
+
+/* Starts the loop once: a second foreach over the same iterator goes on where the first stopped. A loop that
+ * starts takes responsibility for the errors present: they need no report (section 3). */
+static void task_group_iterator_rewind(zend_object_iterator *zend_iterator)
+{
+	task_group_iterator_t *const iterator = (task_group_iterator_t *) zend_iterator;
+
+	if (UNEXPECTED(iterator->started)) {
+		return;
+	}
+
+	/* A refused loop delivered nothing, so its errors stay reported. */
+	if (UNEXPECTED(async_throw_if_unavailable())) {
+		return;
+	}
+
+	iterator->started = true;
+
+	const async_task_group_t *const group = task_group_from_object(Z_OBJ(zend_iterator->data));
+	async_task_group_entry_t *entry;
+
+	ZEND_HASH_FOREACH_PTR(&group->tasks, entry)
+	{
+		if (UNEXPECTED(entry->state == TASK_FAILED)) {
+			entry->is_handled = true;
+		}
+	}
+	ZEND_HASH_FOREACH_END();
+
+	task_group_iterator_move_forward(zend_iterator);
+}
+
+static const zend_object_iterator_funcs task_group_iterator_funcs = {
+	.dtor = task_group_iterator_dtor,
+	.valid = task_group_iterator_valid,
+	.get_current_data = task_group_iterator_current,
+	.get_current_key = task_group_iterator_key,
+	.move_forward = task_group_iterator_move_forward,
+	.rewind = task_group_iterator_rewind,
+	.get_gc = task_group_iterator_gc,
+};
+
 static zend_object_iterator *task_group_get_iterator(zend_class_entry *class_entry, zval *object, int by_ref)
 {
 	(void) class_entry;
-	(void) object;
-	(void) by_ref;
 
-	zend_throw_error(NULL, "Iterating a TaskGroup is not implemented yet");
+	if (UNEXPECTED(by_ref)) {
+		zend_throw_error(NULL, "Cannot iterate TaskGroup by reference");
+		return NULL;
+	}
 
-	return NULL;
+	async_task_group_t *const group = task_group_from_object(Z_OBJ_P(object));
+	task_group_iterator_t *const iterator = emalloc(sizeof(task_group_iterator_t));
+
+	zend_iterator_init(&iterator->iterator);
+	iterator->iterator.funcs = &task_group_iterator_funcs;
+	ZVAL_OBJ_COPY(&iterator->iterator.data, &group->std);
+	iterator->last_entry = NULL;
+	ZVAL_UNDEF(&iterator->key);
+	ZVAL_UNDEF(&iterator->current);
+	iterator->started = false;
+
+	return &iterator->iterator;
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -1512,7 +1920,8 @@ ZEND_METHOD(Async_TaskGroup, __construct)
 }
 
 /* spawn(), spawnWithKey(), trySpawn() and trySpawnWithKey() (task_group.c:1421-1507; section 2). A try that
- * finds no free slot queues nothing and takes no integer key; spawn() takes one at its call, as TrueAsync's. */
+ * finds no free slot, or a spawner parked or woken ahead of it, queues nothing and takes no integer key; spawn()
+ * takes one at its call, as TrueAsync's, and parks on a full queue (section 4). */
 static void task_group_spawn_method(INTERNAL_FUNCTION_PARAMETERS, const bool with_key, const bool is_try)
 {
 	zend_string *key_string = NULL;
@@ -1557,75 +1966,94 @@ static void task_group_spawn_method(INTERNAL_FUNCTION_PARAMETERS, const bool wit
 		ZVAL_LONG(&key, group->next_key++);
 	}
 
-	if (UNEXPECTED(group->base.flags & TASK_GROUP_F_SEALED)) {
-		zend_release_fcall_info_cache(&fcc);
-		zend_throw_exception(async_ce_async_exception, task_group_closed_message, 0);
-		RETURN_THROWS();
-	}
+	/* A spawner parked on a full queue checks everything again when it wakes (task_group.c:1461-1486). */
+	bool has_parked = false;
 
-	if (UNEXPECTED(task_group_key_find(&group->tasks, &key) != NULL)) {
-		/* A trySpawn() takes the taken integer as spawn() does, so the next call moves on. */
-		if (is_try && !with_key) {
-			group->next_key++;
+	while (true) {
+		/* The seal woke every parked spawner. */
+		if (UNEXPECTED(group->base.flags & TASK_GROUP_F_SEALED)) {
+			zend_release_fcall_info_cache(&fcc);
+			zend_throw_exception(async_ce_async_exception, task_group_closed_message, 0);
+			break;
 		}
 
-		zend_release_fcall_info_cache(&fcc);
-		task_group_throw_duplicate(&key);
-		RETURN_THROWS();
-	}
+		if (UNEXPECTED(task_group_key_find(&group->tasks, &key) != NULL)) {
+			/* A trySpawn() takes the taken integer as spawn() does, so the next call moves on. */
+			if (UNEXPECTED(is_try && !with_key)) {
+				group->next_key++;
+			}
 
-	async_scope_t *scope = task_group_scope(group);
-
-	/* A scope cancelled or closed from outside: the group seals and cancels (section 5). */
-	if (UNEXPECTED(task_group_scope_is_stopped(scope))) {
-		const bool is_cancelled = scope != NULL && (scope->event.flags & ASYNC_SCOPE_F_CANCELLED);
-
-		zend_release_fcall_info_cache(&fcc);
-		task_group_cancel(group, async_new_exception(async_ce_cancellation, "TaskGroup cancelled"));
-
-		if (EXPECTED(EG(exception) == NULL)) {
-			zend_throw_exception(async_ce_async_exception,
-								 is_cancelled ? task_group_closed_message
-											  : "Cannot spawn a coroutine in a closed scope",
-								 0);
+			zend_release_fcall_info_cache(&fcc);
+			task_group_throw_duplicate(&key);
+			break;
 		}
 
-		RETURN_THROWS();
-	}
+		async_scope_t *scope = task_group_scope(group);
 
-	if (task_group_has_slot(group)) {
-		async_coroutine_t *coroutine = async_scope_spawn(scope, NULL, &fci, &fcc, args, args_count, named_args);
+		/* A scope cancelled or closed from outside: the group seals and cancels (section 5). */
+		if (UNEXPECTED(task_group_scope_is_stopped(scope))) {
+			const bool is_cancelled = scope != NULL && (scope->event.flags & ASYNC_SCOPE_F_CANCELLED);
 
-		if (UNEXPECTED(coroutine == NULL)) {
-			RETURN_THROWS();
+			zend_release_fcall_info_cache(&fcc);
+			task_group_cancel(group, async_new_exception(async_ce_cancellation, "TaskGroup cancelled"));
+
+			if (EXPECTED(EG(exception) == NULL)) {
+				zend_throw_exception(async_ce_async_exception,
+									 is_cancelled ? task_group_closed_message
+												  : "Cannot spawn a coroutine in a closed scope",
+									 0);
+			}
+
+			break;
 		}
 
-		if (is_try && !with_key) {
-			group->next_key++;
+		/* A newcomer takes no room ahead of a spawner parked or woken to take it (DECISIONS 2026-10-09 S9.29). */
+		const bool waits_its_turn = !has_parked && (group->slot_waiters.length > 0 || group->passed_spawners > 0);
+
+		if (EXPECTED(!waits_its_turn && task_group_has_slot(group))) {
+			async_coroutine_t *coroutine = async_scope_spawn(scope, NULL, &fci, &fcc, args, args_count, named_args);
+
+			if (UNEXPECTED(coroutine == NULL)) {
+				break;
+			}
+
+			if (UNEXPECTED(is_try && !with_key)) {
+				group->next_key++;
+			}
+
+			task_group_entry_run(group, task_group_entry_add(group, &key), coroutine);
+
+			if (UNEXPECTED(is_try)) {
+				RETVAL_TRUE;
+			}
+
+			break;
 		}
 
-		task_group_entry_run(group, task_group_entry_add(group, &key), coroutine);
-
-		if (is_try) {
-			RETURN_TRUE;
+		if (UNEXPECTED(is_try)) {
+			zend_release_fcall_info_cache(&fcc);
+			RETURN_FALSE;
 		}
 
-		return;
+		if (EXPECTED(!waits_its_turn && !task_group_queue_is_full(group))) {
+			task_group_entry_queue(group, task_group_entry_add(group, &key), &fci, &fcc, args, args_count, named_args);
+			break;
+		}
+
+		const bool is_woken = task_group_wait(group, TASK_GROUP_RECORD_F_SPAWNER);
+
+		has_parked = true;
+
+		if (UNEXPECTED(!is_woken)) {
+			zend_release_fcall_info_cache(&fcc);
+			break;
+		}
 	}
 
-	if (is_try) {
-		zend_release_fcall_info_cache(&fcc);
-		RETURN_FALSE;
+	/* Leaving the park, by going on or by an exception, passes on the room left. */
+	if (UNEXPECTED(has_parked)) {
+		task_group_pass_room(group);
 	}
-
-	/* A spawner parks on a full queue with the TASK_GROUP wait (dev/PLAN.md S9.29). */
-	if (UNEXPECTED(group->queue_limit != 0 && group->queued_count >= group->queue_limit)) {
-		zend_release_fcall_info_cache(&fcc);
-		zend_throw_exception(async_ce_async_exception, "Waiting on a full TaskGroup queue is not implemented yet", 0);
-		RETURN_THROWS();
-	}
-
-	task_group_entry_queue(group, task_group_entry_add(group, &key), &fci, &fcc, args, args_count, named_args);
 }
 
 ZEND_METHOD(Async_TaskGroup, spawn)
@@ -1828,7 +2256,7 @@ ZEND_METHOD(Async_TaskGroup, close)
 
 	async_task_group_t *const group = THIS_GROUP;
 
-	group->base.flags |= TASK_GROUP_F_SEALED;
+	task_group_seal(group);
 	task_group_update(group);
 }
 
@@ -1862,7 +2290,25 @@ ZEND_METHOD(Async_TaskGroup, count)
 	RETURN_LONG(zend_hash_num_elements(&THIS_GROUP->tasks));
 }
 
-/* Returns at once on a completed group; the wait is the TASK_GROUP kind of the next step (dev/PLAN.md S9.29). */
+/* Whether `coroutine` runs one of the group's tasks, which the group's completion waits for. */
+static bool task_group_runs_task(const async_task_group_t *group, const zend_coroutine_t *coroutine)
+{
+	const async_task_group_entry_t *entry;
+
+	ZEND_HASH_FOREACH_PTR(&group->tasks, entry)
+	{
+		if (UNEXPECTED(entry->state == TASK_RUNNING && &entry->coroutine->coroutine == coroutine)) {
+			return true;
+		}
+	}
+	ZEND_HASH_FOREACH_END();
+
+	return false;
+}
+
+/* Waits for the tasks only, until the group completes (task_group.c:1807-1858): it never throws a task's error
+ * and takes no cancellation token. Refused in scheduler context only when it would park, as Scope::awaitCompletion(),
+ * and in a task of the group, which the completion waits for (TrueAsync parks it for good). */
 ZEND_METHOD(Async_TaskGroup, awaitCompletion)
 {
 	ZEND_PARSE_PARAMETERS_NONE();
@@ -1874,11 +2320,22 @@ ZEND_METHOD(Async_TaskGroup, awaitCompletion)
 		RETURN_THROWS();
 	}
 
-	if (group->base.flags & TASK_GROUP_F_COMPLETED) {
+	if (UNEXPECTED(group->base.flags & TASK_GROUP_F_COMPLETED)) {
 		return;
 	}
 
-	zend_throw_exception(async_ce_async_exception, "TaskGroup::awaitCompletion() is not implemented yet", 0);
+	THROW_IF_UNAVAILABLE();
+
+	if (UNEXPECTED(task_group_runs_task(group, ZEND_ASYNC_CURRENT_COROUTINE))) {
+		zend_throw_exception(async_ce_async_exception, "Cannot await completion of TaskGroup from one of its tasks", 0);
+		RETURN_THROWS();
+	}
+
+	do {
+		if (UNEXPECTED(!task_group_wait(group, TASK_GROUP_RECORD_F_COMPLETION))) {
+			RETURN_THROWS();
+		}
+	} while (!(group->base.flags & TASK_GROUP_F_COMPLETED));
 }
 
 /* Stored until the completion; on a completed group the callback is called at once, in the caller

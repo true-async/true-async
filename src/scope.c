@@ -1003,6 +1003,11 @@ static void scope_collector_reach_from(async_collector_t *collector, async_scope
 			async_collector_report_holder(collector, scope->scope_object, scope_node);
 		}
 
+		/* A TaskGroup's cancel(), dispose() and destructor cancel its own scope. */
+		if (UNEXPECTED(scope->owner_object != NULL)) {
+			async_collector_report_holder(collector, scope->owner_object, scope_node);
+		}
+
 		/* It cancels the scope when it throws, holding no object. */
 		if (UNEXPECTED(scope->iterator_coroutine != NULL)) {
 			async_collector_report_holder(collector, &scope->iterator_coroutine->std, scope_node);

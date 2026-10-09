@@ -953,7 +953,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, dev/plans/S9-taskgroup.md
-Active: S9.29
+Active: S9.30
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -1363,10 +1363,16 @@ Active: S9.29
         `task_set/011` changed) and 68 own; `channel/059` in, `task_group/040` out. Debug 1594 PASS, ASAN
         1566 PASS, 0 unexpected. Critic, a second Critic, two quality Critics and a re-check Critic on the
         commit (DECISIONS 2026-10-09 S9.28). For Edmond: the two Open questions S9.28 added.
-- [ ] S9.29 The TASK_GROUP wait kind: `awaitCompletion()`, `foreach`, `spawn()` on a full queue, the collector.
+- [x] S9.29 The TASK_GROUP wait kind: `awaitCompletion()`, `foreach`, `spawn()` on a full queue, the collector.
       done: the S9.29 XFAILs pass; the collector finds a coroutine parked on a group nobody else reaches
       tier: T2 · role: Critic
-      handoff: `dev/plans/S9-taskgroup.md` sections 4, 6.
+      handoff: done 2026-10-09: the group's two wait queues (`slot_waiters`, `waiters`) hold its waiters' records
+        with the TASK_GROUP kind (info, unlink, collector target); the channel's queue became the shared
+        `async_wait_queue_t`. Spawners take rooms in order: a newcomer waits behind a parked or woken one; a
+        scope stopped from outside seals the group at any task end; `awaitCompletion()` in an own task throws
+        (DECISIONS 2026-10-09 S9.29). The 12 S9.29 XFAILs pass, `task_group/035` changed; own tests
+        `task_group/099`-`137`. Debug 1654 PASS, ASAN 1622 PASS, 0 unexpected. Critic, two quality Critics and a
+        re-check Critic on the commit.
 - [ ] S9.30 Layer 4 review and its documentation in `true-async-doc`.
       done: Critic over S9.27-S9.29, coverage, Mull, 100 fuzz seeds, measurements B17 and B18, the doc pushed
       tier: T2 · role: Critic

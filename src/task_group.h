@@ -51,6 +51,11 @@ typedef struct
 	async_task_group_entry_t *settled_head;
 	async_task_group_entry_t *settled_tail;
 	async_task_group_futures_t futures;
+	/* The TASK_GROUP waits (section 4): spawn() parked on a full queue, oldest first; the foreach steps
+	 * and the awaitCompletion() callers. */
+	async_wait_queue_t slot_waiters;
+	async_wait_queue_t waiters;
+	uint32_t passed_spawners;    /* spawners woken to take the room there is, not yet run */
 	HashTable *finally_handlers; /* lazy: the closures of finally() */
 	zend_object std;
 } async_task_group_t;

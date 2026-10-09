@@ -2103,29 +2103,18 @@ stack options were shown with the code).
   (`future/038`), but these Futures' events died with their object, so `$group->all()->map(f)->await()` and
   `$channel->recvAsync()->map(f)->await()` deadlocked (probes `s928_*_map_temporary.php`). A chain dropped whole
   stays queued until PHP's GC collects it, as TrueAsync's.
-- 2026-10-09 S9.28, own choices: the queued and the settled tasks are doubly linked lists of entries in place of
-  the note's `pending` and `settled` key tables, since a `TaskSet` read takes an entry from the middle; the slot
-  waiters and the waiters' queues come with S9.29. The case "the queued tasks of a group whose scope is closed"
-  (note section 9) cannot be reached from PHP: a scope with a running member is never closed without being
-  cancelled, since `async_scope_cancel()` closes only a scope `scope_is_completed()` counts as completed
-  (`src/scope.c:163`, `673`), which with a running member is one already cancelled, and the deadline closes only
-  finally runs (`src/scope.c:340`); so a drain behind a running task finds the scope cancelled (`task_group/067`);
-  the closed scope is tested through `spawn()` (`task_group/068`-`070`), and the drain's closed branch is recorded
-  as read from code. A group made and dropped by an output handler after the coroutines are gone is reachable and
-  calls no finally handler (`task_group/085`); a group still held at the request's end is destroyed by the core's
-  `zend_call_destructors()` (`main/main.c:1934` of async-core) while the scheduler still runs, and its closing ends
-  quietly (`task_group/081`). The closing's composite is made outside PHP code, so its report reads `Uncaught
-  Async\CompositeException in [no active file]:0`, without the inner errors (PLAN, Open questions). The queued
-  tasks of a scope cancelled from outside end with a new `AsyncCancellation("TaskGroup cancelled")`: our scope
-  keeps no cancellation object. Step 6 of the closing cancels through `async_scope_cancel_remaining()`
-  (`src/scope.c`), since `async_scope_cancel()` counts a cancelled scope as completed and would leave a coroutine
-  spawned into it after its cancel, or a zombie of a safe external scope, running (the Critics, `task_group/093`,
-  `095`); `task_group_closing_end()` only releases when its `caller_release_only` says so (`task_group_complete()`
-  passes true only when a refused finally run left the scheduler's exception pending), after a bailout, or once the
-  request's end freed the scopes, and no longer whenever an exception is pending, which a destructor on the way may
-  have thrown. The release of what the entries hold runs after the entries have their new state and the read is
-  answered (a cancel's unstarted calls, `joinAll()`'s taken entries), so a destructor there finds the group
-  consistent (the Critic, `task_group/094`, `task_set/033`).
+- 2026-10-09 S9.28, own choices: the queued and the settled tasks are doubly linked lists of entries, not the
+  note's key tables, since a `TaskSet` read takes an entry from the middle. A drain behind a running task finds the
+  scope cancelled, never closed: `async_scope_cancel()` closes only a completed scope (`src/scope.c:163`, `673`)
+  and the deadline only finally runs (`340`); the closed scope is tested through `spawn()` (`task_group/067`-
+  `070`). A group dropped by an output handler after the coroutines calls no finally handler (`085`); one held at
+  the request's end is destroyed by `zend_call_destructors()` while the scheduler runs and closes quietly (`081`).
+  A closing that ends later makes its composite outside PHP code: `Uncaught Async\CompositeException in [no active
+  file]:0` (PLAN, Open questions; one that ends at the drop names the dropping line, `103`, `104`). Queued tasks of
+  a scope cancelled from outside end with a new `AsyncCancellation("TaskGroup cancelled")`. The closing cancels
+  through `async_scope_cancel_remaining()`, which also reaches a coroutine spawned after the cancel and a safe
+  scope's zombie (`093`, `095`). What the entries hold is released once they have their new state and the read is
+  answered, so a destructor there finds the group consistent (`094`, `task_set/033`).
 - 2026-10-09 S9.28 (Edmond 13:56, «если баг - фикси»; a departure from TrueAsync, `task_group.c:1499-1502`): a
   numeric string key of `spawnWithKey()` and `trySpawnWithKey()` is the integer key, as in a PHP array, so `"1"`
   and `1` are one key (`Duplicate key 1`) and the reads build arrays PHP can index (`task_group/096`). TrueAsync
@@ -2179,3 +2168,46 @@ stack options were shown with the code).
   adopted fiber refuse once async is off instead (`RFC-CHANGES.md` 24, step S8.1a). Why: our scheduler
   unwinds or detaches every parked wait and refuses a suspend without a current coroutine; only the
   fiber methods reach it after the deactivation, and they assert first (review section 9).
+- 2026-10-09 `task_group/035-task_group_gc_traversal_all_states.phpt` (reference, `changed:2026-10-09`) ends with
+  `Uncaught Async\CompositeException in [no active file]:0`. Why: S9.29 lets it run past its park on a full queue,
+  it never reads its failing task's error, and an error no read took ends the request (note sections 8, item 15,
+  and 9; S9.28 Q36).
+- 2026-10-09 S9.29, own choices: the waiters' queue is the channel's, moved to `src/true_async_API.c` as
+  `async_wait_queue_t`, and `async_wait_link_outside()` takes a kind with an `unlink` (the wake takes the record
+  out, D26) or with an `abort` alone (its frame does, as the channel's). The TASK_GROUP kind has no `abort`, unlike
+  the note's section 4: `async_wait_abort()` ends with `async_wait_unlink()`, which calls the kind's `unlink`
+  (`task_group/112`-`114`). `async_collector_iterator_is_c_local()` moved from the channel to `src/collector.c` for
+  both iterators. The finally run is no reach source of the group, unlike the note's section 6: the completion
+  wakes every waiter before the run starts, and a closed group parks no spawner. `getAwaitingInfo()` reads
+  `TaskGroup(total=2, active=1, queued=1): spawn() on a full queue` (`foreach`, `awaitCompletion()`; `TaskSet` for
+  a set). `awaitCompletion()` refuses the scheduler's own work only when it would wait; a `foreach` refuses it at
+  each step, as the channel's iterator.
+- 2026-10-09 S9.29, own choices: a woken spawner checks the group again (closed, the key taken meanwhile, the scope
+  stopped) and, leaving the park without a place (an exception, its cancellation), wakes the next one while a slot
+  is free or the queue has room (section 8, item 19; `task_group/108`, `109`). A `spawn()` reached through `__call`
+  keeps its trampoline across the park: `zend_get_call_trampoline_func()` does not reuse a busy one
+  (`Zend/zend_object_handlers.c:1807`, `task_group/120`).
+- 2026-10-09 S9.29, the Critic: a scope cancelled or closed from outside seals and cancels the group at the first
+  task end that finds it so, with nothing queued as well, reading the note's "first drain" as every task end;
+  before, a `foreach` over a group whose external scope was cancelled with nothing queued waited for good
+  (`task_group/124`). A newcomer's `spawn()` or `trySpawn()` takes no room while a spawner is parked or woken to
+  take the room and not yet run (`passed_spawners`): it parks behind, or gets `false`, so a `trySpawn()` never
+  passes a waiting one (note section 2; `125`, `126`); a spawner leaving the park wakes the next ones only for the
+  rooms no woken spawner has been promised (`task_group_free_room()` over `passed_spawners`), so each woken one
+  finds its room and the spawners go in their order (`129`). A `foreach` takes responsibility for the errors
+  present only once its first step is allowed, so a refused one leaves them reported (`128`).
+- 2026-10-09 S9.29 (a bug TrueAsync also has, `task_group.c:1807-1858`): `awaitCompletion()` called in one of the
+  group's own tasks throws `AsyncException("Cannot await completion of TaskGroup from one of its tasks")`, as
+  `Scope::awaitCompletion()` refuses a coroutine of its scope; TrueAsync parks it until a cancel, since the
+  completion waits for that task (`task_group/127`). A `foreach` there is not refused: it may stop early.
+- 2026-10-09 S9.29, the re-check Critic: the group's cancel leaves a scope already cancelled or closed from outside
+  as it is, as it found the tasks cancelled; a second `async_scope_cancel()` would close the scope
+  (`src/scope.c:672`), so a task's catch could no longer spawn into it and the scope's finally handlers would start
+  while the tasks unwind (`task_group/137`). Before S9.29 only a drain with tasks queued met this case.
+- 2026-10-09 S9.29, kept as they are: a plain `spawn()` takes its integer key at its call, before a park, as
+  TrueAsync's; a `spawnWithKey()` of that integer while it waits parks behind it and throws `Duplicate key` when it
+  wakes (`task_group/132`). Waking every waiter of a group removes the records from the front of an array, O(N^2)
+  for N waiters, as the channel's queues (2026-10-09 entry, `SECURITY.md` Accepted). The bailouts while parked
+  (`task_group/112`-`114`) keep `skip-on:*-asan(USE_ZEND_ALLOC=0)` for the S9.28 reason (`086`), so they run on
+  debug only, short of section 9's "on debug and ASAN". `g4.php`'s `race()` before the settle is `task_group/012`'s
+  case.

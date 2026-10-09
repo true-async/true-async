@@ -429,13 +429,42 @@ void async_wait_link(async_coroutine_event_callback_t *record,
 					 const async_wait_kind_t *kind,
 					 async_event_callback_fn wake);
 
-/* Links `record` of `waiter`'s wait to `target` without its vector, as ASYNC_CALLBACK_F_FRAME_UNLINKS:
- * the target's own code holds it and wakes the waiter. Allocates nothing; the rules of async_wait_link()
- * apply. */
+/* Links `record` of `waiter`'s wait to `target` without its vector: the target's own code holds it and
+ * wakes the waiter. A kind with an unlink takes it out at the wake (D26); one without leaves it to its
+ * frame, as ASYNC_CALLBACK_F_FRAME_UNLINKS. Allocates nothing; the rules of async_wait_link() apply. */
 void async_wait_link_outside(async_coroutine_event_callback_t *record,
 							 async_coroutine_t *waiter,
 							 async_awaitable_t *target,
 							 const async_wait_kind_t *kind);
+
+/* Records a target keeps outside its vector, in arrival order (a channel's sides, a task group's waits);
+ * each borrowed. */
+typedef struct
+{
+	async_coroutine_event_callback_t **records;
+	uint32_t length;
+	uint32_t capacity;
+} async_wait_queue_t;
+
+/* Makes room for one more record; may allocate, so a wait calls it before its first link. */
+void async_wait_queue_make_room(async_wait_queue_t *queue);
+
+static zend_always_inline void async_wait_queue_push(async_wait_queue_t *queue,
+													 async_coroutine_event_callback_t *record)
+{
+	ZEND_ASSERT(queue->length < queue->capacity);
+
+	queue->records[queue->length++] = record;
+}
+
+/* Keeps the arrival order, which decides who a channel's handed-on reservation reaches. */
+void async_wait_queue_remove_at(async_wait_queue_t *queue, uint32_t index);
+
+/* False when the record is not in the queue. */
+bool async_wait_queue_remove(async_wait_queue_t *queue, const async_coroutine_event_callback_t *record);
+
+/* With its owner; no waiter is left, since each holds the target through its frame. */
+void async_wait_queue_free(async_wait_queue_t *queue);
 
 /* Removes a linked record from its target's vector and clears its `event`: the generic unlink, and
  * the part a kind's unlink shares with it. */

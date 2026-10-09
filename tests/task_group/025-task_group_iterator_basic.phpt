@@ -1,7 +1,5 @@
 --TEST--
 TaskGroup: foreach iteration yields results as [result, error]
---XFAIL--
-Not implemented yet: S9.29 of dev/PLAN.md
 --FILE--
 <?php
 

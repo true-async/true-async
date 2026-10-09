@@ -1,7 +1,5 @@
 --TEST--
 TaskSet: foreach iteration delivers errors as [null, error]
---XFAIL--
-Not implemented yet: S9.29 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -51,6 +51,11 @@ void async_collector_report_event_target(async_collector_t *collector,
 										 async_event_t *target,
 										 async_collector_event_references_t references,
 										 bool owned);
+/* Whether an iterator's step runs while the iterator lives only in a local of the C code that drives it,
+ * so that no slot the walk reads reports it: the engine's foreach between its rewind and storing the
+ * iterator (zend_fe_reset_iterator()), and spl_iterator_apply() of iterator_to_array(), iterator_count()
+ * and iterator_apply(). The iterator's one reference to its object then counts as the wait's (`owned`). */
+bool async_collector_iterator_is_c_local(void);
 /* For a kind's collector_target whose record waits for any of many sources (a scope's coroutines): the
  * record's target is the reach node found or added by `key`, which the caller makes live with
  * async_collector_report_reach_source() when `*added`. COLLECTOR_NONE and no `*added` outside the

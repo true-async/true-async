@@ -1,7 +1,5 @@
 --TEST--
 TaskGroup: awaitCompletion() - waits after cancel
---XFAIL--
-Not implemented yet: S9.29 of dev/PLAN.md
 --FILE--
 <?php
 

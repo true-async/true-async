@@ -35,15 +35,6 @@ typedef enum
 	ASYNC_CHANNEL_CLOSE_SCOPE_DISPOSED,
 } async_channel_close_reason_t;
 
-/* Parked senders or receivers in arrival order: the CHANNEL records of their coroutines, borrowed, and
- * the queue entries of pending recvAsync() Futures. */
-typedef struct
-{
-	async_coroutine_event_callback_t **records;
-	uint32_t length;
-	uint32_t capacity;
-} async_channel_queue_t;
-
 typedef struct
 {
 	async_event_t base;            /* ASYNC_EVENT_F_CLOSED once closed; ZEND_OBJ: inside `std`'s allocation */
@@ -58,8 +49,10 @@ typedef struct
 	/* The rendezvous value a close from a timer, the global deadlock or the owner scope rolled back, where no
 	 * PHP code may run: released with the channel. */
 	zval dropped_value;
-	async_channel_queue_t receivers; /* coroutines and recvAsync() Futures */
-	async_channel_queue_t senders;
+	/* Parked receivers and senders in arrival order: the CHANNEL records of their coroutines and the queue
+	 * entries of pending recvAsync() Futures. */
+	async_wait_queue_t receivers;
+	async_wait_queue_t senders;
 	uint32_t reserved_receivers;    /* values promised to woken receivers that have not run yet */
 	uint32_t reserved_senders;      /* free slots promised to woken senders */
 	int32_t no_producer_timeout_ms; /* 0: none */

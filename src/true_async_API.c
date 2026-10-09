@@ -229,13 +229,57 @@ void async_wait_link_outside(async_coroutine_event_callback_t *record,
 							 const async_wait_kind_t *kind)
 {
 	ZEND_ASSERT(record->event == NULL && "a record links once per wait");
-	ZEND_ASSERT(kind->abort != NULL && "only abort removes a record its frame never removed");
+	ZEND_ASSERT((kind->unlink != NULL || kind->abort != NULL) &&
+				"a kind takes its record out: unlink at the wake, or abort");
 
-	record->event_callback.flags = ASYNC_CALLBACK_F_RECORD | ASYNC_CALLBACK_F_FRAME_UNLINKS;
+	record->event_callback.flags = kind->unlink != NULL ? ASYNC_CALLBACK_F_RECORD | ASYNC_CALLBACK_F_TYPED
+														: ASYNC_CALLBACK_F_RECORD | ASYNC_CALLBACK_F_FRAME_UNLINKS;
 	record->event_callback.callback = NULL;
 	record->event_callback.kind = kind;
 	record->coroutine = waiter;
 	record->event = target;
+}
+
+#define WAIT_QUEUE_FIRST_CAPACITY 4
+
+void async_wait_queue_make_room(async_wait_queue_t *queue)
+{
+	if (EXPECTED(queue->length < queue->capacity)) {
+		return;
+	}
+
+	queue->capacity = queue->capacity == 0 ? WAIT_QUEUE_FIRST_CAPACITY : queue->capacity * 2;
+	queue->records = safe_erealloc(queue->records, queue->capacity, sizeof(*queue->records), 0);
+}
+
+void async_wait_queue_remove_at(async_wait_queue_t *queue, const uint32_t index)
+{
+	queue->length--;
+
+	if (index < queue->length) {
+		memmove(&queue->records[index], &queue->records[index + 1], (queue->length - index) * sizeof(*queue->records));
+	}
+}
+
+bool async_wait_queue_remove(async_wait_queue_t *queue, const async_coroutine_event_callback_t *record)
+{
+	for (uint32_t i = 0; i < queue->length; i++) {
+		if (queue->records[i] == record) {
+			async_wait_queue_remove_at(queue, i);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void async_wait_queue_free(async_wait_queue_t *queue)
+{
+	ZEND_ASSERT(queue->length == 0 && "a parked waiter holds its target through its frame");
+
+	if (queue->records != NULL) {
+		efree(queue->records);
+	}
 }
 
 void async_wait_record_remove(async_coroutine_event_callback_t *record)

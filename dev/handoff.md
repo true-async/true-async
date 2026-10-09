@@ -584,6 +584,13 @@ reporter coroutine. Core-side changes in the extension: `async_scope_cancel_rema
 (DECISIONS 2026-10-09 S9.28). Next: S9.29 (the TASK_GROUP wait kind, `dev/plans/S9-taskgroup.md` sections
 4, 6).
 
+S9.29 done 2026-10-09: the group's waits park the waiter's record in `slot_waiters` (spawners) or `waiters`
+(`foreach` steps, `awaitCompletion()`), the channel's queue made the shared `async_wait_queue_t`
+(`src/true_async_API.h`). Rooms pass to spawners in order: `task_group_pass_room()` wakes one per free room no
+woken spawner holds (`passed_spawners`), and a newcomer waits behind them. The collector reaches a group
+through its running tasks and its own scope's `owner_object` (DECISIONS 2026-10-09 S9.29). Next: S9.30
+(layer 4 review and the doc, `dev/plans/S9-taskgroup.md` sections 7, 9).
+
 ## S10
 
 - S10.1 closed 2026-10-08: `dev/plans/S10.md` approved by Edmond (17:40) except output buffers, which

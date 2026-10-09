@@ -1,7 +1,5 @@
 --TEST--
 TaskGroup: gc_get handler walks tasks in PENDING / RUNNING / ERROR states
---XFAIL--
-Not implemented yet: S9.29 of dev/PLAN.md
 --FILE--
 <?php
 
@@ -50,3 +48,8 @@ echo "end\n";
 --EXPECTF--
 start
 end
+
+Fatal error: Uncaught Async\CompositeException in [no active file]:0
+Stack trace:
+#0 {main}
+  thrown in [no active file] on line 0

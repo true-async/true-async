@@ -52,11 +52,9 @@ static zend_object_handlers channel_handlers;
 #define CHANNEL_RECORD_F_RESERVED (1u << (ASYNC_CALLBACK_F_KIND_SHIFT + 1))
 /* A rendezvous sender parked on its own value in the slot: it reserves nothing. */
 #define CHANNEL_RECORD_F_DELIVERING (1u << (ASYNC_CALLBACK_F_KIND_SHIFT + 2))
-/* The iterator lives in a C local the collector's walk does not read (channel_iterator_is_c_local()):
- * the wait owns its reference to the channel. */
+/* The iterator lives in a C local the collector's walk does not read (async_collector_iterator_is_c_local()):
+ * the wait owns its reference to the channel, as a step clears `current` before it receives. */
 #define CHANNEL_RECORD_F_HOLDS_CHANNEL (1u << (ASYNC_CALLBACK_F_KIND_SHIFT + 3))
-
-#define CHANNEL_QUEUE_FIRST_CAPACITY 4
 
 /* A pending recvAsync() Future's place in the receivers' queue (channel.c:110-139). The Future's event
  * disposes `on_future` when it completes or is freed, which frees the waiter, so a dropped Future leaves
@@ -203,51 +201,9 @@ static void channel_withdraw_rendezvous_value(async_channel_t *channel, zval *dr
 /// Queues
 ///////////////////////////////////////////////////////////////////
 
-/* Makes room for one more record; may allocate, so a wait calls it before its first link. */
-static void channel_queue_make_room(async_channel_queue_t *queue)
-{
-	if (EXPECTED(queue->length < queue->capacity)) {
-		return;
-	}
-
-	queue->capacity = queue->capacity == 0 ? CHANNEL_QUEUE_FIRST_CAPACITY : queue->capacity * 2;
-	queue->records = safe_erealloc(queue->records, queue->capacity, sizeof(*queue->records), 0);
-}
-
-static zend_always_inline void channel_queue_push(async_channel_queue_t *queue,
-												  async_coroutine_event_callback_t *record)
-{
-	ZEND_ASSERT(queue->length < queue->capacity);
-
-	queue->records[queue->length++] = record;
-}
-
-/* Keeps the arrival order, which decides who a handed-on reservation reaches (channel.c:248-257). */
-static void channel_queue_remove_at(async_channel_queue_t *queue, const uint32_t index)
-{
-	queue->length--;
-
-	if (index < queue->length) {
-		memmove(&queue->records[index], &queue->records[index + 1], (queue->length - index) * sizeof(*queue->records));
-	}
-}
-
-/* False when the record is not in the queue. */
-static bool channel_queue_remove(async_channel_queue_t *queue, const async_coroutine_event_callback_t *record)
-{
-	for (uint32_t i = 0; i < queue->length; i++) {
-		if (queue->records[i] == record) {
-			channel_queue_remove_at(queue, i);
-			return true;
-		}
-	}
-
-	return false;
-}
-
 /* The oldest record with nothing promised to it: a reserved one keeps its place until it runs, and a
  * delivering sender waits for an answer, not a slot (channel.c:259-271). */
-static async_coroutine_event_callback_t *channel_queue_first_unreserved(const async_channel_queue_t *queue)
+static async_coroutine_event_callback_t *channel_queue_first_unreserved(const async_wait_queue_t *queue)
 {
 	for (uint32_t i = 0; i < queue->length; i++) {
 		if (!(queue->records[i]->event_callback.flags & (CHANNEL_RECORD_F_RESERVED | CHANNEL_RECORD_F_DELIVERING))) {
@@ -259,7 +215,7 @@ static async_coroutine_event_callback_t *channel_queue_first_unreserved(const as
 }
 
 /* The rendezvous sender parked on the slot's value; at most one (channel.c:273-284). */
-static async_coroutine_event_callback_t *channel_queue_delivering(const async_channel_queue_t *queue)
+static async_coroutine_event_callback_t *channel_queue_delivering(const async_wait_queue_t *queue)
 {
 	for (uint32_t i = 0; i < queue->length; i++) {
 		if (queue->records[i]->event_callback.flags & CHANNEL_RECORD_F_DELIVERING) {
@@ -268,15 +224,6 @@ static async_coroutine_event_callback_t *channel_queue_delivering(const async_ch
 	}
 
 	return NULL;
-}
-
-static void channel_queue_free(async_channel_queue_t *queue)
-{
-	ZEND_ASSERT(queue->length == 0 && "a parked waiter holds its channel through its frame");
-
-	if (queue->records != NULL) {
-		efree(queue->records);
-	}
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -512,7 +459,7 @@ static void channel_future_reject(async_future_event_t *future, const async_chan
 /* A Future has no later run, so it takes the value at once and reserves nothing (channel.c:448-460). */
 static void channel_future_serve(async_channel_t *channel, async_coroutine_event_callback_t *record)
 {
-	channel_queue_remove(&channel->receivers, record);
+	async_wait_queue_remove(&channel->receivers, record);
 	record->event = NULL;
 	/* Disposes the waiter. */
 	channel_future_give_value(channel, CHANNEL_FUTURE_WAITER_OF(record, queue_record)->future);
@@ -558,7 +505,7 @@ static void channel_wake_delivered_sender(async_channel_t *channel)
 		return;
 	}
 
-	channel_queue_remove(&channel->senders, record);
+	async_wait_queue_remove(&channel->senders, record);
 	channel_record_wake(record, NULL);
 }
 
@@ -614,7 +561,7 @@ static void channel_close(async_channel_t *channel, const async_channel_close_re
 			continue;
 		}
 
-		channel_queue_remove_at(&channel->receivers, index);
+		async_wait_queue_remove_at(&channel->receivers, index);
 
 		if (UNEXPECTED(channel_record_is_future(record))) {
 			record->event = NULL;
@@ -629,7 +576,7 @@ static void channel_close(async_channel_t *channel, const async_channel_close_re
 		const uint32_t last = channel->senders.length - 1;
 		async_coroutine_event_callback_t *const record = channel->senders.records[last];
 
-		channel_queue_remove_at(&channel->senders, last);
+		async_wait_queue_remove_at(&channel->senders, last);
 		channel_record_wake(record, channel_exception_new(reason));
 	}
 
@@ -754,10 +701,10 @@ static void channel_hand_out_found_records(async_callbacks_vector_t *callbacks)
 /* Every waiter a close would wake: the queued coroutines and the awaiters of the queued Futures. */
 static void channel_hand_out_found_waiters(async_channel_t *channel)
 {
-	const async_channel_queue_t *const queues[] = { &channel->receivers, &channel->senders };
+	const async_wait_queue_t *const queues[] = { &channel->receivers, &channel->senders };
 
 	for (uint32_t queue_index = 0; queue_index < sizeof(queues) / sizeof(queues[0]); queue_index++) {
-		const async_channel_queue_t *const queue = queues[queue_index];
+		const async_wait_queue_t *const queue = queues[queue_index];
 
 		for (uint32_t i = 0; i < queue->length; i++) {
 			const async_coroutine_event_callback_t *const record = queue->records[i];
@@ -812,7 +759,7 @@ static zend_always_inline async_channel_t *channel_of_record(const async_corouti
 }
 
 /* `role`: a record's SENDER bit, alone or with the others. */
-static zend_always_inline async_channel_queue_t *channel_queue_of_role(async_channel_t *channel, const uint32_t role)
+static zend_always_inline async_wait_queue_t *channel_queue_of_role(async_channel_t *channel, const uint32_t role)
 {
 	return (role & CHANNEL_RECORD_F_SENDER) ? &channel->senders : &channel->receivers;
 }
@@ -823,7 +770,7 @@ static bool channel_record_leave(async_coroutine_event_callback_t *record, bool 
 {
 	async_channel_t *const channel = channel_of_record(record);
 	const uint32_t flags = record->event_callback.flags;
-	const bool was_queued = channel_queue_remove(channel_queue_of_role(channel, flags), record);
+	const bool was_queued = async_wait_queue_remove(channel_queue_of_role(channel, flags), record);
 
 	*had_reservation = (flags & CHANNEL_RECORD_F_RESERVED) != 0;
 
@@ -920,7 +867,7 @@ static const async_wait_kind_t channel_wait_kind = {
 static async_coroutine_event_callback_t *
 channel_wait_link(async_channel_t *channel, async_awaitable_t *const token, const uint32_t role)
 {
-	async_channel_queue_t *const queue = channel_queue_of_role(channel, role);
+	async_wait_queue_t *const queue = channel_queue_of_role(channel, role);
 	async_coroutine_t *const waiter = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
 
 	if (UNEXPECTED(waiter == NULL)) {
@@ -934,7 +881,7 @@ channel_wait_link(async_channel_t *channel, async_awaitable_t *const token, cons
 		return NULL;
 	}
 
-	channel_queue_make_room(queue);
+	async_wait_queue_make_room(queue);
 
 	if (token != NULL) {
 		async_callbacks_reserve(async_awaitable_callbacks(token), 1);
@@ -948,7 +895,7 @@ channel_wait_link(async_channel_t *channel, async_awaitable_t *const token, cons
 
 	async_wait_link_outside(record, waiter, (async_awaitable_t *) &channel->base, &channel_wait_kind);
 	record->event_callback.flags |= role;
-	channel_queue_push(queue, record);
+	async_wait_queue_push(queue, record);
 
 	if (token != NULL) {
 		async_await_token_link(&waiter->waker.records[1], waiter, token);
@@ -1077,31 +1024,6 @@ static void channel_send(async_channel_t *channel, const zval *value, async_awai
 	}
 }
 
-/* Whether the iterator lives only in a local of the C code that drives it, so that no slot the
- * collector's walk reads reports it: the engine's foreach between its rewind and storing the iterator
- * (zend_fe_reset_iterator()), and spl_iterator_apply() of iterator_to_array(), iterator_count() and
- * iterator_apply(). Its one reference to the channel then counts as the wait's: a step clears `current`
- * before it receives. */
-static bool channel_iterator_is_c_local(void)
-{
-	const zend_execute_data *const frame = EG(current_execute_data);
-
-	if (UNEXPECTED(frame == NULL || frame->func == NULL)) {
-		return false;
-	}
-
-	if (EXPECTED(ZEND_USER_CODE(frame->func->type))) {
-		return frame->opline->opcode == ZEND_FE_RESET_R;
-	}
-
-	const zend_string *const function_name = frame->func->common.function_name;
-
-	return frame->func->common.scope == NULL && function_name != NULL &&
-			(zend_string_equals_literal(function_name, "iterator_to_array") ||
-			 zend_string_equals_literal(function_name, "iterator_count") ||
-			 zend_string_equals_literal(function_name, "iterator_apply"));
-}
-
 /* TrueAsync's recv() loop (channel.c:1209-1245) and its iterator's (974-1012): false with nothing thrown
  * once the channel is closed and empty, false with an exception when the wait failed. `is_iterator`: an
  * iterator's step, whose iterator may hold the channel where the collector does not look. */
@@ -1109,7 +1031,7 @@ static bool
 channel_receive(async_channel_t *channel, zval *result, async_awaitable_t *const token, const bool is_iterator)
 {
 	bool has_reservation = false;
-	const uint32_t role = is_iterator && channel_iterator_is_c_local() ? CHANNEL_RECORD_F_HOLDS_CHANNEL : 0;
+	const uint32_t role = is_iterator && async_collector_iterator_is_c_local() ? CHANNEL_RECORD_F_HOLDS_CHANNEL : 0;
 
 	while (true) {
 		if (has_reservation || channel_has_free_value(channel)) {
@@ -1177,7 +1099,7 @@ static void channel_future_waiter_dispose(async_event_callback_t *callback, asyn
 	async_channel_t *const channel = (async_channel_t *) waiter->queue_record.event;
 
 	if (channel != NULL) {
-		channel_queue_remove(&channel->receivers, &waiter->queue_record);
+		async_wait_queue_remove(&channel->receivers, &waiter->queue_record);
 		channel_timer_disarm_if_idle(channel);
 	}
 
@@ -1187,7 +1109,7 @@ static void channel_future_waiter_dispose(async_event_callback_t *callback, asyn
 /* Queues a waiter for the pending `future`, which the next free value completes. */
 static void channel_future_wait(async_channel_t *channel, async_future_event_t *future)
 {
-	channel_queue_make_room(&channel->receivers);
+	async_wait_queue_make_room(&channel->receivers);
 	async_callbacks_reserve(&future->base.callbacks, 1);
 
 	channel_future_waiter_t *const waiter = emalloc(sizeof(channel_future_waiter_t));
@@ -1204,7 +1126,7 @@ static void channel_future_wait(async_channel_t *channel, async_future_event_t *
 	waiter->on_future.dispose = channel_future_waiter_dispose;
 
 	async_callbacks_push_reserved(&future->base.callbacks, &waiter->on_future);
-	channel_queue_push(&channel->receivers, &waiter->queue_record);
+	async_wait_queue_push(&channel->receivers, &waiter->queue_record);
 }
 
 zend_object *async_channel_of_future_waiter(const async_event_callback_t *subscriber)
@@ -1423,8 +1345,8 @@ static void channel_object_free(zend_object *object)
 	channel_future_waiters_detach(channel);
 	/* Nothing waits on the channel's event: its waiters sit in its queues. */
 	ZEND_ASSERT(channel->base.callbacks.length == 0 && ASYNC_CALLBACKS_CAPACITY(&channel->base.callbacks) == 0);
-	channel_queue_free(&channel->receivers);
-	channel_queue_free(&channel->senders);
+	async_wait_queue_free(&channel->receivers);
+	async_wait_queue_free(&channel->senders);
 	zval_circular_buffer_dtor(&channel->buffer);
 	zval_ptr_dtor(&channel->rendezvous_value);
 	zval_ptr_dtor(&channel->dropped_value);

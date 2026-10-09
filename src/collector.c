@@ -470,6 +470,26 @@ void async_collector_report_target(async_collector_t *collector, zend_object *ta
 	collector_wake_edge_add(collector, collector_node_of(collector, (zend_refcounted *) target));
 }
 
+bool async_collector_iterator_is_c_local(void)
+{
+	const zend_execute_data *const frame = EG(current_execute_data);
+
+	if (UNEXPECTED(frame == NULL || frame->func == NULL)) {
+		return false;
+	}
+
+	if (EXPECTED(ZEND_USER_CODE(frame->func->type))) {
+		return frame->opline->opcode == ZEND_FE_RESET_R;
+	}
+
+	const zend_string *const function_name = frame->func->common.function_name;
+
+	return frame->func->common.scope == NULL && function_name != NULL &&
+			(zend_string_equals_literal(function_name, "iterator_to_array") ||
+			 zend_string_equals_literal(function_name, "iterator_count") ||
+			 zend_string_equals_literal(function_name, "iterator_apply"));
+}
+
 uint32_t async_collector_report_reach_target(async_collector_t *collector, const void *key, bool *added)
 {
 	if (EXPECTED(collector->pass != COLLECTOR_PASS_WAKE_EDGES)) {

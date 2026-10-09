@@ -1,7 +1,5 @@
 --TEST--
 TaskGroup: awaitCompletion() - does not throw on task errors
---XFAIL--
-Not implemented yet: S9.29 of dev/PLAN.md
 --FILE--
 <?php
 

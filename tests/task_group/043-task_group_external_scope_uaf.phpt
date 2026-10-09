@@ -1,7 +1,5 @@
 --TEST--
 TaskGroup: externally supplied (PHP) Scope must survive until group destruction
---XFAIL--
-Not implemented yet: S9.29 of dev/PLAN.md
 --SKIPIF--
 <?php
 if (!class_exists("Async\\TaskSet")) die("skip TaskSet not available");

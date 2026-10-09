@@ -1,7 +1,5 @@
 --TEST--
 TaskGroup: queueLimit — spawn() suspends when pending queue is full (backpressure)
---XFAIL--
-Not implemented yet: S9.29 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -106,13 +106,17 @@ can see goes here; tests, tools and CI are in the git history.
 - `Async\Channel`'s `noProducerTimeout` and `noConsumerTimeout` close a channel that waits too long; a
   channel closes when the scope it was made in is cancelled, takes an error, is disposed or is freed, and
   the partial deadlock collector finds coroutines parked on it ([S9](dev/plans/S9-channel.md)).
-- `Async\TaskGroup` and `Async\TaskSet`: `spawn()`, `spawnWithKey()`, `trySpawn()` and `trySpawnWithKey()`
-  run callables as coroutines of one scope, at most `concurrency` at a time and the rest queued; `all()`,
-  `race()` and `any()` (`joinAll()`, `joinNext()` and `joinAny()`, which take what they deliver, on a
-  `TaskSet`) return Futures; `close()`, `cancel()`, `dispose()` and `finally()`. Dropping a group cancels
-  its unfinished tasks without waiting, runs its finally handlers once and reports the errors no read took
-  as an `Async\CompositeException`. A numeric string key is the integer key, as in an array. `awaitCompletion()`
-  while a closed group has tasks left, `foreach` and waiting on a full queue throw "not implemented yet" for now ([S9](dev/plans/S9-taskgroup.md)).
+- `Async\TaskGroup` and `Async\TaskSet`: `spawn()`, `spawnWithKey()`, `trySpawn()` and `trySpawnWithKey()` run
+  callables as coroutines of one scope, at most `concurrency` at a time and the rest queued; `all()`, `race()`
+  and `any()` (`joinAll()`, `joinNext()` and `joinAny()`, which take what they deliver, on a `TaskSet`) return
+  Futures; `close()`, `cancel()`, `dispose()` and `finally()`. Dropping a group cancels its unfinished tasks
+  without waiting, runs its finally handlers once and reports the errors no read took as an
+  `Async\CompositeException`. A numeric string key is the integer key, as in an array. `awaitCompletion()`
+  waits until a closed group's tasks are done, and throws in one of its own tasks; `foreach` yields `key =>
+  [result, error]` in the order the tasks end, waiting for the next one (a `TaskSet` takes what it yields);
+  `spawn()` on a full queue waits for room, the oldest caller first, and `trySpawn()` returns `false` while
+  one waits; the partial deadlock collector finds coroutines parked on a group nobody else reaches
+  ([S9](dev/plans/S9-taskgroup.md)).
 - A coroutine whose body has returned or thrown keeps its outcome when its scope is cancelled while its
   closure is released, as when the closure held the last reference to the scope or the group
   ([S9](dev/plans/S9-taskgroup.md)).
