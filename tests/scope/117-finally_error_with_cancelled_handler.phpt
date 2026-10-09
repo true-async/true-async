@@ -17,21 +17,27 @@ $scope->setChildScopeExceptionHandler(function (Scope $scope, Coroutine $corouti
         echo "  ", get_class($exception), ": ", $exception->getMessage(), "\n";
     }
 });
-$scope->spawn(function () {
+$thrown = false;
+$scope->spawn(function () use (&$thrown) {
     $self = Async\current_coroutine();
     $self->finally(function () {
         echo "first waits\n";
-        delay(50);
+        delay(100000);
         echo "not reached\n";
     });
-    $self->finally(function () {
+    $self->finally(function () use (&$thrown) {
         echo "second throws\n";
+        $thrown = true;
         throw new Exception('from finally');
     });
 });
-delay(20);
-echo "cancel\n";
-$scope->cancel();
+
+while (!$thrown) {
+    Async\suspend();
+}
+
+echo "deadline\n";
+$scope->disposeAfterTimeout(1);
 delay(20);
 echo "end\n";
 
@@ -39,8 +45,8 @@ echo "end\n";
 --EXPECT--
 first waits
 second throws
-cancel
+deadline
 Async\CompositeException:
   Exception: from finally
-  Async\AsyncCancellation: Scope was cancelled
+  Async\AsyncCancellation: Scope has been disposed due to timeout
 end

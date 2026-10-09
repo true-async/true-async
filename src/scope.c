@@ -306,6 +306,53 @@ static bool scope_dispose_timer_is_armed(const async_scope_t *scope)
 	return scope->dispose_timer != NULL && scope->dispose_timer->reactor_link.prev != NULL;
 }
 
+static zend_always_inline bool scope_is_finally_run(const async_scope_t *scope)
+{
+	return (scope->event.flags & ASYNC_SCOPE_F_FINALLY_RUN) != 0;
+}
+
+/* A finally run below the scope, which its deadline still has to reach. */
+static bool scope_has_finally_run_below(const async_scope_t *scope)
+{
+	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
+		const async_scope_t *child_scope = scope->child_scopes.data[i];
+
+		if (scope_is_finally_run(child_scope) || scope_has_finally_run_below(child_scope)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/* The deadline's cancel of every coroutine in the finally runs below the scope, whatever their state, and
+ * never safely: unlike a scope cancel it reaches a run, a handler that caught an earlier one, and a zombie
+ * (S9-scope.md 13). A closed run takes no new worker. A cancel only queues, so no PHP code changes the
+ * vectors under the loops. */
+static void scope_deadline_cancel_finally_runs(async_scope_t *scope, zend_object *error, const bool is_under_run)
+{
+	const bool is_in_run = is_under_run || scope_is_finally_run(scope);
+
+	if (UNEXPECTED(is_in_run)) {
+		if (scope_is_finally_run(scope)) {
+			scope->event.flags |= ASYNC_SCOPE_F_CLOSED;
+		}
+
+		for (uint32_t i = 0; i < scope->coroutines.length; i++) {
+			async_coroutine_cancel(scope->coroutines.data[i], error, false, false);
+		}
+	}
+
+	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
+		scope_deadline_cancel_finally_runs(scope->child_scopes.data[i], error, is_in_run);
+	}
+}
+
+void async_scope_finally_run_end(async_scope_t *scope)
+{
+	scope->event.flags &= ~ASYNC_SCOPE_F_FINALLY_RUN;
+}
+
 /* Moves the references `handler` holds into `released_values`, made on the first one; the copy of a
  * __call trampoline goes here, which runs no PHP code. */
 static void scope_handler_keep_back(zend_fcall_info_cache *handler, zend_array **released_values)
@@ -572,7 +619,9 @@ static void scope_close_bound_channels(async_scope_t *scope)
 
 void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_error, const bool is_safely)
 {
-	if (UNEXPECTED(scope->event.flags & ASYNC_SCOPE_F_CLOSED)) {
+	/* A closed scope has nothing left to cancel; a finally run's scope, which a stand-in object can reach,
+	 * is out of every scope cancel's reach, and only an ancestor's deadline stops it from outside. */
+	if (UNEXPECTED(scope->event.flags & (ASYNC_SCOPE_F_CLOSED | ASYNC_SCOPE_F_FINALLY_RUN))) {
 		if (error != NULL && transfer_error) {
 			OBJ_RELEASE(error);
 		}
@@ -582,14 +631,12 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 
 	if (scope_is_completed(scope, true, NULL)) {
 		scope->event.flags |= ASYNC_SCOPE_F_CLOSED;
-		/* Its fire would find the scope closed. */
-		scope_dispose_timer_disarm(scope);
 		scope_close_bound_channels(scope);
 
 		/* The cancel reaches the subtree, as the TrueAsync docs say (concepts/scope.md), though TrueAsync's
 		 * scope.c:964-971 stops at this scope. A child scope with a coroutine of its own is skipped: a
-		 * cancelled one is left to unwind, and a finally handler's run scope to finish. A cancel only queues,
-		 * so no PHP code changes the vector under the loop. */
+		 * cancelled one is left to unwind. A finally run's scope returns at the cancel's first check. A
+		 * cancel only queues, so no PHP code changes the vector under the loop. */
 		for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
 			async_scope_t *const child_scope = scope->child_scopes.data[i];
 
@@ -615,6 +662,12 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 			}
 		}
 
+		/* After the starts above, which add the runs: the timer's fire still has to stop a finally run below;
+		 * with none, it would find the scope closed and do nothing. */
+		if (UNEXPECTED(scope->dispose_timer != NULL) && !scope_has_finally_run_below(scope)) {
+			scope_dispose_timer_disarm(scope);
+		}
+
 		return;
 	}
 
@@ -628,7 +681,11 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 	/* A cancel only queues and a closed child scope's finally run starts in a worker, or is left to its
 	 * disposal when refused, so no PHP code changes either vector under the loops. */
 	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
-		async_scope_cancel(scope->child_scopes.data[i], error, false, is_safely);
+		async_scope_t *const child_scope = scope->child_scopes.data[i];
+
+		if (EXPECTED(!scope_is_finally_run(child_scope))) {
+			async_scope_cancel(child_scope, error, false, is_safely);
+		}
 	}
 
 	for (uint32_t i = 0; i < scope->coroutines.length; i++) {
@@ -823,7 +880,11 @@ bool async_scope_catch(async_coroutine_t *coroutine, zend_object *error)
 
 		/* Fresh cancellations, not the error (scope.c:1020-1044); the loops hold as async_scope_cancel()'s. */
 		for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
-			async_scope_cancel(scope->child_scopes.data[i], NULL, false, is_safely);
+			async_scope_t *const child_scope = scope->child_scopes.data[i];
+
+			if (EXPECTED(!scope_is_finally_run(child_scope))) {
+				async_scope_cancel(child_scope, NULL, false, is_safely);
+			}
 		}
 
 		for (uint32_t i = 0; i < scope->coroutines.length; i++) {
@@ -844,6 +905,18 @@ bool async_scope_catch(async_coroutine_t *coroutine, zend_object *error)
 	OBJ_RELEASE(error);
 
 	return is_handled;
+}
+
+/* An ancestor's dispose timer, whose fire reaches the scope's finally run. */
+static bool scope_has_deadline_above(const async_scope_t *scope)
+{
+	for (const async_scope_t *ancestor = scope->parent_scope; ancestor != NULL; ancestor = ancestor->parent_scope) {
+		if (scope_dispose_timer_is_armed(ancestor)) {
+			return true;
+		}
+	}
+
+	return false;
 }
 
 /* The reach of `scope` and its parents, with an edge from the scope's node to `node`. */
@@ -871,8 +944,15 @@ static void scope_collector_reach_from(async_collector_t *collector, async_scope
 			async_collector_report_holder(collector, &scope->iterator_coroutine->std, scope_node);
 		}
 
-		/* It cancels the scope when it fires, holding no object; a cancelled scope's fire only closes it. */
-		if (UNEXPECTED(scope_dispose_timer_is_armed(scope) && !(scope->event.flags & ASYNC_SCOPE_F_CANCELLED))) {
+		/* It cancels the scope when it fires, holding no object; a cancelled or closed scope's fire does not
+		 * reach its own coroutines. */
+		if (UNEXPECTED(scope_dispose_timer_is_armed(scope) &&
+					   !(scope->event.flags & (ASYNC_SCOPE_F_CANCELLED | ASYNC_SCOPE_F_CLOSED)))) {
+			async_collector_report_live_reach(collector, scope_node);
+		}
+
+		/* An ancestor's deadline stops the run when it fires; no scope cancel reaches it. */
+		if (UNEXPECTED(scope_is_finally_run(scope) && scope_has_deadline_above(scope))) {
 			async_collector_report_live_reach(collector, scope_node);
 		}
 
@@ -1344,6 +1424,8 @@ static void scope_dispose_timer_fire(async_awaitable_t *target,
 
 	zend_object *error = async_new_exception(async_ce_cancellation, "Scope has been disposed due to timeout");
 
+	/* Before the scope's cancel, so the finally runs its close starts in idle child scopes are not stopped. */
+	scope_deadline_cancel_finally_runs(scope, error, false);
 	async_scope_cancel(scope, error, true, (scope->event.flags & ASYNC_SCOPE_F_DISPOSE_SAFELY) != 0);
 }
 
@@ -1364,8 +1446,11 @@ ZEND_METHOD(Async_Scope, disposeAfterTimeout)
 
 	async_scope_t *scope = THIS_SCOPE_OBJECT->scope;
 
-	/* No timer fires while async is not active, and in RSHUTDOWN's final release the reactor is gone. */
-	if (UNEXPECTED(!ZEND_ASYNC_IS_ACTIVE || scope == NULL || (scope->event.flags & ASYNC_SCOPE_F_CLOSED) ||
+	/* No timer fires while async is not active, and in RSHUTDOWN's final release the reactor is gone. A
+	 * closed scope's timer is kept only to stop the finally runs below it; a run's own scope, reachable
+	 * through a stand-in, takes none, since its fire would stop the run's handlers. */
+	if (UNEXPECTED(!ZEND_ASYNC_IS_ACTIVE || scope == NULL || scope_is_finally_run(scope) ||
+				   ((scope->event.flags & ASYNC_SCOPE_F_CLOSED) && !scope_has_finally_run_below(scope)) ||
 				   (scope->coroutines.length == 0 && scope->child_scopes.length == 0))) {
 		return;
 	}

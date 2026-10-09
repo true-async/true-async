@@ -620,8 +620,12 @@ bool async_finally_handlers_start(HashTable *finally_handlers, async_scope_t *sc
 
 	ZVAL_ARR(&handlers, finally_handlers);
 
+	async_scope_t *const run_scope = async_scope_new(scope);
+
+	run_scope->event.flags |= ASYNC_SCOPE_F_FINALLY_RUN;
+
 	finally_run_t *run = (finally_run_t *) async_iterator_new(
-			&handlers, NULL, NULL, finally_handler_call, async_scope_new(scope), 0, true, sizeof(finally_run_t));
+			&handlers, NULL, NULL, finally_handler_call, run_scope, 0, true, sizeof(finally_run_t));
 
 	/* The run takes the caller's reference; a refusal hands it back by forgetting it. */
 	GC_DELREF(finally_handlers);

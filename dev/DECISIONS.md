@@ -1905,3 +1905,16 @@ stack options were shown with the code).
 - 2026-10-09: a channel's queues stay arrays with linear remove, O(N^2) for N leaving waiters, as TrueAsync's
   (`channel.c:286-294`). Why: Edmond, 06:40, «нет не стоит, я думаю это очень редкий кейс»; slow only past
   tens of thousands of waiters on one channel (`SECURITY.md`, 2026-10-09 Accepted).
+- 2026-10-09 S9.23: a finally handler that has started is stopped by no scope cancel, first, repeated or an
+  ancestor's, nor by the error route of its target's scope; only a dispose timer's fire (and exit, graceful
+  shutdown, the deadlock resolution, the collector's cancel policy, a `cancel()` of its worker's own object)
+  stops it. Why: Edmond 06:50, «согласен именно так и нужно! отдельный флаг для особого Scope, который человек
+  поставить не может»; before, whether the handler survived depended on whether its scope was cancelled before
+  the handler started (a member that returned by itself, then `cancel()`: the handler's wait threw). A
+  departure from TrueAsync (`scope.c:1021-1036`); `dev/plans/S9-scope.md` section 13.
+- 2026-10-09 `scope/117-finally_error_with_cancelled_handler.phpt` (ours, S9.6; `changed:2026-10-09`) cancels
+  its waiting handler with `disposeAfterTimeout(1)` instead of `cancel()`, and the handler waits 100 000 ms
+  instead of 50. Why: since S9.23 `cancel()` no longer reaches a running handler; the deadline keeps the
+  test's case, a cancellation among the handlers' errors, now "Scope has been disposed due to timeout" (the
+  S9.23 code Critic: a 50 ms wait could end before the timer fired under load), and the main waits on a flag
+  the throwing handler sets instead of `delay(20)`.

@@ -542,8 +542,13 @@ made under a cancelled scope after its cancel.
 
 S9.22 done 2026-10-09 (Edmond 06:38): a dropped `recvAsync()` Future and a parked waiter's abort disarm the
 channel's timer through `channel_timer_disarm_if_idle()` when its side starves no more (`channel/141`); the
-queues stay arrays (Edmond 06:40). Next is S9.23 (Edmond 06:50): a running finally handler outlives every
-cancel, only a deadline stops it; design in `dev/plans/S9-scope.md` section 13, Critic before the code.
+queues stay arrays (Edmond 06:40).
+
+S9.23 done 2026-10-09 (PLAN result line; `dev/plans/S9-scope.md` section 13): `ASYNC_SCOPE_F_FINALLY_RUN` on a
+finally run's scope from its start to its last worker's leave; the cascades and the error route skip it, and
+a dispose timer's fire cancels the runs below it (`scope_deadline_cancel_finally_runs()`). Open for Edmond:
+a run that starts after the deadline fired (asked), a handler that catches the deadline and waits again, and
+a coroutine a handler left running under a cancelled scope.
 
 ## S10
 

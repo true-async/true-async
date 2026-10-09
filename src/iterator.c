@@ -88,6 +88,8 @@ static void iterator_release_coroutine(async_iterator_t *iterator, async_corouti
 
 	iterator->active_coroutines = 0;
 	iterator->state = ASYNC_ITERATOR_FINISHED;
+	/* The leaving worker still keeps the scope alive here. */
+	async_scope_finally_run_end(iterator->scope);
 	iterator_end_worker(iterator, worker, has_run);
 }
 

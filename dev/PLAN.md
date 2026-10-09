@@ -87,9 +87,16 @@ Waiting for Edmond's call; nothing here is being worked on.
   scope's own second cancel wait for its coroutines too? Edmond's call.
 - A child scope made under a cancelled scope after its cancel (the re-check Critic of S9.20): the scope's
   second cancel closes the scope and skips the child, whose coroutines run on, as TrueAsync's; so does a
-  grandchild made under a cancelled child that still unwinds. Cancelling such a child must leave out a
-  finally handler's run scope, which is never cancelled and whose handler the cancel would stop
-  (`scope/140`); that needs a mark on the run scope. Edmond's call.
+  grandchild made under a cancelled child that still unwinds, and a coroutine a finally handler spawned and
+  left running once its run ended (the S9.23 code Critic), which the deadline does not reach either. Since
+  S9.23 a finally run's scope carries `ASYNC_SCOPE_F_FINALLY_RUN`, so cancelling such a child no longer stops
+  a running handler (`scope/140`). Edmond's call.
+- A finally run that starts after its scope's deadline fired (the S9.23 design Critic): a member the fire
+  cancelled unwinds and only then starts its handlers, which nothing bounds; bounding it needs the scope to
+  remember that its deadline passed (asked 2026-10-09).
+- A handler that catches the deadline's cancellation and waits again outlives one fire (the S9.23 design
+  Critic); a second `disposeAfterTimeout()` stops it (`scope/150`), and D16's exit repeats an uncatchable one.
+  Edmond's call.
 - Fiber stacks on Windows (the Critic on `scope/058`): `zend_fiber_stack_allocate()` commits the
   whole 2 MB stack (`VirtualAlloc(MEM_COMMIT)`), as TrueAsync's core and PHP's `Fiber` do, so 20 000
   suspended coroutines need about 40 GB of commit; `collector/064` skips on Windows, and `scope/058`
@@ -1137,6 +1144,23 @@ Active: none; layer 3 done, the next layer needs its plan agreed with Edmond
         fixes: debug 1415 PASS, 14 SKIP, 17 XFAIL; ASAN 1390 PASS, 40 SKIP, 16 XFAIL; 0 unexpected on both.
         After them: `channel/`, `await/` and `collector/` pass on debug (357) and ASAN (356, 1 SKIP), and 30
         fuzz seeds over `channel/141` fail none.
+
+- [x] S9.23 A running finally handler outlives every scope cancel; only a deadline stops it.
+      done: the shield and the deadline built with tests; Critic on the design, the code and the fixes
+      tier: T2 · role: Critic
+      handoff: done 2026-10-09: Edmond 06:50 ("a separate flag for a special Scope, which a person cannot
+        set"); design in `dev/plans/S9-scope.md` section 13, departure section 9 item 29.
+        `ASYNC_SCOPE_F_FINALLY_RUN` on a finally run's scope, from its start to its last worker's leave
+        (`async_scope_finally_run_end()`); every scope cancel and the error route skip it,
+        `async_scope_cancel()` of a flagged scope returns, and a dispose timer's fire cancels every coroutine
+        of the runs below it, never safely, closing them; a close keeps the timer while a run is below. Own
+        tests `scope/142`-`157`; `scope/117` (ours, `changed:2026-10-09`) stops its handler with the deadline.
+        Open for Edmond (PLAN open questions): a finally run that starts after the deadline fired, a handler
+        that catches the deadline and waits again, and a coroutine a handler left running under a cancelled
+        scope. Critics: two on the design, one on the code, a re-check, two quality Critics. On CORE_REF
+        77dbfc061f3: debug 1430 PASS, 14 SKIP, 17 XFAIL; ASAN 1405 PASS, 40 SKIP, 16 XFAIL; 0 unexpected on
+        both; after the quality fixes `scope/`, `coroutine/`, `spawnWith/` and `collector/` pass on debug
+        (291) and ASAN (288, 3 SKIP), and 30 fuzz seeds over the 18 new and changed tests fail none.
 
 ## S10 — Beyond the RFCs  [in progress]
 
