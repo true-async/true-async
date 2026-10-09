@@ -1,0 +1,15 @@
+# S8: the IO hooks review's findings measured on our provider (dev/reviews/io-hooks-design-review.md, section 9).
+# A test of a defect our provider cannot close carries the core: tag of its dev/RFC-CHANGES.md entry.
+
+# fiber
+fiber/036-resume_after_deactivation.phpt  own:e370a9e081edfe28863dd8d8fe7fa2a347974d31f22a19f21c8127a29c4f94f4  core:24
+fiber/037-throw_after_deactivation.phpt  own:c309842a8570a064ec4429fbe1394cfea4c4cf98b70e4f49fdd05bbca8d3516a  core:24
+fiber/038-new_fiber_in_output_handler.phpt  own:e3301e37cb1de71cf2b51bbf9ae187981d00ba5ed4a809598c84204002379209
+
+# io_provider
+io_provider/036-fatal_error_with_main_parked_in_read.phpt  own:5e448795e54c5aa837233fa5acff9dfe7f30312d75d069599984e36aca0fa7a4  skip-on:*-win(Unix-only)
+io_provider/037-poll_queue_fatal_error_with_main_parked_in_read.phpt  own:653a42c7958ae1f07f58b08c00b64801ac5e274d4da4647460222fd331dcfeb9  skip-on:*-win(Unix-only)
+io_provider/038-bailout_in_tick_of_main_parked_in_read.phpt  own:da423dc1473afb835c05d2835bf4c679ac4e1e90c77066be5604455d30dd3896  skip-on:*-win(Unix-only)
+io_provider/039-poll_queue_bailout_in_tick_of_main_parked_in_read.phpt  own:1e789b8c2ebbe1af64181633e427def28c8cfc0639b2a5d3fa2f770b88c86af4  skip-on:*-win(Unix-only)
+io_provider/040-coroutine_parked_in_read_to_the_request_end.phpt  own:b70bef1a58e34e2a51d63f3e822603635b41478773bf3c10da20ef1ffd32cdb3  skip-on:*-win(Unix-only)
+io_provider/041-poll_queue_coroutine_parked_in_read_to_the_request_end.phpt  own:5e99c3eb09c882ffa84d82c711ce3275840708dfb872bb5516e572f5dff4aa43  skip-on:*-win(Unix-only)

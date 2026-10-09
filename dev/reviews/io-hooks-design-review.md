@@ -630,3 +630,26 @@ Reference: TrueAsync and its tests (`ext/async/tests`).
   which TrueAsync does not provide today.
 - Unsupported answered by a provider falls back to the core's synchronous wait, which matches what a
   scheduler needs in its own context.
+
+## 9. Outcomes on a real provider (S8)
+
+Each finding run against the extension's own provider (`src/io_provider.c`) on the pinned core
+(`dev/WORKFLOW.md`, "Pinned core"), on the debug and the ASAN builds, over the Ring and over the Poll
+queue where the finding depends on the queue. **Reproduced**: a script or a test showed the defect
+today; **not reproduced**: the provider closes it, and the test that shows that is named;
+**not expressible**: the case cannot be built against this provider, with the reason.
+
+| Item | Date, core | Outcome | Evidence |
+|---|---|---|---|
+| M12 | 2026-10-09, `3aa1cd120f4` | not reproduced, on the Ring and on the Poll queue, for a coroutine and for main: every path that unwinds a parked `run()` aborts its wait before other code runs on that stack (the bailout transfer inside `scheduler_suspend()`; a bailout raised on the parked stack, through the finalize; main through `main_coroutine_finish()`), and the request's end detaches the wait of a coroutine a bailout left parked before it frees the stack without unwinding it (U6, `async_scheduler_request_shutdown()`). The abort then reads a heap copy of the op (`dev/plans/S6.md` 3.2), not the frame; no test shows what the copy alone prevents. What stays: the parked stream remains frozen for the shutdown functions (`RFC-CHANGES.md` 8). Not covered: a userland `Io\Hooks\set_hooks()` provider on our scheduler gets the frame op from the core's bridge, so the hooks-side rule of section 6 item 2 still applies to it | `io_provider/007`, `017` (a coroutine), `036`-`039` (main, both paths, Ring and Poll queue), `011` (main in a shutdown function); `040`, `041` (U6) run clean on ASAN, though a mutant without the request end's detach passes them too |
+| M13 | 2026-10-09, `3aa1cd120f4` | not reproduced: `run()` answers Unsupported once async is off (`dev/plans/S6.md` 3.1, `src/io_provider.c`), whichever module's RSHUTDOWN runs first, so IO in an output handler and in a session write runs synchronously; `delay()` returns at once and the other `Async\` calls refuse | `io_provider/006`, `016`, `reactor/024`, `scheduler/079` |
+
+On the scheduler side (section 6), item 1 holds for this extension: a bailout during a pass unwinds
+the parked coroutines through their suspension points, and a bailout out of main's finish in the last
+`from_main` call leaves them parked to the request's end, which detaches their waits before it frees
+their stacks. Item 2 holds too: the deactivation leaves no current coroutine (`ZEND_ASYNC_DEACTIVATE`,
+`Zend/zend_async_API.h`), and `scheduler_suspend()` refuses a NULL current coroutine with an Error.
+The one core caller that reaches the scheduler after the deactivation fails before that refusal:
+`Fiber::resume()` or `Fiber::throw()` in an output handler, for a fiber whose coroutine a bailout left
+parked, enqueues the coroutine and asserts a current coroutine in `zend_fiber_await()`, an assertion
+failure in a debug build (`fiber/036`, `037`; `RFC-CHANGES.md` 24).

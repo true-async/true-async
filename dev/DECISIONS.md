@@ -2174,3 +2174,8 @@ stack options were shown with the code).
   `context/044-teardown_releases_coroutine_values_last.phpt` (ours, S9.13; `changed:2026-10-09`)
   checked that coroutine's argument released at the teardown; it now checks that the coroutine runs
   and its argument is released when it ends, before the teardown (Edmond: «код меняй»).
+- 2026-10-09 S8.1: no guard in `ZEND_ASYNC_SUSPEND()` after the deactivation and no rule for
+  unwinding on a bailout (the review's scheduler items 1 and 2); `Fiber::resume()` and `throw()` of an
+  adopted fiber refuse once async is off instead (`RFC-CHANGES.md` 24, step S8.1a). Why: our scheduler
+  unwinds or detaches every parked wait and refuses a suspend without a current coroutine; only the
+  fiber methods reach it after the deactivation, and they assert first (review section 9).

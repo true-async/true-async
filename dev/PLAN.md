@@ -746,7 +746,7 @@ Active: none; stage closed with S6.10
         timing, which load on Windows broke). PR texts for bukka and libior/ior in
         `/mnt/project-files/notes/s6-10/`, Edmond opens them. Closes S6.
 
-## S7 — Async object collector  [ ]
+## S7 — Async object collector  [x]
 
 Goal: find coroutines that can never wake and the async objects only they keep alive: partial
 deadlocks (a cycle of waits while other coroutines run), a Future nobody can complete, a channel
@@ -873,7 +873,61 @@ Active: none; the channel case came with S9.19 (`channel/125`, `126`), the fuzz 
 Goal: the review's findings measured on a real provider; requests to both RFCs written.
 Done when: B1, B2, B3, M1, M4, M10, M12, M13 each have an outcome (reproduced, not reproduced,
 not expressible with why); `RFC-CHANGES.md` complete; the review updated.
-Tier: T1.
+Tier: T1. Roles: Critic after every step.
+Tests: interleaved
+Base: d783cea
+Active: S8.1a
+
+Each item is run against our provider on the pinned core, on `pocs-dbg` and `pocs-asan`, over the
+Ring and over the Poll queue (`TrueAsync\Test\` hook) where the item depends on the queue. Its
+outcome goes to a new section 9 of `dev/reviews/io-hooks-design-review.md`: reproduced, not
+reproduced (what closes it), or not expressible (why), with the script or test that showed it. A
+reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>` with its
+`RFC-CHANGES.md` entry, as S6.7 did for B1; a defect our provider closes gets a test that checks it.
+
+- [x] S8.1 M12 and M13: a bailout while a coroutine is parked in `run()`, and IO after the
+      deactivation, against the op on the heap and the suspend predicate (`dev/plans/S6.md` 3.1,
+      3.2); the scheduler side of both (review section 6, scheduler items 1 and 2) checked in
+      `async-core`.
+      done: both outcomes in section 9 with the tests that show them; an `RFC-CHANGES.md` entry for
+        each scheduler-side change still missing in the core
+      tier: T1 · role: Critic
+      handoff: 2026-10-09 on core `3aa1cd120f4`: M12 and M13 do not reproduce (review section 9);
+        the core's `Fiber::resume()` and `throw()` assert after the deactivation (`RFC-CHANGES.md`
+        24). Tests `io_provider/036`-`041`, `fiber/036`-`038` (036, 037 `core:24`) in
+        `tests/lists/S8.txt`; lanes `pocs-dbg` and `pocs-asan`: 14 of 14 S8.1 and related tests PASS.
+- [ ] S8.1a `Fiber::resume()` and `Fiber::throw()` of an adopted fiber refuse once async is off, on
+      `async-core` (`RFC-CHANGES.md` 24), with the core update that brings it.
+      done: `fiber/036`, `037` pass without their `core:` tag and `fiber/038` still passes, on debug
+        and ASAN; the core suites rediffed
+      tier: T1 · role: Critic
+- [ ] S8.2 B1 and B2: each scenario of B1 (a writer beside a parked reader, several acceptors on
+      one listener, `fclose()`, `stream_socket_shutdown()` and `proc_close()` of a stream another
+      coroutine waits on, `stream_select()` beside a read of a member, two writers on one pipe) and
+      each path of B2 (`$db->close()` beside a parked query, the query cancelled, a bailout while it
+      is parked), on both queues.
+      done: an outcome per scenario and per path; the requests in `RFC-CHANGES.md` for what
+        reproduces; entry 12 names every test it waits for
+      tier: T1 · role: Critic
+- [ ] S8.3 B3 and M1: a cancelled read whose completion already happened (a socket and a pipe on
+      the Ring and the Poll queue; a regular file with `PHP_IO_HOOKS_F_FILES` on in a test-hook
+      build), an `fwrite()` cancelled after its bytes went out, a readiness followed by a
+      cancellation in the wrapper ladders.
+      done: outcomes in section 9; whether the core's commit-on-settle lets the provider turn
+        `F_FILES` on (`dev/plans/S6.md` section 6), and if it does, a step that turns it on; the
+        requests in `RFC-CHANGES.md`
+      tier: T1 · role: Critic
+- [ ] S8.4 M4 and M10: a connect whose first address refuses and whose second accepts, on both
+      queues; curl's `remove()` after libcurl closed the socket; a contended `flock()` with the lock
+      holder parked on a timer.
+      done: outcomes in section 9; M4's request in `RFC-CHANGES.md` if it reproduces; entry 11
+        names its tests
+      tier: T1 · role: Critic
+- [ ] S8.5 `RFC-CHANGES.md` against the review: every item of the review's section 6 (both lists)
+      and every section 5 defect a script on our provider shows has an entry or a reason in section
+      9; the review's summary states what holds on the core each row of section 9 names.
+      done: no item of section 6 without an entry or a reason; the review's section 1 updated
+      tier: T1 · role: Critic
 
 ## S9 — Higher layers, one at a time  [in progress]
 

@@ -447,3 +447,26 @@ are a later php-src PR of ours (PLAN Fog). The helpers stay `poll()` (DECISIONS 
 
 Waits for it: `socket/004` stays in `tests/lists/S10.excluded` (it needs the network and cannot show a
 blocking resolution); no listed test covers ftp or pgsql.
+
+## 24. Scheduler API: Fiber::resume() and Fiber::throw() refuse once async is off
+
+State: drafted 2026-10-09 (S8.1), the core commit is step S8.1a. PR: none.
+
+Need: a bailout out of main's finish in the last from_main call leaves the coroutines parked to the
+request's end (U6), an adopted fiber's included. `Fiber::resume()` or `Fiber::throw()` in an output
+handler, which runs after `ZEND_ASYNC_DEACTIVATE`, then enqueues the fiber's coroutine and calls
+`zend_fiber_await()` with no current coroutine (`Zend/zend_fibers.c:1554-1555`, `1591-1592`, `997`):
+an assertion failure in a debug build. A release build, read from the code and not run, leaves the
+coroutine in a run queue nobody drains and throws the scheduler's Error "There is no coroutine to
+suspend", not a FiberError. The review's scheduler item 2 asks for a guard in `ZEND_ASYNC_SUSPEND()`;
+our scheduler refuses there already, and the fiber methods are the one core caller that reaches it.
+
+Request: at the top of `Fiber::resume()` and `Fiber::throw()`, beside `zend_fiber_switch_refused()`,
+and only for a fiber with a coroutine (`fiber->coroutine != NULL`), throw the FiberError "Cannot
+switch fibers in current execution context" while `!ZEND_ASYNC_IS_ACTIVE`. A plain fiber stays
+untouched: after the deactivation every new fiber is one (`zend_fiber_adopt()`), and output and
+session handlers may use it.
+
+Waits for it: `fiber/036`, `037` (`core:24` in `tests/lists/S8.txt`); `fiber/038` checks that a plain
+fiber in an output handler keeps working.
+

@@ -604,3 +604,11 @@ reporter coroutine. Core-side changes in the extension: `async_scope_cancel_rema
   four S10.5 entries in `DECISIONS.md` marked "not yet confirmed by Edmond".
 
 The research reports behind the note: `/mnt/project-files/notes/s10/` (project files).
+
+## S8
+
+- S8.1 closed 2026-10-09 (PLAN result line): M12 and M13 do not reproduce on our provider; the
+  outcomes go to section 9 of `dev/reviews/io-hooks-design-review.md`, one row per item. Found on the
+  way: `Fiber::resume()` after the deactivation asserts (`RFC-CHANGES.md` 24); its core fix is S8.1a,
+  which needs the coordinator's go for the core slot. S8.2 (B1, B2) is measured already: a patch of
+  its tests and texts is `/mnt/project-files/s8/S8.2-wip.patch` (project files).
