@@ -19,7 +19,6 @@
 #include "zend_interfaces.h"
 #include "php_true_async.h"
 #include "await.h"
-#include "channel.h"
 #include "collector.h"
 #include "coroutine.h"
 #include "exceptions.h"
@@ -34,7 +33,11 @@
 
 async_awaitable_t *async_await_awaitable_of(zend_object *object)
 {
-	async_awaitable_t *awaitable = async_awaitable_from_object(object);
+	/* Every caller's parameter is Completable, whose classes are these; any other awaitable would be read as a
+	 * Future's event. */
+	ZEND_ASSERT(object->ce == async_ce_coroutine || object->ce == async_ce_future || object->ce == async_ce_timeout);
+
+	async_awaitable_t *const awaitable = async_awaitable_from_object(object);
 
 	if (UNEXPECTED(awaitable == NULL)) {
 		zend_throw_exception(async_ce_async_exception, "Future has no state", 0);
@@ -48,8 +51,6 @@ void async_awaitable_addref(async_awaitable_t *awaitable)
 {
 	if (ASYNC_AWAITABLE_IS_COROUTINE(awaitable)) {
 		GC_ADDREF(&((async_coroutine_t *) awaitable)->std);
-	} else if (UNEXPECTED(ASYNC_AWAITABLE_IS_CHANNEL(awaitable))) {
-		GC_ADDREF(&((async_channel_t *) awaitable)->std);
 	} else {
 		((async_event_t *) awaitable)->ref_count++;
 	}
@@ -61,8 +62,6 @@ void async_awaitable_release(async_awaitable_t *awaitable)
 		OBJ_RELEASE(&((async_coroutine_t *) awaitable)->std);
 	} else if (ASYNC_AWAITABLE_IS_TIMEOUT(awaitable)) {
 		async_timeout_release((async_timeout_event_t *) awaitable);
-	} else if (UNEXPECTED(ASYNC_AWAITABLE_IS_CHANNEL(awaitable))) {
-		OBJ_RELEASE(&((async_channel_t *) awaitable)->std);
 	} else {
 		async_future_event_release((async_future_event_t *) awaitable);
 	}
@@ -114,12 +113,6 @@ static bool await_outcome(async_awaitable_t *awaitable, zval **result, zend_obje
 		*exception = coroutine->coroutine.exception;
 	} else if (ASYNC_AWAITABLE_IS_TIMEOUT(awaitable)) {
 		*exception = ((const async_timeout_event_t *) awaitable)->exception;
-	} else if (UNEXPECTED(ASYNC_AWAITABLE_IS_CHANNEL(awaitable))) {
-		/* A new one per waiter, as TrueAsync's recvAsync: a kept one would gather each wait's errors as its
-		 * previous, and its trace would hold the channel. */
-		*exception = async_channel_close_exception((const async_channel_t *) awaitable);
-
-		return true;
 	} else {
 		async_future_event_t *const future = (async_future_event_t *) awaitable;
 
@@ -250,17 +243,16 @@ static void await_collector_check_wake(async_coroutine_t *waiter, const async_aw
 #endif
 
 /* The token's notify, or the teardown of a token whose notify stopped at a throwing callback before
- * this record: the teardown passes no outcome, which the token holds; a channel's close passes none, and its
- * outcome is built here. */
+ * this record: the teardown passes no outcome, which the token holds. */
 static void
 token_record_wake(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
 {
 	(void) result;
 
-	async_coroutine_event_callback_t *record = (async_coroutine_event_callback_t *) callback;
+	async_coroutine_event_callback_t *const record = (async_coroutine_event_callback_t *) callback;
 	zend_object *own_exception = NULL;
 
-	if (UNEXPECTED(record->event == NULL || ASYNC_AWAITABLE_IS_CHANNEL(target))) {
+	if (UNEXPECTED(record->event == NULL)) {
 		zval *own_result;
 
 		await_outcome(target, &own_result, &own_exception);
@@ -293,10 +285,6 @@ static zend_string *token_record_info(const async_coroutine_event_callback_t *re
 		return zend_string_init(ZEND_STRL("cancellation: timeout"), 0);
 	}
 
-	if (ASYNC_AWAITABLE_IS_CHANNEL(record->event)) {
-		return zend_string_init(ZEND_STRL("cancellation: channel"), 0);
-	}
-
 	return zend_string_init(ZEND_STRL("cancellation: future"), 0);
 }
 
@@ -306,15 +294,13 @@ static zend_string *token_record_info(const async_coroutine_event_callback_t *re
 static void await_record_report_held_target(const async_coroutine_event_callback_t *record,
 											async_collector_t *collector)
 {
-	async_awaitable_t *target = record->event;
+	async_awaitable_t *const target = record->event;
 
 	if (EXPECTED(ASYNC_AWAITABLE_IS_COROUTINE(target))) {
 		async_collector_report_target(collector, &((async_coroutine_t *) target)->std, true);
 	} else if (UNEXPECTED(ASYNC_AWAITABLE_IS_TIMEOUT(target))) {
 		/* A Timeout fires by itself. */
 		async_collector_report_outside(collector);
-	} else if (UNEXPECTED(ASYNC_AWAITABLE_IS_CHANNEL(target))) {
-		async_channel_collector_target(collector, (async_channel_t *) target, true);
 	} else {
 		async_future_collector_target(collector, (async_future_event_t *) target);
 	}
@@ -633,10 +619,6 @@ static zend_string *await_record_info(const async_coroutine_event_callback_t *re
 		return zend_strpprintf(0, "await: coroutine #%u", ((const async_coroutine_t *) record->event)->std.handle);
 	}
 
-	if (ASYNC_AWAITABLE_IS_CHANNEL(record->event)) {
-		return zend_string_init(ZEND_STRL("await: channel"), 0);
-	}
-
 	return zend_string_init(ZEND_STRL("await: future"), 0);
 }
 
@@ -647,25 +629,22 @@ static const async_wait_kind_t async_wait_kind_trigger = {
 };
 
 /* A trigger completed, or its teardown fired the record a throwing callback left; the teardown
- * passes no outcome, which the trigger holds; a channel's close passes none, and its outcome is built here. */
+ * passes no outcome, which the trigger holds. */
 static void
 trigger_record_wake(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
 {
-	await_trigger_t *trigger = (await_trigger_t *) callback;
-	await_context_t *context = trigger->context;
-	const bool is_teardown = trigger->record.event == NULL;
+	await_trigger_t *const trigger = (await_trigger_t *) callback;
+	await_context_t *const context = trigger->context;
 	zend_object *own_exception = NULL;
 
-	if (EXPECTED(!is_teardown)) {
-		async_wait_record_unlink(&trigger->record);
-	}
-
-	if (UNEXPECTED(is_teardown || ASYNC_AWAITABLE_IS_CHANNEL(target))) {
+	if (UNEXPECTED(trigger->record.event == NULL)) {
 		zval *own_result;
 
 		await_outcome(trigger->target, &own_result, &own_exception);
 		result = own_result;
 		exception = own_exception;
+	} else {
+		async_wait_record_unlink(&trigger->record);
 	}
 
 	if (exception != NULL) {
@@ -783,13 +762,13 @@ static async_awaitable_t *await_trigger_of(zval *item, const async_coroutine_t *
 
 	const zend_class_entry *const item_class = Z_TYPE_P(item) == IS_OBJECT ? Z_OBJCE_P(item) : NULL;
 
-	if (UNEXPECTED(item_class != async_ce_coroutine && item_class != async_ce_future &&
-				   item_class != async_ce_channel)) {
-		zend_throw_exception(async_ce_async_exception, "Expected item to be an Async\\Awaitable object", 0);
+	/* The Completable classes except Timeout, refused above. */
+	if (UNEXPECTED(item_class != async_ce_coroutine && item_class != async_ce_future)) {
+		zend_throw_exception(async_ce_async_exception, "Expected item to be an Async\\Completable object", 0);
 		return NULL;
 	}
 
-	async_awaitable_t *awaitable = async_await_awaitable_of(Z_OBJ_P(item));
+	async_awaitable_t *const awaitable = async_await_awaitable_of(Z_OBJ_P(item));
 
 	if (UNEXPECTED(awaitable == (const async_awaitable_t *) waiter)) {
 		zend_throw_error(NULL, "Cannot await a coroutine from within itself");
@@ -1553,7 +1532,7 @@ ZEND_FUNCTION(Async_await_any_or_fail)
 	ZEND_PARSE_PARAMETERS_START(1, 2)
 		Z_PARAM_ZVAL(items)
 		Z_PARAM_OPTIONAL
-		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_awaitable)
+		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_completable)
 	ZEND_PARSE_PARAMETERS_END();
 
 	const await_options_t options = { .count = 1 };
@@ -1579,7 +1558,7 @@ ZEND_FUNCTION(Async_await_first_success)
 	ZEND_PARSE_PARAMETERS_START(1, 2)
 		Z_PARAM_ZVAL(items)
 		Z_PARAM_OPTIONAL
-		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_awaitable)
+		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_completable)
 	ZEND_PARSE_PARAMETERS_END();
 
 	const await_options_t options = { .count = 1, .collect_errors = true, .wait_for_rest = true };
@@ -1611,7 +1590,7 @@ ZEND_FUNCTION(Async_await_all_or_fail)
 	ZEND_PARSE_PARAMETERS_START(1, 3)
 		Z_PARAM_ZVAL(items)
 		Z_PARAM_OPTIONAL
-		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_awaitable)
+		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_completable)
 		Z_PARAM_BOOL(preserve_key_order)
 	ZEND_PARSE_PARAMETERS_END();
 
@@ -1643,7 +1622,7 @@ ZEND_FUNCTION(Async_await_all)
 	ZEND_PARSE_PARAMETERS_START(1, 4)
 		Z_PARAM_ZVAL(items)
 		Z_PARAM_OPTIONAL
-		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_awaitable)
+		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_completable)
 		Z_PARAM_BOOL(preserve_key_order)
 		Z_PARAM_BOOL(fill_null)
 	ZEND_PARSE_PARAMETERS_END();
@@ -1681,7 +1660,7 @@ ZEND_FUNCTION(Async_await_any_of_or_fail)
 		Z_PARAM_LONG(count)
 		Z_PARAM_ITERABLE(items)
 		Z_PARAM_OPTIONAL
-		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_awaitable)
+		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_completable)
 		Z_PARAM_BOOL(preserve_key_order)
 	ZEND_PARSE_PARAMETERS_END();
 
@@ -1716,7 +1695,7 @@ ZEND_FUNCTION(Async_await_any_of)
 		Z_PARAM_LONG(count)
 		Z_PARAM_ZVAL(items)
 		Z_PARAM_OPTIONAL
-		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_awaitable)
+		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_completable)
 		Z_PARAM_BOOL(preserve_key_order)
 		Z_PARAM_BOOL(fill_null)
 	ZEND_PARSE_PARAMETERS_END();

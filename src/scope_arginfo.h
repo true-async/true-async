@@ -1,5 +1,5 @@
 /* This is a generated file, edit scope.stub.php instead.
- * Stub hash: 8aa3811fd7247693a82cda84a0b4a1423ece277e */
+ * Stub hash: e5c9bee1bccaa00fe05b2fbc84212729d89f5367 */
 
 #include "zend_attributes.h"
 
@@ -40,12 +40,12 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_Scope_cancel, 0, 0, 
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_Scope_awaitCompletion, 0, 1, IS_VOID, 0)
-	ZEND_ARG_OBJ_INFO(0, cancellation, Async\\Awaitable, 0)
+	ZEND_ARG_OBJ_INFO(0, cancellation, Async\\Completable, 0)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_Scope_awaitAfterCancellation, 0, 0, IS_VOID, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, errorHandler, IS_CALLABLE, 1, "null")
-	ZEND_ARG_OBJ_INFO_WITH_DEFAULT_VALUE(0, cancellation, Async\\Awaitable, 1, "null")
+	ZEND_ARG_OBJ_INFO_WITH_DEFAULT_VALUE(0, cancellation, Async\\Completable, 1, "null")
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_Scope_isFinished, 0, 0, _IS_BOOL, 0)

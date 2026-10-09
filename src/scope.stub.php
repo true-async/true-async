@@ -67,7 +67,7 @@ final class Scope implements ScopeProvider
      * made the coroutines zombies first; OperationCanceledException when `$cancellation` completes
      * first. Refused from a coroutine of the scope or of its children.
      */
-    public function awaitCompletion(Awaitable $cancellation): void {}
+    public function awaitCompletion(Completable $cancellation): void {}
 
     /**
      * Waits on a cancelled scope until no coroutine of it or of its child scopes is left, zombies
@@ -82,7 +82,7 @@ final class Scope implements ScopeProvider
      * OperationCanceledException when `$cancellation` completes first. Refused for a scope that is neither cancelled nor closed, and,
      * unless it returns at once, from a coroutine of the scope or of its children.
      */
-    public function awaitAfterCancellation(?callable $errorHandler = null, ?Awaitable $cancellation = null): void {}
+    public function awaitAfterCancellation(?callable $errorHandler = null, ?Completable $cancellation = null): void {}
 
     /** True once the scope is cancelled, closed or gone, or no coroutine of it or of its children runs. */
     public function isFinished(): bool {}

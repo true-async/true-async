@@ -570,6 +570,10 @@ completion, have ended and the unhandled errors are reported. Probes `d1.php`-`d
 (`await_*` items and tokens `Completable` only), then S9.28; the finally run's end callback of S9.28 builds on
 S9.25's release point.
 
+S9.27 done 2026-10-09: `await_*` items and every cancellation token take `Completable` only, so a channel is
+neither; `await_*` over `recvAsync()` Futures waits on channels. The channel's code as an awaitable is gone
+(DECISIONS 2026-10-09 S9.27). S9.txt's layer 4 block starts with the step's own tests. Next: S9.28.
+
 ## S10
 
 - S10.1 closed 2026-10-08: `dev/plans/S10.md` approved by Edmond (17:40) except output buffers, which

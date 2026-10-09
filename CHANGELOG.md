@@ -92,8 +92,11 @@ can see goes here; tests, tools and CI are in the git history.
   naming the reason, while `recv()` still gets the values left.
   The buffer grows as values arrive, within `memory_limit` ([S9](dev/plans/S9-channel.md)).
 - `Async\Channel::recvAsync()` returns a `Future` of the next value; `foreach` and `getIterator()`
-  receive until the channel is closed, an explicit `close()` ending the loop quietly; a channel is an
-  `await_*` item and a cancellation token that completes when it closes ([S9](dev/plans/S9-channel.md)).
+  receive until the channel is closed, an explicit `close()` ending the loop quietly
+  ([S9](dev/plans/S9-channel.md)).
+- `await_*` items and every cancellation token take a `Completable` only: a `Channel` is refused, and
+  `await_*` over `recvAsync()` Futures waits on channels; `timeout()` is declared to return `Completable`
+  ([S9](dev/plans/S9-taskgroup.md)).
 - `Async\Channel`'s `noProducerTimeout` and `noConsumerTimeout` close a channel that waits too long; a
   channel closes when the scope it was made in is cancelled, takes an error, is disposed or is freed, and
   the partial deadlock collector finds coroutines parked on it ([S9](dev/plans/S9-channel.md)).

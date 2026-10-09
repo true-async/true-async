@@ -1,5 +1,5 @@
 --TEST--
-await_*() refuses an item that is not an awaitable, in an array and in a Traversable
+await_*() refuses an item that is not Completable, in an array and in a Traversable
 --FILE--
 <?php
 
@@ -25,5 +25,5 @@ try {
 
 ?>
 --EXPECT--
-array: Expected item to be an Async\Awaitable object
-traversable: Expected item to be an Async\Awaitable object
+array: Expected item to be an Async\Completable object
+traversable: Expected item to be an Async\Completable object

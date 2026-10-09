@@ -1,5 +1,5 @@
 --TEST--
-Channel: close() wakes each coroutine parked in await_* on the channel with a ChannelException of its own
+Channel: close() wakes each coroutine parked in await_* on a recvAsync() Future with a ChannelException of its own
 --FILE--
 <?php
 
@@ -15,11 +15,12 @@ $waiter = function () use ($channel, &$parked) {
     $parked++;
 
     try {
-        await_any_or_fail([$channel]);
+        await_any_or_fail([$channel->recvAsync()]);
     } catch (Async\ChannelException $exception) {
         return $exception;
     }
 };
+
 $first = spawn($waiter);
 $second = spawn($waiter);
 

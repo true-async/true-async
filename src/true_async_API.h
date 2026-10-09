@@ -231,7 +231,7 @@ void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *v
 
 /* Event flags at the positions of TrueAsync's fork (dev/plans/S3.md 3.7); bits 13-30 are an event
  * type's own. */
-/* A type tells its events apart by one top bit: 30 Timeout, 29 Channel. */
+/* Bit 30 marks a Timeout's event. */
 #define ASYNC_EVENT_F_CLOSED (1u << 0)            /* a one-shot event fired; a new waiter reads its outcome */
 #define ASYNC_EVENT_F_RESULT_USED (1u << 1)       /* somebody took the outcome */
 #define ASYNC_EVENT_F_EXC_CAUGHT (1u << 2)        /* somebody took the exception */

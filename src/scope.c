@@ -1739,7 +1739,7 @@ ZEND_METHOD(Async_Scope, awaitCompletion)
 	zend_object *cancellation;
 
 	ZEND_PARSE_PARAMETERS_START(1, 1)
-		Z_PARAM_OBJ_OF_CLASS(cancellation, async_ce_awaitable)
+		Z_PARAM_OBJ_OF_CLASS(cancellation, async_ce_completable)
 	ZEND_PARSE_PARAMETERS_END();
 
 	async_awaitable_t *token = async_await_awaitable_of(cancellation);
@@ -1851,7 +1851,7 @@ ZEND_METHOD(Async_Scope, awaitAfterCancellation)
 	ZEND_PARSE_PARAMETERS_START(0, 2)
 		Z_PARAM_OPTIONAL
 		Z_PARAM_FUNC_OR_NULL(error_handler, error_handler_cache)
-		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_awaitable)
+		Z_PARAM_OBJ_OF_CLASS_OR_NULL(cancellation, async_ce_completable)
 	ZEND_PARSE_PARAMETERS_END();
 
 	async_awaitable_t *token = NULL;

@@ -502,13 +502,15 @@ for the global deadlock. The fuzz oracle's call goes before each wake, as in the
   tokens of the six `await_*` (their ZPP, `await.c:1556`, `1582`, `1614`, `1646`, `1684`, `1719`),
   `Scope::awaitCompletion()` (`scope.c:1742`) and `Scope::awaitAfterCancellation()` (`scope.c:1854`) take
   `async_ce_completable`, and their stubs say `?Completable` (`Completable` for `awaitCompletion()`);
-  `timeout()` returns `Completable`. The channel stops being an
-  item and a token: the CHANNEL branches of `await.c` and the channel's item callbacks of S9.18 and S9.20 go
-  (`async_channel_close_exception()` stays for `recv()` and `recvAsync()`). Tests: `channel/100`, `103`, `111`,
-  `132`-`134` and `await/128` (the message) change with `changed:` and the DECISIONS line (each asserts the refusal, or moves to
-  `recvAsync()` Futures where it tests the close); `channel/067` stays (it awaits `recvAsync()` Futures).
-- S9.28 The list block for layer 4 in `tests/lists/S9.txt` (section 9), with `--XFAIL--` naming S9.28 or
-  S9.29; `src/task_group.c`, `task_group.h`, `task_group.stub.php`, `task_set.stub.php`: the structure, the
+  `timeout()` returns `Completable`. The channel stops being an item and a token: the CHANNEL branches of
+  `await.c` and the channel's item callbacks of S9.18 and S9.20 go (the closed channel's `ChannelException` of
+  `recv()` stays; S9.27 folded `async_channel_close_exception()` into `channel_throw_closed()`, its only caller
+  left). Tests: `channel/100`, `103`, `111`, `132`-`134` and `await/128` (the message) change with `changed:`
+  and the DECISIONS line (each asserts the refusal, or moves to `recvAsync()` Futures where it tests the
+  close); `channel/067` stays (it awaits `recvAsync()` Futures). The step's own tests open the layer 4 block of
+  `tests/lists/S9.txt`.
+- S9.28 The layer 4 block of `tests/lists/S9.txt` that S9.27 opened, extended (section 9), with `--XFAIL--` naming
+  S9.28 or S9.29; `src/task_group.c`, `task_group.h`, `task_group.stub.php`, `task_set.stub.php`: the structure, the
   constructor and its warning, `ASYNC_SCOPE_F_ZOMBIES_ALLOWED`, `spawn()`, `spawnWithKey()`, `trySpawn()`,
   `trySpawnWithKey()`, the queue and the drain, a task's end, results, errors and the HANDLED bit, the Futures
   of both classes and their collector sources, `close()`, `cancel()`, `dispose()`, the scope cancelled or
@@ -599,7 +601,9 @@ Each was Edmond's decision on 2026-10-09 (DECISIONS 2026-10-09, "S9 layer 4"), u
 26. **Internal: `Cannot spawn tasks on a completed TaskGroup` is not ported**: COMPLETED needs a seal, and the
     closed check comes first (`task_group.c:1430-1438`), so no call reaches it.
 27. **The `await_*` item message names `Completable`** (S9.27), since the check is `Completable` now;
-    TrueAsync's names `Awaitable`. `trySpawn()`'s and the `allowZombies()` warning's messages are new.
+    TrueAsync's names `Awaitable`. The narrowing itself is Edmond's (DECISIONS 2026-10-09 S9.26): TrueAsync
+    takes a channel as an item and a token, types the `await_*` tokens `?Awaitable` and `timeout()` `Awaitable`.
+    `trySpawn()`'s and the `allowZombies()` warning's messages are new.
 28. **A cancel leaves a coroutine whose body has returned alone** (section 2), so a task whose
     closure drops the group keeps its result.
 29. **No cancel marks an error handled** (section 3): an error nobody saw before `cancel()` or `dispose()` is
@@ -656,7 +660,8 @@ thousands of times (Edmond, 2026-10-09, on `channel/101`): volumes belong to the
 - S9.28 (a probe named here is the test's case, not its text; an item naming two cases is two tests):
   `g1.php` (two `all()` Futures), `g3.php` (two `joinNext()` Futures), `dispose()` refusing a later
   `spawn()`, `dispose()` starting no queued task, a group's `dispose()` closing a channel its scope owns (the
-  own variant of `channel/058`), `g7.php` (`await()` refused), `g22.php` (`await_all()` refused),
+  own variant of `channel/058`), `g7.php` (`await()` refused), `g22.php` (`await_all()` refused), a group as
+  the token of `await_all()` and of `Scope::awaitCompletion()` refused (S9.27's cases for a group),
   `g15.php`-`g16.php` (`cancel()` with queued tasks), `g10h.php` (no report after a caught `all()`), a
   rejected `race()` and a rejected `any()` read as received, a successful `race()` leaving a later failure
   unreported, a task added after it reported, `trySpawn()` with a free

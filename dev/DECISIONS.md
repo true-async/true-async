@@ -2065,3 +2065,21 @@ stack options were shown with the code).
   suspend, as destructors do elsewhere, and after an exit its error must not replace the exit; our probe
   ended the request ("The operation cannot be executed in the scheduler context"), TrueAsync's with "The
   scheduler cannot be started when is already enabled".
+- 2026-10-09 S9.27: `channel/100-channel_as_await_item.phpt` and `channel/111-channel_as_cancellation_token.phpt`
+  (ours, S9.18; `changed:2026-10-09`) assert the refusal of a channel item and token;
+  `channel/103-channel_close_gives_each_waiter_its_own_exception.phpt` drops its `await_*` outcome;
+  `channel/132-channel_closed_item_exception_per_await.phpt`,
+  `channel/133-channel_close_wakes_await_waiters_with_own_exceptions.phpt` and
+  `channel/134-channel_closed_item_previous_not_kept_across_waits.phpt` (ours, S9.20) await `recvAsync()` Futures;
+  `await/128-await_all_item_not_awaitable.phpt` (ours, S5) expects the message naming `Completable`. Why: the
+  2026-10-09 S9.26 entry, `await_*` items and tokens `Completable` only. `channel/100`'s `await()` case moved to
+  `channel/142`, one case per test.
+- 2026-10-09 S9.27, own choices: the item check stays a class compare (Coroutine, Future), the set of
+  `Completable` classes once `Timeout` is refused; the channel's type flag `ASYNC_CHANNEL_F_CHANNEL` and
+  `ASYNC_AWAITABLE_IS_CHANNEL()` go with their last readers; `await_outcome()` keeps the owned exception of S9.20, since
+  `async_await_token_completed()` hands out an owned one (a Timeout's is new per call);
+  `async_channel_close_exception()` folds back into `channel_throw_closed()`, its only caller; debug asserts in
+  `async_await_awaitable_of()` (a Coroutine, Future or Timeout) and in the channel's `free_obj` (an empty event
+  vector) stand where the channel's branches were; the step's own tests open S9.txt's layer 4 block, which S9.28
+  extends. Why: no code is left for a channel as an awaitable, and a non-Completable object that slipped past a
+  parameter would be read as a Future's event. The refusal of a group comes in S9.28 (note section 9).

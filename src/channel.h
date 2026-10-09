@@ -21,15 +21,8 @@
 /* Async\Channel (dev/plans/S9-channel.md): values passed between the coroutines of one thread through
  * a bounded buffer or a rendezvous slot, TrueAsync's channel on this extension's wait records. */
 
-/* Set on every channel event and on no other event: generic code tells a channel by it, as a Timeout by
- * ASYNC_TIMEOUT_F_TIMEOUT. */
-#define ASYNC_CHANNEL_F_CHANNEL (1u << 29)
 /* __construct() ran: a second one throws. */
 #define ASYNC_CHANNEL_F_CONSTRUCTED (1u << ASYNC_EVENT_F_TYPE_SHIFT)
-
-#define ASYNC_AWAITABLE_IS_CHANNEL(awaitable) \
-	((((const async_awaitable_t *) (awaitable))->flags & (ASYNC_AWAITABLE_F_EVENT | ASYNC_CHANNEL_F_CHANNEL)) == \
-	 (ASYNC_AWAITABLE_F_EVENT | ASYNC_CHANNEL_F_CHANNEL))
 
 /* The cases of Async\ChannelCloseReason. */
 typedef enum
@@ -101,15 +94,9 @@ bool async_channel_resolve_deadlocks(void);
  * (collector.h), whoever holds the channel can complete the waiter's Future. */
 zend_object *async_channel_of_future_waiter(const async_event_callback_t *subscriber);
 
-/* A new ChannelException of a closed channel's reason: its outcome as an Awaitable, one per reader. */
-zend_object *async_channel_close_exception(const async_channel_t *channel);
-
 /* For the collector: what closes `channel_object` without a holder, its armed timer and its owner
  * scope, makes it live, once per run. */
 void async_channel_collector_sources(async_collector_t *collector, zend_object *channel_object);
-
-/* A wait's target `channel` for the collector, with the reference the wait `owned` in C. */
-void async_channel_collector_target(async_collector_t *collector, async_channel_t *channel, bool owned);
 
 /* For a scope's walks of its own vector (scope.c): whether `subscriber` binds a channel to the scope. */
 bool async_channel_is_owner_scope_subscriber(const async_event_callback_t *subscriber);

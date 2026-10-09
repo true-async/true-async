@@ -1,5 +1,5 @@
 --TEST--
-Channel: each await_* of an already closed channel throws a ChannelException of its own
+Channel: each recvAsync() Future of an already closed channel, awaited in await_*, throws a ChannelException of its own
 --FILE--
 <?php
 
@@ -12,7 +12,7 @@ $channel->close();
 function closed_item_exception(Channel $channel): Async\ChannelException
 {
     try {
-        await_any_or_fail([$channel]);
+        await_any_or_fail([$channel->recvAsync()]);
     } catch (Async\ChannelException $exception) {
         return $exception;
     }

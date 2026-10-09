@@ -33,28 +33,28 @@ function spawn_with(ScopeProvider $provider, callable $task, mixed ...$args): Co
 function await(Completable $awaitable, ?Completable $cancellation = null): mixed {}
 
 /** The first result of `$triggers`, or null when it is empty; the first error is thrown. */
-function await_any_or_fail(iterable $triggers, ?Awaitable $cancellation = null): mixed {}
+function await_any_or_fail(iterable $triggers, ?Completable $cancellation = null): mixed {}
 
 /** `[the first result or null, the errors before it]`: errors are collected, not thrown. */
-function await_first_success(iterable $triggers, ?Awaitable $cancellation = null): mixed {}
+function await_first_success(iterable $triggers, ?Completable $cancellation = null): mixed {}
 
 /** Every result by its key; the first error is thrown. */
-function await_all_or_fail(iterable $triggers, ?Awaitable $cancellation = null, bool $preserveKeyOrder = true): array {}
+function await_all_or_fail(iterable $triggers, ?Completable $cancellation = null, bool $preserveKeyOrder = true): array {}
 
 /** `[results, errors]` of every trigger, by their keys. */
-function await_all(iterable $triggers, ?Awaitable $cancellation = null, bool $preserveKeyOrder = true, bool $fillNull = false): array {}
+function await_all(iterable $triggers, ?Completable $cancellation = null, bool $preserveKeyOrder = true, bool $fillNull = false): array {}
 
 /** The first `$count` results by their keys; the first error is thrown. */
-function await_any_of_or_fail(int $count, iterable $triggers, ?Awaitable $cancellation = null, bool $preserveKeyOrder = true): array {}
+function await_any_of_or_fail(int $count, iterable $triggers, ?Completable $cancellation = null, bool $preserveKeyOrder = true): array {}
 
 /** `[results, errors]` once `$count` triggers succeeded (all of them for 0 or less). */
-function await_any_of(int $count, iterable $triggers, ?Awaitable $cancellation = null, bool $preserveKeyOrder = true, bool $fillNull = false): array {}
+function await_any_of(int $count, iterable $triggers, ?Completable $cancellation = null, bool $preserveKeyOrder = true, bool $fillNull = false): array {}
 
 /**
  * A cancellation token whose deadline is `$ms` milliseconds after the call; a wait it ends throws
  * OperationCanceledException with a TimeoutException as the previous.
  */
-function timeout(int $ms): Awaitable {}
+function timeout(int $ms): Completable {}
 
 /**
  * OS signals, numbered as on Linux except SIGBREAK and SIGABRT2, which exist only on Windows and

@@ -1,5 +1,5 @@
 --TEST--
-Channel: a later await_* of a closed channel does not see the error an earlier wait chained under it
+Channel: a later await_* of a closed channel's recvAsync() Future sees no error an earlier wait chained under it
 --FILE--
 <?php
 
@@ -16,13 +16,13 @@ $channel = new Channel(1);
 $channel->close();
 
 try {
-    await_any_or_fail([$failed, $channel]);
+    await_any_or_fail([$failed, $channel->recvAsync()]);
 } catch (Async\ChannelException $exception) {
     echo "first: ", $exception->getPrevious()::class, "\n";
 }
 
 try {
-    await_any_or_fail([$channel]);
+    await_any_or_fail([$channel->recvAsync()]);
 } catch (Async\ChannelException $exception) {
     echo "second: ", var_export($exception->getPrevious(), true), "\n";
 }

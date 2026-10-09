@@ -123,14 +123,9 @@ static zend_object *channel_exception_new(const async_channel_close_reason_t rea
 	return exception;
 }
 
-zend_object *async_channel_close_exception(const async_channel_t *channel)
-{
-	return channel_exception_new(channel->close_reason);
-}
-
 static void channel_throw_closed(const async_channel_t *channel)
 {
-	zend_throw_exception_internal(async_channel_close_exception(channel));
+	zend_throw_exception_internal(channel_exception_new(channel->close_reason));
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -638,13 +633,6 @@ static void channel_close(async_channel_t *channel, const async_channel_close_re
 		channel_record_wake(record, channel_exception_new(reason));
 	}
 
-#ifdef TRUE_ASYNC_TEST_HOOKS
-	async_collector_check_records_wake(&channel->base.callbacks, NULL);
-#endif
-	/* No exception: each await_* record builds its own from the reason. A closed channel takes no record, and
-	 * one that a throwing callback left behind wakes here and reads the outcome. */
-	async_callbacks_notify((async_awaitable_t *) &channel->base, &channel->base.callbacks, NULL, NULL);
-	async_callbacks_free((async_awaitable_t *) &channel->base, &channel->base.callbacks);
 	channel_withdraw_rendezvous_value(channel, dropped);
 }
 
@@ -763,8 +751,7 @@ static void channel_hand_out_found_records(async_callbacks_vector_t *callbacks)
 	}
 }
 
-/* Every waiter a close would wake: the queued coroutines, the awaiters of the queued Futures and the
- * channel's await_* items and tokens. */
+/* Every waiter a close would wake: the queued coroutines and the awaiters of the queued Futures. */
 static void channel_hand_out_found_waiters(async_channel_t *channel)
 {
 	const async_channel_queue_t *const queues[] = { &channel->receivers, &channel->senders };
@@ -782,8 +769,6 @@ static void channel_hand_out_found_waiters(async_channel_t *channel)
 			}
 		}
 	}
-
-	channel_hand_out_found_records(&channel->base.callbacks);
 }
 
 void async_channel_hand_out_found(const async_event_callback_t *subscriber)
@@ -913,17 +898,14 @@ void async_channel_collector_sources(async_collector_t *collector, zend_object *
 }
 
 /* Whoever holds the channel can send, receive or close. */
-void async_channel_collector_target(async_collector_t *collector, async_channel_t *channel, const bool owned)
-{
-	async_collector_report_target(collector, &channel->std, owned);
-	async_channel_collector_sources(collector, &channel->std);
-}
-
 static void channel_record_collector_target(const async_coroutine_event_callback_t *record,
 											async_collector_t *collector)
 {
-	async_channel_collector_target(
-			collector, channel_of_record(record), (record->event_callback.flags & CHANNEL_RECORD_F_HOLDS_CHANNEL) != 0);
+	async_channel_t *const channel = channel_of_record(record);
+
+	async_collector_report_target(
+			collector, &channel->std, (record->event_callback.flags & CHANNEL_RECORD_F_HOLDS_CHANNEL) != 0);
+	async_channel_collector_sources(collector, &channel->std);
 }
 
 static const async_wait_kind_t channel_wait_kind = {
@@ -1409,7 +1391,7 @@ static zend_object *channel_object_create(zend_class_entry *class_entry)
 	async_channel_t *const channel = zend_object_alloc(sizeof(async_channel_t), class_entry);
 
 	memset(channel, 0, offsetof(async_channel_t, std));
-	async_event_init_in_object(&channel->base, ASYNC_CHANNEL_F_CHANNEL, offsetof(async_channel_t, std));
+	async_event_init_in_object(&channel->base, 0, offsetof(async_channel_t, std));
 	ZVAL_UNDEF(&channel->rendezvous_value);
 	ZVAL_UNDEF(&channel->dropped_value);
 	channel->timer_callback.callback = channel_timer_fire;
@@ -1439,7 +1421,8 @@ static void channel_object_free(zend_object *object)
 	channel_unbind_from_owner_scope(channel);
 	channel_timer_disarm(channel);
 	channel_future_waiters_detach(channel);
-	async_callbacks_free((async_awaitable_t *) &channel->base, &channel->base.callbacks);
+	/* Nothing waits on the channel's event: its waiters sit in its queues. */
+	ZEND_ASSERT(channel->base.callbacks.length == 0 && ASYNC_CALLBACKS_CAPACITY(&channel->base.callbacks) == 0);
 	channel_queue_free(&channel->receivers);
 	channel_queue_free(&channel->senders);
 	zval_circular_buffer_dtor(&channel->buffer);

@@ -4,7 +4,6 @@ Channel: close() wakes each waiter with an exception of its own, so one waiter's
 <?php
 
 use Async\Channel;
-use function Async\await_any_or_fail;
 use function Async\spawn;
 use function Async\suspend;
 
@@ -40,15 +39,8 @@ suspend();
 
 $future->catch(fn(Throwable $exception) => print("future: " . describe($exception) . "\n"))->ignore();
 suspend();
-
-try {
-    await_any_or_fail([$channel]);
-} catch (Throwable $exception) {
-    echo "outcome: ", describe($exception), "\n";
-}
 ?>
 --EXPECT--
 cancelled receiver: Async\ChannelException, previous Async\AsyncCancellation
 receiver: Async\ChannelException, previous none
 future: Async\ChannelException, previous none
-outcome: Async\ChannelException, previous none

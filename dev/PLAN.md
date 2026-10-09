@@ -883,7 +883,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, dev/plans/S9-taskgroup.md
-Active: S9.25; S9.27 next for layer 4
+Active: S9.28
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -1267,13 +1267,19 @@ Active: S9.25; S9.27 next for layer 4
         take `Completable` only (S9.27), so the channel stops being one. Two Critics on the note. Probes in
         `/mnt/project-files/s9/probes/s9.taskgroup/`. 71 reference tests for the list; `channel/058` stays
         excluded. The finally run's end builds on S9.25's release point.
-- [ ] S9.27 `await_*` items and tokens take `Completable` only.
+- [x] S9.27 `await_*` items and tokens take `Completable` only.
       done: the item check and the token ZPP take `Completable`; the channel's item and token code gone;
         `channel/100`, `103`, `111`, `132`-`134` and `await/128` changed with `changed:` and DECISIONS
       tier: T1 · role: Critic
-      handoff: `dev/plans/S9-taskgroup.md` section 7.
-- [ ] S9.28 The list block for layer 4 and `src/task_group.c` without its waits.
-      done: after S9.25; the block in `S9.txt` with `--XFAIL--` naming S9.28 or S9.29, `channel/059` out
+      handoff: done 2026-10-09: the six `await_*`, `Scope::awaitCompletion()` and `awaitAfterCancellation()` take
+        `Completable` tokens, `timeout()` returns `Completable`, the item message names `Completable`; the channel's
+        type bit, its branches in `await.c` and the notify of its event vector are gone, with debug asserts in
+        their place (DECISIONS 2026-10-09 S9.27). Own tests `channel/142`-`144`, `await/145` open S9.txt's layer
+        4 block; the group's refusals come in S9.28. Critic, Sage and two quality Critics on the commit; for
+        Edmond: `channel/134` now overlaps `channel/132` and `await/115`.
+- [ ] S9.28 The layer 4 list block extended and `src/task_group.c` without its waits.
+      done: after S9.25; the layer 4 block S9.27 opened in `S9.txt` extended, with `--XFAIL--` naming S9.28 or
+        S9.29, `channel/059` out
         of `S9.excluded`, `task_group/040` into it, `channel/058`'s reason changed; the group, its tasks,
         results, errors, closing, finally handlers and destructor built with tests (note sections 2, 3, 5, 6);
         a cancel leaving a coroutine whose body has finished alone, for every scope (section 8, item 28)

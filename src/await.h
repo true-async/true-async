@@ -17,11 +17,11 @@
 #include "true_async_API.h"
 
 /* Cancellation tokens of a wait and the await_* family (dev/plans/S5.md, sections 4 to 6). A token
- * is the awaitable of a Coroutine, Future, Timeout or Channel object; its completion ends the wait
- * with OperationCanceledException, whose previous is the token's exception. */
+ * is the awaitable of a Coroutine, Future or Timeout object; its completion ends the wait with
+ * OperationCanceledException, whose previous is the token's exception. */
 
-/* The awaitable of a Coroutine, Future, Timeout or Channel object; NULL with an AsyncException for a
- * Future never constructed (unserialize()). */
+/* The awaitable of a Coroutine, Future or Timeout object; NULL with an AsyncException for a Future
+ * never constructed (unserialize()). */
 async_awaitable_t *async_await_awaitable_of(zend_object *object);
 
 /* A reference for a wait to the coroutine's object or to the future event: the object a record's
