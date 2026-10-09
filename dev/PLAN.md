@@ -71,11 +71,6 @@ Waiting for Edmond's call; nothing here is being worked on.
   ahead can in principle complete as TIMEOUT on a ready socket (not seen); io_uring checks readiness at
   submit. The provider answers a passed deadline itself; a readiness probe at issue in ior, or in the ring as `php_io_ring_group_probe()`
   does for ANY members, is a change to bukka's code. Edmond's call.
-- A channel's timer armed for a `recvAsync()` Future (the layer Critic of S9.20): a Future dropped while
-  it waits leaves the queue without a refresh, so `noProducerTimeout` later closes an idle channel with
-  `NO_PRODUCERS`; TrueAsync does the same (`channel.c:297-320`), and note section 5 refreshes only at a
-  park, a wake and a wait's end. A disarm when no side starves at the Future's leave would fix it.
-  Edmond's call.
 - `Scope::inherit()` under a closed scope (the Critic of S9.20) is allowed, as TrueAsync's, and its
   coroutines are out of reach of any later cancel of the closed scope's ancestors; `spawn()` in the closed
   scope itself is refused, the new child accepts it. Edmond's call.
@@ -1129,6 +1124,19 @@ Active: none; layer 3 done, the next layer needs its plan agreed with Edmond
         XFAIL, 0 unexpected; ASAN 1387 PASS, 40 SKIP, 16 XFAIL, 1 passed on retry, and `signal/024` at its
         time limit while orphaned test processes of earlier runs held two of four cores (passes alone, three
         runs of three).
+- [x] S9.22 A dropped `recvAsync()` Future takes the channel's timer along when no side starves.
+      done: an idle channel stays open after its last pending Future is dropped, with a test
+      tier: T1 · role: Critic
+      handoff: done 2026-10-09: Edmond's answer to the PLAN open question (06:38, "если это баг конечно нужно
+        исправить"): a dropped `recvAsync()` Future and a parked waiter's abort disarm the timer through
+        `channel_timer_disarm_if_idle()` when its side starves no more; neither arms one, so a Future queued
+        still arms nothing (`channel/141`). A departure from TrueAsync, whose dispose leaves the timer
+        (`channel.c:297-320`). The wrong-side timer the helper now also drops (a reserved receiver not yet
+        run, a dropped Future, a parked sender) has no own test: it lasts only until the woken receiver runs
+        (the Critic). Edmond kept the queues' arrays (06:40). On CORE_REF 77dbfc061f3, before the Critic's
+        fixes: debug 1415 PASS, 14 SKIP, 17 XFAIL; ASAN 1390 PASS, 40 SKIP, 16 XFAIL; 0 unexpected on both.
+        After them: `channel/`, `await/` and `collector/` pass on debug (357) and ASAN (356, 1 SKIP), and 30
+        fuzz seeds over `channel/141` fail none.
 
 ## S10 — Beyond the RFCs  [in progress]
 

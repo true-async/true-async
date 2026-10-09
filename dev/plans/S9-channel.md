@@ -286,8 +286,9 @@ fires on time while anything else keeps the loop running (probed `h9.php`: `NO_P
 while another coroutine sleeps 300 ms), and keeps nothing from the global deadlock, as libuv's hidden
 timer. The refresh counts the queued `recvAsync()` Futures as receivers, as TrueAsync's
 (`channel.c:401-422`), and runs where TrueAsync's does: on the exit of a parked `send()` or `recv()`
-and at a wake or a close, not when a Future is queued or disposed (`channel.c:1278-1288`, `297-320`), so a
-channel with only a pending Future arms no timer. It arms nothing once async is off
+and at a wake or a close, not when a Future is queued (`channel.c:1278-1288`), so a channel with only a
+pending Future arms no timer; a Future that is dropped only disarms a timer its side no longer starves for
+(S9.22, Edmond 2026-10-09; TrueAsync's leaves it, `297-320`). It arms nothing once async is off
 (`ZEND_ASYNC_IS_ACTIVE`, `php_true_async.h:81-87`): a destructor run from `released_values` may still
 call `recvAsync()`.
 

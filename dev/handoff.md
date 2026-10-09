@@ -538,7 +538,12 @@ through a `WeakReference` (fixed in the channel, Future, FutureState and Timeout
 released while its destructor may suspend is emptied before the release (the channel iterator's step).
 The stale CHANNEL record does not survive main's finish. Layer 3 is done; the next layer needs its plan
 agreed with Edmond. Open for Edmond: the PLAN open questions listed under S9.20 above, and a child scope
-made under a cancelled scope after its cancel; the timer question was asked 2026-10-08 22:33, no answer.
+made under a cancelled scope after its cancel.
+
+S9.22 done 2026-10-09 (Edmond 06:38): a dropped `recvAsync()` Future and a parked waiter's abort disarm the
+channel's timer through `channel_timer_disarm_if_idle()` when its side starves no more (`channel/141`); the
+queues stay arrays (Edmond 06:40). Next is S9.23 (Edmond 06:50): a running finally handler outlives every
+cancel, only a deadline stops it; design in `dev/plans/S9-scope.md` section 13, Critic before the code.
 
 ## S10
 

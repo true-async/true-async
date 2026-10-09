@@ -1895,3 +1895,13 @@ stack options were shown with the code).
   received straight into the iterator's value and the second overwrote the first without releasing it,
   and a value whose destructor suspended stayed in the iterator for the other step to release again
   (the security pass and a quality Critic); TrueAsync's step has the same gaps (`channel.c:974-997`).
+- 2026-10-09 S9.22: a `recvAsync()` Future dropped while it waits (its last reference released) disarms the
+  channel's timer when its side starves no more, and arms nothing; a parked waiter's abort does the same
+  through one helper (`channel_timer_disarm_if_idle()`), which now also drops a timer of the side that stopped
+  starving. Why: the timer stayed armed for the gone Future and `noProducerTimeout` closed an idle channel
+  with `NO_PRODUCERS` (`channel/141`); Edmond, 06:38: «если это баг конечно нужно исправить». A departure from
+  TrueAsync, whose Future dispose leaves the timer (`channel.c:297-320`), and from `S9-channel.md` section 5,
+  which refreshed only at a park, a wake and a wait's end.
+- 2026-10-09: a channel's queues stay arrays with linear remove, O(N^2) for N leaving waiters, as TrueAsync's
+  (`channel.c:286-294`). Why: Edmond, 06:40, «нет не стоит, я думаю это очень редкий кейс»; slow only past
+  tens of thousands of waiters on one channel (`SECURITY.md`, 2026-10-09 Accepted).

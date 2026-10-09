@@ -406,11 +406,11 @@ static bool channel_has_starving_side(const async_channel_t *channel, async_chan
 	return false;
 }
 
-/* After a park, a wake or a wait's end, not when a Future is queued or leaves (channel.c:401-422), so
- * pending Futures alone arm a timer only once a wake or a wait's end finds them starving. A timer runs
- * from its first arming while its side keeps starving. Only a park's arm may throw, as its wait then ends
- * before it parks: elsewhere a value may have moved, and a failed submit leaves the channel without a
- * timer until the next refresh. */
+/* After a park, a wake or a wait's end, not when a Future is queued (channel.c:401-422), so pending
+ * Futures alone arm a timer only once a wake or a wait's end finds them starving; a waiter that leaves
+ * unwoken only disarms (channel_timer_disarm_if_idle()). A timer runs from its first arming while its side
+ * keeps starving. Only a park's arm may throw, as its wait then ends before it parks: elsewhere a value may have
+ * moved, and a failed submit leaves the channel without a timer until the next refresh. */
 static void channel_timer_refresh(async_channel_t *channel, const bool may_throw)
 {
 	async_channel_close_reason_t reason;
@@ -438,6 +438,17 @@ static void channel_timer_refresh(async_channel_t *channel, const bool may_throw
 	}
 
 	channel_timer_arm(channel, reason, may_throw);
+}
+
+/* After a waiter leaves without a wake: disarms a timer whose side starves no more, and arms nothing, so it
+ * runs anywhere. */
+static void channel_timer_disarm_if_idle(async_channel_t *channel)
+{
+	async_channel_close_reason_t reason;
+
+	if (!channel_has_starving_side(channel, &reason) || reason != channel->timer_reason) {
+		channel_timer_disarm(channel);
+	}
 }
 
 void async_channel_request_startup(void)
@@ -867,13 +878,9 @@ static void channel_record_abort(async_coroutine_event_callback_t *record)
 {
 	async_channel_t *const channel = channel_of_record(record);
 	bool had_reservation;
-	async_channel_close_reason_t reason;
 
 	channel_record_leave(record, &had_reservation);
-
-	if (!channel_has_starving_side(channel, &reason)) {
-		channel_timer_disarm(channel);
-	}
+	channel_timer_disarm_if_idle(channel);
 }
 
 /* What closes the channel without a holder (S9-channel.md 6): an armed timer fires by itself, and the
@@ -1178,7 +1185,8 @@ static void channel_token_release(async_awaitable_t *const token)
 ///////////////////////////////////////////////////////////////////
 
 /* The Future completed or went: the waiter leaves the queue unless the channel took it out first or
- * went before it (channel.c:297-320). */
+ * went before it (channel.c:297-320). Unlike TrueAsync's, it takes a timer nobody starves for along, or
+ * the timer would close an idle channel (Edmond, 2026-10-09). */
 static void channel_future_waiter_dispose(async_event_callback_t *callback, async_awaitable_t *target)
 {
 	(void) target;
@@ -1188,6 +1196,7 @@ static void channel_future_waiter_dispose(async_event_callback_t *callback, asyn
 
 	if (channel != NULL) {
 		channel_queue_remove(&channel->receivers, &waiter->queue_record);
+		channel_timer_disarm_if_idle(channel);
 	}
 
 	efree(waiter);

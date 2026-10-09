@@ -393,13 +393,13 @@ finding left open gets an owner step in `PLAN.md`.
   entries: none new. Test-only code: the channel's hooks sit under `TRUE_ASYNC_TEST_HOOKS`; a build of the
   default configuration has no `TrueAsync\Test` string (checked). CI: no change.
 - 2026-10-09 Accepted (S9.21), as TrueAsync's (`channel.c:286-294`): a channel's queues are arrays, so
-  serving or dropping N pending `recvAsync()` Futures costs O(N^2) (debug: 40 000 in 2.1 s, 160 000 in
-  35 s and 69 MB, within the default `memory_limit`), and so do cancelling N parked receivers (30 000:
-  1.4 s) and waking N parked receivers, each promised a value (30 000: 3.5 s), both bounded by the
-  number of coroutines. A linked list through the queue records would make each step O(1) and is not
-  built. A fatal error inside `close()` leaves
-  the channel closed with its queued Futures pending and, on a rendezvous channel, the killed sender's
-  value receivable, the class of S9-channel.md 8 item 8.
+  serving or dropping N pending `recvAsync()` Futures costs O(N^2) (debug: 40 000 in 2.1 s, 160 000 in 35
+  s and 69 MB, within the default `memory_limit`), and so do cancelling N parked receivers (30 000: 1.4 s)
+  and waking N parked receivers, each promised a value (30 000: 3.5 s), both bounded by the number of
+  coroutines. A linked list through the queue records would make each step O(1) and is not built (Edmond,
+  2026-10-09: a rare case). A fatal error inside `close()` leaves the channel closed with its queued
+  Futures pending and, on a rendezvous channel, the killed sender's value receivable, the class of
+  S9-channel.md 8 item 8.
 
 ## Open findings
 
