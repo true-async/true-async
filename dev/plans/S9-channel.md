@@ -43,7 +43,6 @@ typedef struct {
 	async_channel_queue_t senders;    /* parked senders, in arrival order */
 	uint32_t reserved_receivers;      /* values promised to woken receivers that have not run yet */
 	uint32_t reserved_senders;        /* free slots promised to woken senders */
-	zend_object *close_exception;     /* the close's ChannelException, held: the Awaitable outcome */
 	zval dropped_value;               /* a value a scope's close rolled back: get_gc reports it, free_obj releases it */
 	/* section 5: the timeouts, the timer, its reason, the close reason, the owner-scope binding */
 	zend_object std;
@@ -210,7 +209,8 @@ reference" (probed `h10.php`), the key is null. `getIterator()` returns an `\Ite
 return type: probed (`h11.php`), "Return value must be of type Iterator, __iterator_wrapper returned", a
 fatal error; section 8, item 5.
 
-**An Awaitable.** The channel's close notifies its event with the close's `ChannelException`, and a channel
+**An Awaitable.** The channel's close notifies its event with no exception (S9.20; each `await_*` record
+builds one from the close reason), and a channel
 is accepted where TrueAsync accepts it: probed (`h4.php`), `await_any_or_fail([$channel])` fails with
 "Channel is closed" once the channel closes, and `$scope->awaitCompletion($channel)` ends with
 `OperationCanceledException` at the close; `await($channel)` is a `TypeError`, since `await()` takes a
@@ -222,8 +222,8 @@ in the event's flags, as `Timeout`'s (`ASYNC_TIMEOUT_F_TIMEOUT`, `src/timeout.h:
 each place that reads the type:
 `async_awaitable_addref()` and `async_awaitable_release()` (the object's counter, `src/await.c:45-63`),
 which covers every item and token hold (`src/await.c:387`, `469`, `1446-1448`, `src/scope.c:1537`, `1567`,
-`1655`, `1723`); `await_outcome()` (`src/await.c:105-110`), pending until the close and the held
-`close_exception` after it; the class gate `await_trigger_of()` (`src/await.c:732-733`); the info lines
+`1655`, `1723`); `await_outcome()` (`src/await.c:105-110`), pending until the close and a new
+`ChannelException` per call after it (`async_channel_close_exception()`, S9.20); the class gate `await_trigger_of()` (`src/await.c:732-733`); the info lines
 `token_record_info()` and `await_record_info()` (`src/await.c:258-270`, `591-598`), which say "channel";
 and `await_record_report_held_target()` (`src/await.c:275-287`), which reports a channel item or token
 with the same function as CHANNEL's `collector_target` (section 6), not as a Future. The tokens of
@@ -238,9 +238,10 @@ rendezvous_has_value` (`channel.c:1146-1151`). `channel_receive()` is the one re
 and the iterator: a closed, empty channel ends it with nothing thrown, so `recv()` throws there and the
 loop ends, which is TrueAsync's iterator (`channel.c:992-995`) for a channel already closed for any
 reason. The iterator refuses in scheduler context and once async is off at each step, as `recv()` does
-(item 14). The close keeps its exception as `close_exception`, the channel's outcome for the `await_*`
-code, notifies the channel's vector with it and frees the vector, as a Future's completion does
-(`src/future.c:659-663`). Until S9.19 a channel item or token reports to the collector as an outside
+(item 14). The close notifies the channel's vector and frees it, as a Future's completion does
+(`src/future.c:659-663`); since S9.20 the channel keeps no exception, and each `await_*` reader builds one
+from the close reason (`async_channel_close_exception()`), as TrueAsync's `recvAsync()` on a closed channel
+does (`channel.c:1273-1276`). Until S9.19 a channel item or token reports to the collector as an outside
 source, the same as the CHANNEL kind without its `collector_target`. The walk of a Channel object's
 queued Futures (section 6) came with S9.18 rather than S9.19, since `recvAsync()` made a coroutine
 awaiting one found never to wake while a sleeping producer held the channel (the re-check Critic,
@@ -447,7 +448,8 @@ holds waits until the global deadlock (probed `h8.php`).
     (section 5, Edmond 2026-10-08): TrueAsync's code closes on every notify of the scope; its documentation
     promises the close "when that scope is disposed or cancelled". The cost is the parked receiver of
     section 5. A cancel or a dispose of a completed or cancelled scope closes its channels, where
-    TrueAsync's closed them at the completion.
+    TrueAsync's closed them at the completion, and since S9.20 the channels of its child scopes that have
+    no coroutine of their own (Edmond 2026-10-08; TrueAsync's `scope.c:964-971` stops at the scope).
 12. **A channel made in a cancelled scope closes at the scope's next cancel, dispose, error route or free**
     (section 5); the reference closes it at the scope's next member's end.
 13. **A rendezvous send whose wait fails before it parks withdraws its value** (S9.17, the Critic): a
@@ -526,7 +528,10 @@ for S9.18 and 16 for S9.19. TrueAsync's `fuzzy-tests/` are not ported, as no fuz
   and `123` the fatal error's end, `124` the forked child, `125` and `126` the collector (a `foreach` over
   a new channel or a producer's return parked in its first receive, an aggregate's channel and
   `iterator_to_array()` found), `127` the rolled-back value, `128` the Critic's Future left starving at a
-  reserved receiver's exit, `129` a cancelled scope's free waiting for a child scope's object.
+  reserved receiver's exit, `129` a cancelled scope's free waiting for a child scope's object. S9.20:
+  `130` a held child scope's channel closed by its completed parent's cancel, `131` a channel closed by a
+  function that takes it freed at its unset, `132`-`134` a `ChannelException` per `await_*` reader, `135`
+  `foreach` after a throwing destructor, `136` two channels of a completed scope's dispose.
 
 **Measurements** (S9.20, `dev/BENCHMARKS.md`), against the reference: B15, a rendezvous ping-pong of 100 000
 messages between two coroutines, instructions and allocations per message (D29's allocation, `dev/plans/S3.md`

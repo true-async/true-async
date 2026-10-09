@@ -135,9 +135,10 @@ void async_scope_mark_zombie(async_coroutine_t *coroutine);
 
 /* Scope::cancel(): the child scopes and the coroutines are cancelled with `error`, or with
  * AsyncCancellation("Scope was cancelled") when it is NULL; with `is_safely` a started coroutine
- * becomes a zombie instead. A closed scope ignores it; a scope with nothing left to cancel is closed
- * and its finally handlers start (TrueAsync's catch_or_cancel in CANCEL mode, scope.c:942-1080). A
- * transferred `error` is the callee's. */
+ * becomes a zombie instead. A closed scope ignores it; a scope with nothing left to cancel is closed and
+ * its finally handlers start (TrueAsync's catch_or_cancel in CANCEL mode, scope.c:942-1080), and, unlike
+ * TrueAsync's, the cancel goes on to each child scope with no coroutine of its own. A transferred `error`
+ * is the callee's. */
 void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_error, bool is_safely);
 
 /* The route of an unhandled error of `coroutine`, which belongs to a scope (S9-scope.md 4, TrueAsync's

@@ -66,10 +66,10 @@ can see goes here; tests, tools and CI are in the git history.
   an error in the global scope cancels the coroutines that have not started yet
   ([S9](dev/plans/S9-scope.md)).
 - `Scope::dispose()`, `disposeSafely()`, `disposeAfterTimeout()` and `awaitAfterCancellation()`:
-  disposal cancels the scope with no error, or closes it when nothing is left to cancel; the timeout
-  disposes the scope once it passes; `awaitAfterCancellation()` waits until no coroutine of a
-  cancelled scope's subtree is left, zombies included, and hands the errors that come meanwhile to
-  its handler ([S9](dev/plans/S9-scope.md)).
+  disposal cancels the scope with no error, or closes it with its idle child scopes when nothing is
+  left to cancel; the timeout disposes the scope once it passes; `awaitAfterCancellation()` waits
+  until no coroutine of a cancelled scope's subtree is left, zombies included, and hands the errors
+  that come meanwhile to its handler ([S9](dev/plans/S9-scope.md)).
 - `Scope::finally()` and `Coroutine::finally()`: the handlers run in coroutines of a child scope once
   the scope is disposed or the coroutine finishes, also when the coroutine's error cancels its scope
   or ends the request; one handler's error goes up from that child scope as itself, several as an
@@ -84,10 +84,6 @@ can see goes here; tests, tools and CI are in the git history.
 - `Async\Channel::recvAsync()` returns a `Future` of the next value; `foreach` and `getIterator()`
   receive until the channel is closed, an explicit `close()` ending the loop quietly; a channel is an
   `await_*` item and a cancellation token that completes when it closes ([S9](dev/plans/S9-channel.md)).
-- `Async\Channel`'s `noProducerTimeout` and `noConsumerTimeout` close a channel whose receivers or
-  senders wait too long, with `NO_PRODUCERS` or `NO_CONSUMERS`; with `hardTimeouts` the timers keep the
-  script running, without it a script with nothing else to run closes such channels with `DEADLOCK`
-  instead of ending in a `DeadlockError`. A channel closes with `SCOPE_DISPOSED` when the scope it was
-  made in is cancelled, takes an error, is disposed or is freed, not when its coroutines merely end. The
-  partial deadlock collector finds coroutines parked on a channel no one else can reach
-  ([S9](dev/plans/S9-channel.md)).
+- `Async\Channel`'s `noProducerTimeout` and `noConsumerTimeout` close a channel that waits too long; a
+  channel closes when the scope it was made in is cancelled, takes an error, is disposed or is freed, and
+  the partial deadlock collector finds coroutines parked on it ([S9](dev/plans/S9-channel.md)).

@@ -12,8 +12,11 @@ use function Async\delay;
 use function Async\spawn;
 
 $channel = null;
+$started = false;
 $scope = new Scope();
-$scope->spawn(function () use (&$channel) {
+$scope->spawn(function () use (&$channel, &$started) {
+    $started = true;
+
     try {
         delay(1000);
     } catch (AsyncCancellation) {
@@ -22,25 +25,37 @@ $scope->spawn(function () use (&$channel) {
         echo "member: ended\n";
     }
 });
-Async\suspend();
+
+while (!$started) {
+    Async\suspend();
+}
+
 $scope->cancel();
 
 while ($channel === null) {
     Async\suspend();
 }
 
-$waiter = spawn(function () use ($scope) {
+$parked = 0;
+$waiter = spawn(function () use ($scope, &$parked) {
+    $parked++;
     $scope->awaitAfterCancellation();
     echo "waiter: woke\n";
 });
-$receiver = spawn(function () use ($channel) {
+$receiver = spawn(function () use ($channel, &$parked) {
+    $parked++;
+
     try {
         $channel->recv();
     } catch (ChannelException $exception) {
         echo "receiver: ", $exception->reason->name, "\n";
     }
 });
-Async\suspend();
+
+while ($parked < 2) {
+    Async\suspend();
+}
+
 echo "after the first cancel: closed=", var_export($channel->isClosed(), true), "\n";
 
 $scope->dispose();

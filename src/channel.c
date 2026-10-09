@@ -123,9 +123,14 @@ static zend_object *channel_exception_new(const async_channel_close_reason_t rea
 	return exception;
 }
 
+zend_object *async_channel_close_exception(const async_channel_t *channel)
+{
+	return channel_exception_new(channel->close_reason);
+}
+
 static void channel_throw_closed(const async_channel_t *channel)
 {
-	zend_throw_exception_internal(channel_exception_new(channel->close_reason));
+	zend_throw_exception_internal(async_channel_close_exception(channel));
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -587,8 +592,6 @@ static void channel_close(async_channel_t *channel, const async_channel_close_re
 	channel->base.flags |= ASYNC_EVENT_F_CLOSED;
 	channel_timer_disarm(channel);
 
-	channel->close_exception = channel_exception_new(reason);
-
 	uint32_t index = channel->receivers.length;
 
 	while (index > 0) {
@@ -627,10 +630,9 @@ static void channel_close(async_channel_t *channel, const async_channel_close_re
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	async_collector_check_records_wake(&channel->base.callbacks, NULL);
 #endif
-	async_callbacks_notify(
-			(async_awaitable_t *) &channel->base, &channel->base.callbacks, NULL, channel->close_exception);
-	/* A closed channel takes no record, and one that a throwing callback left behind wakes here and reads
-	 * the outcome. */
+	/* No exception: each await_* record builds its own from the reason. A closed channel takes no record, and
+	 * one that a throwing callback left behind wakes here and reads the outcome. */
+	async_callbacks_notify((async_awaitable_t *) &channel->base, &channel->base.callbacks, NULL, NULL);
 	async_callbacks_free((async_awaitable_t *) &channel->base, &channel->base.callbacks);
 	channel_withdraw_rendezvous_value(channel, dropped);
 }
@@ -1305,6 +1307,11 @@ static void channel_iterator_move_forward(zend_object_iterator *zend_iterator)
 	zval_ptr_dtor(&iterator->current);
 	ZVAL_UNDEF(&iterator->current);
 
+	/* The previous value's destructor threw: a receive now would take a value the loop never sees. */
+	if (UNEXPECTED(EG(exception) != NULL)) {
+		return;
+	}
+
 	if (UNEXPECTED(async_throw_if_unavailable())) {
 		return;
 	}
@@ -1413,11 +1420,6 @@ static void channel_object_free(zend_object *object)
 	zval_circular_buffer_dtor(&channel->buffer);
 	zval_ptr_dtor(&channel->rendezvous_value);
 	zval_ptr_dtor(&channel->dropped_value);
-
-	if (EXPECTED(channel->close_exception != NULL)) {
-		OBJ_RELEASE(channel->close_exception);
-	}
-
 	zend_object_std_dtor(object);
 }
 
@@ -1432,10 +1434,6 @@ static HashTable *channel_object_gc(zend_object *object, zval **table, int *num)
 
 	zend_get_gc_buffer_add_zval(gc_buffer, &channel->rendezvous_value);
 	zend_get_gc_buffer_add_zval(gc_buffer, &channel->dropped_value);
-
-	if (UNEXPECTED(channel->close_exception != NULL)) {
-		zend_get_gc_buffer_add_obj(gc_buffer, channel->close_exception);
-	}
 
 	zend_get_gc_buffer_use(gc_buffer, table, num);
 

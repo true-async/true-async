@@ -188,7 +188,8 @@ error is the question of section 12.
   is closed (`scope.c:964-974`); `scope/004` and `026` need it, so it comes with `cancel()` in S9.2.
 - `dispose()` is `cancel()` with no error and the scope's flag, `disposeSafely()` the same with
   `is_safely` true (TrueAsync's `ZEND_ASYNC_SCOPE_CLOSE`, `F:1531`): a scope with nothing left to
-  cancel is closed and its finally handlers run at once (`scope.c:964-974`), one whose members still
+  cancel is closed and its finally handlers run at once (`scope.c:964-974`), and since S9.20 so are its
+  child scopes with no coroutine of their own (DECISIONS 2026-10-08), one whose members still
   run is only cancelled and still accepts a spawn, on the reference as on ours (probe `s9.5/d6.php`,
   `scope/101`). `disposeAfterTimeout($ms)` arms an S4 Timer op on the reactor's waits, so a script that
   ends by itself waits for it as for TrueAsync's libuv timer (`d1.php`, `scope/102`); its fire cancels

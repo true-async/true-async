@@ -87,42 +87,51 @@ static void await_mark_observed(async_awaitable_t *awaitable)
 	}
 }
 
-/* The outcome of a completed awaitable, borrowed; false while it runs. `result` may be UNDEF. */
-static bool await_outcome(async_awaitable_t *awaitable, zval **result, zend_object **exception)
+static bool await_is_completed(const async_awaitable_t *awaitable)
 {
 	if (ASYNC_AWAITABLE_IS_COROUTINE(awaitable)) {
-		async_coroutine_t *coroutine = (async_coroutine_t *) awaitable;
+		return ZEND_COROUTINE_IS_FINISHED(&((const async_coroutine_t *) awaitable)->coroutine);
+	}
+
+	return (((const async_event_t *) awaitable)->flags & ASYNC_EVENT_F_CLOSED) != 0;
+}
+
+/* The outcome of a completed awaitable, with a reference to its exception that the caller releases;
+ * false while it runs, with nothing taken. `result` may be NULL or UNDEF. */
+static bool await_outcome(async_awaitable_t *awaitable, zval **result, zend_object **exception)
+{
+	*result = NULL;
+	*exception = NULL;
+
+	if (UNEXPECTED(!await_is_completed(awaitable))) {
+		return false;
+	}
+
+	if (ASYNC_AWAITABLE_IS_COROUTINE(awaitable)) {
+		async_coroutine_t *const coroutine = (async_coroutine_t *) awaitable;
 
 		*result = &coroutine->coroutine.result;
 		*exception = coroutine->coroutine.exception;
+	} else if (ASYNC_AWAITABLE_IS_TIMEOUT(awaitable)) {
+		*exception = ((const async_timeout_event_t *) awaitable)->exception;
+	} else if (UNEXPECTED(ASYNC_AWAITABLE_IS_CHANNEL(awaitable))) {
+		/* A new one per waiter, as TrueAsync's recvAsync: a kept one would gather each wait's errors as its
+		 * previous, and its trace would hold the channel. */
+		*exception = async_channel_close_exception((const async_channel_t *) awaitable);
 
-		return ZEND_COROUTINE_IS_FINISHED(&coroutine->coroutine);
+		return true;
+	} else {
+		async_future_event_t *const future = (async_future_event_t *) awaitable;
+
+		*result = &future->result;
+		*exception = future->exception;
 	}
 
-	if (ASYNC_AWAITABLE_IS_TIMEOUT(awaitable)) {
-		const async_timeout_event_t *const timeout = (const async_timeout_event_t *) awaitable;
-
-		*result = NULL;
-		*exception = timeout->exception;
-
-		return (timeout->base.flags & ASYNC_EVENT_F_CLOSED) != 0;
+	if (*exception != NULL) {
+		GC_ADDREF(*exception);
 	}
 
-	if (UNEXPECTED(ASYNC_AWAITABLE_IS_CHANNEL(awaitable))) {
-		const async_channel_t *const channel = (const async_channel_t *) awaitable;
-
-		*result = NULL;
-		*exception = channel->close_exception;
-
-		return (channel->base.flags & ASYNC_EVENT_F_CLOSED) != 0;
-	}
-
-	async_future_event_t *future = (async_future_event_t *) awaitable;
-
-	*result = &future->result;
-	*exception = future->exception;
-
-	return (future->base.flags & ASYNC_EVENT_F_CLOSED) != 0;
+	return true;
 }
 
 /* TrueAsync's async_resolve_cancel_token (async_API.c:1253-1281): always OperationCanceledException,
@@ -183,12 +192,8 @@ bool async_await_token_completed(async_awaitable_t *token, zend_object **excepti
 		return false;
 	}
 
-	if (own_exception != NULL) {
-		if (is_coroutine) {
-			((async_coroutine_t *) token)->coroutine.flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
-		}
-
-		GC_ADDREF(own_exception);
+	if (own_exception != NULL && is_coroutine) {
+		((async_coroutine_t *) token)->coroutine.flags |= ASYNC_COROUTINE_F_EXC_CAUGHT;
 	}
 
 	*exception = own_exception;
@@ -245,18 +250,21 @@ static void await_collector_check_wake(async_coroutine_t *waiter, const async_aw
 #endif
 
 /* The token's notify, or the teardown of a token whose notify stopped at a throwing callback before
- * this record: the teardown passes no outcome, which the token holds. */
+ * this record: the teardown passes no outcome, which the token holds; a channel's close passes none, and its
+ * outcome is built here. */
 static void
 token_record_wake(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
 {
 	(void) result;
 
 	async_coroutine_event_callback_t *record = (async_coroutine_event_callback_t *) callback;
+	zend_object *own_exception = NULL;
 
-	if (UNEXPECTED(record->event == NULL)) {
+	if (UNEXPECTED(record->event == NULL || ASYNC_AWAITABLE_IS_CHANNEL(target))) {
 		zval *own_result;
 
-		await_outcome(target, &own_result, &exception);
+		await_outcome(target, &own_result, &own_exception);
+		exception = own_exception;
 	}
 
 	if (exception != NULL) {
@@ -268,6 +276,10 @@ token_record_wake(async_awaitable_t *target, async_event_callback_t *callback, v
 #endif
 
 	async_scheduler_enqueue(&record->coroutine->coroutine, await_token_cancelled_error(target, exception), true);
+
+	if (own_exception != NULL) {
+		OBJ_RELEASE(own_exception);
+	}
 }
 
 static zend_string *token_record_info(const async_coroutine_event_callback_t *record)
@@ -559,7 +571,7 @@ static void await_keep_error(const await_context_t *context, zval *key, zend_obj
 }
 
 /* One trigger's outcome into the tables (TrueAsync's async_waiting_callback, async_API.c:370-459):
- * true when the wait is over, with `*error` (borrowed) when it throws. */
+ * true when the wait is over; when it throws, `*error` is `exception`, whose reference stays the caller's. */
 static bool await_take(await_context_t *context, zval *key, zval *result, zend_object *exception, zend_object **error)
 {
 	context->resolved_count++;
@@ -600,6 +612,11 @@ static void await_wake_waiter(const await_context_t *context, zend_object *error
 	if (context->token != NULL && UNEXPECTED(await_outcome(context->token, &token_result, &token_exception))) {
 		async_scheduler_enqueue(
 				&context->waiter->coroutine, await_token_cancelled_error(context->token, token_exception), true);
+
+		if (token_exception != NULL) {
+			OBJ_RELEASE(token_exception);
+		}
+
 		return;
 	}
 
@@ -630,20 +647,25 @@ static const async_wait_kind_t async_wait_kind_trigger = {
 };
 
 /* A trigger completed, or its teardown fired the record a throwing callback left; the teardown
- * passes no outcome, which the trigger holds. */
+ * passes no outcome, which the trigger holds; a channel's close passes none, and its outcome is built here. */
 static void
 trigger_record_wake(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
 {
 	await_trigger_t *trigger = (await_trigger_t *) callback;
 	await_context_t *context = trigger->context;
+	const bool is_teardown = trigger->record.event == NULL;
+	zend_object *own_exception = NULL;
 
-	if (UNEXPECTED(trigger->record.event == NULL)) {
+	if (EXPECTED(!is_teardown)) {
+		async_wait_record_unlink(&trigger->record);
+	}
+
+	if (UNEXPECTED(is_teardown || ASYNC_AWAITABLE_IS_CHANNEL(target))) {
 		zval *own_result;
 
-		await_outcome(trigger->target, &own_result, &exception);
+		await_outcome(trigger->target, &own_result, &own_exception);
 		result = own_result;
-	} else {
-		async_wait_record_unlink(&trigger->record);
+		exception = own_exception;
 	}
 
 	if (exception != NULL) {
@@ -660,6 +682,10 @@ trigger_record_wake(async_awaitable_t *target, async_event_callback_t *callback,
 
 	if (await_take(context, &trigger->key, result, exception, &error)) {
 		await_wake_waiter(context, error);
+	}
+
+	if (own_exception != NULL) {
+		OBJ_RELEASE(own_exception);
 	}
 }
 
@@ -999,11 +1025,19 @@ static void await_array(await_context_t *context, HashTable *items, const bool w
 		 * gets the one before as its previous and is thrown instead, as its waker does
 		 * (coroutine.c:810-816). */
 		if (UNEXPECTED(error != NULL)) {
-			if (await_outcome(awaitable, &result, &exception) && exception != NULL && exception != error) {
-				GC_ADDREF(error);
-				zend_exception_set_previous(exception, error);
-				error = exception;
+			if (!await_outcome(awaitable, &result, &exception) || exception == NULL) {
+				continue;
 			}
+
+			/* `error` holds it too. Not OBJ_RELEASE: a GC run there would call destructors inside the walk. */
+			if (exception == error) {
+				GC_DELREF(exception);
+				continue;
+			}
+
+			/* Takes the reference `error` holds. */
+			zend_exception_set_previous(exception, error);
+			error = exception;
 
 			continue;
 		}
@@ -1017,6 +1051,13 @@ static void await_array(await_context_t *context, HashTable *items, const bool w
 
 		done = await_take(context, &key, result, exception, &error);
 
+		/* `error` keeps the reference when the wait throws it; the errors table took its own. Not
+		 * OBJ_RELEASE, as above. */
+		if (exception != NULL && exception != error) {
+			ZEND_ASSERT(GC_REFCOUNT(exception) > 1);
+			GC_DELREF(exception);
+		}
+
 		if (done && error == NULL) {
 			break;
 		}
@@ -1025,7 +1066,6 @@ static void await_array(await_context_t *context, HashTable *items, const bool w
 
 	if (done) {
 		if (UNEXPECTED(error != NULL)) {
-			GC_ADDREF(error);
 			zend_throw_exception_internal(error);
 			return;
 		}
@@ -1052,10 +1092,8 @@ static void await_array(await_context_t *context, HashTable *items, const bool w
 	ZEND_HASH_FOREACH_KEY_VAL(items, index, string_key, item)
 	{
 		async_awaitable_t *awaitable = await_trigger_of(item, waiter, &skip);
-		zval *result;
-		zend_object *exception;
 
-		if (skip || await_outcome(awaitable, &result, &exception)) {
+		if (skip || await_is_completed(awaitable)) {
 			continue;
 		}
 
@@ -1140,6 +1178,10 @@ static bool await_iterator_item(await_context_t *context, zval *item, zval *key)
 
 		if (await_take(context, key, result, exception, &error)) {
 			await_wake_waiter(context, error);
+		}
+
+		if (exception != NULL) {
+			OBJ_RELEASE(exception);
 		}
 
 		return true;

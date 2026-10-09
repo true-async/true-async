@@ -586,6 +586,18 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 		scope_dispose_timer_disarm(scope);
 		scope_close_bound_channels(scope);
 
+		/* The cancel reaches the subtree, as the TrueAsync docs say (concepts/scope.md), though TrueAsync's
+		 * scope.c:964-971 stops at this scope. A child scope with a coroutine of its own is skipped: a
+		 * cancelled one is left to unwind, and a finally handler's run scope to finish. A cancel only queues,
+		 * so no PHP code changes the vector under the loop. */
+		for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
+			async_scope_t *const child_scope = scope->child_scopes.data[i];
+
+			if (EXPECTED(child_scope->coroutines.length == 0)) {
+				async_scope_cancel(child_scope, error, false, is_safely);
+			}
+		}
+
 		if (error != NULL && transfer_error) {
 			OBJ_RELEASE(error);
 		}

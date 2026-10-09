@@ -62,7 +62,6 @@ typedef struct
 	bool hard_timeouts;
 	async_channel_close_reason_t close_reason; /* valid once closed */
 	async_channel_close_reason_t timer_reason; /* the close the armed timer makes */
-	zend_object *close_exception;              /* once closed: the outcome of the channel as an Awaitable */
 	/* The rendezvous value a close from a timer, the global deadlock or the owner scope rolled back, where no
 	 * PHP code may run: released with the channel. */
 	zval dropped_value;
@@ -101,6 +100,9 @@ bool async_channel_resolve_deadlocks(void);
 /* The channel object whose queue holds the recvAsync() waiter `subscriber`, else NULL: for the collector
  * (collector.h), whoever holds the channel can complete the waiter's Future. */
 zend_object *async_channel_of_future_waiter(const async_event_callback_t *subscriber);
+
+/* A new ChannelException of a closed channel's reason: its outcome as an Awaitable, one per reader. */
+zend_object *async_channel_close_exception(const async_channel_t *channel);
 
 /* For the collector: what closes `channel_object` without a holder, its armed timer and its owner
  * scope, makes it live, once per run. */

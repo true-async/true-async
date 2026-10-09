@@ -521,6 +521,17 @@ scope's notify (scheduler context); the timer withdraw pattern now has four copi
 scope.c, os_signal.c, channel.c); under steady traffic the timer runs from its first arming while any
 waiter starves, as TrueAsync's (the Critic). Next is S9.20, the layer review.
 
+S9.20 done 2026-10-09 (PLAN result line): the closed channel keeps no exception since then;
+`await_outcome()` hands its caller a reference and builds a `ChannelException` per reader
+(`async_channel_close_exception()`), and the close notifies with none (Edmond 21:56, option Б). The cancel
+or dispose of a completed scope reaches its child scopes, skipping a cancelled one whose coroutines unwind
+(Edmond 22:06-22:07; TrueAsync's `scope.c:964-971` has the same defect, told Edmond). Open for Edmond (PLAN
+open questions): the timer left armed by a dropped `recvAsync()` Future, `Scope::inherit()` under a closed
+scope, `recvAsync()->map()` losing its temporary source, a scope's own second cancel while its coroutines
+unwind. Under the fuzz, a test that waits with one `suspend()` or `delay()` for another coroutine is
+order-dependent: wait on a flag the other sets before it parks. Next is S9.21, the security pass, with the
+stale CHANNEL record after a caught bailout to check first.
+
 ## S10
 
 - S10.1 closed 2026-10-08: `dev/plans/S10.md` approved by Edmond (17:40) except output buffers, which

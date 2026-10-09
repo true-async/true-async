@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-08 · Active: per stage, under its `Tier:` line (Parallel tracks)
+Updated: 2026-10-09 · Active: per stage, under its `Tier:` line (Parallel tracks)
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -71,19 +71,30 @@ Waiting for Edmond's call; nothing here is being worked on.
   ahead can in principle complete as TIMEOUT on a ready socket (not seen); io_uring checks readiness at
   submit. The provider answers a passed deadline itself; a readiness probe at issue in ior, or in the ring as `php_io_ring_group_probe()`
   does for ANY members, is a change to bukka's code. Edmond's call.
-- A closed channel's held exception (the re-check Critic of S9.18): the channel keeps its close's
-  `ChannelException` as its outcome for `await_*` (note section 4, as planned), and its trace holds the
-  arguments of the frames that called `close()`, by default (`zend.exception_ignore_args=0`) the
-  channel itself when a function taking it closed it. Such a channel, its unreceived values and their
-  destructors then wait for PHP's cycle collector instead of the last `unset()`; TrueAsync releases the
-  exception at the end of the close. The other option: keep only the reason and build an exception per
-  reader in `await_outcome()`. The `await_*` pass also chains a later item's error under this shared
-  exception as under a Future's. Edmond's call (a departure from the agreed note).
-- A channel bound to a child scope that a held object keeps (the Critic of S9.19): the cancel or dispose
-  of the completed parent closes nothing in the child, since that branch notifies no child, as TrueAsync's
-  silent branch (`src/scope.c:583-607`); a running parent's cancel cancels the child and closes it
-  (`channel/115`). Taken as the rule applies to the channel's own scope (DECISIONS, reversible); the
-  other reading walks the subtree's channels too. Edmond's call.
+- A channel's timer armed for a `recvAsync()` Future (the layer Critic of S9.20): a Future dropped while
+  it waits leaves the queue without a refresh, so `noProducerTimeout` later closes an idle channel with
+  `NO_PRODUCERS`; TrueAsync does the same (`channel.c:297-320`), and note section 5 refreshes only at a
+  park, a wake and a wait's end. A disarm when no side starves at the Future's leave would fix it.
+  Edmond's call.
+- `Scope::inherit()` under a closed scope (the Critic of S9.20) is allowed, as TrueAsync's, and its
+  coroutines are out of reach of any later cancel of the closed scope's ancestors; `spawn()` in the closed
+  scope itself is refused, the new child accepts it. Edmond's call.
+- `$channel->recvAsync()->map(...)` (the layer Critic of S9.20): the temporary Future is its event's only
+  holder, so it takes the receive and the chain with it, and the child stays pending for ever. TrueAsync
+  holds the source object from the child's subscription until the source completes (`future.c:1752-1756`);
+  that fix here (the child holds its source) makes a pending chain nobody holds wait for the cycle
+  collector (`channel/108`, `future/112` expect an immediate release). Handing
+  the event to held children at the source's death works one level deep only (the second Critic).
+  Edmond's call.
+- A scope's second cancel while its own coroutines unwind (the second Critic of S9.20): `scope_is_completed()`
+  counts a cancelled scope as completed, so the scope closes and its finally handlers start at once, as
+  TrueAsync's (`scope.c:964-971`); S9.20 keeps its parent's cancel from doing that to a child. Should the
+  scope's own second cancel wait for its coroutines too? Edmond's call.
+- A child scope made under a cancelled scope after its cancel (the re-check Critic of S9.20): the scope's
+  second cancel closes the scope and skips the child, whose coroutines run on, as TrueAsync's; so does a
+  grandchild made under a cancelled child that still unwinds. Cancelling such a child must leave out a
+  finally handler's run scope, which is never cancelled and whose handler the cancel would stop
+  (`scope/140`); that needs a mark on the run scope. Edmond's call.
 - Fiber stacks on Windows (the Critic on `scope/058`): `zend_fiber_stack_allocate()` commits the
   whole 2 MB stack (`VirtualAlloc(MEM_COMMIT)`), as TrueAsync's core and PHP's `Fiber` do, so 20 000
   suspended coroutines need about 40 GB of commit; `collector/064` skips on Windows, and `scope/058`
@@ -808,7 +819,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md
-Active: S9.20
+Active: S9.21
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -1077,10 +1088,33 @@ Active: S9.20
         child scope's object: `channel/129`. Format fixed for S9.18's lines too. Code Reviewer, Critic,
         two quality Critics, a re-check Critic. On CORE_REF 77dbfc061f3:
         debug 1388 PASS, 14 SKIP, 17 XFAIL; ASAN 1363 PASS, 40 SKIP, 16 XFAIL; 0 unexpected.
-- [ ] S9.20 Layer review: Critic after S9.17-S9.19, coverage, Mull on the layer's diff, the fuzz
+- [x] S9.20 Layer review: Critic after S9.17-S9.19, coverage, Mull on the layer's diff, the fuzz
       oracle over 100 seeds, the measurements of note section 9.
       done: the layer's Done when holds on the day; survivors killed or explained
       tier: T2 · role: Critic
+      handoff: done 2026-10-09. Edmond's two answers built: a closed channel keeps only its reason, and
+        `await_outcome()` gives each `await_*` reader a `ChannelException` of its own (option Б,
+        `channel/131`-`134`); the cancel or dispose of a completed scope reaches its child scopes, a cancelled
+        one whose coroutines unwind left open (`scope/132`-`141`, `channel/130`, `136`; the free of an idle
+        parent's object closes a held child, `scope/141`; a finally handler's run scope is left to finish,
+        `scope/140`). `foreach` leaves the next value in the channel after a throwing destructor
+        (`channel/135`); `await/142`, `143` cover the owned outcome. Coverage (pocs-dbg-cov): src 94.8 % (8212
+        of 8665 lines), the layer's lines 957 of 991, the misses failure paths. Mull on the layer's diff:
+        channel.c 105 mutants, 4 survivors, loop steps of the delivering sender's queue walk (the sender is
+        always first) and of two test-hook helpers; scope.c survivors at 562 and 592 killed by `channel/136`
+        and `scope/139`; 1541 (the collector's walk of one child's holders) and 1558 (a reach that only adds)
+        explained; await, future, collector, reactor, scheduler 1 survivor, `future.c:278` (a second channel
+        waiter's subscriber). Fuzz, 100 seeds over `channel/` and `collector/` (211 tests): the failed seeds
+        were `channel/117` and `129` cancelling their member before it started, on `ba6412c` too, fixed
+        (DECISIONS 2026-10-09); the 33 tests with a new diagnostic are the same 33 on `ba6412c`, order
+        artifacts; 100 seeds over the 24 new and changed tests: 0 failed. B15 0.793 and B16 0.949 of the
+        reference's instructions, no allocation per message (`dev/BENCHMARKS.md`). Layer Critic, a second
+        Critic, two quality Critics, the final Critic and a re-check. Open for S9.21: a stale CHANNEL record
+        left by a bailout a shutdown function caught takes the next `send()`'s value at the next wait's
+        `async_wait_end()`, whose abort wakes nobody (the layer Critic, traced, not run). On CORE_REF
+        77dbfc061f3: debug 1406 PASS, 14 SKIP, 17 XFAIL and `bailout/017`'s race (DECISIONS 2026-10-09, fixed
+        after the lane); ASAN 1379 PASS, 40 SKIP, 16 XFAIL, 2 passed on retry, and `signal/024` at its time
+        limit while busy loops ran beside it (passes alone); then the 24 new and changed tests pass on debug.
 - [ ] S9.21 Security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item; findings fixed with a test or recorded
       tier: T2 · role: —

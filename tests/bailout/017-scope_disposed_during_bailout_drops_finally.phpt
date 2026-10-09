@@ -21,12 +21,24 @@ $scope = Scope::inherit();
 $scope->finally(function () {
     echo "not reached\n";
 });
-$scope->spawn(function () {
-    Async\delay(10);
+$started = false;
+$disposed = false;
+$scope->spawn(function () use (&$started, &$disposed) {
+    $started = true;
+
+    while (!$disposed) {
+        Async\suspend();
+    }
+
     str_repeat('x', 10000000);
 });
-Async\suspend();
+
+while (!$started) {
+    Async\suspend();
+}
+
 $scope->disposeSafely();
+$disposed = true;
 Async\delay(50);
 
 ?>

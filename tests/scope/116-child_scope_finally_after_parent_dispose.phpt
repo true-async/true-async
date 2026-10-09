@@ -1,5 +1,5 @@
 --TEST--
-Disposing a scope runs its finally handlers; those of an idle child scope run when the request ends, with null
+Disposing a scope runs its finally handlers and those of an idle child scope
 --FILE--
 <?php
 
@@ -26,5 +26,5 @@ echo "end\n";
 --EXPECT--
 after dispose
 parent finally: scope
+child finally: scope
 end
-child finally: null

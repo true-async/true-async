@@ -3,6 +3,31 @@
 The results journal: every measurement with its date, builds and outcome. The method and the
 benchmarks are `dev/plans/S3.md`, section 12; the scripts are `bench/`, the runner `tools/bench.py`.
 
+## 2026-10-08, S9.20: Channel rendezvous and buffered transfer, counted
+
+**Builds.** Release, ZTS, `-O2`, gcc 13.3, run with `-n`, no opcache; one count per side, the child
+pinned to one CPU (cachegrind counts). Both cores configured with `tools/ci/build-core.sh`'s flags
+without `--enable-debug`.
+
+- `ours`: the pinned core `77dbfc061f3` (`async-core-io-2026-10-08-4`), ior `d46649f6425`, and our
+  extension as a `phpize` module of `ba6412c` (S9.19), the test hooks off.
+- `ref`: the fork core `863f6dd90cf` with `ext/async` `1fdacf8` built in, libuv 1.48.
+
+`B15` sends N messages back and forth between two coroutines over two `Channel(0)` (`bench/b15.php`); one
+operation is one message. `B16` sends N values from 4 producers to 1 consumer through a `Channel(64)`
+(`bench/b16.php`); one operation is one value.
+
+| Bench | ours | ref | ours / ref |
+|---|---|---|---|
+| B1 | 2,965.0 / 1.020 | 3,128.9 / 2.030 | 0.948 |
+| B15 | 1,391.0 / 0 | 1,755.0 / 1.000 | 0.793 |
+| B16 | 694.5 / 0 | 731.6 / 0.055 | 0.949 |
+
+Instructions / allocations per operation; page faults and system calls 0 on every row. Known answer: the
+`known` variants send a `new stdClass` and count +369.0 / +1 (ours) and +380.0 / +1 (ref) on `B15`, +308.1 / +1
+and +313.0 / +1 on `B16`; `B1-known` +370.0 / +1 and +372.2 / +1. Two runs gave the same numbers. Our
+channel allocates nothing per message; the reference's rendezvous allocates one block per message.
+
 ## 2026-10-08, S9.14: find() up the scopes, and a coroutine's context
 
 **Builds.** Release, ZTS, `-O2`, gcc 13.3, run with `-n`, no opcache; one count per side, the child

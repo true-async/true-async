@@ -1825,7 +1825,7 @@ stack options were shown with the code).
   channels bound to that scope, not those of a child scope a held object keeps, since that branch reaches
   no child, as TrueAsync's silent branch; a running parent's cancel cancels the child and so closes them.
   Why: Edmond's rule names the channel's own scope; the other reading is in PLAN's open questions (the
-  Critic of S9.19).
+  Critic of S9.19). Replaced by the S9.20 entry on a completed scope's cancel.
 - 2026-10-08 S10.3a, signal masks during a watch (Edmond 19:22 «я бы шёл по малопу пути. пока вообще не
   трогать маску», 19:46 «ок сделай пока так»): `pcntl_sigprocmask()`'s `$old` stays the real mask; bukka's
   pcntl filter records the script's unblock of a number it blocked before the watch, the last removal
@@ -1841,3 +1841,51 @@ stack options were shown with the code).
   expects the number unblocked after the watch when the script unblocked it during it, and probes
   the mask without `SIG_SETMASK`. Why: S10.3a does the unblock the test recorded as lost; a
   `SIG_SETMASK` probe during the watch is a save-and-restore, which takes the unblock back.
+- 2026-10-08 S9.20, a departure from TrueAsync's code (Edmond 22:06 «Это баг», 22:07 «Да»): the cancel or
+  dispose of a completed scope reaches its child scopes too, recursively (`src/scope.c`,
+  `async_scope_cancel()`): a child scope the script holds is closed, not cancelled (`isCancelled()` stays
+  false), refuses `spawn()`, starts its finally handlers and closes the channels bound to it
+  (`scope/132`-`136`, `139`, `channel/130`, `136`). Why: the TrueAsync docs say the cancel of a
+  scope reaches the whole hierarchy (`concepts/scope.md`, `concepts/cancellation.md`), and TrueAsync's
+  silent branch (`scope.c:964-971`) stops at the scope itself, a defect of TrueAsync. A child scope with a
+  coroutine of its own left, zombies included, is skipped: a cancelled one stays open while its
+  coroutines unwind (`scope/137`, `138`, the Critics of S9.20), and a finally handler's run scope, never
+  cancelled itself, is left to finish (`scope/140`, the re-check Critic). The free of an idle parent's
+  object is such a cancel (TrueAsync's `scope_destroy()`, `scope.c:1395-1416`, says it cancels "all its
+  child Scopes"), so a child scope the script keeps alone is closed with it (`scope/141`).
+- 2026-10-08 `scope/110-awaitAfterCancellation_idle_closed_scope_open_child.phpt` and
+  `scope/116-child_scope_finally_after_parent_dispose.phpt` (ours, S9.5 and S9.6; `changed:2026-10-08`)
+  expect the dispose of an idle parent to close its child scope: `110` no longer spawns into the child
+  (its name, which says the child stays open, is kept: a list line is frozen), and `116` sees the
+  child's finally handler run at the dispose with its scope instead of at the request's end with null.
+  Why: the S9.20 entry above; both pinned TrueAsync's silent branch.
+- 2026-10-08 S9.20, a departure from the agreed note (Edmond 21:56, option Б): a closed channel keeps only
+  its close reason, no `close_exception`; `await_outcome()` builds a `ChannelException` from the reason
+  for each `await_*` reader, and the close notifies its vector with no exception, so the item and token
+  records read the outcome themselves (`src/await.c`). `await_outcome()` now hands its caller a
+  reference to release, and nothing on false. Why: the held exception's trace held the arguments of the
+  frames that called `close()`, so a channel closed by a function that took it waited for the cycle
+  collector (`channel/131`); TrueAsync releases its close exception at the end of `close()`
+  (`channel.c:572-575`). The readers no longer share one object (`channel/132`, `133`), and an error a
+  wait chained under the exception no longer stays on the channel (`channel/134`). An already closed
+  channel as an `await_*` item throws, as S9.18 built it; TrueAsync skips such an item, since its channel
+  event sets no `replay` (`async_API.c:598-606`).
+- 2026-10-08 S9.20: `foreach` over a channel receives nothing after the previous value's destructor
+  threw in the iterator's release, so the next value stays in the channel (`channel/135`, the body
+  unsets the value). Why: the receive took a value the loop then dropped with the exception, or parked
+  with it pending; TrueAsync has the same gap (`channel.c:979-997`). A destructor run by the loop
+  variable's reassignment runs after the receive, as with any iterator, so the next value is then in
+  the variable, not in the channel.
+- 2026-10-09 `channel/117-channel_second_dispose_of_cancelled_scope_wakes_only_channel.phpt` and
+  `channel/129-channel_collector_spares_receiver_until_child_scope_released.phpt` (ours, S9.19;
+  `changed:2026-10-09`) wait for the member to start before the cancel, and `117` for its waiter and
+  receiver to park before the dispose. Why: under the S9.20 fuzz seeds the one `suspend()` returned
+  before the member ran, the cancel stopped it unstarted, and the loop that waits for its channel never
+  ended (seeds 4, 5, 6, 9 and more, on `ba6412c` too); a receiver starting after the dispose takes the
+  closed channel's path instead of the wake.
+- 2026-10-09 `bailout/017-scope_disposed_during_bailout_drops_finally.phpt` (ours, S9.6;
+  `changed:2026-10-09`) has its zombie wait for the `disposeSafely()` instead of a `delay(10)`. Why: the
+  S9.20 debug lane failed it once; under load the timer fired in the zombie's own first suspend tick,
+  the zombie resumed there and failed before main disposed the scope, so the scope's finally ran at
+  the object's free after the shutdown functions, as a live scope's does (1 of 120 runs with six busy
+  CPUs printed no dispose; also on `ba6412c`).

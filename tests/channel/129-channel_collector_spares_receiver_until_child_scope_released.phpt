@@ -14,8 +14,11 @@ use function Async\delay;
 use function Async\spawn;
 
 $child = $channel = null;
+$started = false;
 $scope = new Scope();
-$scope->spawn(function () use (&$child, &$channel) {
+$scope->spawn(function () use (&$child, &$channel, &$started) {
+    $started = true;
+
     try {
         delay(1000);
     } catch (AsyncCancellation) {
@@ -24,7 +27,11 @@ $scope->spawn(function () use (&$child, &$channel) {
         $channel = new Channel(0);
     }
 });
-Async\suspend();
+
+while (!$started) {
+    Async\suspend();
+}
+
 $scope->cancel();
 
 while ($channel === null) {
