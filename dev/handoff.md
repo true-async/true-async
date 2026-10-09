@@ -556,6 +556,15 @@ the runs it stops; `finally_handler_call()` calls nothing under it. Edmond agree
 (10:04) and kept the global scope safe (10:03). Open for Edmond: the subtree-wide flag, a coroutine spawned
 into the scope after the fire. Next: S9.25, a finally handler's captured object's destructor cannot wait.
 
+S9.26 done 2026-10-09: `dev/plans/S9-taskgroup.md` (layer 4, TaskGroup and TaskSet), TrueAsync's
+`task_group.c` on our wait model with 30 departures (section 8), decided by Edmond, the internal ones together at 07:26 (DECISIONS
+2026-10-09 S9.26; 38 answers in `/mnt/project-files/s9/S9-taskgroup-answers.md`). The destructor never waits:
+it seals the group, and the closing holds the object until the finally handlers, started once at the
+completion, have ended and the unhandled errors are reported. Probes `d1.php`-`d5.php`, `f1.php`,
+`g1.php`-`g23.php`, `g10h.php`, `r28_*.php` in `/mnt/project-files/s9/probes/s9.taskgroup/`. Next: S9.27
+(`await_*` items and tokens `Completable` only), then S9.28; the finally run's end callback of S9.28 builds on
+S9.25's release point.
+
 ## S10
 
 - S10.1 closed 2026-10-08: `dev/plans/S10.md` approved by Edmond (17:40) except output buffers, which

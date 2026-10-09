@@ -863,14 +863,17 @@ Layer 2, Context: `Async\Context` over the core's storage, the context of a coro
 `current_context()`, `coroutine_context()`, `root_context()`.
 Layer 3, Channel: `Async\Channel`, `ChannelException`, `ChannelCloseReason`, the CHANNEL wait kind,
 `recvAsync()`, `foreach`, the per-channel timers, the close at the global deadlock and by the owner scope.
+Layer 4, TaskGroup: `Async\TaskGroup`, `Async\TaskSet`, the TASK_GROUP wait kind, the group's closing and
+finally handlers, and `await_*` items and tokens narrowed to `Completable`.
 Done when: S9.txt's layer 1 block and `await/062` pass on debug and ASAN; the S3-S7 lists pass as before.
 Layer 2 done when: S9.txt's layer 2 block passes on debug and ASAN; the S3-S7 lists and layer 1 pass as before.
 Layer 3 done when: S9.txt's layer 3 block passes on debug and ASAN; the S3-S7 lists and layers 1 and 2 pass as before.
+Layer 4 done when: S9.txt's layer 4 block passes on debug and ASAN; the S3-S7 lists and layers 1-3 pass as before.
 Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
-Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md
-Active: none; layer 3 done, the next layer needs its plan agreed with Edmond
+Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, dev/plans/S9-taskgroup.md
+Active: S9.25; S9.27 next for layer 4
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -1235,6 +1238,43 @@ Active: none; layer 3 done, the next layer needs its plan agreed with Edmond
         object whose `__destruct` calls `delay(1)`, its member cancelled by `disposeAfterTimeout(10)` (a
         handler that runs fails the same way); the same with `Scope::finally()`. Check TrueAsync's release
         point first.
+
+- [x] S9.26 Design note `dev/plans/S9-taskgroup.md` (layer 4, TaskGroup and TaskSet).
+      done: the note pushed; every Critic finding fixed or answered in the note; the questions of its
+        section 10 answered by Edmond
+      tier: T2 · role: Critic
+      handoff: done 2026-10-09: the layer is TrueAsync's `task_group.c` on our wait model, with 30 departures
+        (section 8), decided by Edmond one question at a time but the internal ones, which he accepted together
+        at 07:26 (DECISIONS 2026-10-09 S9.26); 38 questions answered. A task does not hold the group, so dropping it cancels its
+        tasks; the destructor never waits: it seals the group, and the closing holds the object until the
+        finally handlers, started once at the completion, have ended and the unhandled errors are reported. `await_*` items and tokens
+        take `Completable` only (S9.27), so the channel stops being one. Two Critics on the note. Probes in
+        `/mnt/project-files/s9/probes/s9.taskgroup/`. 71 reference tests for the list; `channel/058` stays
+        excluded. The finally run's end builds on S9.25's release point.
+- [ ] S9.27 `await_*` items and tokens take `Completable` only.
+      done: the item check and the token ZPP take `Completable`; the channel's item and token code gone;
+        `channel/100`, `103`, `111`, `132`-`134` and `await/128` changed with `changed:` and DECISIONS
+      tier: T1 · role: Critic
+      handoff: `dev/plans/S9-taskgroup.md` section 7.
+- [ ] S9.28 The list block for layer 4 and `src/task_group.c` without its waits.
+      done: after S9.25; the block in `S9.txt` with `--XFAIL--` naming S9.28 or S9.29, `channel/059` out
+        of `S9.excluded`, `task_group/040` into it, `channel/058`'s reason changed; the group, its tasks,
+        results, errors, closing, finally handlers and destructor built with tests (note sections 2, 3, 5, 6);
+        a cancel leaving a coroutine whose body has finished alone, for every scope (section 8, item 28)
+      tier: T2 · role: Critic
+      handoff: `dev/plans/S9-taskgroup.md` section 7.
+- [ ] S9.29 The TASK_GROUP wait kind: `awaitCompletion()`, `foreach`, `spawn()` on a full queue, the collector.
+      done: the S9.29 XFAILs pass; the collector finds a coroutine parked on a group nobody else reaches
+      tier: T2 · role: Critic
+      handoff: `dev/plans/S9-taskgroup.md` sections 4, 6.
+- [ ] S9.30 Layer 4 review and its documentation in `true-async-doc`.
+      done: Critic over S9.27-S9.29, coverage, Mull, 100 fuzz seeds, measurements B17 and B18, the doc pushed
+      tier: T2 · role: Critic
+      handoff: `dev/plans/S9-taskgroup.md` sections 7, 9.
+- [ ] S9.31 Layer 4 security pass by `dev/SECURITY.md`.
+      done: a journal entry per checklist item of the note's section 7; findings fixed with a test or recorded
+      tier: T2 · role: —
+      handoff: `dev/plans/S9-taskgroup.md` section 7.
 
 ## S10 — Beyond the RFCs  [in progress]
 

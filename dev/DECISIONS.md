@@ -1793,6 +1793,7 @@ stack options were shown with the code).
   only to the `await_*` items and tokens. Why: the waker chains a cancellation already queued for the
   waiter under the error it is given, and on one shared object, as TrueAsync's, that cancellation showed
   as `previous` for every other waiter and the outcome (`channel/103`). Edmond approved it on 2026-10-08.
+  The channel as an `await_*` item and token is replaced by the 2026-10-09 S9.26 entry (`Completable` only).
 - 2026-10-08 S9.18: `foreach` over a channel ends quietly on an explicit `close()` only when the
   `ChannelException` carries no previous, so a cancellation queued before the close propagates
   (`channel/104`), as `dev/plans/S9-channel.md` section 4 states; TrueAsync's iterator clears it.
@@ -1869,7 +1870,8 @@ stack options were shown with the code).
   (`channel.c:572-575`). The readers no longer share one object (`channel/132`, `133`), and an error a
   wait chained under the exception no longer stays on the channel (`channel/134`). An already closed
   channel as an `await_*` item throws, as S9.18 built it; TrueAsync skips such an item, since its channel
-  event sets no `replay` (`async_API.c:598-606`).
+  event sets no `replay` (`async_API.c:598-606`). The item and token parts are replaced by the
+  2026-10-09 S9.26 entry (`Completable` only).
 - 2026-10-08 S9.20: `foreach` over a channel receives nothing after the previous value's destructor
   threw in the iterator's release, so the next value stays in the channel (`channel/135`, the body
   unsets the value). Why: the receive took a value the loop then dropped with the exception, or parked
@@ -2014,3 +2016,45 @@ stack options were shown with the code).
 - 2026-10-09 `signal/001-signal_basic_timeout.phpt` runs on Windows again and is back to the
   reference's text (its `changed:` and `skip-on:*-win` tags gone). Why: the 2026-10-06 reason, a
   `signal()` that throws on Windows, is replaced above.
+- 2026-10-09 S9.26: S9 layer 4, `Async\TaskGroup` and `Async\TaskSet`, is TrueAsync's `task_group.c` on our wait
+  model, one implementation for both classes, with the 30 departures of `dev/plans/S9-taskgroup.md` section 8.
+  Why: Edmond answered the note's 38 questions on 2026-10-09 (quotes and times in
+  `/mnt/project-files/s9/S9-taskgroup-answers.md`); the six internal departures, items 21-26, he accepted at
+  07:26 («я выбираю то, что лучше»). No core change: the pinned core has no group type.
+- 2026-10-09 S9.26, replacing the channel as an `await_*` item and token of the 2026-10-08 S9.18 and S9.20
+  entries: `await_*` items and every cancellation token take `Completable` only, so a channel, a group or any
+  other non-completable `Awaitable` is refused; `Async\select` is not added. Why: Edmond, 07:17-07:19 («мы
+  тупанули», a channel as a token is a design error), 07:36 (`await_all()` over `recvAsync()` Futures covers
+  `select`). Built in S9.27.
+- 2026-10-09 S9.26: a task does not hold its group, so dropping the last reference cancels the running tasks
+  at once, as our `Scope` (`src/scope.c:1206-1211`) and tokio's `JoinSet`; `foreach` and
+  `TaskSet::joinNext()` follow completion order, `race()` stays TrueAsync's; `cancel()` always interrupts,
+  starts no queued task and also cancels after `close()`; `dispose()` seals the group; the group's own scope
+  does not inherit "dispose safely", and a passed `Scope` with `allowZombies()` draws a warning; the group owns
+  a passed `Scope`. Why: Edmond 2026-10-09 (answers 1-34). Rejected: TrueAsync's task holding the group, under
+  which `unset($g)` cancels nothing.
+- 2026-10-09 S9.26: the destructor never waits, by one algorithm wherever it runs (PHP's GC, `unset()`, a
+  finished coroutine): it takes the object again for the group's closing, seals the group and cancels its
+  unfinished tasks; the finally handlers start once when the group completes (at once when it is settled, else
+  at its last task's end), and the closing lets the object go after they end and the unhandled errors are
+  reported (note section 5, steps 1-7). Why: Edmond 10:01 («единый алгоритм») and 10:03 («второй раз finally
+  не должны вызываться»). Rejected: waiting in the destructor (TrueAsync, probed `d4.php`: a result-held object
+  hangs), and a "called from the GC" check (Edmond 09:58).
+- 2026-10-09 S9.26: an error nobody handled is printed at the group's closing, `Uncaught
+  Async\CompositeException` when there is no handler; an error is handled once `all()`, `race()`, `any()`, a
+  `TaskSet` read, `getErrors()`, `suppressErrors()`, `ignoreErrors: true`, a new iterator or a `foreach` step
+  saw it, and after a successful
+  `race()` or `any()` the other tasks' errors are handled too; no cancel marks an error handled, and a task's
+  cancellation is never reported. Why: Edmond 2026-10-09 («если исключение никто не обработал - печатать»,
+  answers 36 and 37). Rejected: TrueAsync's report of a caught `all()` rejection (probed `g10h.php`).
+- 2026-10-09 S9.26: a cancel leaves alone a coroutine whose body has finished, returned or thrown, for every
+  scope and group: it keeps its outcome and `isCancelled()` stays false. Built in S9.28. A cancel that came before the return is unchanged. Why:
+  Edmond 10:39 («если корутина уже была выполнена - её нельзя по сути отменить», a bug in TrueAsync): a
+  closure that holds the last reference to its `Scope` or `TaskGroup` is released after the body returns, and
+  the destructor's cancel replaced the result (probed on TrueAsync, `r28_plain.php`).
+- 2026-10-09 S9.26: a group's finally run that no coroutine can take (async no longer active at the request's
+  end, or a scheduler that cannot make its own coroutine) releases its handlers unrun, as a coroutine's
+  (`src/coroutine.c:513-518`) and a scope's, so every handler that runs is in the run's coroutine and its error
+  takes the scope's route, never thrown out of `unset()`. Why: the self-decision listed to Edmond at 08:33;
+  async is active from before the script's first line, so the refusal comes only when the request ends or
+  fails (the Critic of the S9.26 commit found the earlier "call them in the caller" contradicting it).
