@@ -554,7 +554,12 @@ S9.24 done 2026-10-09 (Edmond 07:57; PLAN result line; `dev/plans/S9-scope.md` s
 `ASYNC_SCOPE_F_DEADLINE_PASSED`, set by a fire that interrupts the scope's members and by the fire's walk on
 the runs it stops; `finally_handler_call()` calls nothing under it. Edmond agreed the safe-scope default
 (10:04) and kept the global scope safe (10:03). Open for Edmond: the subtree-wide flag, a coroutine spawned
-into the scope after the fire. Next: S9.25, a finally handler's captured object's destructor cannot wait.
+into the scope after the fire.
+
+S9.25 done 2026-10-09 (PLAN result line; `dev/plans/S9-scope.md` section 15): the last worker of a finally run
+that ran releases the handlers and the run's target in its body (`iterator_dispose()`), so a destructor of
+what a handler holds may wait (not after an `exit()`, where the tick releases them). Open for Edmond: a
+destructor that starts after the fire, and the release of a coroutine cancelled before it ran.
 
 S9.26 done 2026-10-09: `dev/plans/S9-taskgroup.md` (layer 4, TaskGroup and TaskSet), TrueAsync's
 `task_group.c` on our wait model with 30 departures (section 8), decided by Edmond, the internal ones together at 07:26 (DECISIONS

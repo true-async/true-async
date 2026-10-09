@@ -508,6 +508,12 @@ Traversable's exception; `await/062` loses its `--XFAIL--` in that step.
     error route skip, and of the scope cancels only a dispose timer's fire reaches it. TrueAsync's cascade
     cancels the run of a scope that was not cancelled before it started (`scope.c:1021-1036`), and its
     timer fire on a cancelled scope only closes it.
+30. **After a scope's deadline interrupts its members, no finally handler is called under it** (S9.24,
+    Edmond 2026-10-09; section 14). TrueAsync calls every finally handler whatever the deadline
+    (`coroutine.c:1281`, `scope.c:1203-1236`).
+31. **A finally run's last worker releases the handlers in its body** (S9.25; section 15), so a destructor of
+    what they hold may wait, except after an `exit()`. TrueAsync releases them at the microtask's last release, in scheduler context,
+    where its probe ends the request.
 
 The probes of S9.6 are in `/mnt/project-files/s9/probes/s9.6/`. The probes of S9.3 are `/mnt/project-files/s9/probes/s9.3/q1.php`-`q16.php`; on the reference and
 on ours they print the same but for items 9 and 10 and for S3's report of an unobserved exception of
@@ -668,7 +674,7 @@ returns at once on a closed scope.
 
 1. `ASYNC_SCOPE_F_FINALLY_RUN` (`src/scope.h`, `ASYNC_EVENT_F_TYPE_SHIFT + 5`), set only by
    `async_finally_handlers_start()` on the scope R it makes. It is cleared when the run's last worker
-   leaves: the last branch of `iterator_release_coroutine()` (`src/iterator.c:92`) calls
+   leaves: the last branch of `iterator_release_coroutine()` (`src/iterator.c:146`) calls
    `async_scope_finally_run_end()`, while the leaving worker still keeps R alive. Not at the iterator's
    FINISHED state, which comes while a handler still waits, and not in its dtor, which can run after R is
    freed. A refused start frees R; RSHUTDOWN frees every scope; after a bailout the flag stays on R until
@@ -683,7 +689,7 @@ returns at once on a closed scope.
    handler spawned routes from R and cancels R's coroutines, the worker included, as any scope's: a
    failure inside the cleanup, not a cancel from outside it.
 3. The deadline has its own cancel. `scope_dispose_timer_fire()` first walks S's subtree; on every
-   flagged scope it sets `ASYNC_SCOPE_F_CLOSED` (no new worker, `src/iterator.c:127`) and cancels every
+   flagged scope it sets `ASYNC_SCOPE_F_CLOSED` (no new worker, `src/iterator.c:181`) and cancels every
    coroutine of that scope and of the scopes below it with `is_safely = false`, whatever their state, so
    a second fire reaches a handler that caught the first, and a zombie stops. It does not go through
    `async_scope_cancel()`, so no completed branch closes an idle scope there and starts its handlers.
@@ -816,3 +822,66 @@ it). `scope/151` (ours, S9.23) expected the fire to run an idle child's `Scope::
 rule the fire of an unsafe scope with a running member drops it, so 151 now expects no output from the handler
 (`changed:`); the walk's order it guarded is guarded by 169. Its file name still says "runs": a list line is
 frozen once pushed.
+
+## 15. A finally run releases its handlers where a destructor may wait (S9.25)
+
+**Before S9.25.** A finally run's iterator holds the handlers' array and, through `finally_run_dtor()`, the
+coroutine or scope it passes them (`src/coroutine.c:610-619`). Both go at the microtask's last release in
+`iterator_dtor()` (`src/iterator.c`). The worker's entry queues the microtask (`iterator_defer()` in
+`iterator_run()`), so when a worker ran and no handler suspended, the last release happens in the tick
+(`scheduler_tick()`, in scheduler context): a `__destruct()` of what a handler's closure captured that calls `delay()` throws "The operation
+cannot be executed in the scheduler context", and the request ends. It fails so with and without a deadline,
+for `Coroutine::finally()` and `Scope::finally()` alike (probed on 8b9ba78, debug build). TrueAsync releases at
+the same point (`iterator_dtor()` from `execute_microtasks()`, scheduler context set, `scheduler.c:1525-1540`),
+and its probe also ends the request, with "The scheduler cannot be started when is already enabled"
+(true-async/php-src `true-async` 829cde6d with php-async 1fdacf8).
+
+**Design** (revised after the design Critic, the code Critic and its re-check).
+
+1. `iterator_dispose()` lets go of what the walk holds and what the caller's `extended_dtor` releases (a
+   finally run's target): the hash iterator, the array, the Traversable's iterator and the callable, each
+   detached before its release. `iterator_dtor()` calls it, then releases the exception, so the microtask's
+   release finds nothing left after it.
+2. The last worker to leave calls it in its body when it ran: `iterator_release_coroutine()` with `has_run`,
+   after the state goes `FINISHED` and before `async_scope_finally_run_end()` and `iterator_end_worker()`.
+   So:
+   - a destructor there runs in that worker, in the run's scope, and may suspend it; a `spawn()` in it goes
+     into the run's scope, as one from a handler, and throws after a fire closed the run;
+   - no scope cancel interrupts the wait, as none interrupts a handler (section 13; `scope/177`), while a
+     dispose timer's fire that lands during the wait does (`scope/178`). A destructor that starts after the
+     fire (the fire stopped the handler, or the run started after it) is not bounded by it: only a second
+     `disposeAfterTimeout()` stops it, as it stops a handler that catches the deadline and waits again (PLAN
+     open question). Before S9.25 such a destructor failed at once;
+   - after an exit (a handler called `exit()`) the worker does not release but queues the microtask once more,
+     so the tick lets go, as before S9.25, and a destructor there cannot wait: a destructor's error in the
+     worker would take the exit's place as its outcome (`zend_exception_set_previous()` drops an exit), and
+     the request would go on. Without the queueing the worker's own release is the last one when a handler
+     suspended (the tick dropped the microtask's reference meanwhile), and the exit was lost so before S9.25
+     too (`scope/184`; `183` without the wait). Keeping the release in the worker would need the exit taken
+     out around it, and a waiting destructor would delay the exit;
+   - the walk's error is thrown after the release, by one rule in `iterator_end_worker()`: an exit stays, a
+     cancellation (the worker's own, or one that ended a destructor's wait) goes under the walk's error, and
+     a destructor's error goes over it, as PHP chains a destructor's error over a pending one
+     (`zend_objects_destroy_object()`). So a fire that interrupts the wait loses no handler's error (`182`),
+     and a destructor's error takes the route of a handler's (`180`, `181`).
+3. Unchanged: a run whose worker a fire's walk cancelled before it ran, or whose worker was never spawned,
+   leaves the release to the microtask's last one, in the worker's finish handler (inside its notify, in
+   scheduler context) or in the tick, where nothing can suspend. Any coroutine cancelled before it ran is
+   released the same way: it finishes with no stack (`coroutine_finish_unrun()`), and a destructor that
+   waits in what a `spawn()` closure captured fails with "Cannot switch coroutines in the current execution
+   context" (probes, debug build; the finally run's with the scheduler-context error); PLAN open question.
+
+**Departure from TrueAsync:** the release point (item 2); TrueAsync's fails as ours did.
+
+**Tests**, one case each, each but 183 failing before S9.25: a `Coroutine::finally()` handler's capture (`scope/173`)
+and a `Scope::finally()` handler's (`174`) after the handler ran; the same two when the fire keeps the handler
+from being called (`175`, `176`); `Scope::cancel()` does not interrupt the destructor's wait (`177`, which also
+fails if the release is moved after `async_scope_finally_run_end()`) and a fire does (`178`); a coroutine's
+result that the run's release of the coroutine frees (`179`); a destructor's error goes to the scope's
+exception handler (`180`) with the handler's error as its previous (`181`); a fire that interrupts the wait
+keeps the handler's error (`182`, which also fails if the walk's error is thrown before the release); a
+handler's `exit()` still ends the request when a destructor of what it held throws (`183`, which passes
+before S9.25 and fails without the exit check), also after the handler waited (`184`). Not
+covered: a run of several workers (one release of one array, whichever worker leaves last) and the test hook's
+Traversable and callable, whose release in the worker runs a generator's `finally` with a pending cancellation
+stashed as for a destructor (`zend_generator_dtor_storage()`; read from the core, not run).

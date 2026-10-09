@@ -79,8 +79,11 @@ can see goes here; tests, tools and CI are in the git history.
   that come meanwhile to its handler ([S9](dev/plans/S9-scope.md)).
 - `Scope::finally()` and `Coroutine::finally()`: the handlers run in coroutines of a child scope once
   the scope is disposed or the coroutine finishes, also when the coroutine's error cancels its scope
-  or ends the request; one handler's error goes up from that child scope as itself, several as an
-  `Async\CompositeException`; a handler added to a finished coroutine or a gone scope runs at once
+  or ends the request; one handler's error goes up from that child scope as itself (under the error of a
+  destructor of what it held, if that throws), several as an
+  `Async\CompositeException`; a handler added to a finished coroutine or a gone scope runs at once;
+  the last of those coroutines releases the handlers and what they hold, so a destructor there may
+  wait, unless a deadline cancelled it before it started or a handler called `exit()`
   ([S9](dev/plans/S9-scope.md)).
 - `Async\Channel`, `Async\ChannelException` and `Async\ChannelCloseReason`: `send()` and `recv()`
   pass values between coroutines through a buffer of `capacity` values, or hand each one over

@@ -43,7 +43,7 @@ struct _async_iterator_s
 	 * reference, and so does the creator until it starts the walk. */
 	zend_async_microtask_t microtask;
 	async_scope_t *scope;                /* where the workers are spawned */
-	async_iterator_dtor_t extended_dtor; /* releases what a caller's larger struct holds */
+	async_iterator_dtor_t extended_dtor; /* releases what a caller's larger struct holds; may suspend */
 	unsigned int concurrency;
 	bool is_hi_priority; /* each worker goes to the front of the queue on its first enqueue */
 	async_iterator_state_t state;

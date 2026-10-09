@@ -140,7 +140,17 @@ Waiting for Edmond's call; nothing here is being worked on.
   keep only CLOSED in that exclusion.
 - A handler that catches the deadline's cancellation and waits again outlives one fire (the S9.23 design
   Critic); a second `disposeAfterTimeout()` stops it (`scope/150`), and D16's exit repeats an uncatchable one.
-  Edmond's call.
+  A destructor of what a handler holds that starts after the fire (the fire stopped the handler, or the run
+  started after it) outlives it the same way (S9.25, the design Critic), while one whose run's worker the fire
+  cancelled before it started ends the request (next item): after a deadline the same capture either waits
+  unbounded or fails. Bound it (the Sage leans so; a cancel set aside around `__destruct()` does not reach its
+  wait, so it needs a new rule) or leave it? Edmond's call.
+- A coroutine cancelled before it ran finishes with no stack (`coroutine_finish_unrun()`, as TrueAsync's
+  IGNORED path), so a destructor that its release runs cannot wait: one in what a `spawn()` closure captured
+  fails with "Cannot switch coroutines in the current execution context", and one of a finally run whose
+  worker a fire cancelled before it started fails with the scheduler-context error (S9.25, probes on the
+  debug build).
+  Running such a coroutine's finish on a context of its own is a scheduler change. Edmond's call.
 - Fiber stacks on Windows (the Critic on `scope/058`): `zend_fiber_stack_allocate()` commits the
   whole 2 MB stack (`VirtualAlloc(MEM_COMMIT)`), as TrueAsync's core and PHP's `Fiber` do, so 20 000
   suspended coroutines need about 40 GB of commit; `collector/064` skips on Windows, and `scope/058`
@@ -1229,15 +1239,21 @@ Active: S9.25; S9.27 next for layer 4
         77dbfc061f3, over S10.4 (17b6d11): debug 1456 PASS, 14 SKIP, 11 XFAIL; ASAN 1431 PASS, 40 SKIP, 10
         XFAIL; 0 unexpected on both; 30 fuzz seeds over the 16 new and changed tests fail none.
 
-- [ ] S9.25 A finally run releases its handlers where a destructor may wait.
+- [x] S9.25 A finally run releases its handlers where a destructor may wait.
       done: a destructor of an object a finally handler holds may suspend, with and without a deadline
       tier: T1 · role: Critic
-      handoff: found 2026-10-09 in S9.24 (probed on 31fec2b): the run's handlers are released in the
-        scheduler's context, so `delay()` in such a destructor throws "The operation cannot be executed in
-        the scheduler context" and ends the request. Probe: a `Coroutine::finally()` closure that captures an
-        object whose `__destruct` calls `delay(1)`, its member cancelled by `disposeAfterTimeout(10)` (a
-        handler that runs fails the same way); the same with `Scope::finally()`. Check TrueAsync's release
-        point first.
+      handoff: done 2026-10-09; design in `dev/plans/S9-scope.md` section 15. The last worker of a run that ran
+        lets go of what the walk holds in its body (`iterator_dispose()`), before the run ends and before the
+        walk's error is thrown, so a destructor there may suspend and no scope cancel interrupts it; after an
+        `exit()` the tick lets go, so that a destructor's error cannot take the exit's place. Before S9.25
+        the microtask's release in the tick ran such a destructor in scheduler context, as TrueAsync's does
+        (probed on ours and on TrueAsync). Own tests `scope/173`-`184`. Open for Edmond (PLAN open questions): a destructor
+        that starts after the fire is bounded only by a second timer; a coroutine cancelled before it ran
+        releases what it holds where nothing can suspend. Found on the way and fixed:
+        a handler's `exit()` after a wait was lost when a destructor of what it held threw (`scope/184`).
+        Critics: one on the design, one on the code, three re-checks, two quality Critics, the Sage. On CORE_REF
+        77dbfc061f3, over 8b9ba78: debug 1468 PASS, 19 SKIP, 11 XFAIL; ASAN 1443 PASS, 45 SKIP, 10 XFAIL; 0
+        unexpected on both; 30 fuzz seeds over the 12 new tests fail none.
 
 - [x] S9.26 Design note `dev/plans/S9-taskgroup.md` (layer 4, TaskGroup and TaskSet).
       done: the note pushed; every Critic finding fixed or answered in the note; the questions of its

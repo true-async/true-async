@@ -26,7 +26,8 @@
 /* The port of TrueAsync's iterator.c (S9-scope.md 7) to this extension's contracts: the defer slot takes
  * the caller's reference to the microtask and its release frees it after `dtor`, which here only lets go
  * of what the iterator holds; a worker that never ran is let go of by its finish handler, where
- * TrueAsync's extended_dispose runs at the coroutine's finish. */
+ * TrueAsync's extended_dispose runs at the coroutine's finish. Unlike TrueAsync, the last worker that ran
+ * releases what the walk holds unless an exit is pending (S9-scope.md 15). */
 
 static void iterator_worker_entry(void);
 
@@ -40,10 +41,48 @@ static void iterator_defer(async_iterator_t *iterator)
 	}
 }
 
+/* Lets go of what the walk holds and what a caller's larger struct holds; each is detached first, so a second
+ * call finds nothing. The last worker that ran calls it in its body, where a destructor may suspend; otherwise
+ * the microtask's release does (the worker was cancelled before it ran, none was spawned, or an exit is
+ * pending). */
+static void iterator_dispose(async_iterator_t *iterator)
+{
+	if (iterator->extended_dtor != NULL) {
+		const async_iterator_dtor_t extended_dtor = iterator->extended_dtor;
+		iterator->extended_dtor = NULL;
+		extended_dtor(iterator);
+	}
+
+	if (iterator->hash_iterator != (uint32_t) -1) {
+		zend_hash_iterator_del(iterator->hash_iterator);
+		iterator->hash_iterator = (uint32_t) -1;
+	}
+
+	if (!Z_ISUNDEF(iterator->array)) {
+		zval array;
+		ZVAL_COPY_VALUE(&array, &iterator->array);
+		ZVAL_UNDEF(&iterator->array);
+		zval_ptr_dtor(&array);
+	}
+
+	if (iterator->zend_iterator != NULL) {
+		zend_object_iterator *const zend_iterator = iterator->zend_iterator;
+		iterator->zend_iterator = NULL;
+		zend_iterator_dtor(zend_iterator);
+	}
+
+	if (iterator->fcall != NULL) {
+		zend_fcall_t *const fcall = iterator->fcall;
+		iterator->fcall = NULL;
+		ZEND_ASYNC_FCALL_FREE(fcall);
+	}
+}
+
 /* The last worker to leave ends with the iterator's exception, which then goes its route as that
  * worker's error, a cancellation it was given before chained as its previous. One that ran throws it in
- * its body, where an exit stays; one that never ran has no body, so its finish handler makes the error
- * its outcome, which finalize takes after the notify. */
+ * its body, where an exit stays and an error a destructor of iterator_dispose() threw goes over it, as PHP
+ * chains a destructor's error; one that never ran has no body, so its finish handler makes the error its
+ * outcome, which finalize takes after the notify. */
 static void iterator_end_worker(async_iterator_t *iterator, async_coroutine_t *worker, const bool has_run)
 {
 	zend_object *exception = iterator->exception;
@@ -65,6 +104,13 @@ static void iterator_end_worker(async_iterator_t *iterator, async_coroutine_t *w
 
 			GC_ADDREF(previous);
 			zend_clear_exception();
+
+			if (UNEXPECTED(!instanceof_function(previous->ce, async_ce_cancellation))) {
+				zend_exception_set_previous(previous, exception);
+				EG(exception) = previous;
+				return;
+			}
+
 			zend_exception_set_previous(exception, previous);
 		}
 
@@ -88,6 +134,19 @@ static void iterator_release_coroutine(async_iterator_t *iterator, async_corouti
 
 	iterator->active_coroutines = 0;
 	iterator->state = ASYNC_ITERATOR_FINISHED;
+
+	/* Before the walk's error is thrown, so that a cancellation that ends a destructor's wait goes under it,
+	 * and before the run ends, so that no scope cancel interrupts the wait, as none interrupts a handler
+	 * (S9-scope.md 15). After an exit the tick lets go, so that a destructor's error, which PHP chains over a
+	 * pending exception, cannot take the exit's place as the worker's outcome. */
+	if (EXPECTED(has_run)) {
+		if (UNEXPECTED(EG(exception) != NULL && async_is_exit_object(EG(exception)))) {
+			iterator_defer(iterator);
+		} else {
+			iterator_dispose(iterator);
+		}
+	}
+
 	/* The leaving worker still keeps the scope alive here. */
 	async_scope_finally_run_end(iterator->scope);
 	iterator_end_worker(iterator, worker, has_run);
@@ -171,28 +230,7 @@ static void iterator_dtor(zend_async_microtask_t *microtask)
 {
 	async_iterator_t *iterator = (async_iterator_t *) microtask;
 
-	if (iterator->extended_dtor != NULL) {
-		const async_iterator_dtor_t extended_dtor = iterator->extended_dtor;
-		iterator->extended_dtor = NULL;
-		extended_dtor(iterator);
-	}
-
-	if (iterator->hash_iterator != (uint32_t) -1) {
-		zend_hash_iterator_del(iterator->hash_iterator);
-	}
-
-	zval_ptr_dtor(&iterator->array);
-
-	if (iterator->zend_iterator != NULL) {
-		zend_iterator_dtor(iterator->zend_iterator);
-		iterator->zend_iterator = NULL;
-	}
-
-	if (iterator->fcall != NULL) {
-		zend_fcall_t *fcall = iterator->fcall;
-		iterator->fcall = NULL;
-		ZEND_ASYNC_FCALL_FREE(fcall);
-	}
+	iterator_dispose(iterator);
 
 	if (iterator->exception != NULL) {
 		zend_object *exception = iterator->exception;

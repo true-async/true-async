@@ -2058,3 +2058,10 @@ stack options were shown with the code).
   takes the scope's route, never thrown out of `unset()`. Why: the self-decision listed to Edmond at 08:33;
   async is active from before the script's first line, so the refusal comes only when the request ends or
   fails (the Critic of the S9.26 commit found the earlier "call them in the caller" contradicting it).
+- 2026-10-09 S9.25 (agent, not yet confirmed by Edmond), departing from TrueAsync: in its body, the last
+  worker of a finally run that ran lets go of the handlers, the run's target and the rest of what the walk
+  holds, before the run ends (`iterator_dispose()`); TrueAsync releases them at the microtask's last
+  release, in scheduler context; after an `exit()` the tick still releases them. Why: a destructor there may
+  suspend, as destructors do elsewhere, and after an exit its error must not replace the exit; our probe
+  ended the request ("The operation cannot be executed in the scheduler context"), TrueAsync's with "The
+  scheduler cannot be started when is already enabled".
