@@ -69,10 +69,10 @@ The other branches there belong to the TrueAsync fork's earlier work and are not
 
 ## Pinned core
 
-| Part | Revision | In `async-core-io-2026-10-08-4` `77dbfc061f3` |
+| Part | Revision | In `async-core-io-2026-10-09-1` `3aa1cd120f4` |
 |---|---|---|
 | php-src master | `e17e2970bc0` | merged through bukka's head |
-| Scheduler PoC (`async-core`, php/php-src#22561) | `b7c70909437` | merged |
+| Scheduler PoC (`async-core`, php/php-src#22561) | `5610980dc8f` | merged onto `77dbfc061f3` (`async-core-io-2026-10-08-4`) |
 | IO hooks PoC (php/php-src#23997) | `566a6833eb5` | merged |
 | Our fixes to the IO hooks PoC (`io-hooks-fixes`) | `2a74924668c` | merged; `dev/RFC-CHANGES.md` 2, 18, 19 |
 | The connect fix (`io-hooks-connect-started`, bukka/php-src#4, on bukka's `2bf149c2f50`) | `dca62e39da4` | picked onto `8159f7baa5c` (`async-core-io-2026-10-07-4`) |

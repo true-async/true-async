@@ -2144,3 +2144,46 @@ stack options were shown with the code).
   throwing on every call (`task_group/097`). The availability check of the spawn methods stays before the parameter
   parsing, as `Async\spawn()`'s (`src/true_async.c`): after it a refusal would leave the `__call` trampoline
   unreleased.
+- 2026-10-09 S10.6 (Edmond, 10:53, option A): a fiber whose coroutine ends before its body runs (a
+  cancel through `Fiber::getCoroutine()`, an `exit()` elsewhere between `start()` and the body) ends
+  without running the body; `start()` throws the coroutine's error, `isTerminated()` is true and a
+  second `start()` throws `FiberError`, as in TrueAsync. The core does it: `zend_fiber_coroutine_start()`
+  adds a finish handler that ends the fiber and wakes the coroutine waiting in `start()` with the
+  error, and the fiber's entry point removes it once the body runs (`async-core` `060bc7e104e`;
+  `fiber/033`-`035`). Rejected (B): the scheduler calls the fiber's entry point with the error thrown,
+  as TrueAsync (`coroutine.c:497-523`); it changes the core's `ZEND_COROUTINE_F_STARTED` contract, our
+  `run_queue_pop()` and `test_scheduler`. Why: one place, in the core; the handler wakes the fiber's
+  `caller_coroutine`, which `start()` waits in.
+- 2026-10-09 S10.6 (Edmond, 11:30: «я бы не создавал главную корутину без нужды»): the from_main call
+  after the destructors makes no new main coroutine and returns async to READY, as TrueAsync's
+  `async_scheduler_main_coroutine_suspend()` (`ZEND_ASYNC_INITIALIZE`, `scheduler.c:1385`); in
+  `src/scheduler.c` and in `test_scheduler` (`async-core` `5610980dc8f`), which also makes no loop when
+  nothing is left to drain. It narrows 2026-10-05 ("Main is re-minted at every from_main call"): the
+  calls after the script, after a shutdown function's bailout and the last call after a destructor's
+  bailout still re-mint. Why: after the
+  destructors the object store reuses no handle, and a fatal out-of-memory error could leave it full
+  with no memory to grow, so the error was printed twice (`scheduler/108`, `test_scheduler/095`).
+- 2026-10-09 S10.6 (Edmond, 12:59-13:09: «если код законный ... async там должен работать», «иметь
+  планировщик под боком и планировщик не выключать до этой точки»): the request's last print of
+  uncaught exceptions (the unobserved ones, then the exit exception that `main.c` printed after the
+  call) runs in a coroutine of the last call's pass, which `scheduler_loop()` starts when nothing is
+  left to run (`scheduler_print_start()`); what its `__toString()` spawns runs in the same pass, and
+  the pass ends when nothing is left to run or print. The print runs without the coroutine's root
+  frame, as `main.c` printed, so a throw or an `exit()` out of `__toString()` bails out of the print as
+  before; once the rest is printed the coroutine re-raises that bailout, so nothing it spawned runs
+  after it (`scheduler/109`, `110`). D16's deadline is withdrawn when the print starts: it bounds the
+  drain, and the print was not bounded when `main.c` did it (`reactor/044`); a graceful shutdown that
+  starts during the print arms it again, as for any drain. After a bailout of the request the exit
+  exception is printed by the built-in `__toString()` too, not left to `main.c` (`scheduler/112`). A `__toString()` whose spawned
+  coroutine throws a new uncaught exception each time prints without end, as any endless loop in PHP
+  code; the memory limit ends it (a probe: 13 105 prints at 16 MB, then the out-of-memory error). A graceful shutdown that
+  starts during the print cancels the print coroutine as any other, and a cancellation that leaves
+  `__toString()` is printed in place of that exception (a probe; the print outside a coroutine lost it
+  the same way). After a bailout of the request the built-in `__toString()` prints outside a
+  coroutine: in `scheduler_main_suspend()` after a bailout before the last call (it also prints when no
+  scheduler can be created), at RSHUTDOWN after a bailout in the destructors. TrueAsync differs, by its
+  code (`async_API.c:60-68`, `main.c:1943`): there a `spawn()` in that print relaunches the scheduler
+  and no pass follows to run the coroutine.
+  `context/044-teardown_releases_coroutine_values_last.phpt` (ours, S9.13; `changed:2026-10-09`)
+  checked that coroutine's argument released at the teardown; it now checks that the coroutine runs
+  and its argument is released when it ends, before the teardown (Edmond: «код меняй»).

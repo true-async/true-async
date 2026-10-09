@@ -7,7 +7,7 @@ Written 2026-10-06. S3 closed: S3.24 re-ran its Done when on the final core; S4,
 
 ## State
 
-- Core pinned: `async-core-io-2026-10-08-4` (`77dbfc061f3`), ior `d46649f6425` (2026-10-08, S10.3a).
+- Core pinned: `async-core-io-2026-10-09-1` (`3aa1cd120f4`), ior `d46649f6425` (2026-10-09, S10.6).
   CI gates every lane on every list; a test that cannot pass yet carries `--XFAIL--` naming its
   step, and the commit that makes it pass removes the section. run-tests (`tools/run-tests.patch`)
   fails a test the timeout killed.
@@ -597,5 +597,10 @@ reporter coroutine. Core-side changes in the extension: `async_scope_cancel_rema
   bukka PR text is `/mnt/project-files/notes/signal-unblock-at-removal-pr.md` (Edmond opens it).
 - S10.4 closed 2026-10-09 (PLAN result line): `Fiber::getCoroutine()` in `src/coroutine.c`. Next is
   S10.5.
+- S10.5 closed 2026-10-09 (PLAN result line): `Async\signal()` on Windows, RFC-CHANGES 20-23.
+- S10.6 closed 2026-10-09 (PLAN result line): the security pass, with the core update to
+  `async-core-io-2026-10-09-1`: a fiber cancelled before its body ran, and no new main after the last
+  from_main call. S10 closed. Open for Edmond: the residual double print (PLAN open questions) and the
+  four S10.5 entries in `DECISIONS.md` marked "not yet confirmed by Edmond".
 
 The research reports behind the note: `/mnt/project-files/notes/s10/` (project files).

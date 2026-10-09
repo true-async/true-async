@@ -26,6 +26,10 @@ fiber/027-fiber_cancel_in_nested_spawn.phpt  ref:3f3e6698aeeb21b0ad70f4b7f58b200
 fiber/028-fiber_exception_vs_cancel.phpt  ref:e4e9a0a5c3c927e157bfb42b3c9f5cdf4b9ef7c4c9d2f8cb57d69b8f695e4f3e
 fiber/031-fiber_coroutine_cancelled_then_parent.phpt  own:3cd76e49c6f1439706c9b1a6abc137d4a517ba8630c38be3750f4a2489408c8c
 fiber/032-fiber_getCoroutine_before_start.phpt  own:33893c6c918780631aa1dcaa7fe0969e9e1592fc7f12b897020255624a66a096
+fiber/033-fiber_start_throws_when_cancelled_before_body.phpt  own:f17147f1816975e051397a90deb0898c5adf62f49b1a625cad69d27458706e7d
+fiber/034-fiber_start_again_after_cancel_before_body.phpt  own:be1fee5b43ab1f1dbf7603f457c558d898a8ea49ebd331288c70822ba93ab770
+fiber/035-fiber_exit_before_body_start_again.phpt  own:ff0dcb3254cb680e9b167d37d1de469445f1315476e70c03fe48dd1dea72eae7
+scheduler/108-out_of_memory_fatal_error_printed_once.phpt  own:2d5c4cf90c58da99e612734b0eb47d6c91ed98bbab3a656c8833a56c53d8afdc  skip-on:*-asan(USE_ZEND_ALLOC=0)
 module/006-disabled_no_fiber_getCoroutine.phpt  own:799a14c59a2c0437c13bdd5905f2a0ebf58eb5f94aec1c2cb2f88898b8142982
 module/007-refused_scheduler_no_fiber_getCoroutine.phpt  own:0d3aa5c2b27cf7e0bc71794850ba539498690e4753e57746e6938aa3111f4ae8  skip-on:*-win(test_scheduler_not_loaded)
 
@@ -39,3 +43,8 @@ signal/037-windows_ctrl_break_without_watch_ends_process.phpt  own:404a7bfdbb75d
 signal/038-windows_refused_outside_cli.phpt  own:6358cdb8c12bf37f3f1f2fe227c0f123d9d88183626d180c8fcdeb44ff715e02  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)
 signal/039-windows_number_without_console_event_waits.phpt  own:8612825fb5dc16ccd9f3b59ddcd91a99be1c42dceeee508f688cb2754636aa20  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)
 collector/079-windows_signal_future_waiter.phpt  own:4c0fa38742a1caf4e847984fca3c7e5352f67889ef1ed13808b474a061875739  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)
+scheduler/109-exit_in_last_print_runs_no_spawned_coroutine.phpt  own:c9dc7f4f5fa8c54be40f88562c5a79b6a995767369fe34209ccf40099533c212
+scheduler/110-error_in_last_print_runs_no_spawned_coroutine.phpt  own:3ce3e0f849851b12e424c100679f0e6986bff393ec2546af8b9e00cdc71b326a
+scheduler/111-await_in_last_print.phpt  own:d407fd9ab0dc4ec7dff9164534405fa7f49494446817e1344772b956d23298ea
+reactor/044-exit_deadline_does_not_cut_last_print.phpt  own:ed6aea43cc589f9cbe3633e4c78638829fe5777a7721ed8305c007b881e3e15a
+scheduler/112-exit_exception_after_fatal_error_printed_by_built_in.phpt  own:b17c723c6192bd8890a2fe7109ec2399f23e8403e7b980f0f12498ee275e8a2c

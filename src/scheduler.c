@@ -68,6 +68,7 @@ static zend_function root_function = { ZEND_INTERNAL_FUNCTION };
 
 static ZEND_STACK_ALIGNED void fiber_entry(zend_fiber_transfer *transfer);
 static ZEND_STACK_ALIGNED void scheduler_fiber_entry(zend_fiber_transfer *transfer);
+static bool scheduler_print_start(void);
 static void scheduler_cancel_all(zend_object *cancellation);
 static void context_vm_stack_start(zend_fiber_context *context, zval *vm_stack_memory);
 static void context_vm_stack_free(void);
@@ -906,6 +907,12 @@ static bool scheduler_loop(void)
 			const uint32_t waiting = registry_waiting_count();
 
 			if (EXPECTED(waiting == 0)) {
+				/* During the shutdown only the last from_main call's pass gets here: in every earlier pass
+				 * main is alive, queued or waiting. */
+				if (UNEXPECTED((EG(flags) & EG_FLAGS_IN_SHUTDOWN) && scheduler_print_start())) {
+					continue;
+				}
+
 				exit_deadline_withdraw();
 				return false;
 			}
@@ -1182,23 +1189,21 @@ static void scheduler_print_exception_built_in(zend_object *exception)
 	zval_ptr_dtor(&string);
 }
 
-/* After the request's last drain, or at RSHUTDOWN after a bailout in the shutdown phase. A finished
- * coroutine still alive (in an array, a static property, a cycle) whose exception nobody observed adds
- * it to the table; the plain globals added theirs in coroutine_object_destroy. Each is printed as
- * uncaught. */
-static void scheduler_print_unobserved_exceptions(void)
+/* A finished coroutine still alive (in an array, a static property, a cycle) whose exception nobody
+ * observed adds it to the table; the plain globals added theirs in coroutine_object_destroy. */
+static void scheduler_unobserved_collect(void)
 {
 	const zend_objects_store *objects = &EG(objects_store);
 
 	for (uint32_t i = 1; i < objects->top; i++) {
-		zend_object *object = objects->object_buckets[i];
+		zend_object *const object = objects->object_buckets[i];
 
 		if (EXPECTED(!IS_OBJ_VALID(object) || object->ce != async_ce_coroutine)) {
 			continue;
 		}
 
-		async_coroutine_t *coroutine = async_coroutine_from_object(object);
-		zend_object *exception = coroutine->coroutine.exception;
+		async_coroutine_t *const coroutine = async_coroutine_from_object(object);
+		zend_object *const exception = coroutine->coroutine.exception;
 
 		if (EXPECTED(exception == NULL || !ZEND_COROUTINE_IS_FINISHED(&coroutine->coroutine) ||
 					 (coroutine->coroutine.flags & ASYNC_COROUTINE_F_EXC_CAUGHT) ||
@@ -1210,72 +1215,169 @@ static void scheduler_print_unobserved_exceptions(void)
 		GC_ADDREF(exception);
 		async_unobserved_exception_add(exception);
 	}
+}
 
-	/* main.c prints EG(exception) after this call. */
-	zend_object *pending_exception = EG(exception);
+/* The table's first entry not printed yet, or NULL. */
+static zval *scheduler_unobserved_next(void)
+{
+	zval *value = NULL;
+
+	ZEND_HASH_FOREACH_VAL(&ASYNC_G(unobserved_exceptions), value)
+	{
+		if (Z_TYPE_P(value) == IS_OBJECT) {
+			return value;
+		}
+	}
+	ZEND_HASH_FOREACH_END();
+
+	return NULL;
+}
+
+/* True when the last pass has something to print in a coroutine. After a bailout of the request the
+ * built-in __toString() prints instead, outside a coroutine. */
+static bool scheduler_last_print_due(void)
+{
+	if (UNEXPECTED(CG(unclean_shutdown))) {
+		return false;
+	}
+
+	scheduler_unobserved_collect();
+
+	return ZEND_ASYNC_EXIT_EXCEPTION != NULL || scheduler_unobserved_next() != NULL;
+}
+
+/* Takes the exit exception and marks it printed, so the table's print skips it. */
+static zend_object *scheduler_exit_exception_take(void)
+{
+	zend_object *const exit_exception = ZEND_ASYNC_EXIT_EXCEPTION;
+
+	if (exit_exception != NULL) {
+		ZEND_ASYNC_EXIT_EXCEPTION = NULL;
+		scheduler_exit_exception_printed(exit_exception);
+	}
+
+	return exit_exception;
+}
+
+/* Prints one exception as uncaught; the caller keeps its reference. */
+static void scheduler_print_uncaught(zend_object *exception)
+{
+	/* After any bailout of the request, a fatal error's above all, the class's __toString() is not
+	 * called: it would run unbounded after a timeout and may exhaust the memory limit again. Read per
+	 * print: a print may bail out. CG(unclean_shutdown) cannot be cleared from PHP code, as
+	 * error_clear_last() clears error_get_last(). */
+	if (UNEXPECTED(CG(unclean_shutdown))) {
+		zend_try
+		{
+			scheduler_print_exception_built_in(exception);
+		}
+		zend_end_try();
+		return;
+	}
+
+	/* zend_exception_error() releases this reference. With no frame, a throw, an exit() or a fatal
+	 * error in __toString() bails out before that release. */
+	GC_ADDREF(exception);
+
+	zend_try
+	{
+		zend_exception_error(exception, E_ERROR);
+	}
+	zend_catch
+	{
+		OBJ_RELEASE(exception);
+	}
+	zend_end_try();
+}
+
+/* Prints each unobserved exception as uncaught. Called by the last pass's print coroutine, by
+ * scheduler_main_suspend when the request bailed out before the last call or no scheduler could be
+ * created, and at RSHUTDOWN after a bailout in the shutdown phase. */
+static void scheduler_print_unobserved_exceptions(void)
+{
+	scheduler_unobserved_collect();
+
+	/* A caller on main's stack leaves EG(exception) to main.c, which prints it after the call. */
+	zend_object *const pending_exception = EG(exception);
 	EG(exception) = NULL;
 
-	/* Uncaught at the request's end, as main.c prints it: a throwing __toString() is not handed to
-	 * set_exception_handler()'s handler. */
+	/* A throwing __toString() is not handed to set_exception_handler()'s handler, which main.c's print
+	 * of the exit exception does. */
 	zval user_exception_handler;
 	ZVAL_COPY_VALUE(&user_exception_handler, &EG(user_exception_handler));
 	ZVAL_UNDEF(&EG(user_exception_handler));
 
 	/* A print runs PHP code, which may add to the table: each pass looks it up again. */
-	while (true) {
-		zend_object *exception = NULL;
-		zval *value = NULL;
+	zval *value = NULL;
 
-		ZEND_HASH_FOREACH_VAL(&ASYNC_G(unobserved_exceptions), value)
-		{
-			if (Z_TYPE_P(value) == IS_OBJECT) {
-				exception = Z_OBJ_P(value);
-				ZVAL_PTR(value, exception);
-				break;
-			}
-		}
-		ZEND_HASH_FOREACH_END();
+	while ((value = scheduler_unobserved_next()) != NULL) {
+		zend_object *const exception = Z_OBJ_P(value);
 
-		if (exception == NULL) {
-			break;
-		}
-
-		/* After any bailout of the request, a fatal error's above all, the class's __toString() is not
-		 * called: it would run unbounded after a timeout and may exhaust the memory limit again. Read per
-		 * print: a print may bail out. CG(unclean_shutdown) cannot be cleared from PHP code, as
-		 * error_clear_last() clears error_get_last(). */
-		if (UNEXPECTED(CG(unclean_shutdown))) {
-			zend_try
-			{
-				scheduler_print_exception_built_in(exception);
-			}
-			zend_end_try();
-			continue;
-		}
-
-		/* The entry keeps its reference; zend_exception_error() releases this one. With no frame, a
-		 * throwing __toString() bails out before that, as an exit() or a fatal error in it. */
-		GC_ADDREF(exception);
-
-		zend_try
-		{
-			zend_exception_error(exception, E_ERROR);
-		}
-		zend_catch
-		{
-			OBJ_RELEASE(exception);
-		}
-		zend_end_try();
+		/* The entry keeps its reference. */
+		ZVAL_PTR(value, exception);
+		scheduler_print_uncaught(exception);
 	}
 
 	ZVAL_COPY_VALUE(&EG(user_exception_handler), &user_exception_handler);
 	EG(exception) = pending_exception;
 }
 
+/* The request's last print: the unobserved exceptions, then the exit exception. Takes the exit
+ * exception's reference. */
+static void scheduler_print_last(zend_object *exit_exception)
+{
+	scheduler_print_unobserved_exceptions();
+
+	if (exit_exception != NULL) {
+		scheduler_print_uncaught(exit_exception);
+		OBJ_RELEASE(exit_exception);
+	}
+}
+
+/* The request's last print runs in a coroutine of the last pass (Edmond, 2026-10-09): a __toString()
+ * there is PHP code like any other, so async works in it, and what it spawns runs in the same pass. */
+static void scheduler_print_entry(void)
+{
+	/* With no frame, as in main.c's print of EG(exception), a throw or an exit() out of __toString()
+	 * bails out of the print instead of becoming a warning. */
+	zend_execute_data *const root_frame = EG(current_execute_data);
+	EG(current_execute_data) = NULL;
+
+	scheduler_print_last(scheduler_exit_exception_take());
+
+	EG(current_execute_data) = root_frame;
+
+	/* scheduler_print_uncaught() catches a print's bailout (a throw, an exit() or a fatal error in
+	 * __toString()) so the rest still prints. Raised again here, so nothing more runs after it
+	 * (section 4.5): what __toString() spawned is unwound. */
+	if (UNEXPECTED(CG(unclean_shutdown))) {
+		zend_bailout();
+	}
+}
+
+/* At the end of the last pass, when nothing is left to run. False when nothing is due to print. */
+static bool scheduler_print_start(void)
+{
+	if (!scheduler_last_print_due()) {
+		return false;
+	}
+
+	/* The drain is over: D16's deadline bounds the drain, not the print. */
+	exit_deadline_withdraw();
+
+	async_coroutine_t *const coroutine = async_coroutine_new();
+
+	coroutine->coroutine.internal_entry = scheduler_print_entry;
+	async_scheduler_enqueue(&coroutine->coroutine, NULL, false);
+
+	return true;
+}
+
 /* The suspend slot's from_main calls (section 7): main finishes, the scheduler coroutine drains the
  * queue on its own stack and comes back here, a new main is minted on this stack. A bailout, the
  * call's or the drain's, is re-raised on the way out after the new main exists, so whatever runs
- * after the core's catch has a current coroutine. */
+ * after the core's catch has a current coroutine. The last call, after the destructors, mints none,
+ * as in TrueAsync. */
 static bool scheduler_main_suspend(bool is_bailout)
 {
 	async_coroutine_t *main_coroutine = (async_coroutine_t *) ZEND_ASYNC_MAIN_COROUTINE;
@@ -1290,9 +1392,20 @@ static bool scheduler_main_suspend(bool is_bailout)
 
 	bool reraise_bailout = is_bailout;
 
+	/* Only the call after the destructors comes in the shutdown without a bailout: a shutdown
+	 * function's always brings one. */
+	const bool is_last_call = (EG(flags) & EG_FLAGS_IN_SHUTDOWN) && !is_bailout;
+
 	/* A bailout out of the previous call's main_coroutine_finish left no main to finish. */
 	if (EXPECTED(main_coroutine != NULL)) {
 		main_coroutine_finish(main_coroutine, is_bailout);
+	}
+
+	/* The last pass prints in a coroutine (scheduler_print_start): a scheduler is created even with
+	 * nothing queued when something is due to print. One that cannot be created leaves its error in EG
+	 * for main.c, and the print below goes on without it. */
+	if (UNEXPECTED(is_last_call && ASYNC_G(scheduler_coroutine) == NULL && scheduler_last_print_due())) {
+		scheduler_coroutine_create();
 	}
 
 	/* No scheduler: nothing was queued or deferred since the last one ended. */
@@ -1305,9 +1418,17 @@ static bool scheduler_main_suspend(bool is_bailout)
 
 	ZEND_ASSERT(circular_buffer_is_empty(&ASYNC_G(fiber_context_pool)));
 
-	main_coroutine = main_coroutine_adopt();
-	ZEND_ASYNC_MAIN_COROUTINE = &main_coroutine->coroutine;
-	ZEND_ASYNC_CURRENT_COROUTINE = &main_coroutine->coroutine;
+	/* After the last call only the print below may run before the core turns async off. A new main
+	 * there would need a new handle in a store that reuses none after the destructors, which a fatal
+	 * error may have left full with no memory to grow it, so the fatal error would be printed again.
+	 * Async goes back to READY, as in TrueAsync. */
+	if (UNEXPECTED(is_last_call)) {
+		ZEND_ASYNC_INITIALIZE;
+	} else {
+		main_coroutine = main_coroutine_adopt();
+		ZEND_ASYNC_MAIN_COROUTINE = &main_coroutine->coroutine;
+		ZEND_ASYNC_CURRENT_COROUTINE = &main_coroutine->coroutine;
+	}
 
 	/* The bailout's own error is what the request reports; the exit exception is dropped, as in
 	 * TrueAsync. */
@@ -1320,23 +1441,24 @@ static bool scheduler_main_suspend(bool is_bailout)
 		zend_bailout();
 	}
 
-	/* main.c prints only EG(exception): the exit exception goes there. */
-	if (UNEXPECTED(ZEND_ASYNC_EXIT_EXCEPTION != NULL)) {
-		zend_object *exit_exception = ZEND_ASYNC_EXIT_EXCEPTION;
-		ZEND_ASYNC_EXIT_EXCEPTION = NULL;
-		scheduler_exit_exception_printed(exit_exception);
+	zend_object *exit_exception = scheduler_exit_exception_take();
 
+	/* main.c prints only EG(exception): the exit exception goes there, except at the last call with
+	 * none pending, which prints it below so that after a bailout the built-in __toString() does. */
+	if (UNEXPECTED(exit_exception != NULL && (!is_last_call || EG(exception) != NULL))) {
 		if (UNEXPECTED(EG(exception) != NULL)) {
 			zend_exception_set_previous(EG(exception), exit_exception);
 		} else {
 			EG(exception) = exit_exception;
 		}
+
+		exit_exception = NULL;
 	}
 
-	/* Only the last call reaches this line in the shutdown, after the destructors. A bailout's call never
-	 * gets here, a shutdown function's included (it re-raises above). */
-	if (UNEXPECTED(EG(flags) & EG_FLAGS_IN_SHUTDOWN)) {
-		scheduler_print_unobserved_exceptions();
+	/* What the last pass did not print: after a bailout before the last call, or without a scheduler.
+	 * A bailout's call never gets here (it re-raises above). */
+	if (UNEXPECTED(is_last_call)) {
+		scheduler_print_last(exit_exception);
 	}
 
 	return EG(exception) == NULL;
@@ -2320,9 +2442,9 @@ void async_scheduler_request_startup(void)
 }
 
 /* Runs after the core turned async off (the main and current slots are NULL already). What is left
- * in the registry is the main coroutine minted by the last from_main call, a core coroutine whose
- * enqueue the scheduler refused, and, when a bailout cut that call short (U6), the coroutines it never
- * reached, a parked scheduler and its pool. Nothing may
+ * in the registry is the main coroutine minted by a last from_main call with a bailout, a core
+ * coroutine whose enqueue the scheduler refused, and, when a bailout cut that call short (U6), the
+ * coroutines it never reached, a parked scheduler and its pool. Nothing may
  * run any more, so a parked stack is unmapped without unwinding: the heap never reclaims a fiber
  * stack, and a worker would lose one per such request. TrueAsync's dtor only releases the objects.
  * What the dropped frames held is leaked to the heap, which is silent after a bailout

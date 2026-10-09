@@ -166,8 +166,8 @@ static void coroutine_object_destroy(zend_object *object)
 		return;
 	}
 
-	/* Async is off only after the request's last print. */
-	if (EXPECTED(ZEND_ASYNC_IS_ACTIVE)) {
+	/* READY counts: the last call's fallback print runs with async READY. */
+	if (EXPECTED(ZEND_ASYNC_ON)) {
 		async_unobserved_exception_add(exception);
 		return;
 	}

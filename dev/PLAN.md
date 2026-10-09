@@ -105,6 +105,11 @@ Waiting for Edmond's call; nothing here is being worked on.
   ahead can in principle complete as TIMEOUT on a ready socket (not seen); io_uring checks readiness at
   submit. The provider answers a passed deadline itself; a readiness probe at issue in ior, or in the ring as `php_io_ring_group_probe()`
   does for ANY members, is a change to bukka's code. Edmond's call.
+- The last from_main call with a bailout still makes a new main coroutine (S10.6): a bailout in the
+  destructors brings it to the call after them, which the scheduler cannot tell from a shutdown
+  function's call, so an out-of-memory error in a destructor of the store's pass at shutdown is printed
+  twice (`dev/SECURITY.md`, 2026-10-09). A fix needs the core to say which call it is (a flag before
+  `main/main.c`'s last call, or an argument), an RFC change. Edmond's call.
 - `Scope::inherit()` under a closed scope (the Critic of S9.20) is allowed, as TrueAsync's, and its
   coroutines are out of reach of any later cancel of the closed scope's ancestors; `spawn()` in the closed
   scope itself is refused, the new child accepts it. Edmond's call.
@@ -1317,7 +1322,7 @@ Active: S9.29
       tier: T2 · role: —
       handoff: `dev/plans/S9-taskgroup.md` section 7.
 
-## S10 — Beyond the RFCs  [in progress]
+## S10 — Beyond the RFCs  [x]
 
 One decision per fork feature that needs core changes: PDO pool, per-coroutine output buffers,
 pgsql, `Fiber::getCoroutine()`, `zend_sigaction` hook, thread pool, Windows, and what the inventory
@@ -1331,7 +1336,7 @@ Tier: T2. Roles: Critic and Sage on S10.1, Critic after every coding step.
 Tests: interleaved
 Base: 3c859b5
 Notes: dev/plans/S10.md
-Active: S10.6
+Active: none; stage closed with S10.6
 
 - [x] S10.1 Decision note `dev/plans/S10.md`: per item what TrueAsync does, what the pinned core has,
       the options and the proposed outcome; the inventory of the fork's other core changes.
@@ -1466,9 +1471,24 @@ Active: S10.6
         Critics: watch open/close shared by both platforms, one `signal_watch_settle()`, the handler
         installed last in MINIT and failing it when Windows refuses; "console CLI" was wrong (the
         core's check takes `cli` and `cli-server`), the texts reworded.
-- [ ] S10.6 Security pass by `dev/SECURITY.md`.
+- [x] S10.6 Security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item; findings fixed with a test or recorded
       tier: T2 · role: —
+      result 2026-10-09: journal 2026-10-09 (S10.6). Fixed in the core, `async-core-io-2026-10-09-1`
+        (`3aa1cd120f4`): a fiber whose coroutine was cancelled before its body ran left its starter
+        asleep in `start()` and, after a second `start()`, a heap-use-after-free (`060bc7e104e`, Edmond
+        10:53, option A; `fiber/033`-`035`); and, shown by that fix in `test_scheduler/035`, an
+        out-of-memory fatal error printed twice, because the from_main call after the destructors
+        made a new main (`5610980dc8f` and `src/scheduler.c`, Edmond 11:30; `scheduler/108`,
+        `test_scheduler/095`). Accepted: three Windows console limits, as libuv. Left: the double print
+        after a bailout in the destructors (open questions). An older leak of a printed exception
+        whose `__toString()` throws went with the print's move into a coroutine. The request's last print of uncaught exceptions runs in a
+        coroutine of the last pass, so async works in its `__toString()` (Edmond 13:09;
+        `context/044` changed, `scheduler/109`-`112`, `reactor/044`). Core suites (test_scheduler,
+        poll, stream hooks, Zend/tests/fibers): debug 360 PASS, 5 SKIP; ASAN 354 PASS, 11 SKIP; only
+        the new test differs.
+        Critic (last print): a bailout caught in the print let what `__toString()` spawned run on,
+        and D16's deadline cancelled a print that waited, silently; both fixed with tests.
 
 ## S11 — Namespace `Async` renamed to `TrueAsync`  [ ]
 

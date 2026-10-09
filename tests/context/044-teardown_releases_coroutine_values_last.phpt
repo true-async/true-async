@@ -1,5 +1,5 @@
 --TEST--
-Context: an argument of a coroutine spawned while the request prints an uncaught exception, whose destructor throws, is released after the rest of the teardown ran
+Context: the argument of a coroutine spawned by the __toString() of the request's last uncaught print is released when the coroutine ends, before the teardown
 --FILE--
 <?php
 
@@ -10,7 +10,6 @@ class Boom
     public function __destruct()
     {
         echo "boom destructor\n";
-        throw new Exception("from the destructor");
     }
 }
 
@@ -18,7 +17,10 @@ class Printed extends Exception
 {
     public function __toString(): string
     {
-        spawn(fn(Boom $boom) => null, new Boom());
+        spawn(function (Boom $boom) {
+            echo "coroutine ran\n";
+        }, new Boom());
+
         return "printed";
     }
 }
@@ -38,12 +40,9 @@ echo "end\n";
 ?>
 --EXPECTF--
 end
-%A
-teardown: done
-boom destructor
 
-Fatal error: Uncaught Exception: from the destructor in %s:%d
-Stack trace:
-#0 [internal function]: Boom->__destruct()
-#1 {main}
+Fatal error: Uncaught printed
   thrown in %s on line %d
+coroutine ran
+boom destructor
+teardown: done

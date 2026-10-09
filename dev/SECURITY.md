@@ -401,6 +401,62 @@ finding left open gets an owner step in `PLAN.md`.
   Futures pending and, on a rendezvous channel, the killed sender's value receivable, the class of
   S9-channel.md 8 item 8.
 
+- 2026-10-09 Security pass of S10 (S10.6) over `fad3680`, `3d6cc85`, `6b482cb`, `3d6089c`, `17b6d11`,
+  `8b9ba78` (`src/coroutine.c`, `src/os_signal.c`, `src/scheduler.c`, `src/true_async_API.c`, CI) and the
+  core commits they pin (`a203a1259e8`, `68f790cb2d4`, `2a74924668c`), by checklist item, with scripts run
+  on the debug and ASAN builds. Lifetimes: one defect, fixed in the core. A fiber whose coroutine was
+  cancelled before its body ran, by `Fiber::getCoroutine()->cancel()` since S10.4 or by an `exit()` in
+  another coroutine between `start()` and the body before S10, left the coroutine waiting in `start()`
+  asleep for good (the deadlock report), and a second `start()` left a coroutine pointing at the
+  freed `Fiber` (heap-use-after-free in `zend_fiber_coroutine_dispose()` on ASAN): the scheduler
+  finishes such a coroutine without the fiber's entry point, the only code that woke the starter.
+  `async-core` `060bc7e104e`: a finish handler added at `start()` ends the fiber and wakes the
+  starter with the error, which `start()` throws, as in TrueAsync (`fiber/033`-`035`). The fix
+  moved where `test_scheduler/035`'s out-of-memory error falls and showed an older defect: an
+  out-of-memory fatal error in the script was printed twice, the second time "in Unknown on line 0",
+  because the from_main call after the destructors made a new main coroutine in an object store that
+  reuses no handle after the destructors and had no memory to grow. That call now makes none, in our
+  scheduler (`src/scheduler.c`) and in `test_scheduler` (`5610980dc8f`), and returns async to READY
+  as TrueAsync does (`scheduler/108`, `test_scheduler/095`). Clean: a Windows watch and its trigger
+  across `exit()`, an uncaught exception and RSHUTDOWN (`signal/024`, `027`, `028`); the console
+  handler reads the trigger and the watched numbers under the lock and the arrived numbers through an
+  atomic; `Fiber::getCoroutine()` before `start()` (`fiber/032`) and with the fiber's coroutine
+  cancelled while it waits (`fiber/031`). Refcounts on exception paths: balanced (the woken starter
+  takes the coroutine's exception, and the coroutine keeps none). Engine state: one field,
+  `zend_fiber.start_handler_id`, at the end of the struct. Sizes: watched numbers bounded by
+  `ASYNC_SIGNAL_SLOTS`, at most 32 on Windows (a `static_assert`). INI entries: none new. Test-only
+  code: under `TRUE_ASYNC_TEST_HOOKS`, as before. CI: `CORE_REF` bumps only; permissions read-only.
+- 2026-10-09 S10.6 (Edmond, 13:09): the request's last print of uncaught exceptions runs in a
+  coroutine of the last pass (`DECISIONS.md`, 2026-10-09). Exposure checked: an `exit()` or a fatal
+  error in its `__toString()` still ends the request, and nothing it spawned runs after
+  (`scheduler/109`, `110`); the deadline of the drain before it does not cut it (`reactor/044`), so a
+  `__toString()` that waits holds the request as it did when `main.c` printed, until a graceful
+  shutdown started during the print arms D16 again; after a bailout no class's `__toString()` prints, the exit
+  exception included (`scheduler/112`; before, `main.c` printed it with its class's `__toString()`).
+- 2026-10-09 Accepted (S10.6), as TrueAsync's libuv, which accepts every number: on Windows a watch
+  on a number the console never delivers (`SIGTERM`, say) keeps the scheduler waiting instead of
+  resolving a deadlock for as long as the watch lives, as a submitted wait does on Unix. While a watch
+  waits for SIGINT, SIGBREAK or SIGHUP, the handler hides that event from the handlers registered
+  before it and from the default one, and on a console close it blocks Windows' handler thread in
+  `Sleep(INFINITE)` to give the script the seconds Windows allows, as libuv does.
+- 2026-10-09 Accepted (S10.6): between `SetConsoleCtrlHandler(handler, FALSE)` at MSHUTDOWN and the
+  unload of a shared build, a handler call already running on Windows' thread may still be inside the
+  handler; it reads only process-wide state that MSHUTDOWN leaves in place, and no later event reaches
+  it.
+- 2026-10-09 Seen in S10.6, not a defect: `Fiber::getCoroutine()` registered on `Fiber` by a MINIT that
+  fails afterwards stays registered, but a failed MINIT ends the process
+  (`zend_error_noreturn(E_CORE_ERROR, "Unable to start %s module")`, `Zend/zend_API.c:2511-2513`).
+- 2026-10-09 Left (S10.6), not a security defect: an out-of-memory fatal error in a destructor of the
+  store's pass at shutdown (an object in a static property, say) reaches the last from_main call with
+  a bailout, which still makes a new main coroutine, and the message is printed twice (probe on the
+  debug build). Telling that call from a shutdown function's, which always has a bailout too, needs
+  the core to say which call it is; `PLAN.md` S10, open questions.
+- 2026-10-09 Found in S10.6 on `8b9ba78` and fixed by the step: an exception printed as uncaught at the
+  request's end whose `__toString()` throws leaked (152 bytes, LeakSanitizer on the ASAN build with
+  `USE_ZEND_ALLOC=0`): `main.c` printed the exit exception, and the throw with no frame bailed out
+  before the print released it. The print coroutine prints it through `scheduler_print_uncaught()`,
+  which releases it on a bailout; the same script reports no leak now (`scheduler/110` on ASAN).
+
 ## Open findings
 
 None.
