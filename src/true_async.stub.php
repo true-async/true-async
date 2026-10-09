@@ -57,8 +57,8 @@ function await_any_of(int $count, iterable $triggers, ?Awaitable $cancellation =
 function timeout(int $ms): Awaitable {}
 
 /**
- * OS signals by their Linux numbers; Async\signal() maps each to the platform's own. SIGBREAK and
- * SIGABRT2 exist only on Windows.
+ * OS signals, numbered as on Linux except SIGBREAK and SIGABRT2, which exist only on Windows and
+ * carry its numbers. On Unix Async\signal() maps each case to the platform's own number.
  */
 enum Signal: int
 {
@@ -80,7 +80,9 @@ enum Signal: int
 
 /**
  * A Future that completes with `$signal` when the process receives it, or fails with the error of
- * `$cancellation` (AsyncCancellation when it has none) once that completes first. Not on Windows.
+ * `$cancellation` (AsyncCancellation when it has none) once that completes first. On Windows only in
+ * the main thread of the CLI: Ctrl+C, Ctrl+Break and closing the console arrive as SIGINT, SIGBREAK
+ * and SIGHUP, and the Futures of other cases complete only through their cancellation.
  */
 function signal(Signal $signal, ?Completable $cancellation = null): Future {}
 

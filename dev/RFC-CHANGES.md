@@ -82,7 +82,8 @@ since `bdfa5fa7a12` (2026-10-07), in the core from `async-core-io-2026-10-08-2`:
 `pcntl_sigprocmask()` leave a number a `SignalHandle` watches blocked, and `exec()` and friends start
 the child with `php_io_poll_signal_child_mask()` (`signal/031`, `032` changed, DECISIONS 2026-10-08).
 Closed by 19 (S10.3a): the record of the extension's own block for the child mask, and the count of
-handles per number. Still open: the `PHPAPI` to watch a handle's set without a Context.
+handles per number. Superseded by 20 on 2026-10-09 (S10.5), which carries what was left: the hook in
+`zend_sigaction()` and the `PHPAPI` to watch a handle's set without a Context. Not to be sent.
 
 Need: `Async\signal()` takes a signal through a SIGWAIT op on a number an `Io\Poll\SignalHandle`
 blocks while a `Context` watches it (`dev/plans/S6.md` section 8). `zend_sigaction()` unblocks the
@@ -176,9 +177,13 @@ Waits for it: the open question in `dev/PLAN.md`; `async_signal_reblock()` (`src
 
 ## 10. IO hooks: exec() and friends close through a WaitPid op
 
-State: drafted 2026-10-07 (S6.7), not sent. PR: none.
+State: drafted 2026-10-07 (S6.7), not sent. Done on Unix by bukka's `bdfa5fa7a12` (in the core from
+`async-core-io-2026-10-08-2`), noticed on 2026-10-09 (S10.5). The exec family now opens its child
+with `php_stream_popen()`, which records the child's pid, and the close waits through
+`php_io_waitpid()` (`ext/standard/exec.c:130`, `523`; `main/streams/plain_wrapper.c:471-536`,
+`794-806`). The Windows part is 21. PR: none.
 
-Need: `exec()`, `system()`, `passthru()` and `shell_exec()` open the child with libc `popen()`
+Need (before `bdfa5fa7a12`): `exec()`, `system()`, `passthru()` and `shell_exec()` open the child with libc `popen()`
 (`ext/standard/exec.c:123-125, 514-516`); their reads park through `php_io_read()`, but the stream
 has no `child_pid`, so its close is `pclose()`, which blocks the thread in `waitpid()` (review M9,
 11.2.7). TrueAsync waits for that child with a process event.
@@ -186,8 +191,8 @@ has no `child_pid`, so its close is `pclose()`, which blocks the thread in `wait
 Request: open these children with `php_stream_popen()` (or record the pid), so the close is the
 WaitPid op a provider parks on, as `proc_close()` already is.
 
-Waits for it: nothing listed fails; a coroutine that `exec()`s a slow child stalls the thread at the
-close.
+Waits for it (before `bdfa5fa7a12`): nothing listed fails; a coroutine that `exec()`s a slow child
+stalls the thread at the close.
 
 ## 11. IO hooks: a Flock op
 
@@ -351,3 +356,94 @@ script request takes back. `$old` stays the real mask. Two questions go with it:
 followed by a save-and-restore, and a block during the watch of a number the handle blocked itself.
 
 Waits for it: `async_signal_reblock()` in `src/os_signal.c`; `signal/031`, `034`, `035`.
+
+## 20. Zend signals: a hook that keeps a SignalHandle's numbers blocked
+
+State: drafted 2026-10-09 (S10.5), not sent. PR: none. Replaces what is left of 5 (`dev/plans/S10.md`
+section 4, Edmond 2026-10-08).
+
+Need: a `SignalHandle` owns a number by keeping it blocked, and every `zend_sigaction()` unblocks
+the number it installs a handler for (`Zend/zend_signal.c:260-263`). bukka's `bdfa5fa7a12` and 19
+cover pcntl's calls, which block the number again or filter it out. Three unblocks stay uncovered
+(`dev/plans/S10.md` section 4 (a)): the instant inside `pcntl_signal()` between `zend_sigaction()`'s
+unblock and pcntl's block; pcntl's request shutdown (`ext/pcntl/pcntl.c:242-246`), harmless only
+while the extension's RSHUTDOWN runs first; phpdbg and third-party callers of `zend_sigaction()`. A
+delivery in such a window goes to the Zend handler and never reaches the handle.
+
+Request: a hook in `Zend/zend_signal.c`, filled by `ext/standard`, that `zend_sigaction()` asks
+before its unblock, so that a number a live `SignalHandle` blocks stays blocked. pcntl's own block in
+`pcntl_signal()` and its filter in `pcntl_sigprocmask()` then use the same hook. Second,
+optional part: a `PHPAPI` to block and unblock a handle's set without an `Io\Poll\Context`
+(`php_io_poll_signal_handle_watch()` and `_unwatch()`, the `added` and `removed` ops of the handle),
+so a provider keeps no Context it never waits on (section 4 (d)). The scheduler API gets no hook: a
+second owner beside the handle's count would not cover a script's own `SignalHandle` (a departure from
+TrueAsync's `zend_async_sigaction_fn`, Edmond 2026-10-08).
+
+Waits for it: `async_signal_reblock()` in `src/os_signal.c` and its call in `reactor_poll()`
+(`src/reactor.c`) go once the hook is in the core; the optional part removes the Context of
+`async_signal_registry_t`.
+
+## 21. IO hooks: exec() and friends on Windows through overlapped pipes and WaitPid
+
+State: drafted 2026-10-09 (S10.5), not sent. PR: none. Needs 18.
+
+Need: on Windows `exec()`, `system()`, `passthru()` and `shell_exec()` open the child with TSRM's
+`popen_ex()`, an anonymous pipe (`TSRM/tsrm_win32.c:447-590`, `ext/standard/exec.c:122`, `516`). A
+read spins on `PeekNamedPipe()` with `usleep(10)` for up to 3.2 million rounds, each a
+waitable-timer sleep of at least the timer's resolution, and reads only what is there
+(`main/streams/plain_wrapper.c:668-681`), so the thread blocks until the child writes or exits; the
+close is TSRM's `pclose()`, which waits in `WaitForSingleObject(INFINITE)`
+(`TSRM/tsrm_win32.c:594-612`). A coroutine that runs a slow command blocks the thread in each read
+and at the close. On Unix this is done (10). TrueAsync runs these children through libuv's process
+and pipe handles.
+
+Request: with `php_io_overlapped_pipes` set (18), the exec family opens its child as `proc_open()`
+does: the parent's end an overlapped named pipe whose reads are provider ops, the pipe released from
+the queue before `CreateProcessW()`, the pid recorded in the stream, and the close a
+`php_io_waitpid()`, which on Windows takes any pid (`main/php_io_hooks.h:360-363`).
+
+Waits for it: `exec/004`, `005`, `008`, `009` skip on `*-win` in `tests/lists/S6.txt`.
+
+## 22. IO hooks: a console read on Windows
+
+State: drafted 2026-10-09 (S10.5), not sent. PR: none.
+
+Need: on Windows a read of `STDIN` from a console is a plain `read()`
+(`main/streams/plain_wrapper.c:704`), since a console handle takes neither overlapped I/O nor a
+readiness wait through the completion port. `fgets(STDIN)` in one coroutine blocks the thread, and
+every other coroutine stops until the user presses Enter. TrueAsync reads the console through
+libuv's TTY handle, which reads on a Windows thread-pool thread (`QueueUserWorkItem()`,
+`libuv/src/win/tty.c`).
+
+Request: a console read op, a work op in ior that runs `ReadConsoleW()` (or `ReadFile()` on the console
+handle) on its pool and completes on the queue, used by the plain wrapper for a console descriptor
+when a provider is installed. A cancelled read ends as libuv ends one: an Enter key event written to
+the console input releases the worker's `ReadConsoleW()` (`uv__cancel_read_console()`,
+`libuv/src/win/tty.c:1116-1169`); it also submits what the user had typed of the line, which the
+cancelled read then drops.
+
+Waits for it: nothing listed; a console CLI script that reads input stalls its coroutines.
+
+## 23. IO hooks: DNS in ext/sockets and php_pollfd_for_ms() waits in ftp and pgsql (review M9)
+
+State: drafted 2026-10-09 (S10.5), not sent. PR: none.
+
+Need: two kinds of wait outside the hooks block the thread inside a coroutine (review M9,
+`dev/plans/S10.md` section 9). `ext/sockets` resolves names with libc `getaddrinfo()` and
+`php_network_gethostbyname()` (`ext/sockets/sockaddr_conv.c:51`, `109`, `ext/sockets/sockets.c:3992`),
+so `socket_connect()` to a host name and `socket_addrinfo_lookup()` block on DNS. `ext/ftp`,
+`pg_socket_poll()`, `PDO::pgsqlGetNotify()` and `Pdo\Pgsql::getNotify()` (both
+`pgsqlGetNotify_internal()`) wait with `php_pollfd_for_ms()` and a timeout (`ext/ftp/ftp.c:313`,
+`1390`, `1413`, `1518`, `1820`, `ext/pgsql/pgsql.c:468`, `ext/pdo_pgsql/pgsql_driver.c:1292`), which
+is plain `poll()` (`main/php_network.h:197-206`); `getNotify()` with a 30 s timeout stops every
+coroutine for up to 30 s.
+
+Request: `ext/sockets` resolves through `php_io_getaddrinfo()`; the callers in `ext/ftp`,
+`pg_socket_poll()` and `pgsqlGetNotify_internal()` wait through `php_io_poll()` (or
+`php_io_poll_tv()`). These are the waits on an idle connection; the query waits of both pgsql drivers
+are a later php-src PR of ours (PLAN Fog). The helpers stay `poll()` (DECISIONS 2026-10-09), and
+`php_poll2()` stays as well: it is the zero-timeout probe of the Ring's ANY and of `stream_select()`.
+`mysqli_poll()` (`select()`, `ext/mysqlnd/mysqlnd_connection.c:2258`) is a separate request.
+
+Waits for it: `socket/004` stays in `tests/lists/S10.excluded` (it needs the network and cannot show a
+blocking resolution); no listed test covers ftp or pgsql.

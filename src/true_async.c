@@ -166,9 +166,11 @@ static PHP_MINIT_FUNCTION(true_async)
 		return SUCCESS;
 	}
 
-#if defined(PHP_WIN32) && defined(HAVE_IOR)
+#ifdef PHP_WIN32
+#ifdef HAVE_IOR
 	/* proc_open() makes pipes the Ring reads and writes without blocking the thread (S6.md 9.1) */
 	php_io_overlapped_pipes = true;
+#endif
 #endif
 
 	async_register_future_ce(async_ce_completable);
@@ -194,6 +196,12 @@ static PHP_MINIT_FUNCTION(true_async)
 	}
 
 	async_test_hooks_register_classes();
+#endif
+
+#ifdef PHP_WIN32
+	if (UNEXPECTED(!async_signal_module_startup())) {
+		return FAILURE;
+	}
 #endif
 
 	return SUCCESS;
@@ -240,9 +248,7 @@ static PHP_RSHUTDOWN_FUNCTION(true_async)
 		async_test_hooks_request_shutdown();
 #endif
 		async_io_provider_request_shutdown();
-#ifndef PHP_WIN32
 		async_signal_request_shutdown();
-#endif
 		async_channel_request_shutdown();
 		async_reactor_request_shutdown();
 
@@ -263,6 +269,12 @@ static PHP_MSHUTDOWN_FUNCTION(true_async)
 {
 	UNREGISTER_INI_ENTRIES();
 	async_unregister_fiber_methods();
+
+#ifdef PHP_WIN32
+	if (scheduler_registered) {
+		async_signal_module_shutdown();
+	}
+#endif
 
 	/* The core's unregister leaves the slot, and the factory goes with this module's code. */
 	if (zend_async_new_context_fn == async_context_new) {

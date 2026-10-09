@@ -31,8 +31,36 @@ true-async/
 
 ## Fog
 
-- Multi-thread ZTS (thread pool): needs a loop per thread on Poll/Ring; `SignalHandle` is CLI-only
-  under ZTS (gist:2836-2845).
+- Threads (S10, not in the first version): multi-thread ZTS needs a loop per thread on Poll/Ring, and
+  `SignalHandle` is CLI-only under ZTS (gist:2836-2845). TrueAsync's `Thread`, `ThreadPool`,
+  `ThreadChannel` and a Future sent to a thread return as an extension-level design, built the way
+  ext/parallel is, with three small core needs: a drain of child threads at module shutdown,
+  `sapi_module.thread_init` for Windows, WeakReference transfer (`dev/plans/S10.md` section 7).
+  `signal/008`, `009`, `012` also need a process-wide signal owner, a request to bukka; until then
+  `Async\signal()` on Unix outside the main thread of a threaded CLI is not refused (on Windows it
+  is).
+- Per-coroutine output buffers (S10, not built, Edmond 2026-10-08): the follow-up RFC promised by the
+  scheduler RFC (`scheduler_rfc.md:696`) provides them; option C of `dev/plans/S10.md` section 2
+  is the extension-level path if they are wanted before that. `output_buffer/001`-`006` stay excluded.
+- PDO pool (S10, not in the first version): after the first version, a PDO RFC adds hooks to
+  `ext/pdo` (a connection resolver, `stmt->pooled_conn`, per-binding error state), then the extension
+  builds the pool over S9's `Async\Pool`, which comes first (`dev/plans/S10.md` section 5).
+- pgsql and pdo_pgsql (S10, not in the first version): after the first version, both drivers wait
+  through `php_io_poll()`, with cancellation and a guard against two coroutines on one `PGconn`, in
+  our own php-src PR once the IO hooks RFC is merged; no PostgreSQL fixture in CI until then
+  (`dev/plans/S10.md` section 6).
+- `SIGWINCH` on Windows (S10.5, Edmond 2026-10-09: not now): `Async\signal(Signal::SIGWINCH)` is
+  accepted and completes only through its cancellation. TrueAsync's libuv completes it on a console
+  resize with two thread-pool work items (`QueueUserWorkItem()`) and a hook on conhost's window
+  events (`SetWinEventHook()`, `NtQueryInformationProcess(ProcessConsoleHostProcess)`,
+  `libuv/src/win/tty.c:2375-2442`); the follow-up would do the same.
+- `Zend/zend_types.h` C4146 under `/sdl` on Windows (S10, W9): our build has no `/sdl`; a php-src fix
+  if a build needs the flag.
+- Minor items of S10's inventory (`dev/plans/S10.md` section 9): phpdbg's `run` does not drive the
+  scheduler. Whether our build can hit the bug that the fork's opcache JIT fix `#118` addresses is
+  not checked. `prctl(PR_SET_VMA)` fails on every fiber stack and the failure is not cached
+  (`dev/plans/S3.md` section 10); the core request is not written yet. The fork's blocking writer for
+  stdout and stderr and its `zend_try` in the CLI option handlers are fixes outside both RFCs.
 - An exported C API for other extensions (TrueAsync Server and others): the fork's extended
   `zend_async_API` (events, wakers, `resume_when`) may move into the extension. Not decided; S3
   keeps internal structures open to it, the first version does not promise it.
@@ -817,7 +845,12 @@ Tier: T1.
 
 ## S9 — Higher layers, one at a time  [in progress]
 
-Scope, context, channels, task groups, pools, iterators: each its own plan, agreed with Edmond.
+Scope, context, channels, task groups, pools, iterators, FileSystemWatcher: each its own plan,
+agreed with Edmond. FileSystemWatcher came from S10 (`dev/plans/S10.md` section 9, Edmond
+2026-10-08). It has its own iterator, not the iterators layer's (TrueAsync's `fs_watcher.c:596-721`),
+so the two layers do not overlap. On Linux and macOS it would wait on an inotify or kqueue descriptor
+with `php_io_poll()` (not yet tried); on Windows it needs a directory-change op, which its plan will
+request from bukka. 13 `fs_watcher` tests.
 Layer 1, Scope: `Async\Scope`, `ScopeProvider`, `SpawnStrategy`, `spawn_with()`, the global scope,
 zombies, the error route through scopes, both `finally` methods on TrueAsync's iterator core.
 Layer 2, Context: `Async\Context` over the core's storage, the context of a coroutine and of a scope,
@@ -1211,7 +1244,7 @@ Tier: T2. Roles: Critic and Sage on S10.1, Critic after every coding step.
 Tests: interleaved
 Base: 3c859b5
 Notes: dev/plans/S10.md
-Active: S10.5
+Active: S10.6
 
 - [x] S10.1 Decision note `dev/plans/S10.md`: per item what TrueAsync does, what the pinned core has,
       the options and the proposed outcome; the inventory of the fork's other core changes.
@@ -1320,11 +1353,32 @@ Active: S10.5
       Critic 2026-10-09 round 2 and two quality Critics: the fix sound; a failed registration now
         fails MINIT like the other registrations; wording of the comments, the notice, `031`'s title
         and the DECISIONS entry.
-- [ ] S10.5 The requests of the note written into `RFC-CHANGES.md`; Windows signals in the extension;
+- [x] S10.5 The requests of the note written into `RFC-CHANGES.md`; Windows signals in the extension;
       the items left out of the first version recorded with their follow-up paths; FileSystemWatcher
       added to S9's layers.
       done: one entry per request; `signal/001` passes on Windows if built; a Fog line per item left out
       tier: T2 · role: Critic
+      result 2026-10-09: RFC-CHANGES 20 (the `zend_sigaction()` hook, superseding 5), 21 (exec family
+        on Windows; 10 found done on Unix by `bdfa5fa7a12`), 22 (a console read on Windows), 23 (DNS
+        in ext/sockets, `php_pollfd_for_ms()` callers in ftp and pgsql). `Async\signal()` on Windows
+        (`src/os_signal.c`): a `SetConsoleCtrlHandler()` handler fires a trigger of the main thread;
+        Ctrl+C, Ctrl+Break and the close arrive as SIGINT, SIGBREAK, SIGHUP; only in the CLI's main
+        thread. Own tests `signal/036`-`039`, `collector/079`; `signal/001`, `024`, `027`, `028` run on
+        Windows again. Fog: threads, per-coroutine output buffers, PDO pool, pgsql, `SIGWINCH` on
+        Windows (Edmond 2026-10-09), C4146, the minor inventory items. FileSystemWatcher is an S9
+        layer with its own iterator; no overlap with the iterators layer. pocs-dbg 1441 PASS, 19 SKIP,
+        11 XFAIL, 0 unexpected. Windows Debug_TS on Edmond's PC, no
+        warning under `/WX`: `signal` and `collector/079` 11 PASS, 27 SKIP (Unix-only); full pocs-win 1369
+        PASS, 103 SKIP, 12 XFAIL, 3 unexpected outside S10.5: `channel/101` timed out (10 100 rounds of
+        `timeout(1)` at Windows' 15.6 ms timer resolution; reworked in 3eec9c1), `channel/124` needs
+        pcntl (skipped since effaa20), `scope/170` failed only under the parallel run (reworked in
+        c6be9aa); all three fixed on main meanwhile.
+      Critic 2026-10-09: the wrong commit credited for 10; the close and teardown paths of the Windows
+        watch untested (024/027/028 unskipped); the console handler's flag and trigger read without
+        the lock; the Ctrl+C ignore flag and the refusal order undocumented. Round 2 and two quality
+        Critics: watch open/close shared by both platforms, one `signal_watch_settle()`, the handler
+        installed last in MINIT and failing it when Windows refuses; "console CLI" was wrong (the
+        core's check takes `cli` and `cli-server`), the texts reworded.
 - [ ] S10.6 Security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item; findings fixed with a test or recorded
       tier: T2 · role: —

@@ -1973,3 +1973,44 @@ stack options were shown with the code).
   parallel pocs-win run the member's 5 ms wait could outlast the 50 ms timer, the fire then interrupted it
   and the handler was rightly dropped (Edmond's PC, relayed by the coordinator); the test now waits on
   nothing but the fire.
+- 2026-10-09 S10.5, replacing 2026-10-06 "`Async\signal()` throws on Windows": `Async\signal()` on
+  Windows takes the console's control events, Ctrl+C, Ctrl+Break and the close, as SIGINT, SIGBREAK
+  and SIGHUP, through a `SetConsoleCtrlHandler()` handler installed at MINIT that fires a trigger of
+  the main thread. The handler takes an event only while a watch waits for its number, and holds the
+  close until Windows ends the process; logoff and shutdown are left to the default. Why: TrueAsync's
+  libuv does the same (`libuv/src/win/signal.c:116-144`), and Edmond approved `dev/plans/S10.md`
+  section 8 (W1) on 2026-10-08.
+- 2026-10-09 S10.5 (agent, not yet confirmed by Edmond): on Windows every `Signal` case is accepted.
+  The Future of a case that no console event delivers completes only when its cancellation does
+  (`signal/039`), and never without one. `SIGWINCH` is such a case (Edmond 2026-10-09: not now; PLAN
+  Fog). Why: TrueAsync's libuv takes every number below its `NSIG`, 29
+  (`libuv/include/uv/win.h:90-95`).
+- 2026-10-09 S10.5 (agent, not yet confirmed by Edmond): on Windows `Async\signal()` throws `Error`
+  outside the CLI (`signal/038`) and, in a thread-safe build, outside the main thread (no test: a
+  thread needs ext/parallel). The CLI is what the core's `php_win32_console_is_cli_sapi()` takes: the
+  `cli` and `cli-server` SAPIs, with no check for a console. The check runs after the token's, so a
+  completed token still gives a failed Future, as in 2026-10-06. Why: the core's
+  `sapi_windows_set_ctrl_handler()` refuses there (`win32/signal.c:114-130`); the console's events
+  go to the process, and only the main thread owns the trigger.
+- 2026-10-09 S10.5 (agent, not yet confirmed by Edmond): three limits of the console handler stay. A
+  handler set later by `sapi_windows_set_ctrl_handler()` runs before ours, since Windows calls the
+  last registered handler first. An event taken for a watch that is freed before the main thread
+  wakes is dropped. After `sapi_windows_generate_ctrl_event()` or
+  `sapi_windows_set_ctrl_handler(null)` (both call `SetConsoleCtrlHandler(NULL, TRUE)`,
+  `win32/signal.c:136`, `169`), and in a process started with `CREATE_NEW_PROCESS_GROUP`, Ctrl+C is
+  ignored and no SIGINT arrives; we do not re-enable it. Why: TrueAsync's libuv, registered at startup
+  (`libuv/src/win/signal.c:42-46`), behaves the same.
+- 2026-10-09 S10.5 (agent, not yet confirmed by Edmond), departing from `dev/plans/S10.md` section 9
+  (M9): `php_pollfd_for()` and `php_pollfd_for_ms()` stay plain `poll()`, as the plan already kept
+  `php_poll2()`; RFC-CHANGES 23 asks their callers in ext/ftp and pgsql to wait through
+  `php_io_poll()` instead. Why: the core's own blocking path calls `php_pollfd_for_ms()`
+  (`main/io/php_io_hooks.c:876`, `main/io/php_io.c:110`), and a provider wait inside the helper would
+  send that path back into the provider.
+- 2026-10-09 `signal/024-watch_in_static_outlives_shutdown.phpt`,
+  `signal/027-exit_leaves_held_future.phpt` and `signal/028-uncaught_exception_leaves_held_future.phpt`
+  (ours, S6.8; `changed:2026-10-09`) run on Windows: their SKIPIF is gone. Why: they call no posix
+  function, and they cover the Windows watch's teardown at RSHUTDOWN, at `exit()` and at an uncaught
+  exception (the S10.5 Critic).
+- 2026-10-09 `signal/001-signal_basic_timeout.phpt` runs on Windows again and is back to the
+  reference's text (its `changed:` and `skip-on:*-win` tags gone). Why: the 2026-10-06 reason, a
+  `signal()` that throws on Windows, is replaced above.

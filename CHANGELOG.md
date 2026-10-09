@@ -21,6 +21,13 @@ can see goes here; tests, tools and CI are in the git history.
   `getSpawnFileAndLine()`, `getSpawnLocation()` and the state methods `isStarted()`, `isQueued()`,
   `isRunning()`, `isSuspended()` (false for the running coroutine), `isCancelled()`,
   `isCancellationRequested()`, `isCompleted()`.
+- `Async\signal()`: a Future that completes when the process receives the signal, or fails when its
+  cancellation completes first. On Windows, in the main thread of the CLI, Ctrl+C, Ctrl+Break and
+  closing the console complete the Futures of `SIGINT`, `SIGBREAK` and `SIGHUP`. While such a Future
+  waits, Ctrl+C and Ctrl+Break do not end the process; closing the console still ends it a few
+  seconds later. Futures of other cases complete only through their cancellation; awaited without
+  one, they never return. Elsewhere on Windows `Async\signal()` throws `Error`, unless its
+  cancellation has already completed.
 - `Async\suspend()`: the current coroutine, main included, yields to the coroutines queued ahead of
   it and runs again in its turn; refused in the scheduler's own work.
 - `Async\Coroutine::getSuspendFileAndLine()`, `getSuspendLocation()` and `getTrace()` for a

@@ -32,3 +32,10 @@ module/007-refused_scheduler_no_fiber_getCoroutine.phpt  own:0d3aa5c2b27cf7e0bc7
 # signal (S10.3a, dev/plans/S10.md section 4)
 signal/034-sigaction_unblock_during_watch_holds_after_it.phpt  own:e25624789a3f74cd6fe7f21aed54e9f3b8ed1d99ead4dd87f0b70e7980acada4  skip-on:*-win(Unix-only)
 signal/035-number_stays_blocked_while_another_handle_watches.phpt  own:8cf6a2a390c3d655f82b69be46d8bd54a7c2285fc1c71f5228514a1cef9207a7  skip-on:*-win(Unix-only)
+
+# signal on Windows (S10.5, dev/plans/S10.md section 8, W1)
+signal/036-windows_ctrl_break_completes_sigbreak.phpt  own:265caf541276cd378ad7cf27ca1d0c4979c10602a9011697389d369f9a85ae11  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)
+signal/037-windows_ctrl_break_without_watch_ends_process.phpt  own:404a7bfdbb75d0ebd419233ba8bfb42ace1d3360e625a4fd4e6c9535aab0a50a  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)
+signal/038-windows_refused_outside_cli.phpt  own:6358cdb8c12bf37f3f1f2fe227c0f123d9d88183626d180c8fcdeb44ff715e02  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)
+signal/039-windows_number_without_console_event_waits.phpt  own:8612825fb5dc16ccd9f3b59ddcd91a99be1c42dceeee508f688cb2754636aa20  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)
+collector/079-windows_signal_future_waiter.phpt  own:4c0fa38742a1caf4e847984fca3c7e5352f67889ef1ed13808b474a061875739  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)

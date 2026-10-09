@@ -931,9 +931,7 @@ async_coroutine_t **async_collector_find(uint32_t *count, const size_t ceiling)
 				&collector, async_coroutine_from_object((zend_object *) collector.nodes[candidate].address), candidate);
 	}
 
-#ifndef PHP_WIN32
 	async_signal_collector_seed(&collector);
-#endif
 	collector_wake_edges(&collector, candidate_count);
 	collector_count(&collector);
 	collector_holders(&collector);

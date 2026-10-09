@@ -1,9 +1,5 @@
 --TEST--
 Async\signal(): exit() ends the script while a Future nobody awaits holds a watch
---SKIPIF--
-<?php
-if (PHP_OS_FAMILY === 'Windows') echo "skip Unix-only test";
-?>
 --FILE--
 <?php
 use Async\Signal;
