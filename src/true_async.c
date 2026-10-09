@@ -182,6 +182,10 @@ static PHP_MINIT_FUNCTION(true_async)
 		return FAILURE;
 	}
 
+	if (UNEXPECTED(async_register_fiber_methods(type) == FAILURE)) {
+		return FAILURE;
+	}
+
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	/* A second table beside TRUE_ASYNC_FUNCTIONS: the mull lane builds the known-answer functions
 	 * and the hooks together. */
@@ -258,6 +262,7 @@ static PHP_RSHUTDOWN_FUNCTION(true_async)
 static PHP_MSHUTDOWN_FUNCTION(true_async)
 {
 	UNREGISTER_INI_ENTRIES();
+	async_unregister_fiber_methods();
 
 	/* The core's unregister leaves the slot, and the factory goes with this module's code. */
 	if (zend_async_new_context_fn == async_context_new) {

@@ -1,7 +1,5 @@
 --TEST--
 Cancel fiber's coroutine via getCoroutine()->cancel()
---XFAIL--
-Not implemented yet: S10.4 of dev/PLAN.md
 --FILE--
 <?php
 

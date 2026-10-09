@@ -1,7 +1,5 @@
 --TEST--
 Cancel fiber's coroutine while fiber is suspended
---XFAIL--
-Not implemented yet: S10.4 of dev/PLAN.md
 --FILE--
 <?php
 

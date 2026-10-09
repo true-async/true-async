@@ -560,6 +560,8 @@ a coroutine a handler left running under a cancelled scope.
   texts for Edmond in `/mnt/project-files/notes/`: `http-last-response-headers-leak-pr.md` and
   `fiber-gc-include-symbol-table-pr.md` (php/php-src, base `PHP-8.4`).
 - S10.3a closed 2026-10-08 (PLAN result line): the core update to `async-core-io-2026-10-08-4`; the
-  bukka PR text is `/mnt/project-files/notes/signal-unblock-at-removal-pr.md` (Edmond opens it). Next
-  is S10.4.
-  The research reports behind the note: `/mnt/project-files/notes/s10/` (project files).
+  bukka PR text is `/mnt/project-files/notes/signal-unblock-at-removal-pr.md` (Edmond opens it).
+- S10.4 closed 2026-10-09 (PLAN result line): `Fiber::getCoroutine()` in `src/coroutine.c`. Next is
+  S10.5.
+
+The research reports behind the note: `/mnt/project-files/notes/s10/` (project files).

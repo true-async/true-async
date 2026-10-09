@@ -18,6 +18,7 @@
 #include "php_true_async.h"
 #include "Zend/zend_builtin_functions.h"
 #include "Zend/zend_closures.h"
+#include "Zend/zend_fibers.h"
 #include "coroutine.h"
 #include "exceptions.h"
 #include "iterator.h"
@@ -951,4 +952,74 @@ void async_register_coroutine_ce(zend_class_entry *completable_interface)
 	coroutine_handlers.get_gc = coroutine_object_gc;
 	coroutine_handlers.clone_obj = NULL;
 	coroutine_handlers.get_constructor = coroutine_object_get_constructor;
+}
+
+///////////////////////////////////////////////////////////////////
+/// Fiber::getCoroutine()
+///////////////////////////////////////////////////////////////////
+
+/* The coroutine the scheduler gave the fiber at start(), kept after the fiber ends. Null before
+ * start(), where TrueAsync returns one because it makes the coroutine with the Fiber object (S10.md
+ * section 3). Also null for a fiber no scheduler adopted, after a failed start and after the Fiber's
+ * destructor. */
+static ZEND_NAMED_FUNCTION(async_fiber_get_coroutine)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	const zend_fiber *fiber = (const zend_fiber *) Z_OBJ_P(ZEND_THIS);
+
+	if (UNEXPECTED(fiber->coroutine == NULL)) {
+		RETURN_NULL();
+	}
+
+	RETURN_OBJ_COPY(ZEND_COROUTINE_OBJECT(fiber->coroutine));
+}
+
+/* By hand: gen_stub declares only the methods of this extension's own classes. */
+ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_fiber_get_coroutine, 0, 0, Async\\Coroutine, 1)
+ZEND_END_ARG_INFO()
+
+/* clang-format off */
+static const zend_function_entry async_fiber_methods[] = {
+	ZEND_RAW_FENTRY("getCoroutine", async_fiber_get_coroutine, arginfo_fiber_get_coroutine, ZEND_ACC_PUBLIC, NULL, NULL)
+	ZEND_FE_END
+};
+/* clang-format on */
+
+static bool fiber_methods_registered = false;
+
+zend_result async_register_fiber_methods(const int type)
+{
+	HashTable *const methods = &zend_ce_fiber->function_table;
+
+	if (UNEXPECTED(zend_hash_str_exists(methods, ZEND_STRL("getcoroutine")))) {
+		zend_error(E_NOTICE, "The module true_async does not add Fiber::getCoroutine(): the method is already defined");
+		return SUCCESS;
+	}
+
+	if (UNEXPECTED(zend_register_functions(zend_ce_fiber, async_fiber_methods, methods, type) == FAILURE)) {
+		return FAILURE;
+	}
+
+	fiber_methods_registered = true;
+
+	return SUCCESS;
+}
+
+/* The handler is this module's code, which can be unloaded after MSHUTDOWN, while the Fiber class lives
+ * until the class table is destroyed after the modules. */
+void async_unregister_fiber_methods(void)
+{
+	if (UNEXPECTED(!fiber_methods_registered)) {
+		return;
+	}
+
+	zend_function *method = zend_hash_str_find_ptr(&zend_ce_fiber->function_table, ZEND_STRL("getcoroutine"));
+	ZEND_ASSERT(method != NULL && method->internal_function.handler == async_fiber_get_coroutine);
+
+	/* The table's destructor leaves a method's arg_info to the destruction of its class
+	 * (zend_function_dtor()). */
+	zend_free_internal_arg_info(&method->internal_function, true);
+	zend_hash_str_del(&zend_ce_fiber->function_table, ZEND_STRL("getcoroutine"));
+	fiber_methods_registered = false;
 }

@@ -1176,7 +1176,7 @@ Tier: T2. Roles: Critic and Sage on S10.1, Critic after every coding step.
 Tests: interleaved
 Base: 3c859b5
 Notes: dev/plans/S10.md
-Active: S10.4
+Active: S10.5
 
 - [x] S10.1 Decision note `dev/plans/S10.md`: per item what TrueAsync does, what the pinned core has,
       the options and the proposed outcome; the inventory of the fork's other core changes.
@@ -1269,10 +1269,22 @@ Active: S10.4
         `php_io_poll_signal_reblocked()`, which no script request takes back. The second Critic's
         scenario through `pcntl_signal_dispatch()` does not occur on this core: `acc6b34faa3`
         (`php-src-fixes`) runs the handlers under the script's mask.
-- [ ] S10.4 `Fiber::getCoroutine()` added to `Fiber` by the extension.
+- [x] S10.4 `Fiber::getCoroutine()` added to `Fiber` by the extension.
       done: `fiber/019`, `023`-`028` pass on debug and ASAN, with an own test that cancels the
         coroutine of a suspended fiber, then its parent
       tier: T1 · role: Critic
+      result 2026-10-09: `src/coroutine.c` registers the method on `zend_ce_fiber` at MINIT, only with
+        the scheduler registered, and removes it with its arg_info at MSHUTDOWN. Null before `start()`
+        (the note's departure). Own tests `fiber/031` (the fiber's coroutine cancelled, then its parent
+        while the parent waits in `resume()`), `032` (null before `start()`), `module/006`, `007` (no method
+        with the extension disabled or its scheduler refused). All lists on S9.23: pocs-dbg 1441 PASS, 14
+        SKIP, 11 XFAIL; pocs-asan 1416 PASS, 40 SKIP, 10 XFAIL; 0 unexpected.
+      Critic 2026-10-09: the unregister leaked the method's arg_info, which `zend_function_dtor()`
+        leaves to the class (ASAN, every test); freed before the delete. `module/006`, `007` added;
+        `031` shows that the fiber's cancellation is dropped, not chained.
+      Critic 2026-10-09 round 2 and two quality Critics: the fix sound; a failed registration now
+        fails MINIT like the other registrations; wording of the comments, the notice, `031`'s title
+        and the DECISIONS entry.
 - [ ] S10.5 The requests of the note written into `RFC-CHANGES.md`; Windows signals in the extension;
       the items left out of the first version recorded with their follow-up paths; FileSystemWatcher
       added to S9's layers.

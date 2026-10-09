@@ -1,7 +1,5 @@
 --TEST--
 Get fiber's coroutine after fiber termination
---XFAIL--
-Not implemented yet: S10.4 of dev/PLAN.md
 --FILE--
 <?php
 

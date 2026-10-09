@@ -1925,3 +1925,11 @@ stack options were shown with the code).
   close, no longer the lost bytes. Why: Edmond, 07:37, «да снимаем»; keeping the bytes in php-src's
   `php_stream_read()` cost two `php_stream` bits, double memory at the throw and changes to `fpassthru()`
   (`6deca53e595`, reverted by `4c153497db3`).
+- 2026-10-09 S10.4: when the core or an extension loaded earlier already defines
+  `Fiber::getCoroutine()`, the extension leaves it and raises an E_NOTICE at startup, which every CLI
+  run then prints. Why: a silent skip would hide a method whose meaning may differ from ours (null
+  before `start()`, `fiber/032`), and the test suite shows the notice at once.
+- 2026-10-09 S10.4: when a fiber's coroutine is cancelled and then its parent while the parent waits in
+  `resume()`, the parent gets its own cancellation and the fiber's is dropped, not chained
+  (`fiber/031`). Why: the fiber hands its exception to a waker that already holds the parent's
+  cancellation, and a wake never brings a cancellation over a pending error (`scheduler.c:210-215`).

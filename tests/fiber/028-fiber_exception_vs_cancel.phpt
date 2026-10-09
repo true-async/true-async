@@ -1,7 +1,5 @@
 --TEST--
 Fiber throws exception while coroutine is being cancelled
---XFAIL--
-Not implemented yet: S10.4 of dev/PLAN.md
 --FILE--
 <?php
 

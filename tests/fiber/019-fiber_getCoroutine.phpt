@@ -1,7 +1,5 @@
 --TEST--
 Fiber::getCoroutine() method
---XFAIL--
-Not implemented yet: S10.4 of dev/PLAN.md
 --FILE--
 <?php
 

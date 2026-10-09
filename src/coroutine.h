@@ -89,6 +89,10 @@ static zend_always_inline void async_wait_unlink(async_coroutine_t *coroutine)
 
 void async_register_coroutine_ce(zend_class_entry *completable_interface);
 
+/* Fiber::getCoroutine(), added to the core's Fiber class by this extension (S10.md section 3). */
+zend_result async_register_fiber_methods(int type);
+void async_unregister_fiber_methods(void);
+
 /* Runs the coroutine's body on the current context, then finishes it (async_coroutine_finalize)
  * and clears the current-coroutine slot. The coroutine is current and RUNNING. A bailout out of
  * the body sets ASYNC_COROUTINE_F_BAILOUT, finishes it and passes on. */
