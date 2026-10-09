@@ -296,7 +296,7 @@ def compose(lane, stage, selected):
         if missing:
             sys.exit(f'not in any list: {", ".join(sorted(missing))}')
 
-    # A pocs core lacks every RFC change.
+    # A pocs core lacks the RFC change a core tag names; the tag goes once the pinned core carries it.
     needs_rfc = [e for e in entries if e.core and lane.name.startswith('pocs-')]
     left_out = [(e, f'core:{e.core}') for e in needs_rfc]
     run_now = [e for e in entries if e not in needs_rfc]

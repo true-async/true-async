@@ -450,23 +450,35 @@ blocking resolution); no listed test covers ftp or pgsql.
 
 ## 24. Scheduler API: Fiber::resume() and Fiber::throw() refuse once async is off
 
-State: drafted 2026-10-09 (S8.1), the core commit is step S8.1a. PR: none.
+State: done in `async-core` `1e81baa84bf` and `5990cf26276` (2026-10-09, S8.1a, pushed on Edmond's
+word), in the core from `async-core-io-2026-10-09-2`. PR: none; it goes with php/php-src#22561.
 
 Need: a bailout out of main's finish in the last from_main call leaves the coroutines parked to the
 request's end (U6), an adopted fiber's included. `Fiber::resume()` or `Fiber::throw()` in an output
 handler, which runs after `ZEND_ASYNC_DEACTIVATE`, then enqueues the fiber's coroutine and calls
-`zend_fiber_await()` with no current coroutine (`Zend/zend_fibers.c:1554-1555`, `1591-1592`, `997`):
-an assertion failure in a debug build. A release build, read from the code and not run, leaves the
-coroutine in a run queue nobody drains and throws the scheduler's Error "There is no coroutine to
-suspend", not a FiberError. The review's scheduler item 2 asks for a guard in `ZEND_ASYNC_SUSPEND()`;
+`zend_fiber_await()` with no current coroutine (`Zend/zend_fibers.c:1554-1555`, `1591-1592`, `997`
+in `async-core-io-2026-10-09-1`): an assertion failure in a debug build. A release build, read from
+the code and not run, leaves the coroutine in a run queue nobody drains and throws the scheduler's
+Error "There is no coroutine to suspend", not a FiberError. The review's scheduler item 2 asks for a guard in `ZEND_ASYNC_SUSPEND()`;
 our scheduler refuses there already, and the fiber methods are the one core caller that reaches it.
 
-Request: at the top of `Fiber::resume()` and `Fiber::throw()`, beside `zend_fiber_switch_refused()`,
-and only for a fiber with a coroutine (`fiber->coroutine != NULL`), throw the FiberError "Cannot
-switch fibers in current execution context" while `!ZEND_ASYNC_IS_ACTIVE`. A plain fiber stays
-untouched: after the deactivation every new fiber is one (`zend_fiber_adopt()`), and output and
-session handlers may use it.
+The same holds in a session save handler and another extension's RSHUTDOWN, and under READY after
+the scheduler's last pass (a user `__toString()` of the last uncaught print). Without a bailout the
+fiber is closed by then and `resume()` throws "Cannot resume a fiber that is not suspended".
 
-Waits for it: `fiber/036`, `037` (`core:24` in `tests/lists/S8.txt`); `fiber/038` checks that a plain
-fiber in an output handler keeps working.
+Request: in `Fiber::resume()` and `Fiber::throw()`, first in the branch of a fiber with a coroutine
+(`fiber->coroutine != NULL`), after the check that the fiber is suspended and before the enqueue,
+throw the FiberError "Cannot resume a fiber after the scheduler has stopped" while
+`!ZEND_ASYNC_IS_ACTIVE`, and "Cannot switch fibers in current execution context" when the current
+coroutine is missing or finished, which `zend_fiber_await()` needs. The fiber still reports
+`isSuspended()`. A plain fiber stays untouched: after the deactivation every new fiber is one
+(`zend_fiber_adopt()`), and output and session handlers may use it.
+
+Also: the destructor of a fiber with a coroutine detached it and left it SUSPENDED; a destructor
+that kept the object (a collected cycle) reached the legacy `resume()`, which switched to a context
+the fiber never had (an assertion, a crash in a release build). The fiber is now DEAD at once, as a
+plain fiber the destructor closes; its body's cancellation still runs later on the scheduler.
+
+Waits for it: nothing; the pinned core carries it. `fiber/036`, `037` and `039` check it, `fiber/038`
+that a plain fiber in an output handler keeps working.
 

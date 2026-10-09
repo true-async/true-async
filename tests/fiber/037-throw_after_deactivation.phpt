@@ -34,4 +34,4 @@ main end
 shutdown function end
 
 Fatal error: finish handler of coroutine %d bails out in Unknown on line 0
-handler: FiberError: Cannot switch fibers in current execution context
+handler: FiberError: Cannot resume a fiber after the scheduler has stopped

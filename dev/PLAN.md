@@ -889,7 +889,7 @@ not expressible with why); `RFC-CHANGES.md` complete; the review updated.
 Tier: T1. Roles: Critic after every step.
 Tests: interleaved
 Base: d783cea
-Active: S8.1a
+Active: S8.1b
 
 Each item is run against our provider on the pinned core, on `pocs-dbg` and `pocs-asan`, over the
 Ring and over the Poll queue (`TrueAsync\Test\` hook) where the item depends on the queue. Its
@@ -909,10 +909,23 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
         the core's `Fiber::resume()` and `throw()` assert after the deactivation (`RFC-CHANGES.md`
         24). Tests `io_provider/036`-`041`, `fiber/036`-`038` (036, 037 `core:24`) in
         `tests/lists/S8.txt`; lanes `pocs-dbg` and `pocs-asan`: 14 of 14 S8.1 and related tests PASS.
-- [ ] S8.1a `Fiber::resume()` and `Fiber::throw()` of an adopted fiber refuse once async is off, on
+- [x] S8.1a `Fiber::resume()` and `Fiber::throw()` of an adopted fiber refuse once async is off, on
       `async-core` (`RFC-CHANGES.md` 24), with the core update that brings it.
       done: `fiber/036`, `037` pass without their `core:` tag and `fiber/038` still passes, on debug
         and ASAN; the core suites rediffed
+      tier: T1 · role: Critic
+      handoff: 2026-10-09 on core `async-core-io-2026-10-09-2` `a60017a0ec0`: refused before the
+        enqueue, with "Cannot resume a fiber after the scheduler has stopped" (036, 037 changed); a
+        fiber destroyed while suspended is DEAD (`fiber/039`). `pocs-dbg` 1613 PASS, `pocs-asan`
+        1584 PASS, 0 unexpected on both; the core's `Zend/tests/fibers` and `ext/test_scheduler`
+        210 of 210 PASS on debug.
+- [ ] S8.1b Fiber adoption bugs the S8.1a Critic found, on `async-core`: a fiber freed while its body
+      runs leaves `EG(active_fiber)` dangling in the body (`Fiber::getCurrent()` after the caller's
+      cancellation: heap-use-after-free on ASAN); a second `resume()` while one is in flight takes
+      over the fiber and the first caller waits for ever; a fiber kept by a destructor while INIT
+      can be started again (read from the code, not run). Also php/php-src: `getReturn()` of a fiber destroyed while suspended
+      returns UNDEF (fatal error in a debug build), with or without the extension (`php-src-fixes`).
+      done: a test each, on debug and ASAN; the fix follows TrueAsync where it has one
       tier: T1 · role: Critic
 - [ ] S8.2 B1 and B2: each scenario of B1 (a writer beside a parked reader, several acceptors on
       one listener, `fclose()`, `stream_socket_shutdown()` and `proc_close()` of a stream another

@@ -2315,3 +2315,12 @@ stack options were shown with the code).
 - 2026-10-12 S14.5: `io_provider/042-submit_refused_answers_read_with_error.phpt` skips on Windows, as its
   `skip-on:*-win(Unix-only)` tag said: Windows has no `STREAM_PF_UNIX` socket pair, and the test lacked the
   SKIPIF (red `windows` job of 2f277fa).
+- 2026-10-09 S8.1a: an adopted fiber's `resume()` and `throw()` throw "Cannot resume a fiber after the
+  scheduler has stopped" once async is not active, and the switch-refused FiberError with no live current
+  coroutine, before the enqueue; `fiber/036-resume_after_deactivation.phpt` and
+  `fiber/037-throw_after_deactivation.phpt` change to that message. Why: the Critic showed the switch
+  message false there (`fiber/038` switches a plain fiber in the same handler). Found on the way: a fiber
+  destroyed while suspended and kept by a destructor crashed in `resume()`; the core marks it DEAD, as a
+  plain fiber (`fiber/039`). `check-lists.py` lets a frozen line lose its `core:` tag once the pinned core
+  carries the entry, as `xfail-on:`. Not done: `start()` keeps no such check (a destructor of a
+  coroutine's result, the Critic's trigger, is refused as a switch already).

@@ -157,8 +157,9 @@ def check_frozen(list_file):
         if not old or old[0].startswith('#'):
             continue
 
-        # An xfail-on tag is the one a frozen line loses, once its step makes the test pass there.
-        old = [word for word in old if not word.startswith('xfail-on:')]
+        # An xfail-on tag is lost once its step makes the test pass there, and a core tag once the
+        # pinned core carries its RFC-CHANGES entry: either way the test runs and shows a wrong drop.
+        old = [word for word in old if not word.startswith(('xfail-on:', 'core:'))]
 
         if not any(new[:2] == old[:2] and set(old) <= set(new) for new in current):
             error(f'{list_file.name}: frozen line changed or removed: {" ".join(old)}')

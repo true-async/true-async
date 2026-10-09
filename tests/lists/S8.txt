@@ -2,9 +2,10 @@
 # A test of a defect our provider cannot close carries the core: tag of its dev/RFC-CHANGES.md entry.
 
 # fiber
-fiber/036-resume_after_deactivation.phpt  own:e370a9e081edfe28863dd8d8fe7fa2a347974d31f22a19f21c8127a29c4f94f4  core:24
-fiber/037-throw_after_deactivation.phpt  own:c309842a8570a064ec4429fbe1394cfea4c4cf98b70e4f49fdd05bbca8d3516a  core:24
+fiber/036-resume_after_deactivation.phpt  own:e370a9e081edfe28863dd8d8fe7fa2a347974d31f22a19f21c8127a29c4f94f4  changed:2026-10-09:a14aac82617a685a949f638bffd2339a836e7815c4e27caf9c24a25230840d93
+fiber/037-throw_after_deactivation.phpt  own:c309842a8570a064ec4429fbe1394cfea4c4cf98b70e4f49fdd05bbca8d3516a  changed:2026-10-09:0e1a4246e93b767bf9d3831c61289850fd8dcc687bee0da70eb19c9d4894ddfa
 fiber/038-new_fiber_in_output_handler.phpt  own:e3301e37cb1de71cf2b51bbf9ae187981d00ba5ed4a809598c84204002379209
+fiber/039-resume_of_fiber_kept_by_destructor.phpt  own:8f2a638de1202afa37f4c073092b82f33468f30a6f5274e294afc568e244ad6a
 
 # io_provider
 io_provider/036-fatal_error_with_main_parked_in_read.phpt  own:5e448795e54c5aa837233fa5acff9dfe7f30312d75d069599984e36aca0fa7a4  skip-on:*-win(Unix-only)
