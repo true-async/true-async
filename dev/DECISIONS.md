@@ -1918,3 +1918,10 @@ stack options were shown with the code).
   test's case, a cancellation among the handlers' errors, now "Scope has been disposed due to timeout" (the
   S9.23 code Critic: a 50 ms wait could end before the timer fired under load), and the main waits on a flag
   the throwing handler sets instead of `delay(20)`.
+- 2026-10-09: a stream read or write cancelled while it waits gives no guarantee about the stream's data: the
+  stream stays usable (`io_provider/009`, `010`, `023`), its data may have a gap, and the user documentation
+  (true-async.github.io, `cancellation.md`) says to close it.
+  `io_provider/032-cancelled_pipe_read_then_close.phpt` (`changed:2026-10-09`) checks the cancellation and the
+  close, no longer the lost bytes. Why: Edmond, 07:37, «да снимаем»; keeping the bytes in php-src's
+  `php_stream_read()` cost two `php_stream` bits, double memory at the throw and changes to `fpassthru()`
+  (`6deca53e595`, reverted by `4c153497db3`).

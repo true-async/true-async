@@ -1237,7 +1237,9 @@ Active: S10.4
         runs and the old core's CI run; CI on this commit, the first on the new core (Windows
         included), follows the push.
         Found: `io_provider/032` loses bytes under load on the old core too (`php_stream_read()` drops
-        what it took when the refill's wait is cancelled); its own thread and core update.
+        what it took when the refill's wait is cancelled); its own thread. The php-src fix was dropped
+        (Edmond, 2026-10-09): a cancelled read or write leaves gaps in the data, documented in
+        true-async.github.io, and `032` now checks the cancellation and the close (`DECISIONS.md`, 2026-10-09).
       Critic 2026-10-08: the first signal fix returned the real mask in `$old`, which left a watched
         number blocked after a block-and-restore during the watch (run). Changed to the script's mask;
         the choice went to Edmond as a decision card.
