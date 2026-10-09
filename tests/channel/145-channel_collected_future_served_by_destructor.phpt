@@ -1,5 +1,5 @@
 --TEST--
-Channel: a recvAsync() Future being freed is out of the queue before its children's destructors run
+Channel: a recvAsync() Future that only its map() child holds is collected safely when a destructor of the cycle sends on the channel, and the child gets the value
 --FILE--
 <?php
 
@@ -20,18 +20,20 @@ final class SendsOnDestruct
 $channel = new Channel(1);
 $future = $channel->recvAsync();
 $hook = new SendsOnDestruct($channel);
-// The child holds the only reference to the hook, and the pending source holds the only one to the child.
+// The source holds the child in its chain, and the child holds the source and, through its mapper, the hook.
 $future->map(function ($value) use ($hook) {
-    return $value;
+    echo "mapped: ", $value, "\n";
 })->ignore();
 unset($hook);
 $future->ignore();
 unset($future);
 
+var_dump(gc_collect_cycles() > 0);
+Async\suspend();
 echo "count: ", count($channel), "\n";
-echo "recv: ", $channel->recv(), "\n";
 ?>
 --EXPECT--
 destructor sends: true
-count: 1
-recv: value
+mapped: value
+bool(true)
+count: 0

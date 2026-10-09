@@ -25,6 +25,7 @@
 #include "future.h"
 #include "scheduler.h"
 #include "scope.h"
+#include "task_group.h"
 #include "future_arginfo.h"
 
 zend_class_entry *async_ce_future_state = NULL;
@@ -57,6 +58,10 @@ typedef struct
 	zend_object *state;    /* the FutureState held, or NULL */
 	zval mapper;           /* the callable of a child; UNDEF otherwise */
 	future_mapper_kind_t mapper_kind;
+	/* A child's pending source that only its object keeps, a channel's or a group's Future: held until the
+	 * drain takes the child, so a temporary source still completes its chain (TrueAsync's strong reference,
+	 * future.c:1752-1756). NULL otherwise. */
+	zend_object *source;
 	zend_object std;
 } future_t;
 
@@ -281,6 +286,14 @@ static void future_event_collector_references(async_event_t *event, async_collec
 		if (UNEXPECTED(channel != NULL)) {
 			async_collector_report_event_source(collector, channel, event, future_event_collector_references);
 			async_channel_collector_sources(collector, channel);
+			continue;
+		}
+
+		zend_object *const group = async_task_group_of_future_waiter(subscribers[i]);
+
+		if (UNEXPECTED(group != NULL)) {
+			async_collector_report_event_source(collector, group, event, future_event_collector_references);
+			async_task_group_collector_sources(collector, group);
 		}
 	}
 }
@@ -325,6 +338,17 @@ typedef struct
 
 static void
 future_event_complete(async_future_event_t *future, zval *result, zend_object *exception, future_drain_t *drain);
+
+/* The source a child kept until the drain took it; its release may free the source and run PHP code. */
+static void future_release_source(future_t *child)
+{
+	zend_object *source = child->source;
+
+	if (source != NULL) {
+		child->source = NULL;
+		OBJ_RELEASE(source);
+	}
+}
 
 static void future_drain_reserve(future_drain_t *drain, const uint32_t count)
 {
@@ -508,6 +532,7 @@ static void future_drain_run(future_drain_t *drain)
 
 		future_mapper_run(drain, item.parent, child, child_event);
 		async_future_event_release(child_event);
+		future_release_source(child);
 		OBJ_RELEASE(item.child);
 		async_future_event_release(item.parent);
 
@@ -858,6 +883,7 @@ static zend_object *future_object_create(zend_class_entry *class_entry)
 	future_object->state = NULL;
 	ZVAL_UNDEF(&future_object->mapper);
 	future_object->mapper_kind = FUTURE_MAPPER_MAP;
+	future_object->source = NULL;
 
 	zend_object_std_init(&future_object->std, class_entry);
 	object_properties_init(&future_object->std, class_entry);
@@ -903,6 +929,7 @@ static void future_object_free(zend_object *object)
 	zend_object_std_dtor(object);
 	zval_ptr_dtor(&future_object->mapper);
 	ZVAL_UNDEF(&future_object->mapper);
+	future_release_source(future_object);
 	future_release_holding(future_object);
 }
 
@@ -918,6 +945,11 @@ static HashTable *future_object_gc(zend_object *object, zval **table, int *count
 	}
 
 	zend_get_gc_buffer_add_zval(gc_buffer, &future_object->mapper);
+
+	if (future_object->source != NULL) {
+		zend_get_gc_buffer_add_obj(gc_buffer, future_object->source);
+	}
+
 	zend_get_gc_buffer_use(gc_buffer, table, count);
 
 	return NULL;
@@ -1291,6 +1323,13 @@ static void future_mapper_create(INTERNAL_FUNCTION_PARAMETERS, const future_mapp
 	future_chain_reserve(&source->chain, 1);
 	GC_ADDREF(&child->std);
 	source->chain.children[source->chain.length++] = &child->std;
+
+	const future_t *source_object = THIS_FUTURE;
+
+	if (source_object->state == NULL && Z_ISUNDEF(source_object->mapper)) {
+		child->source = Z_OBJ_P(ZEND_THIS);
+		GC_ADDREF(child->source);
+	}
 
 	RETURN_OBJ(&child->std);
 }

@@ -61,6 +61,10 @@ typedef struct _async_awaitable_s
 /* The coroutine left a scope other than the global one: a finished one has no scope to read a context
  * from (current_context()). Never cleared. */
 #define ASYNC_COROUTINE_F_LEFT_NON_GLOBAL_SCOPE (1u << 26)
+/* The body's call has returned or thrown: a cancel of the running coroutine leaves it as it is, so a
+ * destructor that the release of its callable runs cannot replace its outcome (S9-taskgroup.md 2). Never
+ * cleared. */
+#define ASYNC_COROUTINE_F_BODY_RETURNED (1u << 27)
 #ifdef TRUE_ASYNC_TEST_HOOKS
 /* The collector's oracle (collector.h): found by a run, the one in `found_run` last; never cleared. */
 #define ASYNC_COROUTINE_F_DEADLOCK_FOUND (1u << 23)

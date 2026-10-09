@@ -1,0 +1,115 @@
+/* This is a generated file, edit task_set.stub.php instead.
+ * Stub hash: d42e8b262c3f4e176301dac3c4fc1347d6c86c2d */
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_class_Async_TaskSet___construct, 0, 0, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, concurrency, IS_LONG, 1, "null")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, queueLimit, IS_LONG, 1, "null")
+	ZEND_ARG_OBJ_INFO_WITH_DEFAULT_VALUE(0, scope, Async\\Scope, 1, "null")
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_TaskSet_spawn, 0, 1, IS_VOID, 0)
+	ZEND_ARG_TYPE_INFO(0, task, IS_CALLABLE, 0)
+	ZEND_ARG_VARIADIC_TYPE_INFO(0, args, IS_MIXED, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_TaskSet_spawnWithKey, 0, 2, IS_VOID, 0)
+	ZEND_ARG_TYPE_MASK(0, key, MAY_BE_STRING|MAY_BE_LONG, NULL)
+	ZEND_ARG_TYPE_INFO(0, task, IS_CALLABLE, 0)
+	ZEND_ARG_VARIADIC_TYPE_INFO(0, args, IS_MIXED, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_TaskSet_trySpawn, 0, 1, _IS_BOOL, 0)
+	ZEND_ARG_TYPE_INFO(0, task, IS_CALLABLE, 0)
+	ZEND_ARG_VARIADIC_TYPE_INFO(0, args, IS_MIXED, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_TaskSet_trySpawnWithKey, 0, 2, _IS_BOOL, 0)
+	ZEND_ARG_TYPE_MASK(0, key, MAY_BE_STRING|MAY_BE_LONG, NULL)
+	ZEND_ARG_TYPE_INFO(0, task, IS_CALLABLE, 0)
+	ZEND_ARG_VARIADIC_TYPE_INFO(0, args, IS_MIXED, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_class_Async_TaskSet_joinNext, 0, 0, Async\\Future, 0)
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_Async_TaskSet_joinAny arginfo_class_Async_TaskSet_joinNext
+
+ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_class_Async_TaskSet_joinAll, 0, 0, Async\\Future, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, ignoreErrors, _IS_BOOL, 0, "false")
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_TaskSet_cancel, 0, 0, IS_VOID, 0)
+	ZEND_ARG_OBJ_INFO_WITH_DEFAULT_VALUE(0, cancellation, Async\\AsyncCancellation, 1, "null")
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_TaskSet_close, 0, 0, IS_VOID, 0)
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_Async_TaskSet_dispose arginfo_class_Async_TaskSet_close
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_TaskSet_isFinished, 0, 0, _IS_BOOL, 0)
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_Async_TaskSet_isClosed arginfo_class_Async_TaskSet_isFinished
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_TaskSet_count, 0, 0, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_Async_TaskSet_awaitCompletion arginfo_class_Async_TaskSet_close
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_TaskSet_finally, 0, 1, IS_VOID, 0)
+	ZEND_ARG_OBJ_INFO(0, callback, Closure, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_class_Async_TaskSet_getIterator, 0, 0, Iterator, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_METHOD(Async_TaskGroup, __construct);
+ZEND_METHOD(Async_TaskGroup, spawn);
+ZEND_METHOD(Async_TaskGroup, spawnWithKey);
+ZEND_METHOD(Async_TaskGroup, trySpawn);
+ZEND_METHOD(Async_TaskGroup, trySpawnWithKey);
+ZEND_METHOD(Async_TaskGroup, race);
+ZEND_METHOD(Async_TaskGroup, any);
+ZEND_METHOD(Async_TaskGroup, all);
+ZEND_METHOD(Async_TaskGroup, cancel);
+ZEND_METHOD(Async_TaskGroup, close);
+ZEND_METHOD(Async_TaskGroup, dispose);
+ZEND_METHOD(Async_TaskGroup, isFinished);
+ZEND_METHOD(Async_TaskGroup, isClosed);
+ZEND_METHOD(Async_TaskGroup, count);
+ZEND_METHOD(Async_TaskGroup, awaitCompletion);
+ZEND_METHOD(Async_TaskGroup, finally);
+ZEND_METHOD(Async_TaskGroup, getIterator);
+
+static const zend_function_entry class_Async_TaskSet_methods[] = {
+	ZEND_RAW_FENTRY("__construct", zim_Async_TaskGroup___construct, arginfo_class_Async_TaskSet___construct, ZEND_ACC_PUBLIC, NULL, NULL)
+	ZEND_RAW_FENTRY("spawn", zim_Async_TaskGroup_spawn, arginfo_class_Async_TaskSet_spawn, ZEND_ACC_PUBLIC, NULL, NULL)
+	ZEND_RAW_FENTRY("spawnWithKey", zim_Async_TaskGroup_spawnWithKey, arginfo_class_Async_TaskSet_spawnWithKey, ZEND_ACC_PUBLIC, NULL, NULL)
+	ZEND_RAW_FENTRY("trySpawn", zim_Async_TaskGroup_trySpawn, arginfo_class_Async_TaskSet_trySpawn, ZEND_ACC_PUBLIC, NULL, NULL)
+	ZEND_RAW_FENTRY("trySpawnWithKey", zim_Async_TaskGroup_trySpawnWithKey, arginfo_class_Async_TaskSet_trySpawnWithKey, ZEND_ACC_PUBLIC, NULL, NULL)
+	ZEND_RAW_FENTRY("joinNext", zim_Async_TaskGroup_race, arginfo_class_Async_TaskSet_joinNext, ZEND_ACC_PUBLIC, NULL, NULL)
+	ZEND_RAW_FENTRY("joinAny", zim_Async_TaskGroup_any, arginfo_class_Async_TaskSet_joinAny, ZEND_ACC_PUBLIC, NULL, NULL)
+	ZEND_RAW_FENTRY("joinAll", zim_Async_TaskGroup_all, arginfo_class_Async_TaskSet_joinAll, ZEND_ACC_PUBLIC, NULL, NULL)
+	ZEND_RAW_FENTRY("cancel", zim_Async_TaskGroup_cancel, arginfo_class_Async_TaskSet_cancel, ZEND_ACC_PUBLIC, NULL, NULL)
+	ZEND_RAW_FENTRY("close", zim_Async_TaskGroup_close, arginfo_class_Async_TaskSet_close, ZEND_ACC_PUBLIC, NULL, NULL)
+	ZEND_RAW_FENTRY("dispose", zim_Async_TaskGroup_dispose, arginfo_class_Async_TaskSet_dispose, ZEND_ACC_PUBLIC, NULL, NULL)
+	ZEND_RAW_FENTRY("isFinished", zim_Async_TaskGroup_isFinished, arginfo_class_Async_TaskSet_isFinished, ZEND_ACC_PUBLIC, NULL, NULL)
+	ZEND_RAW_FENTRY("isClosed", zim_Async_TaskGroup_isClosed, arginfo_class_Async_TaskSet_isClosed, ZEND_ACC_PUBLIC, NULL, NULL)
+	ZEND_RAW_FENTRY("count", zim_Async_TaskGroup_count, arginfo_class_Async_TaskSet_count, ZEND_ACC_PUBLIC, NULL, NULL)
+	ZEND_RAW_FENTRY("awaitCompletion", zim_Async_TaskGroup_awaitCompletion, arginfo_class_Async_TaskSet_awaitCompletion, ZEND_ACC_PUBLIC, NULL, NULL)
+	ZEND_RAW_FENTRY("finally", zim_Async_TaskGroup_finally, arginfo_class_Async_TaskSet_finally, ZEND_ACC_PUBLIC, NULL, NULL)
+	ZEND_RAW_FENTRY("getIterator", zim_Async_TaskGroup_getIterator, arginfo_class_Async_TaskSet_getIterator, ZEND_ACC_PUBLIC, NULL, NULL)
+	ZEND_FE_END
+};
+
+static zend_class_entry *register_class_Async_TaskSet(zend_class_entry *class_entry_Async_Awaitable, zend_class_entry *class_entry_Countable, zend_class_entry *class_entry_IteratorAggregate)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_NS_CLASS_ENTRY(ce, "Async", "TaskSet", class_Async_TaskSet_methods);
+	class_entry = zend_register_internal_class_with_flags(&ce, NULL, ZEND_ACC_FINAL|ZEND_ACC_NO_DYNAMIC_PROPERTIES|ZEND_ACC_NOT_SERIALIZABLE);
+	zend_class_implements(class_entry, 3, class_entry_Async_Awaitable, class_entry_Countable, class_entry_IteratorAggregate);
+
+	return class_entry;
+}

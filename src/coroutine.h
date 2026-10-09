@@ -114,13 +114,22 @@ zend_execute_data *async_coroutine_suspend_frame(async_coroutine_t *coroutine);
 void async_exit_exception_add(zend_object *exception);
 void async_unobserved_exception_add(zend_object *exception);
 
+/* Called once a finally run that started lets go of its handlers and its target: by the last worker that ran,
+ * in its body, else where the run is released (a worker cancelled before it ran: its finish handler, inside its
+ * notify; a pending exit: the scheduler's tick). `target` is borrowed for the call. */
+typedef void (*async_finally_run_end_t)(zend_object *target);
+
 /* Runs `finally_handlers`, taken on success, each called with `target` (a reference taken; NULL passes null),
- * in workers of a new child scope of `scope` (a root when NULL), at the front of the queue, one more while a
- * handler waits, as TrueAsync's async_call_finally_handlers (coroutine.c:1275-1318). One handler's error is the
- * worker's outcome, several a CompositeException, and goes the worker's error route. False, with the handlers left
- * to the caller, when nothing can run them: the core turned async off, or the scheduler refused the worker, whose
- * stack error is then pending. Runs no PHP code, so a caller inside a walk over scopes releases refused handlers
- * after the walk. */
-bool async_finally_handlers_start(HashTable *finally_handlers, async_scope_t *scope, zend_object *target);
+ * in workers of a new child scope of `scope` (a root when NULL), at the front of the queue when `is_hi_priority`,
+ * one more while a handler waits, as TrueAsync's async_call_finally_handlers (coroutine.c:1275-1318). One
+ * handler's error is the worker's outcome, several a CompositeException, and goes the worker's error route.
+ * `on_end`, or NULL, is called as the run ends; it needs a `target`. False, with the handlers left to the caller, when
+ * nothing can run them: the core turned async off, or the scheduler refused the worker, whose stack error is then
+ * pending. Runs no PHP code, so a caller inside a walk over scopes releases refused handlers after the walk. */
+bool async_finally_handlers_start(HashTable *finally_handlers,
+								  async_scope_t *scope,
+								  zend_object *target,
+								  bool is_hi_priority,
+								  async_finally_run_end_t on_end);
 
 #endif /* TRUE_ASYNC_COROUTINE_H */

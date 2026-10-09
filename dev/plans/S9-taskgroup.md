@@ -330,8 +330,8 @@ tasks still start and `spawn()` still adds (probed `g6.php`); `channel/058` need
 (section 9). Section 8, item 11.
 
 **A scope cancelled or closed from outside.** When the group's scope is cancelled (an external `$scope`, a
-parent's cancel) or closed, the queued tasks end as a `cancel()` ends them, with the scope's cancellation or a
-new `AsyncCancellation("TaskGroup cancelled")`, and the group seals and cancels the rest, at the first drain or
+parent's cancel) or closed, the queued tasks end as a `cancel()` ends them, with a new
+`AsyncCancellation("TaskGroup cancelled")` (our scope keeps no cancellation object to reuse; S9.28), and the group seals and cancels the rest, at the first drain or
 `spawn()` that finds the scope so. This cancel marks no entry HANDLED: nobody saw the errors. A cancelled scope that is not closed still accepts spawns
 (`src/scope.c:1088`, `644-645`), so the drain checks the scope's CANCELLED bit as well as its CLOSED bit;
 TrueAsync's drain would start the queued tasks after a parent's cancel, and on a closed scope leaves the
@@ -640,11 +640,15 @@ A reference test whose output a decision changes carries `changed:` with its DEC
 the Critic in S9.28. By reading, before the code: the reports of `task_group/009`, `015`,
 `035-all_synchronous_reject`, `036` and `037` (an error received through a rejected read, item 4) and of
 `034`, `035-gc_traversal_all_states` and `task_set/011` (an unreported error now ends the request, item 15);
-S9.28 runs the whole block and lists every other change before it freezes the block.
+S9.28 runs the whole block and lists every other change before it freezes the block. Run, only `task_set/011`
+changed (S9.28 in DECISIONS): the others print no second report, since TrueAsync is silent without a handler
+and so their expected output never showed one, and in `034` a successful `any()` covers the failure.
+`035-gc_traversal_all_states` never reads its first error, so it will need `changed:` once S9.29 lets it run.
 
 By what each uses: `awaitCompletion()` (`task_group/028`-`031`, `043`, `task_set/023`), `foreach`
 (`task_group/025`, `026`, `task_set/015`, `024`, `025`) and a park on a full queue (`task_group/035`
-`gc_traversal_all_states`, `041`) name S9.29, 13 tests; the other 58 need only S9.28.
+`gc_traversal_all_states`, `041`) name S9.29, 12 tests carrying `--XFAIL--`; the other 59 need only S9.28
+(`task_group/030` passes now: its open-group check comes first).
 
 Under the fuzz seeds of S9.30 the tasks of `task_group/025`, `026`, `task_set/015`, `024`, `025` end in any
 order, and with completion order these tests print another order; a seed fails a test only by a crash, an
@@ -685,10 +689,11 @@ thousands of times (Edmond, 2026-10-09, on `channel/101`): volumes belong to the
   with the scope kept alive elsewhere, unchanged (`r28_control.php`); a group dropped after the coroutines
   have gone at the request's end (an output handler) calling no finally handler, if PHP code can reach that
   point (S9.28 checks; else the case is recorded as read from code); a bailout while the finally run of a dropped group is
-  pending; a fatal error in the same place; a group freed by its
+  pending (one fatal error covers it: a compile error takes the same path, S9.28); a group freed by its
   finally run reporting its errors; a rejected `all()` Future nobody awaits warning at its release; a
   coroutine awaiting `all()` while the tasks sleep not found by the collector; a bailout with queued tasks; a
-  bailout with tasks running and the destructor skipped.
+  bailout with tasks running and the destructor skipped. Added in S9.28: a numeric string key is the integer key (Edmond, 13:56); a
+  `trySpawn()` whose next integer a `spawnWithKey()` took throws once and the next call moves on.
 - S9.29, the cases whose wait `awaitCompletion()` or a parked spawner is: `g4.php` (`race()` before the
   settle; after it), `g13.php` (the composite at the parent's handler), `g14.php` (a spawner parked on a full
   queue when `cancel()` comes), `g17.php` (no report after a cancel), `g9.php` and `g21.php` (an unreported

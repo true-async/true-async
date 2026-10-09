@@ -60,6 +60,9 @@ typedef struct
  * stopped: no finally run at or below this scope calls another handler (S9-scope.md 14). Never cleared; no
  * PHP API sets or reads it. */
 #define ASYNC_SCOPE_F_DEADLINE_PASSED (1u << (ASYNC_EVENT_F_TYPE_SHIFT + 6))
+/* Scope::allowZombies() was called: a TaskGroup given the scope warns that its cancel interrupts anyway
+ * (S9-taskgroup.md 5). DISPOSE_SAFELY cannot tell, since every scope inherits it from the global scope. */
+#define ASYNC_SCOPE_F_ZOMBIES_ALLOWED (1u << (ASYNC_EVENT_F_TYPE_SHIFT + 7))
 
 struct _async_scope_s
 {
@@ -85,6 +88,10 @@ struct _async_scope_s
 	async_event_callback_t dispose_timer_callback; /* in `dispose_timer`'s vector while armed */
 	HashTable *finally_handlers;                   /* lazy: the closures of Scope::finally() */
 	zend_object *context;                          /* lazy: the scope's Async\Context, one reference */
+	/* The TaskGroup whose own scope this is, borrowed: while set, the scope is not disposed, as one with
+	 * coroutines is not (S9-taskgroup.md 5). Cleared by async_scope_release_owner(), async_scope_forget_owner()
+	 * and the request's end, which frees the scope. */
+	zend_object *owner_object;
 };
 
 /* Async\Scope. A stand-in is the object a SpawnStrategy's hooks get for a scope without one; it stays
@@ -121,7 +128,7 @@ async_scope_t *async_scope_current(void);
 zend_object *async_scope_context(async_scope_t *scope);
 
 /* A scope with no object below `parent_scope`, whose safe disposal it takes, or a root when NULL; one
- * without an object goes with its last coroutine. */
+ * without an object goes with its last coroutine unless a TaskGroup pins it (`owner_object`). */
 async_scope_t *async_scope_new(async_scope_t *parent_scope);
 
 /* Adds `coroutine`, which belongs to no scope, to `scope`. */
@@ -148,6 +155,21 @@ void async_scope_mark_zombie(async_coroutine_t *coroutine);
  * unlike TrueAsync's, the cancel goes on to each child scope with no coroutine of its own. A transferred
  * `error` is the callee's. */
 void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_error, bool is_safely);
+
+/* Cancels, never safely, every unfinished coroutine of `scope` and of its child scopes, those an earlier
+ * cancel reached too: async_scope_cancel() counts a cancelled scope as completed and cancels nothing more in it,
+ * so a coroutine spawned into it after its cancel, a zombie, or one that caught its cancellation and waits again
+ * would run on. A finally run's scope is left alone. For a TaskGroup's closing (S9-taskgroup.md 5, step 6).
+ * `error` stays the caller's. */
+void async_scope_cancel_remaining(async_scope_t *scope, zend_object *error);
+
+/* Clears the owner pin of `scope` and disposes the scope when nothing else keeps it: a disposal may run PHP
+ * code, as async_scope_remove_coroutine()'s. */
+void async_scope_release_owner(async_scope_t *scope);
+
+/* Clears the owner pin of `scope` and disposes nothing: for a group that may run no PHP code (after a bailout,
+ * in its free). */
+void async_scope_forget_owner(async_scope_t *scope);
 
 /* Called by the iterator as a finally run's last worker leaves: the run's scope takes scope cancels again.
  * Any other iterator's scope is left alone. */

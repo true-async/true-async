@@ -27,6 +27,7 @@
 #include "future.h"
 #include "collector.h"
 #include "context.h"
+#include "task_group.h"
 #include "scope_arginfo.h"
 
 zend_class_entry *async_ce_scope = NULL;
@@ -205,12 +206,12 @@ static bool scope_has_user_values(const async_scope_t *scope)
 			scope->finally_handlers != NULL || scope->context != NULL;
 }
 
-/* Nothing can use the scope any more: no coroutine, zombies included, it is cancelled or its object is
- * gone, and every child scope is the same (TrueAsync's can_be_disposed with both checks). */
+/* Nothing can use the scope any more: no coroutine, zombies included, no TaskGroup pin, it is cancelled or its
+ * object is gone, and every child scope is the same (TrueAsync's can_be_disposed with both checks). */
 static bool scope_can_be_disposed(const async_scope_t *scope)
 {
 	if (EXPECTED(scope->active_coroutines_count + scope->zombie_coroutines_count > 0 ||
-				 (scope->event.flags & ASYNC_SCOPE_F_REQUEST_LIFETIME))) {
+				 (scope->event.flags & ASYNC_SCOPE_F_REQUEST_LIFETIME) || scope->owner_object != NULL)) {
 		return false;
 	}
 
@@ -414,6 +415,12 @@ static void scope_free(async_scope_t *scope, zend_array **released_values)
 		async_scope_object_from_object(scope->scope_object)->scope = NULL;
 	}
 
+	/* Only the request's end frees a pinned scope (after a bailout skipped the group's closing). */
+	if (UNEXPECTED(scope->owner_object != NULL)) {
+		async_task_group_scope_freed(scope->owner_object);
+		scope->owner_object = NULL;
+	}
+
 	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
 		scope_free(scope->child_scopes.data[i], released_values);
 	}
@@ -491,8 +498,9 @@ static void scope_objects_give_back_to_gc(const async_scope_t *scope, zend_array
 			zend_hash_next_index_insert_new(*released_values, &held_value);
 		}
 
-		/* The object keeps the scope from being disposed, so it reaches the parent's values too. */
-		if (scope_object != NULL && !(scope->event.flags & ASYNC_SCOPE_F_CANCELLED)) {
+		/* The object keeps the scope from being disposed, so it reaches the parent's values too; so does a
+		 * TaskGroup's pin. */
+		if ((scope_object != NULL && !(scope->event.flags & ASYNC_SCOPE_F_CANCELLED)) || scope->owner_object != NULL) {
 			break;
 		}
 
@@ -521,7 +529,7 @@ static bool scope_finally_start(async_scope_t *scope)
 	if (UNEXPECTED(finally_handlers != NULL)) {
 		scope->finally_handlers = NULL;
 
-		if (async_finally_handlers_start(finally_handlers, scope, scope->scope_object)) {
+		if (async_finally_handlers_start(finally_handlers, scope, scope->scope_object, true, NULL)) {
 			is_started = true;
 		} else {
 			/* Released unrun with the scope, after the walk. */
@@ -580,6 +588,26 @@ static void scope_remove_coroutine(async_coroutine_t *coroutine, zend_array **re
 	} else {
 		scope_objects_give_back_to_gc(scope, released_values);
 	}
+}
+
+void async_scope_forget_owner(async_scope_t *scope)
+{
+	scope->owner_object = NULL;
+}
+
+void async_scope_release_owner(async_scope_t *scope)
+{
+	zend_array *released_values = NULL;
+
+	scope->owner_object = NULL;
+
+	if (scope_can_be_disposed(scope)) {
+		scope_dispose(scope, &released_values);
+	} else {
+		scope_objects_give_back_to_gc(scope, &released_values);
+	}
+
+	scope_values_release(released_values);
 }
 
 void async_scope_remove_coroutine(async_coroutine_t *coroutine)
@@ -669,7 +697,7 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 		if (UNEXPECTED(finally_handlers != NULL)) {
 			scope->finally_handlers = NULL;
 
-			if (UNEXPECTED(!async_finally_handlers_start(finally_handlers, scope, scope->scope_object))) {
+			if (UNEXPECTED(!async_finally_handlers_start(finally_handlers, scope, scope->scope_object, true, NULL))) {
 				scope->finally_handlers = finally_handlers;
 			}
 		}
@@ -711,6 +739,30 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 
 	if (transfer_error) {
 		OBJ_RELEASE(error);
+	}
+}
+
+void async_scope_cancel_remaining(async_scope_t *scope, zend_object *error)
+{
+	if (UNEXPECTED(scope_is_finally_run(scope))) {
+		return;
+	}
+
+	if (!(scope->event.flags & (ASYNC_SCOPE_F_CLOSED | ASYNC_SCOPE_F_CANCELLED))) {
+		async_scope_cancel(scope, error, false, false);
+	}
+
+	/* A cancel only queues, so no PHP code changes either vector under the loops. */
+	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
+		async_scope_cancel_remaining(scope->child_scopes.data[i], error);
+	}
+
+	for (uint32_t i = 0; i < scope->coroutines.length; i++) {
+		zend_coroutine_t *coroutine = &scope->coroutines.data[i]->coroutine;
+
+		if (!ZEND_COROUTINE_IS_FINISHED(coroutine)) {
+			async_coroutine_cancel(scope->coroutines.data[i], error, false, false);
+		}
 	}
 }
 
@@ -1330,7 +1382,7 @@ ZEND_METHOD(Async_Scope, asNotSafely)
 		RETURN_THROWS();
 	}
 
-	scope->event.flags &= ~ASYNC_SCOPE_F_DISPOSE_SAFELY;
+	scope->event.flags &= ~(ASYNC_SCOPE_F_DISPOSE_SAFELY | ASYNC_SCOPE_F_ZOMBIES_ALLOWED);
 
 	RETURN_OBJ_COPY(Z_OBJ_P(ZEND_THIS));
 }
@@ -1345,7 +1397,7 @@ ZEND_METHOD(Async_Scope, allowZombies)
 		RETURN_THROWS();
 	}
 
-	scope->event.flags |= ASYNC_SCOPE_F_DISPOSE_SAFELY;
+	scope->event.flags |= ASYNC_SCOPE_F_DISPOSE_SAFELY | ASYNC_SCOPE_F_ZOMBIES_ALLOWED;
 
 	RETURN_OBJ_COPY(Z_OBJ_P(ZEND_THIS));
 }

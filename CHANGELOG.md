@@ -100,3 +100,17 @@ can see goes here; tests, tools and CI are in the git history.
 - `Async\Channel`'s `noProducerTimeout` and `noConsumerTimeout` close a channel that waits too long; a
   channel closes when the scope it was made in is cancelled, takes an error, is disposed or is freed, and
   the partial deadlock collector finds coroutines parked on it ([S9](dev/plans/S9-channel.md)).
+- `Async\TaskGroup` and `Async\TaskSet`: `spawn()`, `spawnWithKey()`, `trySpawn()` and `trySpawnWithKey()`
+  run callables as coroutines of one scope, at most `concurrency` at a time and the rest queued; `all()`,
+  `race()` and `any()` (`joinAll()`, `joinNext()` and `joinAny()`, which take what they deliver, on a
+  `TaskSet`) return Futures; `close()`, `cancel()`, `dispose()` and `finally()`. Dropping a group cancels
+  its unfinished tasks without waiting, runs its finally handlers once and reports the errors no read took
+  as an `Async\CompositeException`. A numeric string key is the integer key, as in an array. `awaitCompletion()`
+  while a closed group has tasks left, `foreach` and waiting on a full queue throw "not implemented yet" for now ([S9](dev/plans/S9-taskgroup.md)).
+- A coroutine whose body has returned or thrown keeps its outcome when its scope is cancelled while its
+  closure is released, as when the closure held the last reference to the scope or the group
+  ([S9](dev/plans/S9-taskgroup.md)).
+- `map()`, `catch()` and `finally()` on a `recvAsync()`, signal or group Future nobody else holds complete
+  when that Future does; before, the Future went with its object and the chain never completed. A dropped
+  `recvAsync()->map()` chain now stays queued until PHP's GC collects it and takes a channel value
+  ([S9](dev/plans/S9-taskgroup.md)).

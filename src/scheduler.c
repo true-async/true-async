@@ -1537,16 +1537,24 @@ bool async_coroutine_cancel(async_coroutine_t *coroutine,
 	 * throws later takes that as its previous. Inside its own suspend() it is SUSPENDED or QUEUED and
 	 * takes the waker below. */
 	if (UNEXPECTED(zend_coroutine == ZEND_ASYNC_CURRENT_COROUTINE && ZEND_COROUTINE_IS_RUNNING(zend_coroutine))) {
-		ZEND_COROUTINE_SET_CANCELLED(zend_coroutine);
-
 		/* D16's graceful exit comes from a dispatch, so only inside the coroutine's own suspend(),
 		 * woken in its tick (U2): that suspend() throws it as it returns. As the outcome it would reach
 		 * getException() and await(), which are not meant to see an exit object. */
 		if (UNEXPECTED(async_is_exit_object(error))) {
 			ZEND_ASSERT(ZEND_ASYNC_IN_SCHEDULER_CONTEXT);
+			ZEND_COROUTINE_SET_CANCELLED(zend_coroutine);
 			waker_apply_error(coroutine, error, true);
 			return true;
 		}
+
+		/* A coroutine that has run cannot be cancelled: the release of its callable dropped the last
+		 * reference to what cancels it, and it keeps its result (Edmond, 2026-10-09; S9-taskgroup.md 2). */
+		if (UNEXPECTED(zend_coroutine->flags & ASYNC_COROUTINE_F_BODY_RETURNED)) {
+			OBJ_RELEASE(error);
+			return true;
+		}
+
+		ZEND_COROUTINE_SET_CANCELLED(zend_coroutine);
 
 		if (EXPECTED(zend_coroutine->exception == NULL)) {
 			zend_coroutine->exception = error;

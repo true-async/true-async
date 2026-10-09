@@ -367,6 +367,7 @@ void async_coroutine_execute(async_coroutine_t *coroutine)
 			zend_coroutine->fcall->fci.retval = &zend_coroutine->result;
 			zend_call_function(&zend_coroutine->fcall->fci, &zend_coroutine->fcall->fci_cache);
 			zend_coroutine->fcall->fci.retval = NULL;
+			zend_coroutine->flags |= ASYNC_COROUTINE_F_BODY_RETURNED;
 
 			/* The callable goes with the run, as in TrueAsync: a finished coroutine holds no
 			 * closure. Unset before the release, which runs destructors that may bail out; what
@@ -513,8 +514,9 @@ void async_coroutine_finalize(async_coroutine_t *coroutine)
 	if (UNEXPECTED(finally_handlers != NULL)) {
 		coroutine->finally_handlers = NULL;
 
-		if (UNEXPECTED(is_bailout ||
-					   !async_finally_handlers_start(finally_handlers, coroutine->scope, &coroutine->std))) {
+		if (UNEXPECTED(
+					is_bailout ||
+					!async_finally_handlers_start(finally_handlers, coroutine->scope, &coroutine->std, true, NULL))) {
 			zend_array_release(finally_handlers);
 		}
 	}
@@ -550,6 +552,7 @@ typedef struct
 {
 	async_iterator_t iterator;
 	zend_object *target; /* the handlers' argument, held; NULL passes null */
+	async_finally_run_end_t on_end;
 } finally_run_t;
 
 /* Calls one handler; its error goes to the iterator's exception, which the run's last worker ends with,
@@ -614,12 +617,23 @@ static void finally_run_dtor(async_iterator_t *iterator)
 	if (run->target != NULL) {
 		zend_object *target = run->target;
 		run->target = NULL;
+
+		if (run->on_end != NULL) {
+			run->on_end(target);
+		}
+
 		OBJ_RELEASE(target);
 	}
 }
 
-bool async_finally_handlers_start(HashTable *finally_handlers, async_scope_t *scope, zend_object *target)
+bool async_finally_handlers_start(HashTable *finally_handlers,
+								  async_scope_t *scope,
+								  zend_object *target,
+								  const bool is_hi_priority,
+								  const async_finally_run_end_t on_end)
 {
+	ZEND_ASSERT(on_end == NULL || target != NULL);
+
 	if (UNEXPECTED(!ZEND_ASYNC_IS_ACTIVE)) {
 		return false;
 	}
@@ -633,7 +647,7 @@ bool async_finally_handlers_start(HashTable *finally_handlers, async_scope_t *sc
 	run_scope->event.flags |= ASYNC_SCOPE_F_FINALLY_RUN;
 
 	finally_run_t *run = (finally_run_t *) async_iterator_new(
-			&handlers, NULL, NULL, finally_handler_call, run_scope, 0, true, sizeof(finally_run_t));
+			&handlers, NULL, NULL, finally_handler_call, run_scope, 0, is_hi_priority, sizeof(finally_run_t));
 
 	/* The run takes the caller's reference; a refusal hands it back by forgetting it. */
 	GC_DELREF(finally_handlers);
@@ -648,6 +662,7 @@ bool async_finally_handlers_start(HashTable *finally_handlers, async_scope_t *sc
 
 	/* Read only when the worker runs. */
 	run->target = target;
+	run->on_end = on_end;
 
 	if (target != NULL) {
 		GC_ADDREF(target);

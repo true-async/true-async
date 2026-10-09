@@ -2087,3 +2087,60 @@ stack options were shown with the code).
   S9.27) is removed. Why: Edmond, 12:48 («если тест не нужен удали»); on `recvAsync()` Futures it checks only that
   each Future of a closed channel has an exception of its own, which `channel/132` checks, and the chaining of an
   earlier item's error, which `await/115` checks.
+- 2026-10-09 S9.28: `task_set/011-task_set_join_any_first_success.phpt` (reference, `changed:2026-10-09`) ends with
+  `Fatal error: Uncaught Async\CompositeException`: the error of its first task is taken by no read, and a
+  successful `TaskSet::joinAny()` covers no other entry, since a `TaskSet` read delivers only the entry it takes
+  and the others stay in the set for later reads (note section 3). Why: the 2026-10-09 S9.26 entry on unhandled
+  errors; note section 9 names `task_set/011` among the tests whose report changes (item 15).
+- 2026-10-09 S9.28 (a bug since S9.18; Edmond 13:49: TrueAsync's behaviour is right): a `map()`, `catch()` or
+  `finally()` child holds its pending source Future while the source has no `FutureState` and is not a child itself
+  (a `recvAsync()`, a signal wait's or a group read's Future), until the drain takes the child or the child is
+  freed, as TrueAsync's strong reference (`future.c:1752-1756`).
+  `channel/108-channel_dropped_future_with_child_served.phpt` (ours, S9.18; `changed:2026-10-09`; renamed from
+  `108-channel_dying_future_not_served` for its new claim) now asserts that a dropped `recvAsync()` Future with a
+  pending child stays queued and the child gets the value; `channel/145` takes over `108`'s destructor case, the
+  cycle collected by PHP's GC. Why: S5 keeps the chain in the event so that a temporary source completes its chain
+  (`future/038`), but these Futures' events died with their object, so `$group->all()->map(f)->await()` and
+  `$channel->recvAsync()->map(f)->await()` deadlocked (probes `s928_*_map_temporary.php`). A chain dropped whole
+  stays queued until PHP's GC collects it, as TrueAsync's.
+- 2026-10-09 S9.28, own choices: the queued and the settled tasks are doubly linked lists of entries in place of
+  the note's `pending` and `settled` key tables, since a `TaskSet` read takes an entry from the middle; the slot
+  waiters and the waiters' queues come with S9.29. The case "the queued tasks of a group whose scope is closed"
+  (note section 9) cannot be reached from PHP: a scope with a running member is never closed without being
+  cancelled, since `async_scope_cancel()` closes only a scope `scope_is_completed()` counts as completed
+  (`src/scope.c:163`, `673`), which with a running member is one already cancelled, and the deadline closes only
+  finally runs (`src/scope.c:340`); so a drain behind a running task finds the scope cancelled (`task_group/067`);
+  the closed scope is tested through `spawn()` (`task_group/068`-`070`), and the drain's closed branch is recorded
+  as read from code. A group made and dropped by an output handler after the coroutines are gone is reachable and
+  calls no finally handler (`task_group/085`); a group still held at the request's end is destroyed by the core's
+  `zend_call_destructors()` (`main/main.c:1934` of async-core) while the scheduler still runs, and its closing ends
+  quietly (`task_group/081`). The closing's composite is made outside PHP code, so its report reads `Uncaught
+  Async\CompositeException in [no active file]:0`, without the inner errors (PLAN, Open questions). The queued
+  tasks of a scope cancelled from outside end with a new `AsyncCancellation("TaskGroup cancelled")`: our scope
+  keeps no cancellation object. Step 6 of the closing cancels through `async_scope_cancel_remaining()`
+  (`src/scope.c`), since `async_scope_cancel()` counts a cancelled scope as completed and would leave a coroutine
+  spawned into it after its cancel, or a zombie of a safe external scope, running (the Critics, `task_group/093`,
+  `095`); `task_group_closing_end()` only releases when its `caller_release_only` says so (`task_group_complete()`
+  passes true only when a refused finally run left the scheduler's exception pending), after a bailout, or once the
+  request's end freed the scopes, and no longer whenever an exception is pending, which a destructor on the way may
+  have thrown. The release of what the entries hold runs after the entries have their new state and the read is
+  answered (a cancel's unstarted calls, `joinAll()`'s taken entries), so a destructor there finds the group
+  consistent (the Critic, `task_group/094`, `task_set/033`).
+- 2026-10-09 S9.28 (Edmond 13:56, «если баг - фикси»; a departure from TrueAsync, `task_group.c:1499-1502`): a
+  numeric string key of `spawnWithKey()` and `trySpawnWithKey()` is the integer key, as in a PHP array, so `"1"`
+  and `1` are one key (`Duplicate key 1`) and the reads build arrays PHP can index (`task_group/096`). TrueAsync
+  kept `"1"` as a string key, and `$results["1"]` found nothing.
+- 2026-10-09 S9.28, the quality Critics: the bailout tests (`task_group/086`, `089`, `090`) keep
+  `skip-on:*-asan(USE_ZEND_ALLOC=0)`, since with Zend MM off any fatal error leaks the core's request memory
+  (LeakSanitizer reports it for a plain-PHP `Cannot redeclare function`, no async code involved); they run on dbg.
+  The compile-error variant of `086` is dropped: it takes the same bailout path through `php_error_cb`. Its number
+  goes to the closing of a group closed and then dropped while its finally run waits, which reports after the run
+  (`task_group/087`). One case per test: `task_set/031` keeps completion order and `task_set/034` takes the two
+  pending `joinNext()` calls; `task_group/053` keeps the spawned but unrun task (`092` has the queued one); `069`
+  keeps the results (`070` has the closed scope's `spawn()`); `076` waits for the task's start, so the holder's end
+  cannot cancel it unstarted under the S9.30 seeds; `095` checks the zombie with `isCompleted()`.
+- 2026-10-09 S9.28, the re-check Critic: a `trySpawn()` whose next integer key a `spawnWithKey()` took throws
+  `Duplicate key` and takes that integer, as `spawn()` takes one at its call, so the next call moves on instead of
+  throwing on every call (`task_group/097`). The availability check of the spawn methods stays before the parameter
+  parsing, as `Async\spawn()`'s (`src/true_async.c`): after it a refusal would leave the `__call` trampoline
+  unreleased.

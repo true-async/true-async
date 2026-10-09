@@ -29,6 +29,7 @@
 #include "future.h"
 #include "scheduler.h"
 #include "scope.h"
+#include "task_group.h"
 #include "timeout.h"
 #include "true_async_arginfo.h"
 
@@ -178,6 +179,7 @@ static PHP_MINIT_FUNCTION(true_async)
 	async_register_scope_ce();
 	async_register_context_ce();
 	async_register_channel_ce();
+	async_register_task_group_ce();
 	zend_async_new_context_fn = async_context_new;
 
 	if (UNEXPECTED(zend_register_functions(NULL, ext_functions, NULL, type) == FAILURE)) {

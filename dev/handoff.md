@@ -574,6 +574,16 @@ S9.27 done 2026-10-09: `await_*` items and every cancellation token take `Comple
 neither; `await_*` over `recvAsync()` Futures waits on channels. The channel's code as an awaitable is gone
 (DECISIONS 2026-10-09 S9.27). S9.txt's layer 4 block starts with the step's own tests. Next: S9.28.
 
+S9.28 done 2026-10-09: `Async\TaskGroup` and `Async\TaskSet` in `src/task_group.c`, without their waits:
+`awaitCompletion()` on a group with tasks left, `foreach` and `spawn()` on a full queue throw "not
+implemented yet" until S9.29 (12 `--XFAIL--` naming it). A task is a coroutine of the group's scope with a
+subscriber in its callbacks; the group's own scope is pinned by `owner_object` until the closing. The
+destructor never waits: the closing ends at the finally run's end and reports the unseen errors from a
+reporter coroutine. Core-side changes in the extension: `async_scope_cancel_remaining()`,
+`async_scope_release_owner()`/`forget_owner()`, `ASYNC_COROUTINE_F_BODY_RETURNED`, `future_t.source`
+(DECISIONS 2026-10-09 S9.28). Next: S9.29 (the TASK_GROUP wait kind, `dev/plans/S9-taskgroup.md` sections
+4, 6).
+
 ## S10
 
 - S10.1 closed 2026-10-08: `dev/plans/S10.md` approved by Edmond (17:40) except output buffers, which

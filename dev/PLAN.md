@@ -166,6 +166,17 @@ Waiting for Edmond's call; nothing here is being worked on.
   chain drain runs them in the global scope, so their `current_context()` is the root context
   (`context/039`); TrueAsync runs the mapper in the scope captured at `map()` (`future.c:1593-1600`).
   Following it changes S5's drain (a callback per subscriber scope); Edmond's call.
+- The report of a dropped group's unhandled errors (S9.28, note section 5, step 5): with no handler it
+  prints `Fatal error: Uncaught Async\CompositeException in [no active file]:0` and no inner error, so the
+  programmer cannot tell which task failed (`task_set/011`); an unused rejected `all()` Future warns
+  `Unhandled exception in Future: ;` for the same empty composite message (`task_group/083`). The composite could carry the first error's
+  message, or the report could print each inner error; Edmond's call.
+- `Scope::awaitCompletion()` of a parent returns while a cancelled child scope still unwinds (S9.28): a
+  cancelled scope counts as completed (`scope_is_completed()`, TrueAsync's `can_be_disposed`), so a group
+  dropped in a coroutine of `$scope` with a task not yet ended lets `$scope->awaitCompletion()` return before
+  that task ends and before the group's finally handlers run (probe
+  `/mnt/project-files/s9/probes/s9.taskgroup/s928_await_completion_cancelled_child.php`);
+  `awaitAfterCancellation()` waits for them. Edmond's call.
 
 ## Parallel tracks
 
@@ -883,7 +894,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, dev/plans/S9-taskgroup.md
-Active: S9.28
+Active: S9.29
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -1277,14 +1288,22 @@ Active: S9.28
         their place (DECISIONS 2026-10-09 S9.27). Own tests `channel/142`-`144`, `await/145` open S9.txt's layer
         4 block; the group's refusals come in S9.28. Critic, Sage and two quality Critics on the commit;
         `channel/134`, which only overlapped `channel/132` and `await/115`, removed (Edmond, 12:48).
-- [ ] S9.28 The layer 4 list block extended and `src/task_group.c` without its waits.
+- [x] S9.28 The layer 4 list block extended and `src/task_group.c` without its waits.
       done: after S9.25; the layer 4 block S9.27 opened in `S9.txt` extended, with `--XFAIL--` naming S9.28 or
         S9.29, `channel/059` out
         of `S9.excluded`, `task_group/040` into it, `channel/058`'s reason changed; the group, its tasks,
         results, errors, closing, finally handlers and destructor built with tests (note sections 2, 3, 5, 6);
         a cancel leaving a coroutine whose body has finished alone, for every scope (section 8, item 28)
       tier: T2 · role: Critic
-      handoff: `dev/plans/S9-taskgroup.md` section 7.
+      handoff: done 2026-10-09: `src/task_group.c` ports TrueAsync's group onto our scopes, Futures and
+        callbacks with the note's departures; the destructor never waits, the closing ends at the finally
+        run's end, the errors no read took are reported from a reporter coroutine. A coroutine whose body
+        returned keeps its outcome when cancelled (`ASYNC_COROUTINE_F_BODY_RETURNED`); `map()` on a Future
+        nobody else holds completes (as TrueAsync, Edmond 13:49); a numeric string key is the integer key
+        (Edmond 13:56). S9.txt's layer 4 block: 71 reference tests (12 `--XFAIL--` naming S9.29,
+        `task_set/011` changed) and 68 own; `channel/059` in, `task_group/040` out. Debug 1594 PASS, ASAN
+        1566 PASS, 0 unexpected. Critic, a second Critic, two quality Critics and a re-check Critic on the
+        commit (DECISIONS 2026-10-09 S9.28). For Edmond: the two Open questions S9.28 added.
 - [ ] S9.29 The TASK_GROUP wait kind: `awaitCompletion()`, `foreach`, `spawn()` on a full queue, the collector.
       done: the S9.29 XFAILs pass; the collector finds a coroutine parked on a group nobody else reaches
       tier: T2 · role: Critic

@@ -1,5 +1,7 @@
 # S9: reference tests of the S9 groups not ported in S9, one reason each (dev/plans/S2.md, section 3).
 
 # channel
-channel/058-channel_taskgroup_dispose.phpt  component:S9 (TaskGroup)
-channel/059-channel_taskgroup_cancel.phpt  component:S9 (TaskGroup)
+channel/058-channel_taskgroup_dispose.phpt  rfc-rule:2026-10-09 S9.26 (TaskGroup::dispose() seals the group)
+
+# task_group
+task_group/040-task_group_thread_shutdown_uaf.phpt  rfc-rule:2026-10-08 S10 outcomes (threads, not in the first version)
