@@ -591,6 +591,14 @@ woken spawner holds (`passed_spawners`), and a newcomer waits behind them. The c
 through its running tasks and its own scope's `owner_object` (DECISIONS 2026-10-09 S9.29). Next: S9.30
 (layer 4 review and the doc, `dev/plans/S9-taskgroup.md` sections 7, 9).
 
+S9.30 done 2026-10-09: the reporter of a group's unread errors hands its composite to the exit's chain from a
+finish handler when the graceful shutdown cancels it unrun; the report made under the shutdown no longer
+releases what it handed over; an `exit()` in a task leaves a null result. The six bailout tests of layer 4 run
+on ASAN (run-tests `--asan` sets `USE_TRACKED_ALLOC`). Mull survivors killed by `task_group/140`, `143`,
+`148`-`158`, `task_set/035`; the rest explained in the PLAN line. Docs: `true-async-doc` `ru/concepts/task-group.md`,
+`task-set.md`. Open for Edmond: the closing after `exit()` (PLAN Open questions). Next: S9.31 (the layer's
+security pass, `dev/plans/S9-taskgroup.md` section 7).
+
 ## S10
 
 - S10.1 closed 2026-10-08: `dev/plans/S10.md` approved by Edmond (17:40) except output buffers, which

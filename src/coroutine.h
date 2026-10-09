@@ -110,7 +110,7 @@ void async_coroutine_finalize(async_coroutine_t *coroutine);
 zend_execute_data *async_coroutine_suspend_frame(async_coroutine_t *coroutine);
 
 /* The request's exit exception (S3.md section 6): a later one takes the earlier as its previous.
- * Takes a reference. */
+ * Takes over the caller's reference. */
 void async_exit_exception_add(zend_object *exception);
 void async_unobserved_exception_add(zend_object *exception);
 

@@ -27,7 +27,7 @@ final class TaskGroup implements Awaitable, \Countable, \IteratorAggregate
      * the next integer.
      *
      * @throws AsyncException on a closed group, a closed scope, or a next integer a spawnWithKey() took (the
-     *   next call takes the integer after it); until S9.29 also on a full queue ("not implemented yet").
+     *   next call takes the integer after it).
      */
     public function spawn(callable $task, mixed ...$args): void {}
 

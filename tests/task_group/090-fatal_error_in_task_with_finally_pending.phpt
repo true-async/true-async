@@ -1,11 +1,5 @@
 --TEST--
 TaskGroup: a fatal error in one task while another runs and a finally handler waits ends the request cleanly
---SKIPIF--
-<?php
-if (getenv("USE_ZEND_ALLOC") === "0") {
-    die("skip Zend MM disabled");
-}
-?>
 --FILE--
 <?php
 

@@ -2211,3 +2211,27 @@ stack options were shown with the code).
   (`task_group/112`-`114`) keep `skip-on:*-asan(USE_ZEND_ALLOC=0)` for the S9.28 reason (`086`), so they run on
   debug only, short of section 9's "on debug and ASAN". `g4.php`'s `race()` before the settle is `task_group/012`'s
   case.
+- 2026-10-09 S9.30: six bailout tests (ours, `changed:2026-10-09`) lose their skip of Zend MM off and their
+  `skip-on:*-asan(USE_ZEND_ALLOC=0)`, so they run on debug and ASAN as note section 9 asks:
+  `task_group/086-fatal_error_finally_run_pending.phpt`, `task_group/089-fatal_error_with_queued_task.phpt`,
+  `task_group/090-fatal_error_in_task_with_finally_pending.phpt`,
+  `task_group/112-fatal_error_while_parked_in_foreach.phpt`,
+  `task_group/113-fatal_error_while_parked_in_awaitCompletion.phpt`,
+  `task_group/114-fatal_error_while_parked_in_spawn.phpt`. The S9.28 reason came from a direct run: run-tests
+  `--asan` sets `USE_TRACKED_ALLOC=1` (the pinned core's `run-tests.php:576`), which keeps `memory_limit` and
+  frees the request's memory after a bailout; `tools/test.py --lane pocs-asan` passes a plain `Cannot redeclare
+  function` and these six. Replaces the S9.28 and S9.29 skip lines; the other lists' bailout tests keep theirs
+  until a step of their own (PLAN, S9.30 handoff).
+- 2026-10-09 S9.30, found by coverage and the Critics (bugs, fixed): the report of a group's unread errors made
+  under the graceful shutdown released the composite it had handed to the exit's chain, a use after free at the
+  print (`task_group/138`). A reporter queued before an `exit()` or an uncaught error was cancelled unrun and its
+  composite dropped, so the errors were never printed; a finish handler now hands it to the exit's chain unless
+  a bailout runs (`139`, `147`). The handler runs at the finish, not in the dispose: a holder of the coroutine
+  (`Async\get_coroutines()`) delays the free past the request, and the exit's chain would keep a freed object
+  (`146`). The tests match only the composite's header: after `exit()` no handler sees it. An `exit()` in a task
+  stored an UNDEF result, which `getResults()` turned into an empty bucket; it is now null, as
+  `Coroutine::getResult()` gives and TrueAsync stores (`task_group.c:931-935`; `145`).
+- 2026-10-09 S9.30 (a departure from note section 9): B17 is compared with the reference at 10 000 tasks, not
+  100 000: the reference's queue scans every entry per start, 905 568 instructions per task at 10 000 and
+  growing with the count, so a run at 100 000 under cachegrind was stopped. Ours runs at both sizes
+  (`dev/BENCHMARKS.md` 2026-10-09).

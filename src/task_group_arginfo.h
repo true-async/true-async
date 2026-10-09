@@ -1,5 +1,5 @@
 /* This is a generated file, edit task_group.stub.php instead.
- * Stub hash: e9f32f9113b995990bad7b6fa4095f637f7a07b8 */
+ * Stub hash: f37ea59b4998a4b690b7f0dde0813a9b09953072 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_Async_TaskGroup___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, concurrency, IS_LONG, 1, "null")

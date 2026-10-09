@@ -1020,6 +1020,18 @@ static void task_group_update(async_task_group_t *group)
 /// Tasks
 ///////////////////////////////////////////////////////////////////
 
+/* An exit() in the task leaves its return value UNDEF: the result is null, as Coroutine::getResult() gives. */
+static void task_group_entry_succeed(async_task_group_entry_t *entry, const zval *result)
+{
+	entry->state = TASK_SUCCEEDED;
+
+	if (UNEXPECTED(Z_ISUNDEF_P(result))) {
+		ZVAL_NULL(&entry->result);
+	} else {
+		ZVAL_COPY(&entry->result, result);
+	}
+}
+
 /* Inside the coroutine's notify, in scheduler context: only records the outcome. The group keeps the error,
  * so it does not take the scope's route (S9-scope.md 4). */
 static void
@@ -1038,8 +1050,7 @@ task_group_task_ended(async_awaitable_t *target, async_event_callback_t *callbac
 		entry->exception = exception;
 		GC_ADDREF(exception);
 	} else {
-		entry->state = TASK_SUCCEEDED;
-		ZVAL_COPY(&entry->result, (zval *) result);
+		task_group_entry_succeed(entry, (const zval *) result);
 	}
 }
 
@@ -1073,8 +1084,7 @@ static void task_group_task_ended_dispose(async_event_callback_t *callback, asyn
 			entry->exception = zend_coroutine->exception;
 			GC_ADDREF(entry->exception);
 		} else {
-			entry->state = TASK_SUCCEEDED;
-			ZVAL_COPY(&entry->result, &zend_coroutine->result);
+			task_group_entry_succeed(entry, &zend_coroutine->result);
 		}
 	}
 
@@ -1372,12 +1382,32 @@ static void task_group_reporter_entry(void)
 	zend_throw_exception_internal(composite);
 }
 
-/* A reporter that never ran (a bailout, the request's end) lets go of its composite. */
+/* A reporter the graceful shutdown cancelled unrun hands its composite to the exit's chain when it finishes, as a
+ * report made under the shutdown does: its free may come after the request, when a holder of the object lets go
+ * late. After a bailout the dispose drops it. */
+static bool
+task_group_reporter_finished(zend_coroutine_t *reporter, zend_coroutine_t *waiter, void *data, const bool is_bailout)
+{
+	(void) waiter;
+	(void) data;
+
+	zend_object *const composite = reporter->extended_data;
+
+	if (UNEXPECTED(composite != NULL && !is_bailout)) {
+		ZEND_ASSERT(ASYNC_G(graceful_shutdown));
+		reporter->extended_data = NULL;
+		async_exit_exception_add(composite);
+	}
+
+	return false;
+}
+
+/* A reporter freed with its composite, one never enqueued or ended by a bailout, lets go of it. */
 static void task_group_reporter_dispose(zend_coroutine_t *reporter)
 {
-	zend_object *composite = reporter->extended_data;
+	zend_object *const composite = reporter->extended_data;
 
-	if (composite != NULL) {
+	if (UNEXPECTED(composite != NULL)) {
 		reporter->extended_data = NULL;
 		OBJ_RELEASE(composite);
 	}
@@ -1396,7 +1426,6 @@ static void task_group_report(zend_object *composite, async_scope_t *parent_scop
 
 	if (UNEXPECTED(ASYNC_G(graceful_shutdown))) {
 		async_exit_exception_add(composite);
-		OBJ_RELEASE(composite);
 		return;
 	}
 
@@ -1407,6 +1436,7 @@ static void task_group_report(zend_object *composite, async_scope_t *parent_scop
 	reporter->coroutine.extended_data = composite;
 	reporter->coroutine.extended_dispose = task_group_reporter_dispose;
 	reporter->coroutine.flags |= ASYNC_COROUTINE_F_PROTECTED | ASYNC_COROUTINE_F_HI_PRIORITY;
+	async_finish_handler_add(&reporter->coroutine, task_group_reporter_finished, NULL, NULL);
 	async_scope_add_coroutine(scope, reporter);
 
 	if (UNEXPECTED(!async_scheduler_enqueue(&reporter->coroutine, NULL, false))) {

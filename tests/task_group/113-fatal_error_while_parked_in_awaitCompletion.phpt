@@ -1,11 +1,5 @@
 --TEST--
 TaskGroup: a fatal error in a task while the main code is parked in awaitCompletion() ends the request cleanly
---SKIPIF--
-<?php
-if (getenv("USE_ZEND_ALLOC") === "0") {
-    die("skip Zend MM disabled");
-}
-?>
 --INI--
 memory_limit=2M
 --FILE--

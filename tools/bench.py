@@ -68,6 +68,14 @@ BENCHMARKS = {
     'B15-known': ('b15.php', ['100000', 'known'], ['200000', 'known'], 100_000),
     'B16': ('b16.php', ['100000'], ['200000'], 100_000),
     'B16-known': ('b16.php', ['100000', 'known'], ['200000', 'known'], 100_000),
+    'B17': ('b17.php', ['100000'], ['200000'], 100_000),
+    'B17-known': ('b17.php', ['100000', 'known'], ['200000', 'known'], 100_000),
+    # The reference's queue scans every entry per start and its all() every entry per task end, quadratic in
+    # the tasks: B17 is compared at 10 000 there, B18 runs at 10 000 as note section 9 asks.
+    'B17-10000': ('b17.php', ['10000'], ['20000'], 10_000),
+    'B17-10000-known': ('b17.php', ['10000', 'known'], ['20000', 'known'], 10_000),
+    'B18': ('b18.php', ['10000'], ['20000'], 10_000),
+    'B18-known': ('b18.php', ['10000', 'known'], ['20000', 'known'], 10_000),
     # D2's control: the same B2 and B4 on ext/test_scheduler, with -d test_scheduler.enable=1.
     'B2-control': ('control/b2.php', ['400000'], ['800000'], 400_000),
     'B4-100-control': ('control/b4.php', ['100', '1000'], ['100', '2000'], 100_000),

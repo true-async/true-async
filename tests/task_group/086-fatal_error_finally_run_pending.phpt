@@ -1,11 +1,5 @@
 --TEST--
 TaskGroup: a fatal error while the finally run of a dropped group waits to start drops the handlers unrun
---SKIPIF--
-<?php
-if (getenv("USE_ZEND_ALLOC") === "0") {
-    die("skip Zend MM disabled");
-}
-?>
 --INI--
 memory_limit=2M
 --FILE--

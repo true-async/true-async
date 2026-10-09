@@ -3,6 +3,35 @@
 The results journal: every measurement with its date, builds and outcome. The method and the
 benchmarks are `dev/plans/S3.md`, section 12; the scripts are `bench/`, the runner `tools/bench.py`.
 
+## 2026-10-09, S9.30: TaskGroup with and without a concurrency limit, counted
+
+**Builds.** Release, ZTS, `-O2`, gcc 13.3, run with `-n`, no opcache; one count per side, the child pinned to one
+CPU (cachegrind counts). Both cores configured with `tools/ci/build-core.sh`'s flags without `--enable-debug`.
+
+- `ours`: the pinned core `3aa1cd120f4` (`async-core-io-2026-10-09-1`), ior `d46649f6425`, and our extension as a
+  `phpize` module of `11a9776` (S9.29) with S9.30's changes, the test hooks off.
+- `ref`: the fork core `863f6dd90cf` with `ext/async` `1fdacf8` built in, libuv 1.48.
+
+`B17` spawns N tasks into a `TaskGroup(concurrency: 10)` from the main code, which parks while the queue (20) is
+full, then awaits `all()` (`bench/b17.php`); `B18` spawns N tasks into a group without a limit, then awaits
+`all()` (`bench/b18.php`). One operation is one task. `B17` runs at N = 100 000 on `ours` only, and both sides
+are compared at N = 10 000 (`B17-10000`): the reference scans every entry of the group for each start and, at
+each task end, for an "anything queued?" check (note section 8, item 21), so its cost per task grows with N in
+`B17` and `B18` alike.
+
+| Bench | ours | ref | ours / ref |
+|---|---|---|---|
+| B1 | 2,966.0 / 1.020 | 3,128.9 / 2.030 | 0.948 |
+| B17 | 4,749.9 / 6.000 | | |
+| B17-10000 | 4,779.0 / 6.000 | 905,568.5 / 8.073 | 0.005 |
+| B18 | 4,781.1 / 6.000 | 1,902,338.8 / 8.000 | 0.003 |
+
+Instructions / allocations per operation; page faults at most 0.4 and system calls 0.001 per operation on every
+row. Known answer: the `known` variants return a `new stdClass` from the same closure and count +448.5 / +1
+(`B17`), +460.1 / +1 (`B17-10000`) and +390.9 / +1 (`B18`) on `ours`, +469.1 / +0.998 (`B17-10000`) and +399.8 / +1
+(`B18`) on `ref`; `B1-known` +370.0 / +1 and +372.2 / +1. Wall time of one run of `taskset -c 0 php -n
+bench/b17.php N`, N = 5 000, 10 000 and 20 000: `ref` 0.069, 0.220 and 0.700 s, `ours` 0.025, 0.025 and 0.029 s.
+
 ## 2026-10-08, S9.20: Channel rendezvous and buffered transfer, counted
 
 **Builds.** Release, ZTS, `-O2`, gcc 13.3, run with `-n`, no opcache; one count per side, the child

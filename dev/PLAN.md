@@ -182,6 +182,13 @@ Waiting for Edmond's call; nothing here is being worked on.
   that task ends and before the group's finally handlers run (probe
   `/mnt/project-files/s9/probes/s9.taskgroup/s928_await_completion_cancelled_child.php`);
   `awaitAfterCancellation()` waits for them. Edmond's call.
+- A group's closing after an `exit()` (the layer Critic of S9.30): a finally run whose worker the exit cancelled
+  before it ran ends at the microtask's last release in the scheduler's tick, so the closing runs there and
+  releases the group's results and its own scope's values in scheduler context; a result whose `__destruct()`
+  waits ends the request with `Uncaught Error: Cannot switch coroutines in the current execution context` (probe
+  `/mnt/project-files/s9/probes/s9.taskgroup/s930_closing_after_exit.php`, debug build). S9.25 accepted that tick
+  release after an exit for a run's handlers and target only; the group makes its whole closing such a target.
+  Move the closing out of the tick, or accept it? Edmond's call.
 
 ## Parallel tracks
 
@@ -953,7 +960,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, dev/plans/S9-taskgroup.md
-Active: S9.30
+Active: S9.31
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -1373,10 +1380,30 @@ Active: S9.30
         (DECISIONS 2026-10-09 S9.29). The 12 S9.29 XFAILs pass, `task_group/035` changed; own tests
         `task_group/099`-`137`. Debug 1654 PASS, ASAN 1622 PASS, 0 unexpected. Critic, two quality Critics and a
         re-check Critic on the commit.
-- [ ] S9.30 Layer 4 review and its documentation in `true-async-doc`.
+- [x] S9.30 Layer 4 review and its documentation in `true-async-doc`.
       done: Critic over S9.27-S9.29, coverage, Mull, 100 fuzz seeds, measurements B17 and B18, the doc pushed
       tier: T2 · role: Critic
-      handoff: `dev/plans/S9-taskgroup.md` sections 7, 9.
+      handoff: done 2026-10-09. Bugs fixed (DECISIONS 2026-10-09 S9.30): a use after free of the report made under
+        the graceful shutdown (`task_group/138`); a reporter queued before an exit lost its errors, now handed over
+        by a finish handler, not the dispose, which a holder can delay past the request (`139`, `146`, `147`); an
+        `exit()` in a task stored UNDEF (`145`). The six bailout tests run on ASAN again: run-tests `--asan` sets
+        `USE_TRACKED_ALLOC`. Coverage (pocs-dbg-cov): src 94.6 % (9425 of 9958 lines), the layer's lines 1182 of
+        1254, the misses failure paths. Mull on `task_group.c` since `5b7f9a3`: 148 mutants, 36 survivors; 22
+        killed by `task_group/140`, `143`, `148`-`158` and `task_set/035` (7 on ASAN only, Mull builds debug),
+        14 explained (lines of the commit): 1214 equivalent, 1910 unkillable (needs about 4e9 queued tasks),
+        422 `<=` equivalent while the waiter is listed, 436 needs a group freed with
+        reads pending (only the request's end), 510 the collector's reach from a Future to its group (the group
+        is held elsewhere), 671 a refused enqueue, 691-695 room counts (a pass wakes more or fewer spawners, each
+        re-checks), 1080 a dispose after an earlier callback threw (no test reaches it), 1363 several child
+        scopes. Fuzz: 100 seeds over 260
+        layer tests, 0 failed, the 30 tests with a new diagnostic the same on `11a9776`; 100 seeds over the 36
+        new and changed tests, 0 failed, 2 diagnostics, both also on `11a9776`. B17 0.005 and B18 0.003 of the
+        reference's instructions at 10 000 tasks, 6 allocations per task against 8 (`dev/BENCHMARKS.md`). Docs:
+        `true-async-doc` `ru/concepts/task-group.md`, `task-set.md`, links from scope, channels, await and
+        coroutines. Layer Critic, a Critic on the fixes, two quality Critics. Open: Edmond's call on the
+        closing after `exit()` (Open questions); the other lists' bailout tests keep `skip-on:*-asan` (S3, S5,
+        S9 layers 1-3, S10), a step of their own. On CORE_REF 3aa1cd120f4: debug 1683 PASS, ASAN 1657 PASS, 0
+        unexpected.
 - [ ] S9.31 Layer 4 security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item of the note's section 7; findings fixed with a test or recorded
       tier: T2 · role: —

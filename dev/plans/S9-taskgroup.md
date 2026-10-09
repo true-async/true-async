@@ -95,11 +95,12 @@ typedef struct {
 ```
 
 The flags: SEALED (`close()`, `cancel()`, `dispose()`, the destructor), COMPLETED, TASK_SET, CANCELLED (a
-cancel ran, section 5) and CLOSING (the destructor ran, section 5); each is a named bit among the event's own
-type bits (13-28), which `await.c` does not read. TrueAsync's bits 11-13 belong to our core's event flags and
-move. Nothing reads the event's CLOSED bit of a group, so the group does not set it (TrueAsync sets it at
-every settle, `task_group.c:725`, the defect of S3.md section 13, item 17). TrueAsync's group-wide "errors
-handled" bit becomes a bit per entry (section 3).
+cancel ran, section 5), CLOSING (the destructor ran, section 5), CONSTRUCTED (the constructor ran, so a second
+call throws), FINALLY_RUNNING (the finally run in progress) and CLOSING_ENDED (the closing ended once); each
+is a named bit among the event's own type bits (13-28), which `await.c` does not read. TrueAsync's bits 11-13
+belong to our core's event flags and move. Nothing reads the event's CLOSED bit of a group, so the group does
+not set it (TrueAsync sets it at every settle, `task_group.c:725`, the defect of S3.md section 13, item 17).
+TrueAsync's group-wide "errors handled" bit becomes a bit per entry (section 3).
 
 **A task entry** is TrueAsync's (`task_group.c:25-42`) with one bit added: queued (it owns the callable, its
 arguments and named arguments), running (a counted reference to the coroutine), succeeded (the result) or
@@ -439,19 +440,21 @@ group has no finally handlers or their run was refused (they are then released u
 reporter of step 5 is refused the same way, and the errors go with the request):
 
 5. report the errors that need it: the failed entries not HANDLED and not cancellations, as one
-   `CompositeException`. A reporter coroutine throws it, spawned into a new child scope of the group's scope
-   (or of the current scope when the external scope is gone), as TrueAsync's `async_spawn_and_throw()`
-   (`exceptions.c:335-365`). It is built as `future_drain_spawn()` builds its coroutine
-   (`src/future.c:551-573`): `internal_entry` throws the composite, `extended_data` holds it,
-   `extended_dispose` releases it when the reporter never runs (a bailout, the request's end); none is
-   spawned while async is not active. While the graceful shutdown of `exit()` or an uncaught error runs, the
-   walks would cancel a reporter unrun, so the composite goes to `async_exit_exception_add()`
-   (`src/coroutine.h:110`) instead and is printed with the exit's exceptions. It carries `ASYNC_COROUTINE_F_PROTECTED`, so the cancel of step 6 waits
-   and is dropped with it, as TrueAsync's thrower survives such a cancel by rethrowing from its dispose
+   `CompositeException`. A reporter coroutine throws it, spawned into a new child scope of the group's scope (or
+   of the current scope when the external scope is gone), as TrueAsync's `async_spawn_and_throw()`
+   (`exceptions.c:335-365`). It is built as `future_drain_spawn()` builds its coroutine (`src/future.c:551-573`):
+   `internal_entry` throws the composite, `extended_data` holds it, `extended_dispose` releases it when the
+   reporter never runs (a bailout, or a reporter never enqueued); none is spawned while async is not active.
+   While the graceful shutdown of `exit()` or an uncaught error runs, the walks would cancel a reporter unrun, so
+   the composite goes to `async_exit_exception_add()` (`src/coroutine.h:114`) instead and is printed with the
+   exit's exceptions; a reporter queued before the shutdown began, which the walks cancel unrun, hands its
+   composite there from a finish handler, not its dispose, which a holder of the object may delay past the
+   request (S9.30, `task_group/139`, `146`). It carries `ASYNC_COROUTINE_F_PROTECTED`, so the cancel of step 6
+   waits and is dropped with it, as TrueAsync's thrower survives such a cancel by rethrowing from its dispose
    (`exceptions.c:312-319`); the walks at exit and shutdown clear the flag (`src/scheduler.c:726`). It carries
    `ASYNC_COROUTINE_F_HI_PRIORITY`, as TrueAsync's at priority 1 (`scope.c:1615`, `async_API.c:157-158`). The
-   error then takes the route of S9-scope.md 4 from the reporter: a scope's handler gets it with the reporter
-   as `$coroutine` (probed `g13.php`); with no handler on the way the unheld reporter ends the request with
+   error then takes the route of S9-scope.md 4 from the reporter: a scope's handler gets it with the reporter as
+   `$coroutine` (probed `g13.php`); with no handler on the way the unheld reporter ends the request with
    `Uncaught Async\CompositeException` (`src/coroutine.c:495-504`), as an unhandled coroutine error does;
 6. cancel the group's scope, own or external, when it is not completely done (a task's child coroutine still
    runs, or another coroutine of an external scope), as TrueAsync's (`task_group.c:481-500`); "done" leaves
