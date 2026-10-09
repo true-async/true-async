@@ -57,6 +57,7 @@ can see goes here; tests, tools and CI are in the git history.
   A fiber whose coroutine is cancelled before its body runs ends without running it, and `start()`
   throws that cancellation.
 - A fiber's `resume()` and `throw()` throw `FiberError` once the scheduler has stopped or the fiber was destroyed.
+- One coroutine resumes a fiber at a time, and a fiber whose starter was cancelled cannot be started again.
 - An exception printed as uncaught at the end of the request may use async in its `__toString()`:
   a coroutine it spawns runs before the request ends, unless that `__toString()` throws or exits.
 - An out-of-memory fatal error is printed once, as without the extension, unless it happens in a

@@ -2324,3 +2324,11 @@ stack options were shown with the code).
   plain fiber (`fiber/039`). `check-lists.py` lets a frozen line lose its `core:` tag once the pinned core
   carries the entry, as `xfail-on:`. Not done: `start()` keeps no such check (a destructor of a
   coroutine's result, the Critic's trigger, is refused as a switch already).
+- 2026-10-09 S8.1b, own choices (`RFC-CHANGES.md` 25): a second resumer of a fiber run as a coroutine is
+  refused with "Cannot resume a fiber that is not suspended", as on the legacy path, not queued behind
+  the first. A destroyed fiber whose body runs is kept alive until the body ends rather than having
+  `Fiber::getCurrent()` and `Fiber::suspend()` read the fiber from the current coroutine, which
+  would change what `EG(active_fiber)` means to generators and reflection. Accepted: when an earlier
+  finish handler throws, or the U6 teardown skips the handlers, the kept fiber lives to the request's
+  end. `fiber/033`-`035` keep their outcomes. The transfer slot's value is detached before its release
+  although no PHP trigger re-enters there: the body's frame holds a yielded value while it parks.

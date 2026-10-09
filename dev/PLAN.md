@@ -889,7 +889,7 @@ not expressible with why); `RFC-CHANGES.md` complete; the review updated.
 Tier: T1. Roles: Critic after every step.
 Tests: interleaved
 Base: d783cea
-Active: S8.1b
+Active: S8.1c
 
 Each item is run against our provider on the pinned core, on `pocs-dbg` and `pocs-asan`, over the
 Ring and over the Poll queue (`TrueAsync\Test\` hook) where the item depends on the queue. Its
@@ -919,13 +919,21 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
         fiber destroyed while suspended is DEAD (`fiber/039`). `pocs-dbg` 1613 PASS, `pocs-asan`
         1584 PASS, 0 unexpected on both; the core's `Zend/tests/fibers` and `ext/test_scheduler`
         210 of 210 PASS on debug.
-- [ ] S8.1b Fiber adoption bugs the S8.1a Critic found, on `async-core`: a fiber freed while its body
-      runs leaves `EG(active_fiber)` dangling in the body (`Fiber::getCurrent()` after the caller's
-      cancellation: heap-use-after-free on ASAN); a second `resume()` while one is in flight takes
-      over the fiber and the first caller waits for ever; a fiber kept by a destructor while INIT
-      can be started again (read from the code, not run). Also php/php-src: `getReturn()` of a fiber destroyed while suspended
-      returns UNDEF (fatal error in a debug build), with or without the extension (`php-src-fixes`).
-      done: a test each, on debug and ASAN; the fix follows TrueAsync where it has one
+- [x] S8.1b Fiber adoption bugs the S8.1a Critic found, on `async-core`: a fiber freed while its body
+      waits outside `Fiber::suspend()` leaves `EG(active_fiber)` dangling in the body; a `resume()`
+      from a second coroutine while one is in flight takes the fiber over; a second `start()` after
+      the starter's cancellation adopts the fiber again.
+      done: a test each, on debug and ASAN
+      tier: T1 · role: Critic
+      handoff: 2026-10-09 on core `async-core-io-2026-10-09-3` `c53c17cfd47` (async-core `b52706c85f5`,
+        `8c0d98dd7e0`, `eb84ae62df1`): `fiber/040`-`047`, each failing on the S8.1a core. Three Critic
+        passes on the fixes found the yield's hand-off window, the transfer slot's leaks and a dead
+        starter frame (`043`, `045`-`047`). `pocs-dbg` 1672 PASS, `pocs-asan` 1640 PASS, 0 unexpected
+        on both; the core's `Zend/tests/fibers`, `ext/test_scheduler`, `ext/reflection` 0 failed on debug.
+- [ ] S8.1c php/php-src: `getReturn()` of a fiber destroyed while suspended and kept by a destructor
+      returns UNDEF, a fatal error in a debug build, with or without the extension; a fix branch
+      from `php-src-fixes`' base and a PR text for Edmond.
+      done: a php-src test fails before and passes after on debug; the PR text in project files
       tier: T1 · role: Critic
 - [ ] S8.2 B1 and B2: each scenario of B1 (a writer beside a parked reader, several acceptors on
       one listener, `fclose()`, `stream_socket_shutdown()` and `proc_close()` of a stream another

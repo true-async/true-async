@@ -482,3 +482,29 @@ plain fiber the destructor closes; its body's cancellation still runs later on t
 Waits for it: nothing; the pinned core carries it. `fiber/036`, `037` and `039` check it, `fiber/038`
 that a plain fiber in an output handler keeps working.
 
+## 25. Scheduler API: the lifetime and hand-off of a fiber run as a coroutine
+
+State: done in `async-core` `b52706c85f5`, `8c0d98dd7e0` and `eb84ae62df1` (2026-10-09, S8.1b), in the
+core from `async-core-io-2026-10-09-3`. PR: none; it goes with php/php-src#22561.
+
+Need: three paths of a fiber run as a coroutine went wrong where a legacy fiber cannot. A `resume()`
+from a second coroutine, while the first waited for the fiber's yield or had not yet taken it, took
+the fiber over, and the first waited for good (`fiber/040`, `043`). A second `start()`, after the
+starter was cancelled while the body waited in the queue, adopted the fiber again and ran the body
+twice (`041`). A body waiting outside `Fiber::suspend()` kept `EG(active_fiber)` in its saved
+context, and when the starter, the fiber's last holder, was cancelled, the destructor freed the
+fiber under it: a heap-use-after-free in `Fiber::getCurrent()` (`042`). The transfer slot leaked a
+value nobody took (`045`), a cancellation that ran the body after its yield woke the waiter a
+second time with the error (`046`), and a body first run after its starter unwound linked its
+backtrace to the dead frame (`047`).
+
+Request: `resume()` and `throw()` mark the fiber RUNNING, as a legacy switch does. The yield moves
+the waiting caller to a new field `handoff_coroutine`, kept until that caller has taken the value,
+and `resume()`, `throw()`, `isSuspended()` and `isRunning()` count both fields as the legacy path
+counts `caller`; a value the slot releases is detached first and released after the state change.
+`start()` refuses a fiber that already has a coroutine. The destructor of a fiber
+whose body runs keeps the object until the body ends, through a finish handler, and the body's
+`Fiber::suspend()` refuses as in a force-closed fiber (`044`). TrueAsync's `resume()` (its
+`zend_fibers.c:1043-1078`) has none of these checks; read, not run.
+
+Waits for it: nothing; the pinned core carries it.
