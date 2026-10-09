@@ -362,6 +362,45 @@ finding left open gets an owner step in `PLAN.md`.
   `dev/plans/S6.md` 9.1). CI: the Windows lane loads `php_sockets.dll`, `php_openssl.dll`,
   `php_curl.dll` from the build directory.
 
+- 2026-10-09 Security pass of the Channel layer (S9.21) over the S9 commits `dbeb13c`, `818ea24`,
+  `37d49c1`, `ba6412c`, `bba9890` (`src/channel.c`, `src/internal/zval_circular_buffer.c`, their parts of
+  `await.c`, `scope.c`, `future.c`, `collector.c`, `true_async_API.c`, `reactor.c`), by checklist item,
+  with scripts run on the debug and ASAN builds. Lifetimes: two defects, fixed. One release order, in four
+  `free_obj` handlers: the channel's released its buffered values, the rendezvous value and the value a
+  close rolled back before `zend_object_std_dtor()`, so a value's destructor reached the channel through a
+  `WeakReference` while it was freed (heap-use-after-free on ASAN); `zend_object_std_dtor()` now runs
+  first, as in the Context's `free_obj` (`channel/137`, `138`). The same order in `Future`'s and
+  `FutureState`'s, code of ours since S5, let a destructor run by the release of the mapper's captures or
+  of the result reach the object being freed (heap-use-after-free on ASAN; `future/123`, `124`), and in
+  `Timeout`'s, since S5, the destructor of a cancellation passed to `cancel()` (a NULL dereference in
+  `isCancelled()`; `await/144`). The coroutine's and the scope's `free_obj` release values before it only
+  when their `dtor_obj` did not run, after a bailout, when no destructor runs. And the iterator's step:
+  one iterator stepped by two coroutines at once overwrote the first value with the second and leaked it,
+  and a released value whose destructor suspended was released again by the other coroutine's step
+  (heap-use-after-free on ASAN); each step now receives into its own slot and takes a value out of the
+  iterator before releasing it (`channel/139`, `140`). Clean: destructors that suspend, throw, close or
+  unset the channel at each release (buffer, close's rollback, a timer's rolled-back value, the iterator's
+  value), a value's destructor that steps the same iterator, armed timers across a fatal error, `exit()`,
+  `memory_limit` and an uncaught exception, pending `recvAsync()` Futures held in statics to the request's
+  end. The stale CHANNEL record the layer Critic traced does not survive: main's finish as a bailout
+  aborts it before the destructors, output handlers and RSHUTDOWN (`async_coroutine_finalize()`), a later
+  shutdown function does not run after that bailout, and an output handler or a header callback sees no
+  queued record. Refcounts on exception paths: balanced (`await_*` over closed channels with chained
+  previous exceptions, a send failed by close, a token or a cancel, faults injected at the enqueues of a
+  close and a delivery). Engine state: none added. Sizes: the capacity is checked (above `INT32_MAX` a
+  `ValueError`) and the buffer grows within `memory_limit` before any state changes; 200 000 channels
+  bound to one scope and 20 000 timers cost linear time; timer values are capped at `INT32_MAX` ms. INI
+  entries: none new. Test-only code: the channel's hooks sit under `TRUE_ASYNC_TEST_HOOKS`; a build of the
+  default configuration has no `TrueAsync\Test` string (checked). CI: no change.
+- 2026-10-09 Accepted (S9.21), as TrueAsync's (`channel.c:286-294`): a channel's queues are arrays, so
+  serving or dropping N pending `recvAsync()` Futures costs O(N^2) (debug: 40 000 in 2.1 s, 160 000 in
+  35 s and 69 MB, within the default `memory_limit`), and so do cancelling N parked receivers (30 000:
+  1.4 s) and waking N parked receivers, each promised a value (30 000: 3.5 s), both bounded by the
+  number of coroutines. A linked list through the queue records would make each step O(1) and is not
+  built. A fatal error inside `close()` leaves
+  the channel closed with its queued Futures pending and, on a rendezvous channel, the killed sender's
+  value receivable, the class of S9-channel.md 8 item 8.
+
 ## Open findings
 
 None.

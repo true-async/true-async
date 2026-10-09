@@ -268,15 +268,16 @@ static zend_object *timeout_object_create(zend_class_entry *class_entry)
 	return &object->std;
 }
 
+/* zend_object_std_dtor first: it clears the WeakReferences, which a destructor of the released
+ * cancellation would otherwise use to reach the Timeout being freed. */
 static void timeout_object_free(zend_object *object)
 {
 	timeout_object_t *timeout_object = timeout_object_from_object(object);
 	async_timeout_event_t *timeout = (async_timeout_event_t *) timeout_object->ref.event;
 
+	zend_object_std_dtor(object);
 	timeout_object->ref.event = NULL;
 	async_timeout_release(timeout);
-
-	zend_object_std_dtor(object);
 }
 
 /* The cancel() argument, reported by the event's sole holder, as a future event's outcome is. */

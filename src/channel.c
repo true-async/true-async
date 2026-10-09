@@ -1304,8 +1304,13 @@ static void channel_iterator_move_forward(zend_object_iterator *zend_iterator)
 	channel_iterator_t *const iterator = (channel_iterator_t *) zend_iterator;
 	async_channel_t *const channel = channel_from_object(Z_OBJ(zend_iterator->data));
 
-	zval_ptr_dtor(&iterator->current);
+	/* Taken out before its release: a destructor that steps the same iterator, or suspends so that another
+	 * coroutine's step runs meanwhile, would release it again. */
+	zval previous_value;
+
+	ZVAL_COPY_VALUE(&previous_value, &iterator->current);
 	ZVAL_UNDEF(&iterator->current);
+	zval_ptr_dtor(&previous_value);
 
 	/* The previous value's destructor threw: a receive now would take a value the loop never sees. */
 	if (UNEXPECTED(EG(exception) != NULL)) {
@@ -1316,7 +1321,15 @@ static void channel_iterator_move_forward(zend_object_iterator *zend_iterator)
 		return;
 	}
 
-	if (EXPECTED(channel_receive(channel, &iterator->current, NULL, true))) {
+	zval value;
+
+	if (EXPECTED(channel_receive(channel, &value, NULL, true))) {
+		/* The destructor's own step or another coroutine's step may have stored a value meanwhile; it is
+		 * released once this value is in place, as above. */
+		ZVAL_COPY_VALUE(&previous_value, &iterator->current);
+		ZVAL_COPY_VALUE(&iterator->current, &value);
+		zval_ptr_dtor(&previous_value);
+
 		return;
 	}
 
@@ -1407,10 +1420,13 @@ static void channel_object_destroy(zend_object *object)
 	channel_close_and_release(channel_from_object(object), ASYNC_CHANNEL_CLOSE_DISPOSED);
 }
 
+/* zend_object_std_dtor first: it clears the WeakReferences, which a destructor of a value released here
+ * would otherwise use to reach the channel being freed. */
 static void channel_object_free(zend_object *object)
 {
 	async_channel_t *const channel = channel_from_object(object);
 
+	zend_object_std_dtor(object);
 	channel_unbind_from_owner_scope(channel);
 	channel_timer_disarm(channel);
 	channel_future_waiters_detach(channel);
@@ -1420,7 +1436,6 @@ static void channel_object_free(zend_object *object)
 	zval_circular_buffer_dtor(&channel->buffer);
 	zval_ptr_dtor(&channel->rendezvous_value);
 	zval_ptr_dtor(&channel->dropped_value);
-	zend_object_std_dtor(object);
 }
 
 static HashTable *channel_object_gc(zend_object *object, zval **table, int *num)

@@ -1889,3 +1889,9 @@ stack options were shown with the code).
   the zombie resumed there and failed before main disposed the scope, so the scope's finally ran at
   the object's free after the shutdown functions, as a live scope's does (1 of 120 runs with six busy
   CPUs printed no dispose; also on `ba6412c`).
+- 2026-10-09 S9.21: a step of a channel's iterator receives into its own slot, then replaces the
+  iterator's value, and takes a value out of the iterator before releasing it, so one iterator stepped
+  by two coroutines at once frees each value it received once (`channel/139`, `140`). Why: both steps
+  received straight into the iterator's value and the second overwrote the first without releasing it,
+  and a value whose destructor suspended stayed in the iterator for the other step to release again
+  (the security pass and a quality Critic); TrueAsync's step has the same gaps (`channel.c:974-997`).

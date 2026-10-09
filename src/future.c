@@ -827,15 +827,16 @@ static zend_object *future_state_object_create(zend_class_entry *class_entry)
 	return &state->std;
 }
 
+/* zend_object_std_dtor first: it clears the WeakReferences, which a destructor of the released result
+ * would otherwise use to reach the FutureState being freed. */
 static void future_state_object_free(zend_object *object)
 {
 	future_state_t *state = future_state_from_object(object);
 	async_future_event_t *future = FUTURE_EVENT(state);
 
+	zend_object_std_dtor(object);
 	state->ref.event = NULL;
 	async_future_event_release(future);
-
-	zend_object_std_dtor(object);
 }
 
 static HashTable *future_state_object_gc(zend_object *object, zval **table, int *count)
@@ -893,15 +894,16 @@ static void future_release_holding(future_t *future_object)
 	future_release_held(state, future);
 }
 
+/* zend_object_std_dtor first: it clears the WeakReferences, which a destructor run by the mapper's
+ * release would otherwise use to reach the Future being freed. */
 static void future_object_free(zend_object *object)
 {
 	future_t *future_object = future_from_object(object);
 
+	zend_object_std_dtor(object);
 	zval_ptr_dtor(&future_object->mapper);
 	ZVAL_UNDEF(&future_object->mapper);
 	future_release_holding(future_object);
-
-	zend_object_std_dtor(object);
 }
 
 static HashTable *future_object_gc(zend_object *object, zval **table, int *count)

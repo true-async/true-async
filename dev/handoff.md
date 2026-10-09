@@ -532,6 +532,14 @@ unwind. Under the fuzz, a test that waits with one `suspend()` or `delay()` for 
 order-dependent: wait on a flag the other sets before it parks. Next is S9.21, the security pass, with the
 stale CHANNEL record after a caught bailout to check first.
 
+S9.21 done 2026-10-09 (PLAN result line, `SECURITY.md` journal): a `free_obj` that releases values must call
+`zend_object_std_dtor()` first, as `context.c` does, or a destructor of a released value reaches the object
+through a `WeakReference` (fixed in the channel, Future, FutureState and Timeout); a slot whose value is
+released while its destructor may suspend is emptied before the release (the channel iterator's step).
+The stale CHANNEL record does not survive main's finish. Layer 3 is done; the next layer needs its plan
+agreed with Edmond. Open for Edmond: the PLAN open questions listed under S9.20 above, and a child scope
+made under a cancelled scope after its cancel; the timer question was asked 2026-10-08 22:33, no answer.
+
 ## S10
 
 - S10.1 closed 2026-10-08: `dev/plans/S10.md` approved by Edmond (17:40) except output buffers, which

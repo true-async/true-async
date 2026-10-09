@@ -819,7 +819,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md
-Active: S9.21
+Active: none; layer 3 done, the next layer needs its plan agreed with Edmond
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -1115,9 +1115,20 @@ Active: S9.21
         77dbfc061f3: debug 1406 PASS, 14 SKIP, 17 XFAIL and `bailout/017`'s race (DECISIONS 2026-10-09, fixed
         after the lane); ASAN 1379 PASS, 40 SKIP, 16 XFAIL, 2 passed on retry, and `signal/024` at its time
         limit while busy loops ran beside it (passes alone); then the 24 new and changed tests pass on debug.
-- [ ] S9.21 Security pass by `dev/SECURITY.md`.
+- [x] S9.21 Security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item; findings fixed with a test or recorded
       tier: T2 · role: —
+      handoff: done 2026-10-09: journal entries in `SECURITY.md`, by checklist item, scripts run on the debug
+        and ASAN builds. Fixed: the channel's, the Future's, the FutureState's and the Timeout's `free_obj`
+        run `zend_object_std_dtor()` first, so a destructor of a value they release no longer reaches the
+        object through a `WeakReference` (a use after free on ASAN; `channel/137`, `138`, `future/123`, `124`,
+        `await/144`); one iterator stepped by two coroutines frees each value once (`channel/139`, `140`). The
+        stale CHANNEL record after a caught bailout does not survive main's finish. Recorded, as TrueAsync's:
+        the queues' O(N^2) for N pending `recvAsync()` Futures, cancelled or reserved receivers. Critic on the
+        fixes, two quality Critics and a re-check. On CORE_REF 77dbfc061f3: debug 1414 PASS, 14 SKIP, 17
+        XFAIL, 0 unexpected; ASAN 1387 PASS, 40 SKIP, 16 XFAIL, 1 passed on retry, and `signal/024` at its
+        time limit while orphaned test processes of earlier runs held two of four cores (passes alone, three
+        runs of three).
 
 ## S10 — Beyond the RFCs  [in progress]
 
