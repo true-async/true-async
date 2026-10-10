@@ -1559,3 +1559,29 @@ their `*_arginfo.h`; 95 class and function names in C strings under `src/`; 1216
 under `tests/`; 26 files in `dev/` and `README.md`; the docs `true-async-doc` (18 files), the site
 `true-async.github.io` (2194 files), the RFC text `php-async-core-rfc` (5 files); two comments in
 the core's `Zend/zend_async_API.h`. The bridge `ext-scheduler-hook` not looked at.
+
+## S12 — A park without a switch when nothing else can run  [ ]
+
+Edmond 2026-10-10: a coroutine that parks while the run queue is empty waits on the reactor in its
+own context and runs on without a switch when the completion woke it, instead of switching into
+the scheduler coroutine (`scheduler_suspend()`, `src/scheduler.c:1884-1990`). This departs from the
+single blocking site of `dev/plans/S4.md` 3.3. TrueAsync blocks in the suspending fiber's tick only
+when its 100 ms reactor throttle lets the tick poll (`ext/async/scheduler.c:1556-1583`). Recorded
+only: no design, no start gate yet.
+Measured 2026-10-10 (release ZTS, io_uring, ior `d46649f6425`, core `3aa1cd120f4`, a plain script's
+pipe read that waits for `cat`): 3.9 µs per op with the provider not installed, 8.4 µs installed;
+of the ~8 400 extra instructions per op, the two fiber switches, `scheduler_fiber_entry()` and
+`scheduler_tick()` take about 600 (cachegrind). The rest is the ior ring, the wait record and its
+notify, and six `getpid()` calls.
+Tier: T2. Roles: Critic, Sage.
+Tests: interleaved
+
+- [ ] S12.1 A park with an empty run queue waits on the reactor in the parking coroutine and
+      returns without a switch when that coroutine was woken; another woken coroutine is switched
+      to directly; a deadlock, a pending interrupt and the shutdown still go through the scheduler
+      coroutine.
+      done: a waiting pipe read in one coroutine and a waiting TCP read beside parked coroutines
+        measured before and after in `dev/BENCHMARKS.md`; the deadlock, signal, graceful-shutdown
+        and fork tests pass on `pocs-dbg` and `pocs-asan`; a `DECISIONS.md` entry replaces S4.md
+        3.3's single blocking site
+      tier: T2 · role: Critic → Sage
