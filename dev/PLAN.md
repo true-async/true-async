@@ -1585,3 +1585,70 @@ Tests: interleaved
         and fork tests pass on `pocs-dbg` and `pocs-asan`; a `DECISIONS.md` entry replaces S4.md
         3.3's single blocking site
       tier: T2 · role: Critic → Sage
+
+## S13 — The provider from the request's start, after bukka's pipe refactor  [ ]
+
+Recorded 2026-10-10, not started. The install point is open and still to be discussed with Edmond
+(S13.1).
+
+bukka merged our overlapped-pipe change (bukka/php-src#5) into php/php-src#23997 as `6c25ec48cfb`
+and refactored it in `665acf84cc1` and `4e58da87214`: the global `php_io_overlapped_pipes` is gone;
+on Windows `proc_open()` makes an overlapped pipe only when `FG(io_hooks)` is set at that moment or
+`PHP_IO_OVERLAPPED_PIPES=1` is in the environment; pipe creation moved to `main/io/php_io_pipe*.c`.
+Edmond agreed with both changes. On bukka's head merged into `3aa1cd120f4` (2026-10-10): the Linux
+core suites pass 1542 of 1542, `pocs-dbg` 1665 PASS with 0 unexpected; on Windows Debug_TS
+`pocs-win` has 1567 PASS and 3 FAIL, `io_provider/029`, `032`, `035`, whose pipes are made in main
+before the first spawn and stay anonymous (all three pass with `PHP_IO_OVERLAPPED_PIPES=1`).
+`src/true_async.c:170-175` sets the removed global and does not build against that head.
+
+Install in RINIT, measured 2026-10-10 (release ZTS, io_uring, a script with main only): no change
+on ready data; +2 to 4.5 µs per op that waits (a pipe read 3.9 → 8.4 µs, a TCP read 9.8 → 11.7 µs);
+`stream_select()` and `usleep(1)` faster. Against it: requests A and B below reach every script
+instead of the scripts that spawn; on Windows a registered provider moves a script without
+coroutines onto the hooks paths (`curl_exec()` through curl_multi, `stream_select()` through the
+core's queue, a write cancelled under a pending exception; read from the code, not run);
+`Io\Hooks\set_hooks()` always throws while the extension is enabled. Alternatives on the table:
+register in RINIT and answer Unsupported until the first spawn; keep the lazy install and ask bukka
+for overlapped pipes by default, or for a MINIT flag ORed into `php_io_pipe_wanted()`. S12 cuts
+about 600 of the ~8 400 extra instructions per waiting op. Edmond 2026-10-10: `sleep()` that does
+not return early on a handled signal is not a defect.
+
+Requests to bukka, one PR each, each told to Edmond first (WORKFLOW "Branches"):
+
+- A. `O_NONBLOCK` (`main/streams/plain_wrapper.c:543-566`) only on descriptions PHP opened: never on
+  `php://stdin`, `stdout`, `stderr`, `fd`, the stdio constants or a stream handed to a child; wait
+  for readiness before the syscall instead, writes cut to `PIPE_BUF`; `stream_set_blocking(false)`
+  unchanged. Reproduced 2026-10-10: `fgets(STDIN); passthru('cat')` under the provider, cat exits 1
+  with EAGAIN.
+- B. `pcntl_fork()` under `FG(io_ops_in_flight)` (`ext/pcntl/pcntl.c:278-282`) asks the provider,
+  which allows it when every parked op is a readiness or a timer, never with a data op in the kernel.
+- C. `php_io_pipe_stream()` returns NULL on an `_open_osfhandle()` failure, and `proc_open()` passes
+  it to `php_stream_set_option()`; the handle leaks on that path.
+- D. `php_select()` takes every pipe out of the wait for every script, so sockets with a pipe poll
+  in 1 ms slices (`win32/select.c:95-97, 147`); back off towards 100 ms while no pipe is ready.
+- E. A stream whose `stream_cast()` gives an overlapped pipe (a user wrapper) is neither released
+  nor marked handed out before the child gets it.
+- F. An overlapped pipe's stream mode reads `r` where its descriptor is binary; EBADF read as 0
+  differs from an anonymous pipe under `blocking_pipes`; no provider can take a `stream_select()`
+  member that is not a socket.
+
+For php-src (`php-src-fixes`): a socket in `proc_open()`'s descriptorspec on Windows goes through
+`_get_osfhandle()` of its `SOCKET` and the child gets a wrong handle without a warning (the child
+read `''` on 2026-10-10). `dev/plans/S6.md` section 2 says TrueAsync's streams go async only after
+its scheduler launches; its plain streams get a libuv handle from RINIT (the fork's
+`main/streams/plain_wrapper.c:235-293`).
+
+- [ ] S13.1 The provider's install point agreed with Edmond: RINIT, RINIT with Unsupported until the
+      first spawn, or the lazy install with a request to bukka for the pipes.
+      done: the decision and its reason in `DECISIONS.md`; the tests it changes named
+      tier: T2 · role: Critic
+- [ ] S13.2 The core moves to bukka's head with our extension building on Windows: the global
+      dropped from `src/true_async.c`, S13.1's decision built, `io_provider/029`, `032`, `035` passing
+      without `PHP_IO_OVERLAPPED_PIPES`.
+      done: `pocs-dbg`, `pocs-asan` and `pocs-win` rediffed against the current core per WORKFLOW
+        "Core update"; `CORE_REF` and `IOR_REF` moved
+      tier: T2 · role: Critic → Sage
+- [ ] S13.3 Requests A-F as PRs to bukka and the socket fix on `php-src-fixes`, each told to Edmond
+      first.
+      done: each PR's link and state in `RFC-CHANGES.md`; `S6.md` section 2 corrected
+      tier: T1 · role: Critic
