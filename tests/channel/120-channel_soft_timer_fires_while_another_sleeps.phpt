@@ -9,17 +9,16 @@ use function Async\await;
 use function Async\delay;
 use function Async\spawn;
 
-$start = hrtime(true);
-$receiver = spawn(function () use ($start) {
+$receiver = spawn(function () {
     $channel = new Channel(0, 100, 100, false);
 
     try {
         $channel->recv();
     } catch (ChannelException $exception) {
-        $elapsed = (hrtime(true) - $start) / 1e6;
-        echo "receiver: ", $exception->reason->name, ", before the sleeper: ", var_export($elapsed < 250, true), "\n";
+        echo "receiver: ", $exception->reason->name, "\n";
     }
 });
+// Armed after the channel's timer and longer: the order of the two lines shows the timer fired first.
 spawn(function () {
     delay(300);
     echo "sleeper: done\n";
@@ -27,5 +26,5 @@ spawn(function () {
 await($receiver);
 ?>
 --EXPECT--
-receiver: NO_PRODUCERS, before the sleeper: true
+receiver: NO_PRODUCERS
 sleeper: done

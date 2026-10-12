@@ -61,9 +61,11 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	uint32_t test_block_releases;    /* test wait blocks released in this request */
 	uint32_t test_typed_unlinks;     /* records unlinked through a test kind's unlink in this request */
 	uint32_t test_aborts;            /* test kind aborts in this request */
+	uint32_t test_callback_searches; /* callback removals that searched their vector in this request */
 	zend_long test_exit_deadline_ms; /* D16's deadline in this request; 0 for ASYNC_EXIT_DEADLINE_MS */
 	async_trigger_t *test_trigger;   /* TrueAsync\Test\trigger_new()'s; NULL without */
 	uint32_t test_collector_runs;    /* the collector's runs and mark_found() calls: the oracle's run ids */
+	uint32_t test_idle_runs;         /* automatic collector runs started, stopped ones included */
 	void *test_firer;                /* the thread trigger_fire() started; NULL when joined */
 	bool test_print_at_teardown;     /* RSHUTDOWN prints "teardown: done" (print_at_teardown()) */
 #endif

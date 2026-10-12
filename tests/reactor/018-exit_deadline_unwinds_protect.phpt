@@ -18,6 +18,7 @@ spawn(function () {
             protect(function () {
                 try {
                     delay(3000);
+                    echo "the wait ran out\n";
                 } finally {
                     echo "inner finally\n";
                 }
@@ -41,7 +42,7 @@ Async\suspend();
 $exited = hrtime(true);
 register_shutdown_function(function () use ($exited) {
     $elapsed = (hrtime(true) - $exited) / 1e6;
-    echo $elapsed >= 200 && $elapsed < 4000 ? "unwound at the deadline" : "unwound after $elapsed ms", "\n";
+    echo $elapsed >= 200 ? "unwound at the deadline" : "unwound early, after $elapsed ms", "\n";
 });
 exit(0);
 ?>

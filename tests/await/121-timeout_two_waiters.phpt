@@ -8,7 +8,6 @@ use Async\Future;
 use Async\OperationCanceledException;
 use function Async\await;
 use function Async\await_all;
-use function Async\delay;
 use function Async\spawn;
 use function Async\timeout;
 
@@ -18,7 +17,6 @@ $never->ignore();
 
 $early = spawn(function () use ($timeout) {
     return await(spawn(function () {
-        delay(10);
         return "early done";
     }), $timeout);
 });

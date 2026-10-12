@@ -3,22 +3,49 @@ sleep() and usleep() park their coroutine on a Timer op: the shorter sleep ends 
 --FILE--
 <?php
 use function Async\spawn;
+use function Async\await;
 
-$started = hrtime(true);
+$main_resumed = false;
+$deadlines = [];
+$ended = [];
+$parked_all = true;
 
-spawn(function () {
-    $left = sleep(1);
-    echo "sleep(1) returned $left\n";
-});
-spawn(function () { usleep(100000); echo "usleep(100 ms) done\n"; });
-spawn(function () { time_nanosleep(0, 200000000); echo "time_nanosleep(200 ms) done\n"; });
+function sleeper(string $name, int $nanoseconds, callable $sleep): Async\Coroutine
+{
+    return spawn(function () use ($name, $nanoseconds, $sleep) {
+        global $main_resumed, $deadlines, $ended, $parked_all;
 
-register_shutdown_function(function () use ($started) {
-    echo "in parallel: ", var_export(hrtime(true) - $started < 1300 * 1000000, true), "\n";
-});
+        $deadlines[$name] = hrtime(true) + $nanoseconds;
+        $result = $sleep();
+        // A sleep that blocked the thread ends before main runs again.
+        $parked_all = $parked_all && $main_resumed;
+        $ended[] = $name;
+
+        return $result;
+    });
+}
+
+// Armed out of the order of their deadlines; the order expected is read from the deadlines they took.
+$sleepers = [
+    sleeper("sleep(1)", 1000000000, fn() => sleep(1)),
+    sleeper("usleep(100 ms)", 100000000, fn() => usleep(100000)),
+    sleeper("time_nanosleep(200 ms)", 200000000, fn() => time_nanosleep(0, 200000000)),
+];
+
+Async\suspend();
+$main_resumed = true;
+$left = await($sleepers[0]);
+
+foreach ($sleepers as $sleeper) {
+    await($sleeper);
+}
+
+asort($deadlines);
+echo "parked: ", var_export($parked_all, true), "\n";
+echo "ended in the order of their deadlines: ", var_export(array_keys($deadlines) === $ended, true), "\n";
+echo "sleep(1) returned $left\n";
 ?>
 --EXPECT--
-usleep(100 ms) done
-time_nanosleep(200 ms) done
+parked: true
+ended in the order of their deadlines: true
 sleep(1) returned 0
-in parallel: true

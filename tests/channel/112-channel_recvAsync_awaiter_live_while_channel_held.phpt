@@ -10,17 +10,43 @@ use Async\Channel;
 use function Async\delay;
 use function Async\spawn;
 
+// The senders sleep, so they hold their channels as live code, until the collector's run has reported
+// the four receivers no one else holds.
+$senders = [];
+$reports = 0;
+
+function sleep_until_cancelled(): void
+{
+    try {
+        delay(100000);
+    } catch (Async\AsyncCancellation) {
+    }
+}
+
 function await_reported(string $name, Async\Future $future): void
 {
+    global $senders, $reports;
+
     try {
         $future->await();
     } catch (Async\AsyncCancellation $cancellation) {
         echo $name, ": ", $cancellation->getMessage(), "\n";
+
+        if (++$reports === 4) {
+            // From a coroutine of its own: a cancel made here would keep this frame's Future in its trace.
+            spawn(function () use ($senders) {
+                foreach ($senders as $sender) {
+                    $sender->cancel();
+                }
+            });
+        }
     }
 }
 
 function start(): void
 {
+    global $senders;
+
     $channel = new Channel(0);
     $handed = $channel->recvAsync();
 
@@ -34,8 +60,8 @@ function start(): void
         echo "holding only the Future: ", $value, "\n";
     });
 
-    spawn(function () use ($channel) {
-        delay(50);
+    $senders[] = spawn(function () use ($channel) {
+        sleep_until_cancelled();
         $channel->send('first');
         $channel->send('second');
     });
@@ -49,8 +75,8 @@ function start(): void
         echo "weakly referenced: ", $value, "\n";
     });
 
-    spawn(function () use ($weak_channel) {
-        delay(50);
+    $senders[] = spawn(function () use ($weak_channel) {
+        sleep_until_cancelled();
         $weak_channel->send('third');
     });
 

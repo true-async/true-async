@@ -15,7 +15,10 @@ function start(): Async\Coroutine
     });
 
     $member = $scope->spawn(function () {
-        delay(20);
+        // A fixed delay can end inside main's two collections on a slow build
+        while (!isset($GLOBALS['gc_ran'])) {
+            delay(1);
+        }
         throw new RuntimeException("after the GC");
     });
     while (!$member->isStarted()) {
@@ -31,6 +34,7 @@ $member = start();
 gc_collect_cycles();
 gc_collect_cycles();
 echo "gc ran\n";
+$gc_ran = true;
 
 while (!$member->isCompleted()) {
     delay(10);

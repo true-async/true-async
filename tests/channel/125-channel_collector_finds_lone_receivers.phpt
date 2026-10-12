@@ -10,23 +10,47 @@ use Async\Channel;
 use function Async\delay;
 use function Async\spawn;
 
+// The producer and main sleep as live code until the collector's runs have reported, in turn, the seven
+// receivers no one else holds and the one the ended producer leaves alone.
+$sleeper_after_report = [];
+$reports = 0;
+
+function sleep_until_cancelled(): void
+{
+    try {
+        delay(100000);
+    } catch (Async\AsyncCancellation) {
+    }
+}
+
 function spawn_reporting(string $name, callable $body): void
 {
     spawn(function () use ($name, $body) {
+        global $sleeper_after_report, $reports;
+
         try {
             $body();
             echo $name, ": woke\n";
         } catch (Async\AsyncCancellation $cancellation) {
             echo $name, ": ", $cancellation->getMessage(), "\n";
+
+            $sleeper = $sleeper_after_report[++$reports] ?? null;
+
+            if ($sleeper !== null) {
+                // From a coroutine of its own: a cancel made here would keep this frame's values in its trace.
+                spawn(fn() => $sleeper->cancel());
+            }
         }
     });
 }
 
 function forgetful_producer(): Channel
 {
+    global $sleeper_after_report;
+
     $channel = new Channel(0);
-    spawn(function () use ($channel) {
-        delay(10);
+    $sleeper_after_report[7] = spawn(function () use ($channel) {
+        sleep_until_cancelled();
     });
 
     return $channel;
@@ -73,7 +97,8 @@ spawn_reporting("iterator_apply()", function () {
     $channel = new Channel(0);
     iterator_apply($channel, fn() => true);
 });
-delay(100);
+$sleeper_after_report[8] = Async\current_coroutine();
+sleep_until_cancelled();
 echo "end\n";
 ?>
 --EXPECTF--

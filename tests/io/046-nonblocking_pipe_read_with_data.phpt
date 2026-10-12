@@ -29,18 +29,18 @@ $coroutine = spawn(function() {
         return "fail";
     }
 
-    // Set non-blocking, then poll for data with retries
-    // (CI runners may be slow to start the child process)
+    // Set non-blocking, then poll until the child has written or closed its end:
+    // its start under a loaded sanitizer build has no bound
     stream_set_blocking($pipes[1], false);
 
     $data = '';
-    for ($i = 0; $i < 10; $i++) {
-        usleep(50000); // 50ms
+    while (!feof($pipes[1])) {
         $chunk = fread($pipes[1], 1024);
         if ($chunk !== '' && $chunk !== false) {
             $data = $chunk;
             break;
         }
+        usleep(10000);
     }
     echo "read: '$data'\n";
     echo "has data: " . ($data !== '' && $data !== false ? "yes" : "no") . "\n";

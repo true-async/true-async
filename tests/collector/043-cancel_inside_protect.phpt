@@ -23,11 +23,15 @@ function start(): void
         } catch (Async\AsyncCancellation $e) {
             echo "cancelled inside protect(): ", $e->getMessage(), "\n";
         }
+        $GLOBALS['caught'] = true;
     });
 }
 
 start();
-delay(10);
+// A single delay can end before the coroutine's first run and the automatic run that follows it
+while (!isset($caught)) {
+    delay(1);
+}
 echo "end\n";
 ?>
 --EXPECT--

@@ -3,17 +3,21 @@ Scope: a member that disposeSafely() left running as a zombie starts its Corouti
 --FILE--
 <?php
 
+use Async\Future;
+use Async\FutureState;
+use function Async\await;
 use function Async\delay;
 use function Async\suspend;
 
 $scope = new Async\Scope();
+$release = new FutureState();
 $started = false;
-$scope->spawn(function () use (&$started) {
+$member = $scope->spawn(function () use ($release, &$started) {
     Async\current_coroutine()->finally(function () {
         echo "finally runs\n";
     });
     $started = true;
-    delay(50);
+    await(new Future($release));
     echo "member done\n";
 });
 
@@ -23,7 +27,10 @@ while (!$started) {
 
 $scope->disposeSafely();
 $scope->disposeAfterTimeout(10);
-delay(100);
+// Armed after the fire's timer and longer, so it fires after it: the reactor runs due timers nearest first.
+delay(20);
+$release->complete(null);
+await($member);
 echo "end\n";
 ?>
 --EXPECT--

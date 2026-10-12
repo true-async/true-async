@@ -91,6 +91,12 @@ Waiting for Edmond's call; nothing here is being worked on.
   walking the chain on `scope`), and `ancestor->event.` would fail it again. The other option:
   check that `struct _async_coroutine_s` in `src/coroutine.h` declares no `async_event_t` member,
   which the compiler then enforces for every access. Edmond's call (a change of S3's gate list).
+- "Linear time" of `scope/124` (a member's finish in 20 000 nested scopes) and `scope/125` (200 000 child
+  scopes leaving) is checked only by `max_execution_time=50` (S14.3, Critic and Sage): their walks have no
+  search to count, unlike `await/141` and `signal/024`. A counter of the scopes the completion walk visits,
+  kept in builds with test hooks, would let them check the step count at a few hundred scopes; it sits on
+  the finish path, which P1.4 leaves to Edmond. The other option: the claim moves to a benchmark row
+  (S3.md section 12's method) and the two tests keep only the mechanism. Edmond's call.
 - A `signal()` Future no coroutine awaits, when the script ends by itself (S6.8): the script waits
   for the signal, as TrueAsync; after `exit()` or an uncaught exception it ends. Edmond 2026-10-07:
   the async collector should close such a watch; to be thought over in another task.
@@ -1856,13 +1862,25 @@ Tests: interleaved
         retries no crash or hang and nothing under a seed; a crashing XFAIL fails; `stream/030` ends in 2 s
         (DECISIONS 2026-10-12 S14.2). The dbg suite runs 38.5 s locally, was 150 s. Close: after S14.1, the
         next nightly run with every `seeds` job green (a dispatched run has the same jobs and counts).
-- [ ] S14.3 Tests without wall-clock waits: the own tests HEALTH lists under "wall-clock delays" and "wall-clock
+- [x] S14.3 Tests without wall-clock waits: the own tests HEALTH lists under "wall-clock delays" and "wall-clock
       bound" wait on the event they test instead of on time; `collector/063`, `064` check the walk's outcome at
       each margin; the cases `fiber/023`, `028` and `scope/043` leave unchecked get own tests. Ported tests
       change only with a `changed:` tag and a DECISIONS entry (P2.2).
       done: each listed test passes under `--jobs 16` on 4 cores and over 20 seeds; none compares elapsed time
         except where the deadline itself is the behaviour
       tier: T1 · role: Critic
+      handoff: done 2026-10-12 (DECISIONS 2026-10-12 S14.3), except `scope/124` and `125`, which keep
+        `max_execution_time` until Edmond's call (Open questions). 50 tests changed: events, Futures or turns
+        instead of delays; timer pairs whose later timer is longer; a line after a wait that must not end;
+        armed timers from `reactor_state()`; new test-build hooks `Test\callback_searches()` (`await/141`,
+        `signal/024`) and `Test\collector_idle_runs()` (`collector/063`, `064`, whose margin is measured on
+        the build's heap). Eight kept with reasons. New: `fiber/048`, `scope/188`, `189` (`tests/lists/S14.txt`).
+        Seeds found tests that hung or hit the limit when a `suspend()` left a new coroutine unstarted, now
+        fixed. `collector/069`-`073` (S14.2's Sage) wait for the collector's run or a flag; the full lanes on
+        core `c53c17cfd47` found `io/046`, `await/119`, `scope/084`, `collector/042`, `043`, `io_provider/013`,
+        `scope/070`. The wider class (a top-level delay as sync point, about 50 tests) is a HEALTH finding with
+        no step yet.
+        Critic twice (14 findings), Sage on two.
 - [x] S14.4 Tests and plan rows with no owner: `gc/020`, `023` (XFAIL "S8 candidate") get an S8 step or a
       DECISIONS outcome; `S3.excluded` lines 4, 7 (`component:S6`) and 13-18 (`component:S9`) get a stage that
       ports them or an exclusion reason that holds; `dev/plans/S2.md` section 4's scenarios, allocator-fault and

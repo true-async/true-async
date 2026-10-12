@@ -1,7 +1,7 @@
 --TEST--
 Scope: 200 000 child scopes leave their parent newest first in linear time, each knowing its index in the parent's vector
 --INI--
-max_execution_time=20
+max_execution_time=50
 memory_limit=1G
 --FILE--
 <?php

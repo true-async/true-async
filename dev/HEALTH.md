@@ -44,19 +44,14 @@ Known dark places: none beyond the open findings
   1691`: a stray `  thrown` glued before scheduler/082's result line), so the nightly dbg job ran 10 of its 100 seeds
   on 2026-10-04, 10-11 and 10-12; io/100 (XFAIL) passes when a seed cancels the reader before its `fread()`, and
   the passing XFAIL fails the seed; nobody watches the scheduled run (S14.2)
+- 2 tests (about 50 of the 128 with a top-level `delay(`): the delay is the sync point for work in other
+  coroutines; their timers start late under load, and a timer due when main parks wakes it ahead of the queue
+  (scope/084 on ASAN, 2026-10-12); list in project file s14/delay-sync-survey.md (no step yet)
 - 2 tests/stream/030 (XFAIL, S8): the UDP receive waits for run-tests' 60 s timeout and is retried, 120 s of the
   150 s suite on 2026-10-12 (S14.2)
-- 2 own tests that order events by wall-clock delays: scope/164, 166, 168 (a member's `delay(50)` against
-  `disposeAfterTimeout(10)`, the defect DECISIONS 2026-10-09 fixed in scope/170), scope/096, 104; channel/112,
-  114, 116-118, 125, 126, 129; await/116, 119, 121; internal/066, 069; reactor/036, 043 (S14.3)
-- 2 own tests whose assertion is a wall-clock bound: scope/099, 100, 102, 107; channel/120; await/125;
-  io_provider/002, 015; reactor/006, 013, 018, 019, 021, 023-026, 028, 030, 038; "linear time" checked only by
-  `max_execution_time`: scope/124, 125, await/141, signal/024 (one million Futures) (S14.3)
 - 2 tests/gc/020, 023: `--XFAIL--` "(S8 candidate)" with no S8 step and no RFC-CHANGES entry that would lift it;
   tests/lists/S3.excluded:4, 7 exclude gc/018 and include/008 as `component:S6` after S6 closed; :13-18 exclude six
   common/ tests as `component:S9` with no S9 step naming them (S14.4)
-- 2 collector/063, 064: the walk at the tight `memory_limit` is checked only through the final warning counts,
-  which a walk that wrongly completes gives too (S14.3)
 - 6 src/os_signal.c `async_signal_rebuild`, `signal_watch_renew` (a forked child's signal context or handle that
   cannot be made: no test, and a fatal error on D16's frameless arm) and src/reactor.c `wakeup_arm` ("Cannot poll
   the wake descriptors": no test) (PLAN open questions, DECISIONS 2026-10-12 S14.5)

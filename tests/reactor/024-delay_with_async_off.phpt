@@ -3,15 +3,16 @@ delay(): with async off (an output handler after the last drain) there is no cor
 --FILE--
 <?php
 ob_start(function (string $buffer) {
-    $before = hrtime(true);
-    Async\delay(5000);
-    $elapsed = (hrtime(true) - $before) / 1e6;
+    // With no coroutine current, delay() returns before it arms a Timer.
+    $coroutines = TrueAsync\Test\coroutine_count();
+    Async\delay(1000);
 
-    return $buffer . "delay: " . ($elapsed < 1000 ? "returned at once" : "waited $elapsed ms") . "\n";
+    return $buffer . "coroutines: $coroutines\ndelay: returned\n";
 });
 
 echo "main end\n";
 ?>
 --EXPECT--
 main end
-delay: returned at once
+coroutines: 0
+delay: returned

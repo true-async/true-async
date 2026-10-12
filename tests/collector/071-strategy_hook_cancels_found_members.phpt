@@ -14,6 +14,9 @@ use function Async\spawn_with;
 use function Async\await;
 use function Async\delay;
 use function Async\get_deadlocked_coroutines;
+use TrueAsync\Test;
+
+$member_done = false;
 
 final class CancellingStrategy implements SpawnStrategy
 {
@@ -41,10 +44,17 @@ function start(): void
             await(new Future(new FutureState()));
         } catch (Async\AsyncCancellation $e) {
             echo "member: ", $e->getMessage(), "\n";
+            $GLOBALS['member_done'] = true;
         }
     });
     $scope->spawn(function () {
-        delay(20);
+        // Cancels once the automatic run has reported both stuck coroutines, whatever the load.
+        $runs = Test\collector_idle_runs();
+
+        while (Test\collector_idle_runs() === $runs) {
+            delay(1);
+        }
+
         spawn_with(new CancellingStrategy(), function () {
         });
     });
@@ -54,11 +64,17 @@ function start(): void
 }
 
 start();
-delay(50);
+
+// Main holds nothing of the scope, so it waits on a flag.
+while (!$member_done) {
+    delay(1);
+}
+
 foreach (get_deadlocked_coroutines() as $coroutine) {
     $coroutine->cancel();
 }
-delay(10);
+
+Async\suspend();
 echo "end\n";
 ?>
 --EXPECTF--

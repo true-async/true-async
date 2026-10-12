@@ -3,17 +3,20 @@ Scope: a member that the disposeAfterTimeout() fire of a safe scope leaves runni
 --FILE--
 <?php
 
-use function Async\delay;
+use Async\Future;
+use Async\FutureState;
+use function Async\await;
 use function Async\suspend;
 
 $scope = Async\Scope::inherit();
+$release = new FutureState();
 $started = false;
-$scope->spawn(function () use (&$started) {
+$member = $scope->spawn(function () use ($release, &$started) {
     Async\current_coroutine()->finally(function () {
         echo "finally runs\n";
     });
     $started = true;
-    delay(50);
+    await(new Future($release));
     echo "member done\n";
 });
 
@@ -22,7 +25,10 @@ while (!$started) {
 }
 
 $scope->disposeAfterTimeout(10);
-delay(100);
+// Returns once the fire has made the member a zombie.
+$scope->awaitCompletion(new Future(new FutureState()));
+$release->complete(null);
+await($member);
 echo "end\n";
 ?>
 --EXPECT--

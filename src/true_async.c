@@ -232,6 +232,8 @@ static PHP_RINIT_FUNCTION(true_async)
 	ASYNC_G(test_block_releases) = 0;
 	ASYNC_G(test_typed_unlinks) = 0;
 	ASYNC_G(test_aborts) = 0;
+	ASYNC_G(test_callback_searches) = 0;
+	ASYNC_G(test_idle_runs) = 0;
 	ASYNC_G(test_exit_deadline_ms) = 0;
 	ASYNC_G(test_trigger) = NULL;
 	ASYNC_G(test_firer) = NULL;

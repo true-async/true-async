@@ -10,6 +10,7 @@ use Async\AsyncCancellation;
 use Async\Channel;
 use Async\ChannelException;
 use Async\Scope;
+use function Async\await;
 use function Async\delay;
 use function Async\spawn;
 
@@ -20,7 +21,7 @@ $scope->spawn(function () use (&$child, &$channel, &$started) {
     $started = true;
 
     try {
-        delay(1000);
+        delay(100000);
     } catch (AsyncCancellation) {
         // Made after the cancel: the child scope is not cancelled, the channel binds to the cancelled scope.
         $child = Scope::inherit();
@@ -43,7 +44,7 @@ spawn(function () use (&$child) {
     echo "releasing the child scope\n";
     $child = null;
 });
-spawn(function () use ($channel, $scope) {
+$receiver = spawn(function () use ($channel, $scope) {
     try {
         $channel->recv();
         echo "receiver: woke\n";
@@ -54,7 +55,7 @@ spawn(function () use ($channel, $scope) {
     }
 });
 unset($channel, $scope);
-delay(200);
+await($receiver);
 echo "end\n";
 ?>
 --EXPECT--

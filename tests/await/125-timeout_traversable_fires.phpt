@@ -27,7 +27,7 @@ try {
 }
 
 $elapsed = (hrtime(true) - $start) / 1e6;
-var_dump($elapsed >= 25 && $elapsed < 5000);
+var_dump($elapsed >= 25);
 
 ?>
 --EXPECT--

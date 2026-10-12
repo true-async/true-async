@@ -3,25 +3,62 @@ The iterator core walks an array and a Traversable with joining workers in the o
 --FILE--
 <?php
 
+use Async\Future;
+use Async\FutureState;
 use Async\Scope;
-use function Async\delay;
+use function Async\await;
+use function Async\spawn;
 use function TrueAsync\Test\iterate;
 
-function run(string $name, Closure $walk): void
+// Each wait of a walk parks on a gate of its name. The driver opens a gate once the waits named with it
+// are parked, as a timer that fires at the idle point finds them, so the order needs no wall clock.
+final class Gates
 {
-    echo "--- $name\n";
-    $scope = new Scope();
-    $scope->spawn($walk);
-    $scope->awaitCompletion(Async\timeout(2000));
+    private array $parked = [];
+    private array $opened = [];
+
+    public function wait(string $name): void
+    {
+        $this->state($this->parked, $name)->complete(null);
+        await(new Future($this->state($this->opened, $name)));
+    }
+
+    public function open(string $name, string ...$also_parked): void
+    {
+        foreach ([$name, ...$also_parked] as $waiting) {
+            await(new Future($this->state($this->parked, $waiting)));
+        }
+
+        $this->state($this->opened, $name)->complete(null);
+    }
+
+    private function state(array &$states, string $name): FutureState
+    {
+        return $states[$name] ??= new FutureState();
+    }
 }
 
-run('array, two workers', function () {
-    iterate(['a' => 1, 'b' => 2, 'c' => 3, 'd' => 4], function ($value, $key) {
+function run(string $name, Closure $walk, array $schedule = []): void
+{
+    echo "--- $name\n";
+    $gates = new Gates();
+    spawn(function () use ($gates, $schedule) {
+        foreach ($schedule as $step) {
+            $gates->open(...$step);
+        }
+    });
+    $scope = new Scope();
+    $scope->spawn($walk, $gates);
+    $scope->awaitCompletion(new Future(new FutureState()));
+}
+
+run('array, two workers', function (Gates $gates) {
+    iterate(['a' => 1, 'b' => 2, 'c' => 3, 'd' => 4], function ($value, $key) use ($gates) {
         echo "start $key=$value\n";
-        delay(10);
+        $gates->wait($key);
         echo "end $key\n";
     }, 2);
-});
+}, [['a', 'b'], ['b', 'c'], ['c', 'd'], ['d']]);
 
 run('false stops the walk', function () {
     iterate([1, 2, 3], function ($value) {
@@ -30,22 +67,22 @@ run('false stops the walk', function () {
     });
 });
 
-function numbers(): Generator
+function numbers(Gates $gates): Generator
 {
     for ($i = 0; $i < 3; $i++) {
         echo "generator moves to $i\n";
-        delay(5);
+        $gates->wait("move $i");
         yield "k$i" => $i;
     }
 }
 
-run('a generator that suspends while it moves', function () {
-    iterate(numbers(), function ($value, $key) {
+run('a generator that suspends while it moves', function (Gates $gates) {
+    iterate(numbers($gates), function ($value, $key) use ($gates) {
         echo "start $key=$value\n";
-        delay(5);
+        $gates->wait($key);
         echo "end $key\n";
     }, 3);
-});
+}, [['move 0'], ['move 1'], ['k0', 'move 2'], ['move 2'], ['k1', 'k2'], ['k2']]);
 
 run('an iterator without keys of its own', function () {
     iterate(new ArrayIterator([5, 6]), function ($value, $key) {

@@ -20,9 +20,10 @@ $worker = spawn(function () use (&$exited) {
 
             try {
                 delay(3000);
+                echo "inner: the wait ran out\n";
             } finally {
                 $elapsed = (hrtime(true) - $exited) / 1e6;
-                echo "inner finally: ", $elapsed < 2000 ? "unwound at the deadline" : "ran out ($elapsed ms)", "\n";
+                echo "inner finally: ", $elapsed >= 200 ? "unwound at the deadline" : "unwound early, after $elapsed ms", "\n";
             }
         });
     } catch (Async\AsyncCancellation $e) {

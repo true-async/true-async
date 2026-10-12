@@ -6,6 +6,8 @@ Channel: a dispose() of a cancelled owner scope closes a channel made after the 
 use Async\AsyncCancellation;
 use Async\Channel;
 use Async\ChannelException;
+use Async\Future;
+use Async\FutureState;
 use Async\Scope;
 use function Async\await;
 use function Async\delay;
@@ -13,15 +15,16 @@ use function Async\spawn;
 
 $channel = null;
 $started = false;
+$release = new FutureState();
 $scope = new Scope();
-$scope->spawn(function () use (&$channel, &$started) {
+$scope->spawn(function () use (&$channel, &$started, $release) {
     $started = true;
 
     try {
-        delay(1000);
+        delay(100000);
     } catch (AsyncCancellation) {
         $channel = new Channel(0);
-        delay(50);
+        await(new Future($release));
         echo "member: ended\n";
     }
 });
@@ -62,6 +65,7 @@ $scope->dispose();
 echo "after dispose(): closed=", var_export($channel->isClosed(), true), "\n";
 Async\suspend();
 echo "waiter still waits: ", var_export(!$waiter->isCompleted(), true), "\n";
+$release->complete(null);
 await($waiter);
 ?>
 --EXPECT--

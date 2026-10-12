@@ -12,9 +12,12 @@ use function Async\timeout;
 $timeout = timeout(150);
 
 echo "first: ", await(spawn(function () {
-    delay(100);
     return "in time";
 }), $timeout), "\n";
+
+// The late result comes past the shared deadline whatever the load: its delay starts after this one ends.
+// A deadline taken anew by the second wait would end only at 250 ms, after it.
+delay(100);
 
 try {
     await(spawn(function () {

@@ -79,7 +79,7 @@ io/042-pipe_timeout_concurrent_coroutines.phpt  ref:3d9ffd763be928d7508e709b422f
 io/043-pipe_fread_timeout.phpt  ref:cff039c14f81f60c9fe02988f15a5409d85404b24d81ebd62b329b0e8798ab72
 io/044-nonblocking_pipe_read_no_data.phpt  ref:391189767291b70227f34b6546eab00d1217e2d5fcc3cf918659da8081692350
 io/045-nonblocking_pipe_write_broken.phpt  ref:0b3b491caacb634896ae3cd89fb8124c4de502176a0886c6c9e986351aa2f71f
-io/046-nonblocking_pipe_read_with_data.phpt  ref:66218c85a2c301613fde47e38d3b214c2bd9bb20fb47342819dde1c71a4eadd9
+io/046-nonblocking_pipe_read_with_data.phpt  ref:66218c85a2c301613fde47e38d3b214c2bd9bb20fb47342819dde1c71a4eadd9 changed:2026-10-12:99ab353ad48a84a63a62dd2e3fb7fb396f1973bd675351ea18ee2042da9c6fa2
 io/047-nonblocking_pipe_write_success.phpt  ref:7318de4d2fba4a36b7cd16a24938e72ed3f1e0c8349108294a0dbc8de6e37e63
 io/048-file_offset_sync_with_dup.phpt  ref:ffbedbdb833069dcbc928513443c7d40f2b436245b96eb3aa6674d3de43ad921
 io/049-file_offset_sequential_writes.phpt  ref:ce51f73d93baaa83cebc9a57973209f9871fd6e76676e19c08a85836dbc8866a
@@ -348,7 +348,7 @@ signal/023-pending_at_last_future_raised_again.phpt  own:97ca1052d45e450410a120a
 
 # S6.3: the provider's own tests (dev/plans/S6.md, section 12).
 io_provider/001-reads_park_the_coroutine.phpt  own:0e125a51fa076d68b3c8e0b9093a14901ec071f75628efbfcb31e9926d36f068  skip-on:*-win(Unix-only)
-io_provider/002-sleep_parks_the_coroutine.phpt  own:1bbd866600049b96b4671a6752c712125544186c3512a94b43026039180bf3f2
+io_provider/002-sleep_parks_the_coroutine.phpt  own:1bbd866600049b96b4671a6752c712125544186c3512a94b43026039180bf3f2  changed:2026-10-12:af8982deba128f9bf02c034d86e2b270473c222c06b9700ed5ba47154543c38e
 io_provider/003-installed_by_spawn.phpt  own:f8611b28f2c63a5a3dd19d1dac073ba97ffa389bd86e519cafb7684b08071e06
 io_provider/004-installed_by_delay_in_main.phpt  own:c137260a20fd7a5d2ff6140345fc58e9c5bf2ae0a121a542f551171d425eecfc
 io_provider/005-cancel_parked_pipe_read.phpt  own:6a357c10f12fa438a873ae9781808049e85b059397135fe2b43564d04f2576be  skip-on:*-win(Unix-only)
@@ -359,9 +359,9 @@ io_provider/009-cancel_after_completion.phpt  own:7c7fa89d5721374431f090c7777318
 io_provider/010-cancelled_pipe_read_reads_again.phpt  own:293421b6b2f09026d17c72b39a3e6358fb11cb51192c33b9e7fec1eb81ddfd94  skip-on:*-win(Unix-only)
 io_provider/011-io_after_bailout_in_shutdown_function.phpt  own:31f01d304c7da9462d9829243291e40297072cdd8b5bb796564b58f4ae251471  skip-on:*-win(Unix-only)
 io_provider/012-cancel_parked_stream_select.phpt  own:aae6a829a811826f25a6548b3d76fca0538d694a96e09c4d9ad7ad1f9fd2e7a0
-io_provider/013-cancel_parked_socket_select.phpt  own:7a1488fced6b64b2e7eddd69ff11a5a4616e9542e7f75e37e11772f72e70d365
+io_provider/013-cancel_parked_socket_select.phpt  own:7a1488fced6b64b2e7eddd69ff11a5a4616e9542e7f75e37e11772f72e70d365 changed:2026-10-12:643d1707f68f64ecbb9f6e5c69221c5a9f1f0c4f468a7e24ce6e3e7ec4179574
 io_provider/014-registration_before_the_queue.phpt  own:7b851a3989d35a366036d602d8702a269d18b54f389a89f652cd5464710c7313  skip-on:*-win(no-registrations-on-IOCP)  changed:2026-10-07:799ae4eae772d8fa605d1a04ee20d95267578e449a4606b19781e44e679a4f26
-io_provider/015-select_sees_pending_connections.phpt  own:5f74c81f2c02d13ffc6e78406c00158d9a09986d104b84419b13401c351b02df
+io_provider/015-select_sees_pending_connections.phpt  own:5f74c81f2c02d13ffc6e78406c00158d9a09986d104b84419b13401c351b02df  changed:2026-10-12:39690a2fa1632c0c702a02a25a2d6096c11026357cd3fc41b7425e393bee7704
 
 # S6.7: the seven tests that include a php-src test helper, from the core checkout the runner names
 # ($TRUE_ASYNC_CORE_SRC, dev/DECISIONS.md 2026-10-07), and the shutdown windows (dev/plans/S6.md section 10).

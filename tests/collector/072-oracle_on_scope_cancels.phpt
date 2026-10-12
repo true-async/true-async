@@ -15,7 +15,6 @@ use Async\Future;
 use Async\FutureState;
 use function Async\spawn_with;
 use function Async\suspend;
-use function Async\delay;
 use TrueAsync\Test;
 
 final class CancellingStrategy implements SpawnStrategy
@@ -39,6 +38,8 @@ final class CancellingStrategy implements SpawnStrategy
 }
 
 if (($mode = getenv('ORACLE_MODE')) !== false) {
+    // run-tests' timeout kills only the test, not this child, should a flag below never be set
+    set_time_limit(30);
     if (function_exists('posix_setrlimit')) {
         posix_setrlimit(POSIX_RLIMIT_CORE, 0, 0);
     }
@@ -56,11 +57,16 @@ if (($mode = getenv('ORACLE_MODE')) !== false) {
     if ($mode === 'child handler') {
         $child = Scope::inherit($parent);
         $child->setExceptionHandler(function () {
+            $GLOBALS['handled'] = true;
         });
         $child->spawn(function () {
             throw new RuntimeException("boom");
         });
-        delay(10);
+        // A delay could end before the child ran: a timer already due when main parks wakes it in
+        // that tick, ahead of the queued child
+        while (!isset($handled)) {
+            suspend();
+        }
         $parent->cancel();
     } elseif ($mode === 'provided scope') {
         spawn_with(new CancellingStrategy($parent), function () {
@@ -69,10 +75,13 @@ if (($mode = getenv('ORACLE_MODE')) !== false) {
         $parent->spawn(function () {
             spawn_with(new CancellingStrategy(null), function () {
             });
+            $GLOBALS['spawned'] = true;
         });
+        while (!isset($spawned)) {
+            suspend();
+        }
     }
 
-    delay(50);
     echo "no abort\n";
     exit(0);
 }

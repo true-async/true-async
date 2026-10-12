@@ -674,3 +674,7 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
 - S14.5 closed 2026-10-12 (PLAN result line): the reactor queue's fault seams
   (`TrueAsync\Test\fail_io()`), the two SECURITY incidents under test, and five bugs those tests found
   (DECISIONS 2026-10-12 S14.5). Two paths stay unreached by a test, named in DECISIONS.
+- S14.3 closed 2026-10-12 (PLAN result line, DECISIONS 2026-10-12 S14.3). A test that must wait for an event
+  waits on it; under a seed one `suspend()` need not run a coroutine just spawned, so a test that needs one
+  parked loops on a flag it sets before the park. The seed runner's "new diagnostic" lines for `channel/112`
+  and `collector/063`, `064` come from the tests as they were before S14.3 as well.

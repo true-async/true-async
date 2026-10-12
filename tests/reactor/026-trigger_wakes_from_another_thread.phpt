@@ -2,21 +2,19 @@
 A coroutine parked on a trigger is woken by a fire from another thread: the idle scheduler waits for it instead of resolving a deadlock, and other coroutines run meanwhile
 --FILE--
 <?php
-use function Async\{spawn, await, delay};
+use function Async\{spawn, await};
 use TrueAsync\Test;
 
 Test\trigger_new();
-$started = hrtime(true);
 
-$waiter = spawn(function () use ($started) {
+$waiter = spawn(function () {
+    // From a new thread, later than the scheduler goes idle; nothing else can wake the waiter.
     Test\trigger_fire(150);
     Test\trigger_wait();
-    $elapsed = (hrtime(true) - $started) / 1e6;
-    echo "woken ", $elapsed >= 140 ? "after the fire" : "early, at $elapsed ms", "\n";
+    echo "woken after the fire\n";
 });
 
 spawn(function () {
-    delay(20);
     $state = Test\reactor_state();
     echo "while parked: started ", $state['started'], ", triggers ", $state['triggers'], "\n";
 });

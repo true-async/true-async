@@ -10,6 +10,9 @@ use Async\Future;
 use Async\FutureState;
 use function Async\await;
 use function Async\delay;
+use TrueAsync\Test;
+
+$stuck_done = false;
 
 function start(): void
 {
@@ -23,16 +26,28 @@ function start(): void
             await(new Future(new FutureState()));
         } catch (Async\AsyncCancellation $e) {
             echo "stuck: ", $e->getMessage(), "\n";
+            $GLOBALS['stuck_done'] = true;
         }
     });
     $scope->spawn(function () {
-        delay(20);
+        // Fails once the automatic run has reported the stuck member, whatever the load.
+        $runs = Test\collector_idle_runs();
+
+        while (Test\collector_idle_runs() === $runs) {
+            delay(1);
+        }
+
         throw new RuntimeException("boom");
     });
 }
 
 start();
-delay(50);
+
+// Main holds nothing of the scope, so it waits on a flag.
+while (!$stuck_done) {
+    delay(1);
+}
+
 echo "end\n";
 ?>
 --EXPECTF--

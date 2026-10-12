@@ -10,6 +10,7 @@ use Async\FutureState;
 use function Async\await;
 use function Async\suspend;
 use function Async\delay;
+use TrueAsync\Test;
 
 $parent = (new Scope())->allowZombies();
 $parent->setChildScopeExceptionHandler(function ($scope, $coroutine, $e) {
@@ -35,7 +36,13 @@ $waiter = $other->spawn(function () use ($future, &$got) {
 });
 $failing = Scope::inherit($scope)->asNotSafely();
 $failer = $failing->spawn(function () {
-    delay(50);
+    // Fails once the automatic run has reported the member and the waiter, whatever the load.
+    $runs = Test\collector_idle_runs();
+
+    while (Test\collector_idle_runs() === $runs) {
+        delay(1);
+    }
+
     throw new RuntimeException("failed");
 });
 while (!$member->isStarted() || !$waiter->isStarted() || !$failer->isStarted()) {
@@ -49,9 +56,9 @@ echo "end\n";
 ?>
 --EXPECTF--
 
-Warning: Partial deadlock: coroutine #%d spawned at %s:16 can never wake (await: future) in %s on line 18
+Warning: Partial deadlock: coroutine #%d spawned at %s:17 can never wake (await: future) in %s on line 19
 
-Warning: Partial deadlock: coroutine #%d spawned at %s:26 can never wake (await: future) in %s on line 27
+Warning: Partial deadlock: coroutine #%d spawned at %s:27 can never wake (await: future) in %s on line 28
 parent: took failed
 member: completes the state
 waiter: got 1

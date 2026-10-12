@@ -82,6 +82,10 @@ bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callba
 
 	if (UNEXPECTED((callback->flags & ASYNC_CALLBACK_F_SHARED) || index >= vector->length ||
 				   slots[index] != callback)) {
+#ifdef TRUE_ASYNC_TEST_HOOKS
+		ASYNC_G(test_callback_searches)++;
+#endif
+
 		for (index = 0; index < vector->length && slots[index] != callback; index++) {
 		}
 

@@ -3,9 +3,9 @@ Scope: the object's destruction cancels a scope whose disposeAfterTimeout() time
 --FILE--
 <?php
 use Async\Scope;
+use TrueAsync\Test;
 use function Async\delay;
 
-$start = hrtime(true);
 $scope = Scope::inherit()->asNotSafely();
 $scope->spawn(function () {
     try {
@@ -18,12 +18,10 @@ $scope->disposeAfterTimeout(3000);
 Async\suspend();
 unset($scope);
 Async\suspend();
-register_shutdown_function(function () use ($start) {
-    echo "waited for the timer: ", var_export(hrtime(true) - $start > 2000e6, true), "\n";
-});
+echo "timers armed: ", Test\reactor_state()['timers'], "\n";
 echo "main end\n";
 ?>
 --EXPECT--
 member: Scope is being disposed due to object destruction
+timers armed: 0
 main end
-waited for the timer: false

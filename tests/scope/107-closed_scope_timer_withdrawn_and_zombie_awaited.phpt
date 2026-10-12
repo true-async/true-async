@@ -5,11 +5,11 @@ pcntl
 --FILE--
 <?php
 use Async\Scope;
+use TrueAsync\Test;
 use function Async\spawn;
 use function Async\await;
 use function Async\delay;
 
-$start = hrtime(true);
 $pid = pcntl_fork();
 
 if ($pid === 0) {
@@ -18,13 +18,13 @@ if ($pid === 0) {
     $idle->disposeAfterTimeout(30000);
     Async\suspend();
     $idle->dispose();
-    printf("child: idle scope closed %d\n", $idle->isClosed());
+    printf("child: idle scope closed %d, timers armed %d\n", $idle->isClosed(), Test\reactor_state()['timers']);
 
     return;
 }
 
 pcntl_waitpid($pid, $status);
-printf("parent: the child ended well before the timer: %d\n", (hrtime(true) - $start) < 10000000000);
+printf("parent: the child exited with %d\n", pcntl_wexitstatus($status));
 
 $scope = Scope::inherit()->allowZombies();
 $scope->spawn(function () {
@@ -46,8 +46,8 @@ await(spawn(function () use ($scope) {
 }));
 ?>
 --EXPECT--
-child: idle scope closed 1
-parent: the child ended well before the timer: 1
+child: idle scope closed 1, timers armed 0
+parent: the child exited with 0
 scope closed 1
 zombie done
 waiter returned

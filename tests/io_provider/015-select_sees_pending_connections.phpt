@@ -16,20 +16,24 @@ var_dump(is_resource(Async\await($acceptor)));
 stream_set_blocking($server, false);
 $clients[] = stream_socket_client($address);
 $clients[] = stream_socket_client($address);
-Async\delay(10);
+
+// A select that saw the connections only at its time limit would end after this delay.
+$late = spawn(function () {
+    Async\delay(10000);
+    echo "the 10 s delay ended first\n";
+});
 
 for ($i = 1; $i <= 2; $i++) {
     $read = [$server];
     $write = $except = null;
-    $start = hrtime(true);
-    $ready = stream_select($read, $write, $except, 5);
-    $waited = (hrtime(true) - $start) / 1e9;
+    $ready = stream_select($read, $write, $except, 30);
     $accepted = stream_socket_accept($server, 0);
-    echo "select $i: $ready, at once: ", var_export($waited < 1, true), ", accepted: ",
-        var_export(is_resource($accepted), true), "\n";
+    echo "select $i: $ready, accepted: ", var_export(is_resource($accepted), true), "\n";
 }
+
+$late->cancel();
 ?>
 --EXPECT--
 bool(true)
-select 1: 1, at once: true, accepted: true
-select 2: 1, at once: true, accepted: true
+select 1: 1, accepted: true
+select 2: 1, accepted: true

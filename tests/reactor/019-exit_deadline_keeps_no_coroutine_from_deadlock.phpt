@@ -1,10 +1,11 @@
 --TEST--
 D16: the deadline's Timer is no coroutine's wait, so a deadlock during the graceful shutdown is resolved at once
+--DESCRIPTION--
+A deadline that fired would cancel both coroutines with a graceful exit no catch sees and raise no
+DeadlockError, so the error shows the deadlock was found first.
 --FILE--
 <?php
 use function Async\{spawn, await, delay};
-
-$started = hrtime(true);
 $a = null;
 $b = null;
 
@@ -26,11 +27,6 @@ $b = spawn(function () use (&$a) {
     }
 });
 
-register_shutdown_function(function () use ($started) {
-    $elapsed = (hrtime(true) - $started) / 1e6;
-    echo $elapsed < 4000 ? "resolved before the deadline" : "resolved after $elapsed ms", "\n";
-});
-
 Async\suspend();
 exit(0);
 ?>
@@ -39,4 +35,3 @@ a waits for b
 b waits for a
 %A
 Fatal error: Uncaught Async\DeadlockError: %a
-resolved before the deadline

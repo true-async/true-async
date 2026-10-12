@@ -4,25 +4,28 @@ Channel: a channel made in the global scope after an unhandled error stays open 
 <?php
 
 use Async\Channel;
-use function Async\delay;
+use function Async\await;
 use function Async\spawn;
 
 $failed = spawn(function () {
     throw new Exception("boom");
 });
-delay(10);
+
+while (!$failed->isCompleted()) {
+    Async\suspend();
+}
+
 echo "main continues\n";
 
 $channel = new Channel(1);
-spawn(function () use ($channel) {
-    delay(20);
+$sender = spawn(function () use ($channel) {
     $channel->send(1);
     echo "sent\n";
 });
-spawn(function () {
-    delay(5);
+$idle = spawn(function () {
 });
-delay(50);
+await($sender);
+await($idle);
 echo "closed: ", var_export($channel->isClosed(), true), "\n";
 echo "received: ", $channel->recv(), "\n";
 ?>

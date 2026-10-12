@@ -9,6 +9,7 @@ use Async\Future;
 use Async\FutureState;
 use function Async\await;
 use function Async\delay;
+use TrueAsync\Test;
 
 function start(): void
 {
@@ -21,14 +22,23 @@ function start(): void
         }
     });
     $scope->spawn(function () {
-        delay(20);
+        // Fails once the automatic run has reported the stuck member, whatever the load.
+        $runs = Test\collector_idle_runs();
+
+        while (Test\collector_idle_runs() === $runs) {
+            delay(1);
+        }
+
         throw new RuntimeException("boom");
     });
 }
 
 start();
-delay(50);
-echo "not reached\n";
+
+// The uncaught error ends the request.
+while (true) {
+    delay(1);
+}
 ?>
 --EXPECTF--
 Warning: Partial deadlock: coroutine #%d spawned at %s:%d can never wake (await: future) in %s on line %d

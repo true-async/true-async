@@ -42,16 +42,19 @@ if ($pid === 0) {
 $parent_waiter = spawn(function () {
     try {
         Test\trigger_wait();
-        echo "parent: woken\n";
+
+        return "woken";
     } catch (Async\AsyncCancellation $e) {
-        echo "parent: cancelled\n";
+        return "cancelled";
     }
 });
 
 delay(600);
 $parent_waiter->cancel();
-await($parent_waiter);
+$outcome = await($parent_waiter);
+// After the child's exit, so its line comes first whatever the load.
 pcntl_waitpid($pid, $status);
+echo "parent: ", $outcome, "\n";
 echo "parent: child exit status ", pcntl_wexitstatus($status), "\n";
 ?>
 --EXPECT--

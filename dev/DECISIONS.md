@@ -2398,3 +2398,99 @@ stack options were shown with the code).
   case of the fiber-switch block joins the open question "A pcntl handler that waits". The XFAILs of S14.4's
   list get steps: `io/039`, `040`, `042`, `043` and `stream/030` name S8.6 (the core fixes of RFC 3 and 4, a new
   step), `io/100` names S8.3a.
+- 2026-10-12 S14.3: own tests that slept a guessed time for an event now wait on the event (HEALTH 2026-10-12):
+  `scope/164-safe_scope_deadline_keeps_zombie_coroutine_finally.phpt` awaits the scope's completion, which the
+  fire reaches by making the member a zombie; `scope/096-awaitAfterCancellation_handler_runs_in_waiter.phpt` and
+  `scope/104-awaitAfterCancellation_error_while_handler_runs_goes_up.phpt` let the handlers release the members in
+  turn; `await/121-timeout_two_waiters.phpt` returns at once instead of after 10 ms;
+  `internal/066-iterator_walk_order.phpt` opens each worker's step only after the steps the expected order puts
+  before it. Why: under `--jobs 16` a delay can end before the event.
+- 2026-10-12 S14.3, the same for channels: `channel/112-channel_recvAsync_awaiter_live_while_channel_held.phpt`,
+  `channel/125-channel_collector_finds_lone_receivers.phpt` and
+  `channel/126-channel_collector_spares_live_receivers.phpt` cancel their sleepers after the collector's reports
+  instead of after a delay; 112 and 125 cancel from a coroutine of their own, since a cancel made in the reporter
+  keeps that frame's Future alive through its trace;
+  `channel/116-channel_in_global_scope_open_after_unhandled_error.phpt`,
+  `channel/117-channel_second_dispose_of_cancelled_scope_wakes_only_channel.phpt` and
+  `channel/129-channel_collector_spares_receiver_until_child_scope_released.phpt` await the coroutine or a Future
+  they slept for. Under a seed one `suspend()` need not run a new coroutine, so 116, 126 and the scope tests above
+  loop until theirs have run or parked.
+- 2026-10-12 S14.3, the same for the reactor: `reactor/026-trigger_wakes_from_another_thread.phpt` arms the
+  thread's fire in the waiter, which nothing else can wake, and checks the state while it is parked;
+  `reactor/028-trigger_fire_without_waiter_dropped.phpt` fires its burst once the waiter is linked and awaits the
+  first wake; `reactor/036-trigger_child_has_own_wake_descriptors.phpt` prints the parent's outcome after
+  `pcntl_waitpid()`.
+- 2026-10-12 S14.3, timers in a fixed order: a timer armed later with a longer duration fires after an earlier one
+  whatever the load, since the reactor completes due timers nearest first (`src/reactor.c`, `timers_run`).
+  `scope/166-deadline_of_cancelled_scope_keeps_zombie_coroutine_finally.phpt`,
+  `scope/168-deadline_of_completed_parent_keeps_finally_of_cancelled_child_member.phpt`,
+  `await/116-timeout_shared_deadline.phpt` and `channel/120-channel_soft_timer_fires_while_another_sleeps.phpt`
+  arm their pairs so; `scope/100-disposeAfterTimeout_earliest_wins.phpt` arms a 1 s delay after the deadlines,
+  which the 5 s one would follow; in `io_provider/015-select_sees_pending_connections.phpt` a 10 s delay ends
+  first only if the select waits for its limit. Why: two timers of different coroutines raced on the scheduler's
+  order (DECISIONS 2026-10-09, `scope/170`).
+- 2026-10-12 S14.3, upper bounds of elapsed time dropped: the state they stood for is printed instead (the armed
+  timers from `TrueAsync\Test\reactor_state()` in
+  `scope/099-disposeAfterTimeout_object_destruction_cancels_at_once.phpt`,
+  `scope/107-closed_scope_timer_withdrawn_and_zombie_awaited.phpt`,
+  `reactor/006-signal_during_park_runs_handler.phpt`, whose wait grows to 3 s to give the shell's signal time; the
+  order of the ends against the deadlines taken in `reactor/013-delay_order_and_bounds.phpt` and
+  `io_provider/002-sleep_parks_the_coroutine.phpt`). Why: a loaded runner breaks any upper bound.
+- 2026-10-12 S14.3, upper bounds dropped the other way: a wait that must be unwound prints a line after it, which
+  a wait that ran out would print (`reactor/018-exit_deadline_unwinds_protect.phpt`,
+  `reactor/021-exit_deadline_in_forked_child.phpt`, `reactor/023-exit_deadline_over_deferred_cancellation.phpt`,
+  `reactor/025-exit_deadline_fires_again.phpt`); 021 takes its start at `exit()`, which arms the deadline, not at
+  the later fork. In `reactor/019-exit_deadline_keeps_no_coroutine_from_deadlock.phpt` the `DeadlockError` is the
+  witness: a deadline that fired raises none (Sage). `reactor/024-delay_with_async_off.phpt` prints
+  `TrueAsync\Test\coroutine_count()` before the delay: with no coroutine current, `delay()` returns before it arms
+  a Timer (Sage). `await/125-timeout_traversable_fires.phpt` keeps its lower bound. A lower bound stays where the
+  deadline is the behaviour. Why: as above.
+- 2026-10-12 S14.3: `collector/063-automatic_run_stops_before_memory_limit_on_wake_edges.phpt` finds the smallest
+  margin above the memory in use at which a walk finds one coroutine awaiting 5000 Futures, then checks that fifty
+  awaiting 5000 Futures stop there, on their edges, and are found at a larger one: the margin is measured on the
+  build's heap (dbg and ASAN: 4 MiB), not written in the test.
+  `collector/064-automatic_run_stops_before_memory_limit_on_candidates.phpt` (dbg only) prints the outcome at each
+  margin. Each margin waits for a run (`TrueAsync\Test\collector_idle_runs()`, new, test builds only, counted at
+  the idle point): a `delay(1)` that ends before the scheduler goes idle makes none. Both wait until every
+  coroutine has parked. Why: the final counts alone pass a walk that wrongly completes.
+- 2026-10-12 S14.3 (Sage): `await/141-many_records_of_one_future_end_in_linear_time.phpt` and
+  `signal/024-many_futures_on_one_signal_leave_in_linear_time.phpt` count the callback removals that search their
+  vector (`TrueAsync\Test\callback_searches()`, 0 for a thousand records or Futures) instead of a million under
+  `max_execution_time`. The count is kept only in builds with test hooks, on the search branch of
+  `async_callbacks_remove()`, which a removal at its slot never takes, so no hot path gains a counter (P1.4).
+  `scope/124-member_finish_in_nested_scope_chain_in_linear_time.phpt` and
+  `scope/125-child_scopes_leave_in_linear_time.phpt` keep `max_execution_time`, raised from 20 s to 50 s (below
+  run-tests' timeout of 60 s), until Edmond decides on a counter on the completion walk (PLAN "Open questions").
+  Why: time is no witness under load.
+- 2026-10-12 S14.3, found by S14.2's Sage: `collector/069-handler_cancels_found_members.phpt`,
+  `collector/070-unheld_error_route_wakes_found_members.phpt`,
+  `collector/071-strategy_hook_cancels_found_members.phpt` and
+  `collector/073-handed_out_member_completes_found_waiters_future.phpt` failed their member after `delay(20)` or
+  `delay(50)` and let main wait `delay(50)`, armed first and so able to end first. The member now fails once
+  `TrueAsync\Test\collector_idle_runs()` has moved, so the automatic run has reported the stuck coroutines
+  whatever the load, and main waits on a flag the woken coroutine sets (070 ends by its uncaught error).
+  Why: the warning has to come before the error, and the error before main's line.
+- 2026-10-12 S14.3, found by the full lanes on core `c53c17cfd47`: a delay is no sync point even for work
+  queued before main parks. Main's own park ticks (`scheduler.c`, `scheduler_tick()` before the pop), which
+  polls timers when 100 ms have passed since the last poll (the request's first park always), and a timer
+  due by then, after a preemption on a loaded machine, wakes main ahead of the queue.
+  `scope/084-awaitCompletion_waiter_found_with_stuck_member.phpt` (ASAN, found nothing) and
+  `collector/072-oracle_on_scope_cancels.phpt` now loop `suspend()` on a counter or flag the coroutines set.
+- 2026-10-12 S14.3, found by the full ASAN lane on core `c53c17cfd47`, the same class:
+  `collector/043-cancel_inside_protect.phpt` and `collector/042-cancel_runs_finally_and_request_goes_on.phpt`
+  (ASAN) loop `delay(1)` on a flag, so the automatic run still comes;
+  `io_provider/013-cancel_parked_socket_select.phpt` (ASAN, 2 of 200 runs) waits until the cancelled select
+  has unwound (its completion, as a seed can cancel it before it starts), whose wake comes through the
+  reactor, where main's due timer can come first. `scope/070-handler_closure_cycle_with_zombie_member.phpt`'s
+  member threw inside main's two `gc_collect_cycles()` on ASAN; it waits for main's flag set after them.
+- 2026-10-12 S14.3, found by the full dbg lane on core `c53c17cfd47`:
+  `await/119-timeout_is_completed_past_deadline.phpt` took `timeout(5)` and checked it was not yet
+  complete; the check passed the deadline. It takes `timeout(50)` and fails only a completion seen before
+  50 ms have passed, so the deadline's unit is still checked (Critic).
+- 2026-10-12 S14.3, found by the full ASAN lane on core `c53c17cfd47`: `io/046-nonblocking_pipe_read_with_data.phpt`
+  gave its child 500 ms to start (ten `usleep(50000)`), which a loaded sanitizer run exceeds (DECISIONS
+  2026-10-07 saw it too). It now reads until the child has written or closed its end; run-tests' timeout
+  bounds a child that never starts. Why: what it tests is the read of data that is there, not the start time.
+- 2026-10-12 S14.3, kept as they are: `channel/114`, `118` order by events already; `internal/069`'s
+  delays are armed after the timer they race and longer; `scope/102`, `reactor/030`, `038`, `043`
+  check a lower bound, where the deadline is the behaviour.

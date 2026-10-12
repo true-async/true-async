@@ -28,7 +28,8 @@
  * coroutine_from_object slot; call_on_main_stack() runs a probe through the call_on_main_stack
  * slot. The class TrueAsync\Test\Event, await_records(), link_into_wait(),
  * subscriber_count() and wait_counters() drive the wait-record layer (dev/plans/S4.md section 2) before any event type
- * of the extension exists; reactor_wait(), reactor_state() and reactor_use_poll_queue() drive the reactor
+ * of the extension exists; callback_searches() counts the callback removals that searched their vector;
+ * reactor_wait(), reactor_state() and reactor_use_poll_queue() drive the reactor
  * (section 3) before delay(), read_without_owner() reads as an op with no stream does, and set_exit_deadline()
  * shortens D16's deadline. zend_sigaction_reinstall()
  * unblocks a signal number as callers of zend_sigaction() outside pcntl do. Each says more above its
@@ -1254,6 +1255,18 @@ static ZEND_FUNCTION(add_clearing_finish_handler)
 			&async_coroutine_from_object(coroutine)->coroutine, test_clearing_finish_handler, NULL, NULL);
 }
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_collector_idle_runs, 0, 0, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
+/* The request's count of automatic collector runs, a run stopped by memory_limit included: a test
+ * that needs a run at a given limit waits until the count moves. */
+static ZEND_FUNCTION(collector_idle_runs)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	RETURN_LONG(ASYNC_G(test_idle_runs));
+}
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_collector_age, 0, 1, IS_VOID, 0)
 	ZEND_ARG_TYPE_INFO(0, ms, IS_LONG, 0)
 ZEND_END_ARG_INFO()
@@ -1876,6 +1889,18 @@ static ZEND_FUNCTION(wait_counters)
 	add_assoc_long(return_value, "block_releases", ASYNC_G(test_block_releases));
 	add_assoc_long(return_value, "typed_unlinks", ASYNC_G(test_typed_unlinks));
 	add_assoc_long(return_value, "aborts", ASYNC_G(test_aborts));
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_callback_searches, 0, 0, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
+/* The request's count of callback removals that searched their vector: a callback found at its slot
+ * is removed without one (async_callbacks_remove()). */
+static ZEND_FUNCTION(callback_searches)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	RETURN_LONG(ASYNC_G(test_callback_searches));
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -2536,11 +2561,13 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\coroutine_count", ZEND_FN(coroutine_count), arginfo_coroutine_count, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\coroutine_from_object", ZEND_FN(coroutine_from_object), arginfo_coroutine_from_object, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\collector_age", ZEND_FN(collector_age), arginfo_collector_age, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\collector_idle_runs", ZEND_FN(collector_idle_runs), arginfo_collector_idle_runs, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\mark_found", ZEND_FN(mark_found), arginfo_mark_found, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\replace_execute_ex", ZEND_FN(replace_execute_ex), arginfo_replace_execute_ex, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\await_records", ZEND_FN(await_records), arginfo_await_records, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\link_into_wait", ZEND_FN(link_into_wait), arginfo_link_into_wait, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\wait_counters", ZEND_FN(wait_counters), arginfo_wait_counters, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\callback_searches", ZEND_FN(callback_searches), arginfo_callback_searches, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\subscriber_count", ZEND_FN(subscriber_count), arginfo_subscriber_count, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\reactor_wait", ZEND_FN(reactor_wait), arginfo_reactor_wait, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\set_exit_deadline", ZEND_FN(set_exit_deadline), arginfo_set_exit_deadline, 0, NULL, NULL)

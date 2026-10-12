@@ -2,52 +2,68 @@
 Scope: awaitAfterCancellation()'s handler gets each member's error in the waiting coroutine, may suspend there, and the wait goes on
 --DESCRIPTION--
 The route of each error cancels the scope's members again, as TrueAsync's catch_or_cancel, so the members
-here sleep through cancellations to throw later.
+here wait through cancellations for their turn. The handler gives the next member its turn.
 --FILE--
 <?php
+use Async\Future;
+use Async\FutureState;
 use Async\Scope;
 use function Async\spawn;
 use function Async\await;
-use function Async\delay;
+use function Async\suspend;
 
-function sleep_through(int $ms): void
+$started = 0;
+
+function wait_through_cancellations(FutureState $turn): void
 {
-    $end = hrtime(true) + $ms * 1000000;
+    global $started;
 
-    while (($left = $end - hrtime(true)) > 0) {
+    $started++;
+
+    while (true) {
         try {
-            delay(max(1, intdiv($left, 1000000)));
+            await(new Future($turn));
+
+            return;
         } catch (Async\AsyncCancellation $e) {
         }
     }
 }
 
+$turns = [new FutureState(), new FutureState(), new FutureState()];
 $scope = Scope::inherit()->asNotSafely();
-foreach ([10, 40] as $ms) {
-    $scope->spawn(function () use ($ms) {
-        sleep_through($ms);
-        throw new RuntimeException("error after $ms ms");
+foreach (['first', 'second'] as $index => $name) {
+    $scope->spawn(function () use ($turns, $index, $name) {
+        wait_through_cancellations($turns[$index]);
+        throw new RuntimeException("error of the $name member");
     });
 }
-$scope->spawn(function () {
-    sleep_through(80);
+$scope->spawn(function () use ($turns) {
+    wait_through_cancellations($turns[2]);
     echo "quiet member done\n";
 });
-Async\suspend();
 
-await(spawn(function () use ($scope) {
+// A member the cancel finds unstarted would never run its body.
+while ($started < 3) {
+    suspend();
+}
+
+await(spawn(function () use ($scope, $turns) {
     $scope->cancel();
-    $scope->awaitAfterCancellation(function (Throwable $e, Scope $s) use ($scope) {
-        delay(1);
+    $turns[0]->complete(null);
+    $next = 1;
+    $scope->awaitAfterCancellation(function (Throwable $e, Scope $s) use ($scope, $turns, &$next) {
+        suspend();
         echo "handler: ", $e->getMessage(), ", same scope: ", var_export($s === $scope, true), "\n";
+        $turns[$next++]->complete(null);
     });
     echo "waiter done\n";
 }));
 echo "end\n";
 ?>
 --EXPECT--
-handler: error after 10 ms, same scope: true
-handler: error after 40 ms, same scope: true
+handler: error of the first member, same scope: true
+handler: error of the second member, same scope: true
 quiet member done
 waiter done
 end

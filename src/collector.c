@@ -1164,6 +1164,9 @@ bool async_collector_idle(void)
 	}
 
 	ASYNC_G(collector_last_run) = now;
+#ifdef TRUE_ASYNC_TEST_HOOKS
+	ASYNC_G(test_idle_runs)++;
+#endif
 
 	uint32_t count = 0;
 	/* memory_limit is -1 when unlimited. */

@@ -22,6 +22,7 @@ function start_pair(): void
             echo "a: ", $e::class, ": ", $e->getMessage(), "\n";
         } finally {
             echo "a: finally\n";
+            $GLOBALS['finished']++;
         }
     });
     $b = spawn(function () use (&$a) {
@@ -32,12 +33,17 @@ function start_pair(): void
             echo "b: ", $e::class, ": ", $e->getMessage(), "\n";
         } finally {
             echo "b: finally\n";
+            $GLOBALS['finished']++;
         }
     });
 }
 
+$finished = 0;
 start_pair();
-delay(10);
+// A single delay can end before the pair's first runs and the automatic run that follows them
+while ($finished < 2) {
+    delay(1);
+}
 echo "main goes on\n";
 delay(10);
 echo "end\n";

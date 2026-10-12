@@ -4,16 +4,17 @@ delay(): coroutines wake in the order of their deadlines, none before its delay 
 <?php
 use function Async\{spawn, await, delay};
 
+$deadlines = [];
 $woken = [];
 $coroutines = [];
 
+// Armed out of the order of their deadlines; the order expected is read from the deadlines they took,
+// since a later arm under load may move one past another.
 foreach ([60, 20, 40] as $ms) {
-    $coroutines[] = spawn(function () use ($ms, &$woken) {
-        $before = hrtime(true);
+    $coroutines[] = spawn(function () use ($ms, &$deadlines, &$woken) {
+        $deadlines[$ms] = hrtime(true) + $ms * 1000000;
         delay($ms);
-        $elapsed = (hrtime(true) - $before) / 1e6;
-        $woken[] = $ms;
-        echo "$ms ms: ", $elapsed >= $ms ? "not early" : "early ($elapsed ms)", "\n";
+        $woken[$ms] = hrtime(true) >= $deadlines[$ms] ? "not early" : "early";
     });
 }
 
@@ -21,16 +22,21 @@ foreach ($coroutines as $coroutine) {
     await($coroutine);
 }
 
-echo implode(', ', $woken), "\n";
+asort($deadlines);
+echo "woken in the order of the deadlines: ", var_export(array_keys($deadlines) === array_keys($woken), true), "\n";
+ksort($woken);
 
-$before = hrtime(true);
+foreach ($woken as $ms => $verdict) {
+    echo "$ms ms: $verdict\n";
+}
+
+$deadline = hrtime(true) + 15 * 1000000;
 delay(15);
-$elapsed = (hrtime(true) - $before) / 1e6;
-echo "main: ", $elapsed >= 15 && $elapsed < 5000 ? "within bounds" : "out of bounds ($elapsed ms)", "\n";
+echo "main: ", hrtime(true) >= $deadline ? "not early" : "early", "\n";
 ?>
 --EXPECT--
+woken in the order of the deadlines: true
 20 ms: not early
 40 ms: not early
 60 ms: not early
-20, 40, 60
-main: within bounds
+main: not early

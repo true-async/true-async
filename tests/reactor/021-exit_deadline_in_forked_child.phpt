@@ -9,19 +9,21 @@ use TrueAsync\Test;
 
 Test\set_exit_deadline(300);
 
-spawn(function () {
+$exited = 0;
+
+spawn(function () use (&$exited) {
     try {
         delay(60000);
     } catch (Async\AsyncCancellation $e) {
-        $forked = hrtime(true);
         $pid = pcntl_fork();
 
         if ($pid === 0) {
             try {
-                delay(60000);
+                delay(3000);
+                echo "child: the wait ran out\n";
             } finally {
-                $elapsed = (hrtime(true) - $forked) / 1e6;
-                echo "child: ", $elapsed >= 200 && $elapsed < 4000 ? "unwound at the deadline" : "unwound after $elapsed ms", "\n";
+                $elapsed = (hrtime(true) - $exited) / 1e6;
+                echo "child: ", $elapsed >= 300 ? "unwound at the deadline" : "unwound early, after $elapsed ms", "\n";
             }
 
             return;
@@ -32,6 +34,7 @@ spawn(function () {
 });
 
 Async\suspend();
+$exited = hrtime(true);
 exit(0);
 ?>
 --EXPECT--
