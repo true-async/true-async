@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-09 · Active: per stage, under its `Tier:` line (Parallel tracks)
+Updated: 2026-10-12 · Active: per stage, under its `Tier:` line (Parallel tracks)
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -1679,3 +1679,49 @@ its scheduler launches; its plain streams get a libuv handle from RINIT (the for
       first.
       done: each PR's link and state in `RFC-CHANGES.md`; `S6.md` section 2 corrected
       tier: T1 · role: Critic
+
+## S14 — Health fixes of 2026-10-12  [ ]
+
+The open findings of the health check of 2026-10-12 (`dev/HEALTH.md`). Edmond 2026-10-12 12:54: all of them are
+fixed at once, ahead of S8, S9.31 and later stages. S14.1 is a crash and a leak on main. S14.1's fiber part and
+S14.6 are core changes and take the core slot.
+Tier: T2. Roles: Critic, Sage.
+Tests: interleaved
+
+- [ ] S14.1 `channel/145` (SIGSEGV) and `fiber/035` (the body runs after the `exit()`, two leaks) under a random
+      scheduling seed: cause found and fixed, with a test that fails without the fix in plain FIFO order where
+      one can be built.
+      done: `tools/test.py --seeds 100` over `channel/` and `fiber/` with no failed seed on `pocs-dbg` and
+        `pocs-asan`; the S9 and S10 lists pass as before
+      tier: T2 · role: Critic → Sage
+- [ ] S14.2 The nightly seeds run completes, means something and is watched: a seed run that cannot parse an
+      output reports it and goes on, and the test that writes the stray `  thrown` is found; `io/100`'s verdict
+      no longer follows the queue order; `stream/030` fails fast instead of waiting for run-tests' timeout;
+      `--show-slow` in `tools/test.py`; an `--io-chaos` entry in the `seeds` matrix; WORKFLOW names who looks at
+      the scheduled run.
+      done: one scheduled run green on dbg and asan with all of its seeds; the suite's ten slowest tests in
+        HEALTH's `Suite:` line
+      tier: T1 · role: Critic
+- [ ] S14.3 The own tests HEALTH lists under "wall-clock delays" and "wall-clock bound" wait on the event they
+      test instead of on time; `collector/063`, `064` check the walk's outcome at each margin; the cases
+      `fiber/023`, `028` and `scope/043` leave unchecked get own tests. Ported tests change only with a
+      `changed:` tag and a DECISIONS entry (P2.2).
+      done: each listed test passes under `--jobs 16` on 4 cores and over 20 seeds; none compares elapsed time
+        except where the deadline itself is the behaviour
+      tier: T1 · role: Critic
+- [ ] S14.4 Tests and plan rows with no owner: `gc/020`, `023` (XFAIL "S8 candidate") get an S8 step or a
+      DECISIONS outcome; `S3.excluded` lines 4, 7 (`component:S6`) and 13-18 (`component:S9`) get a stage that
+      ports them or an exclusion reason that holds; `dev/plans/S2.md` section 4's scenarios, allocator-fault and
+      network-chaos rows get a step or a recorded drop; PLAN's layout drops `src/chaos.c` and `fuzz/`.
+      done: `check-lists.py` passes; no list line or XFAIL names a closed stage
+      tier: T1 · role: Critic
+- [ ] S14.5 Fault seams of the extension for the reactor's queue (creation, submit, wait, the wake pair) and
+      tests through them and through `fiber.stack_size` for the paths HEALTH lists under pass 6; fault tests for
+      the two incidents of `dev/SECURITY.md` (the drain with no owner, the trigger that starves timers).
+      done: each listed path reached by a test on `pocs-dbg` and `pocs-asan`; coverage of those lines recorded
+      tier: T2 · role: Critic → Sage
+- [ ] S14.6 The core's test scheduler can fail an enqueue or a cancel at any status and refuse a finish
+      handler; tests for the GC coroutine's and the Fiber's paths HEALTH lists, and for "The scheduler failed to
+      launch".
+      done: the new core tests pass on dbg and ASAN; `CORE_REF` moved by WORKFLOW "Core update"
+      tier: T2 · role: Critic → Sage
