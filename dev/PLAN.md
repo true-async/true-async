@@ -80,9 +80,6 @@ true-async/
 
 Waiting for Edmond's call; nothing here is being worked on.
 
-- S14.2 was ticked without its done line's green `seeds` run after S14.1: CI has no nightly run (Edmond
-  2026-10-12 16:22). Either one run of CI dispatched by hand (15 `seeds` jobs of about 13 minutes) checks S14.1
-  and S14.7 together, or both wait until a nightly run is back. Edmond's call.
 - `gc_collect_cycles()` called while a GC run is in progress (its coroutine parked waiting for destructor
   iterators) returns 0 at once, from any coroutine: the `gc_active` check meant for a call from inside the run
   (S14.6, Sage). A programmer forcing a collection gets none and no sign of why. Option: await the active run
@@ -1920,8 +1917,9 @@ Tests: interleaved
         (DECISIONS 2026-10-12 S14.2). The dbg suite runs 38.5 s locally, was 150 s. Close: after S14.1, the
         next nightly run with every `seeds` job green (a dispatched run has the same jobs and counts).
         Ticked 2026-10-12 (fd1f9c4, f340508): `channel/145` and `fiber/035`, the only failed seeds, are fixed by
-        S14.1 (cd89af6, core `c53c17cfd47`); the full seeds run is an open question while the nightly is off
-        (Edmond 16:22).
+        S14.1 (cd89af6, core `c53c17cfd47`). The seeds run came after: run 38282314790, dispatched 2026-10-12
+        on 89c944d (Edmond 17:07), all 15 `seeds` jobs green (the push `linux (asan)` job's red is outside
+        the seeds, S14.7).
 - [x] S14.3 Tests without wall-clock waits: the own tests HEALTH lists under "wall-clock delays" and "wall-clock
       bound" wait on the event they test instead of on time; `collector/063`, `064` check the walk's outcome at
       each margin; the cases `fiber/023`, `028` and `scope/043` leave unchecked get own tests. Ported tests
@@ -1983,7 +1981,7 @@ Tests: interleaved
         code; three Critics found that the GC's automatic run during an unwind lost the throw position or an
         `exit()`, walked freed temporaries and, cancelled, dropped live ones from the root buffer (DECISIONS
         2026-10-12 S14.6). Extension on the new core: pocs-dbg 1760 PASS, pocs-asan 1734 PASS, 0 unexpected.
-- [ ] S14.7 Every CI job ends within 30 minutes: each line of the `seeds` job (dbg 100 seeds, asan
+- [x] S14.7 Every CI job ends within 30 minutes: each line of the `seeds` job (dbg 100 seeds, asan
       20, dbg `--io-chaos` 50) runs its seeds in five parallel jobs (`tools/test.py --shard K/M`, a seed keeps
       its number); every job has `timeout-minutes` (30, `lists` 10); no nightly run, the seeds run when CI is
       dispatched by hand. Edmond 2026-10-12 16:05: CI tests do not run long; 16:22: no nightly checks for now.
@@ -1992,6 +1990,11 @@ Tests: interleaved
       handoff: 2026-10-12, the change is in. One job ran a whole line, 51-65 min (run 38266038345), 2 h 52 min
         for asan at 9bbd906 (run 38230954460): S3.12 picked 100 and 20 seeds for 259 tests, the suite has
         ~1 780. Close: a dispatched run in which no job or step hits its time limit.
+        Done 2026-10-12: run 38282314790 on 89c944d (dispatched with Edmond's OK, 17:07) took 21 min from
+        dispatch to its last job; the longest shard of each line, its `Seeds` step: asan 14 min 32 s, dbg
+        13 min 20 s, dbg `--io-chaos` 6 min 35 s; no job or step hit its limit, all 15 `seeds` jobs green.
+        The run's one red is outside the seeds: the push `linux (asan)` job (https://github.com/true-async/true-async/actions/runs/38282314790/job/114922292796),
+        `scope/074`, a top-level `delay()` used to wait for queued work; it joins HEALTH's finding on that class.
 - [x] S14.8 No performance tests in CI: `scope/124` and `125`, the last tests whose verdict is a run time under
       `max_execution_time` (S14.3 made `await/141` and `signal/024` count searches), keep only the mechanism at a
       small size; their "linear time" claim becomes a benchmark of `bench/`, checked by hand with

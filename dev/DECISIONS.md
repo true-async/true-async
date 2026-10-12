@@ -2514,8 +2514,8 @@ stack options were shown with the code).
   `max_execution_time`; their linear-time claims are benchmarks `B19` and `B20`, counted by hand with
   `tools/bench.py --count`. Why: Edmond 2026-10-12 16:05, no performance tests in CI. The other option, a
   test-build counter of the walk's steps as S14.3 gave `await/141`, was not taken: the benchmark changes no
-  code on the finish path. Settles the PLAN open question on the two tests. S14.2 ticked without its seeds
-  run (the coordinator, after the nightly was turned off; PLAN Open questions).
+  code on the finish path. Settles the PLAN open question on the two tests. S14.2 ticked before its seeds
+  run, which came after (run 38282314790, S14.7).
 - 2026-10-12 S14.6: the core's test scheduler gets one INI countdown per refusal, as `fail_enqueue` already was:
   `fail_wake` (an enqueue of a coroutine that is not CREATED), `fail_cancel`, `fail_finish_handler` (returns 0),
   `fail_defer`, `fail_launch` (returns NULL); a refused enqueue, cancel or defer throws an Error naming its seam.

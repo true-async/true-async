@@ -23,9 +23,9 @@ Practices: mutation tool (known-answer on every push, stage diffs at stage revie
   `fail_at` sites enqueue, reserve, link in 12 tests; the reactor queue's `fail_io` sites, S14.5, in 19
   tests; the refused stack, `fiber.stack_size=1048576G`, in 21; IO chaos C1-C3 by `--io-chaos`, S6.8; the core
   test scheduler's `fail_*` seams: new coroutine, enqueue, wake, cancel, finish handler, defer, launch, S14.6,
-  in 26 tests), fuzz seeds (nightly `seeds` job
-  only, with an `--io-chaos` entry since S14.2), benchmarks (bench/, `tools/bench.py`, by hand),
-  dev/PRINCIPLES.md, CI (lists, linux dbg and asan, mutants-coverage, windows on push; seeds on schedule);
+  in 26 tests), fuzz seeds (`seeds` jobs in a
+  run dispatched by hand, five per line since S14.7, with an `--io-chaos` entry since S14.2), benchmarks (bench/, `tools/bench.py`, by hand),
+  dev/PRINCIPLES.md, CI (lists, linux dbg and asan, mutants-coverage, windows on push; seeds when dispatched by hand);
   missing: specification tests (dev/TESTING.md), the allocator-fault and network-chaos layers of
   dev/plans/S2.md section 4
 Scope: the extension (`src/`, `tests/`, `tools/`, `dev/`) and our core diff on `async-core`
@@ -47,7 +47,8 @@ Known dark places: none beyond the open findings
   the passing XFAIL fails the seed; nobody watches the scheduled run (S14.2)
 - 2 tests (about 50 of the 128 with a top-level `delay(`): the delay is the sync point for work in other
   coroutines; their timers start late under load, and a timer due when main parks wakes it ahead of the queue
-  (scope/084 on ASAN, 2026-10-12); list in project file s14/delay-sync-survey.md (no step yet)
+  (scope/084 on ASAN, 2026-10-12; scope/074 on the asan push job of run 38282314790,
+  https://github.com/true-async/true-async/actions/runs/38282314790/job/114922292796); list in project file s14/delay-sync-survey.md (no step yet)
 - 2 tests/stream/030 (XFAIL, S8): the UDP receive waits for run-tests' 60 s timeout and is retried, 120 s of the
   150 s suite on 2026-10-12 (S14.2)
 - 2 tests/gc/020, 023: `--XFAIL--` "(S8 candidate)" with no S8 step and no RFC-CHANGES entry that would lift it;

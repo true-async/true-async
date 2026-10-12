@@ -682,8 +682,8 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   `040`, `042`, `043`, `100`, `stream/030`) wait on core changes that S8 only requests: when S8 closes they
   will name a closed stage unless S8.5 gives them a step. An XFAIL test that crashes, leaks or trips a
   sanitizer reported XFAIL (`tools/run-tests.patch` stopped only a false PASS); S14.2 makes it fail.
-- S14.2 closed 2026-10-12 without its seeds run (the coordinator, after Edmond turned the nightly off; PLAN Open
-  questions): `tools/test.py` keeps run-tests' stderr in `run.err`,
+- S14.2 closed 2026-10-12; its seeds run came after, all 15 `seeds` jobs green (run 38282314790):
+  `tools/test.py` keeps run-tests' stderr in `run.err`,
   reports a lost result line as MISSING and goes on, fails a crashing XFAIL, prints `--show-slow N`; run-tests
   retries no crash or hang and nothing under a seed; the `seeds` matrix has a dbg `--io-chaos` entry; WORKFLOW gives the
   scheduled run to the coordinator (S14.7 dropped the scheduled run).
@@ -694,7 +694,9 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   waits on it; under a seed one `suspend()` need not run a coroutine just spawned, so a test that needs one
   parked loops on a flag it sets before the park. The seed runner's "new diagnostic" lines for `channel/112`
   and `collector/063`, `064` come from the tests as they were before S14.3 as well.
-- S14.7 (open until a dispatched run in which no job or step hits its time limit): each `seeds` line runs
+- S14.7 closed 2026-10-12: run 38282314790, dispatched by hand, took 21 min; longest shards asan 14.5 min,
+  dbg 13.3 min, io-chaos 6.6 min, no time limit hit; its one red, `scope/074` on the push asan job, joins
+  HEALTH's top-level `delay()` finding. Each `seeds` line runs
   in five parallel jobs (`tools/test.py --shard K/M`), every CI job has `timeout-minutes` (30, `lists` 10).
   No nightly run (Edmond 16:22): the seeds run only in a run dispatched by hand. S14.8 (done) moved
   the "linear time" claim of `scope/124`, `125` to `bench/` B19, B20 (Edmond 16:05: no performance tests in CI).
