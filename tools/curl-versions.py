@@ -16,6 +16,20 @@ tests/cleanup) through tools/test.py. The exit code is 0 only when every run pas
 The core is compiled against the headers of --built-with (the system's libcurl by default): a core
 test whose SKIPIF asks for a newer libcurl than those headers checks a CURLINFO or CURLOPT the core
 does not have, so its failure is listed apart and does not fail the run.
+
+Checked 2026-10-12 against core async-core-io-2026-10-12-3 (pocs-dbg), all passing; the versions come
+from the libcurl bugs in TrueAsync's curl history:
+    7.87.0   TrueAsync's floor after crashes in curl_multi_socket_action() with a NULL running_handles
+    8.5.0    the system's and CI's (Ubuntu 24.04), the headers the core is built against
+    8.10.1   the timer regression of 8.10.0-8.11.0 that hangs a transfer (curl#15154, #15639)
+    8.11.0   the last version with that regression
+    8.11.1   its fix (curl#15627), the first that runs tests/curl/071
+    8.13.0   the last that runs the socket callback inside curl_multi_cleanup() (curl#15201)
+    8.20.0   "Resolving timed out" on DNS (curl#21476)
+    8.22.0   the latest release on that date
+No test here reaches the timer hang (a connect to an address that drops it) or the DNS one (every test
+connects to localhost, which libcurl answers without its resolver): 8.10.1, 8.11.0 and 8.20.0 pass on
+the rest. The DNS case was checked by hand on 8.20.0 and does not reproduce.
 """
 import argparse
 import os

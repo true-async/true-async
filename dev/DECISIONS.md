@@ -2681,11 +2681,12 @@ stack options were shown with the code).
   until RFC-CHANGES 11); `io_provider/004` (the delay installs the hooks); `await/116`, `119`, `scope/166`, `168`,
   `collector/042` (S14.3's timer pairs and loop).
 - 2026-10-12 S8.8, own defaults: the libcurl versions come from TrueAsync's curl history (7.87.0: segfault
-  below it; 8.5.0: the system's and CI's; 8.10.1, 8.11.0: the timer hang, 8.11.1 its fix; 8.13.0: the
-  last that runs the socket callback inside `curl_multi_cleanup()`; 8.20.0: the DNS timeout, 8.22.0: the latest). The
-  run is a local script, not a CI job: each version is built from source, and CI stays short (Edmond,
+  below it; 8.5.0: the system's and CI's; 8.10.1, 8.11.0: the timer hang, 8.11.1 its fix; 8.13.0: the last
+  that runs the socket callback inside `curl_multi_cleanup()`; 8.20.0: the DNS timeout; 8.22.0: the latest).
+  The run is a local script, not a CI job: each version is built from source, and CI stays short (Edmond,
   16:05). `LD_LIBRARY_PATH` joins the variables `tools/test.py` hands to run-tests, so a run can load
   another libcurl. A core test whose SKIPIF needs a newer libcurl than the headers the core was built
-  against is listed apart: it reads a `CURLINFO_*` the core does not have. `io_provider/073` and `074`
-  were changed without Edmond's word (an obvious fix): they find the socket libcurl closed by its going,
-  not by log wording or a socket count, so they test the same case on every version.
+  against is listed apart: it reads a `CURLINFO_*` the core does not have. Changed without Edmond's word
+  (an obvious fix), they find the socket libcurl closed by its going, not by log wording or a socket count:
+  `io_provider/073-poll_queue_curl_socket_number_reused_before_its_removal.phpt`,
+  `io_provider/074-curl_socket_number_reused_before_its_removal.phpt`.
