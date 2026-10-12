@@ -55,6 +55,9 @@ true-async/
   resize with two thread-pool work items (`QueueUserWorkItem()`) and a hook on conhost's window
   events (`SetWinEventHook()`, `NtQueryInformationProcess(ProcessConsoleHostProcess)`,
   `libuv/src/win/tty.c:2375-2442`); the follow-up would do the same.
+- A curl multi shared per thread (S8.5, review M8): under hooks each `curl_exec()` runs a multi of its
+  own (`ext/curl/interface.c:2653`), so two handles share no connection, as without the extension;
+  TrueAsync shares one multi per thread (`ext/curl/curl_async.c`). A core request if reuse is wanted.
 - `Zend/zend_types.h` C4146 under `/sdl` on Windows (S10, W9): our build has no `/sdl`; a php-src fix
   if a build needs the flag.
 - Minor items of S10's inventory (`dev/plans/S10.md` section 9): phpdbg's `run` does not drive the
@@ -109,7 +112,9 @@ Waiting for Edmond's call; nothing here is being worked on.
   interrupt coroutine alike. Refusing that suspend needs `zend_fiber_switch_blocked()` in the
   scheduler's suspend, which the extension does not call by Edmond's rule (`tools/check-gates.py`
   refuses it); the second option is leaving it to the script, the third a core change (pcntl lifts
-  its block and mask around a coroutine's suspend), an S8 change-request candidate. Edmond's call.
+  its block and mask around a coroutine's suspend), an S8 change-request candidate. The core takes the
+  same block around tick functions (`Zend/zend_vm_def.h:8105-8109`; review section 5, S8.5), so a
+  tick function that suspends is the same case, inferred: a probe did not show it. Edmond's call.
 - A POLL with a near deadline on ior's IOCP backend (the Critic on the `feof()` fix, 2026-10-08): ior
   arms the ring's linked timeout when it issues the op and hands the poll to its WSAPoll thread with no
   check at issue (`ior_iocp.c` `issue_poll()`, `arm_link_timeout()`), so a timeout a few microseconds
@@ -910,7 +915,7 @@ not expressible with why); `RFC-CHANGES.md` complete; the review updated.
 Tier: T1. Roles: Critic after every step.
 Tests: interleaved
 Base: d783cea
-Active: S8.5
+Active: S8.3a
 
 Each item is run against our provider on the pinned core, on `pocs-dbg` and `pocs-asan`, over the
 Ring and over the Poll queue (`TrueAsync\Test\` hook) where the item depends on the queue. Its
@@ -1017,7 +1022,8 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
       (`dev/plans/S6.md` sections 6, 11).
       done: the numbers in `BENCHMARKS.md`; `F_FILES` on with the `io/` and `include/` lists and
         `io_provider/020` passing on the Ring, and `061` checking that no byte is lost (the stream
-        buffer may now hold them), or the reason it stays off in section 11
+        buffer may now hold them), or the reason it stays off in section 11; `io/100` without its
+        `--XFAIL--`, or the XFAIL names where it goes
       tier: T2 · role: Critic
 - [ ] S8.3b The core fixes of S8.3, when the core slot is free: `RFC-CHANGES.md` 26 merged from
       `io-hooks-fixes`, 27 as one commit on `io-hooks-fixes` with its tests and a PR text for bukka;
@@ -1049,10 +1055,26 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
       it first and opens the PR.
       done: `io_provider/073` passes without `core:28` on debug and ASAN; `074` still passes
       tier: T1 · role: Critic
-- [ ] S8.5 `RFC-CHANGES.md` against the review: every item of the review's section 6 (both lists)
+- [x] S8.5 `RFC-CHANGES.md` against the review: every item of the review's section 6 (both lists)
       and every section 5 defect a script on our provider shows has an entry or a reason in section
       9; the review's summary states what holds on the core each row of section 9 names.
       done: no item of section 6 without an entry or a reason; the review's section 1 updated
+      tier: T1 · role: Critic
+      handoff: 2026-10-12 on core `c53c17cfd47`: section 9 has a row for every finding (M2, M3, M5,
+        M6, M7, M8, M9, M11, section 6 item 13 and section 5 added) and section 1 says what holds.
+        New entries, each with a test (29, 31 and 32 show the defect today on debug; 30's test shows
+        B1's refusal until 12 and 30 land): 29 `mysqli_poll()` (`mysqli/018`), 30 TLS
+        waits outside OpenSSL (`io_provider/078`, full duplex once 12 lands too; the re-entry is
+        inferred, the spin read from the code), 31 `O_NONBLOCK` only on PHP's own descriptions (`079`,
+        PLAN request A), 32 a pipe write tries the syscall first (`080`, `081`: two loggers on one pipe
+        or on `STDERR` collide today). Not requested, with reasons in
+        section 9: M2's predicate, M8's shared multi (Fog), M6 under ZTS outside the CLI.
+- [ ] S8.6 Make `stream_set_timeout()` work on a pipe and on `stream_socket_recvfrom()`/`sendto()` under
+      a provider (core fixes of `RFC-CHANGES.md` 3 and 4), so the five tests that wait for them run
+      without `--XFAIL--`; when the core slot is free: commits on `io-hooks-fixes` with core tests and
+      PR texts for bukka in `notes/`, Edmond opens them; a core update.
+      done: `io/039`, `040`, `042`, `043` and `stream/030` pass without `--XFAIL--` (and `030` without its
+      watchdog) on debug and ASAN
       tier: T1 · role: Critic
 
 ## S9 — Higher layers, one at a time  [in progress]

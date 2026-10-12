@@ -55,7 +55,7 @@ plain wrapper and, when set, wait with `php_io_poll(stream, fd, PHP_POLL_READ, &
 read, so the core's synchronous queue honours it too; `timed_out` in the metadata. A feature, not a
 fix: vanilla PHP has no such option.
 
-Waits for it: `io/039`, `040`, `042`, `043` (`--XFAIL--` naming S8).
+Waits for it: `io/039`, `040`, `042`, `043` (`--XFAIL--` naming S8.6).
 
 ## 4. IO hooks: stream_set_timeout() on stream_socket_recvfrom() and stream_socket_sendto()
 
@@ -73,7 +73,7 @@ Request: `sock_xport_deadline()` builds the deadline from `sock->timeout`, as `p
 `STREAM_XPORT_OP_SEND` set `sock->timeout_event` on `ETIMEDOUT`. A feature, not a fix: vanilla PHP
 ignores the timeout there.
 
-Waits for it: `stream/030` (`--XFAIL--` naming S8).
+Waits for it: `stream/030` (`--XFAIL--` naming S8.6).
 
 ## 5. Poll API additions: zend_sigaction() leaves a SignalHandle's signals blocked
 
@@ -268,10 +268,14 @@ stream"; the close paths stop calling it (`main/streams/streams.c:309`, `1803`),
 keep it (`mysqlnd_conn_is_busy()`, `ext/mysqlnd/mysqlnd_connection.c:2342`, used at
 `ext/mysqli/mysqli_api.c:279`, `1479` and `ext/mysqli/mysqli_nonapi.c:143`): `$mysqli->close()` beside a
 parked query stays refused ("Concurrent access to a MySQL connection"), since the parked query reads
-the connection's `MY_MYSQL` after it resumes and a close frees it.
+the connection's `MY_MYSQL` after it resumes and a close frees it. Until entry 30 lands, a TLS stream
+with an op parked inside an `SSL_*` call keeps every other user refused (both sides, `feof()`, whose
+check runs `SSL_peek()`, and the close): its BIO reads one wait state per stream, which each `SSL_*`
+call sets and clears (`ext/openssl/xp_ssl.c:441-456`, `3288`, `3335`, `3693-3697`). Accepts on a TLS
+listener follow this entry: the handshake runs on the new client's state (`:3525-3553`).
 
 Waits for it: `io/096`, `098`, `exec/025` (`core:12` in `tests/lists/S6.txt`); `io_provider/042`-`059`
-(`core:12` in `tests/lists/S8.txt`).
+(`core:12` in `tests/lists/S8.txt`); `io_provider/078` once entry 30 lands too (`core:30`).
 
 ## 13. IO hooks: an except set on the Ring
 
@@ -623,3 +627,89 @@ Not asked: per-registration counts in the Poll queue; it would fix one queue, an
 clears the record's `ready` and `hup` (`:577-580`), which a count alone does not keep.
 
 Waits for it: `io_provider/073` (`core:28` in `tests/lists/S8.txt`).
+
+## 29. IO hooks: mysqli_poll() waits through the provider
+
+State: requested 2026-10-12 (S8.5), no branch yet. PR: none.
+
+Need: `mysqli_poll()` waits with `select()` (`ext/mysqlnd/mysqlnd_connection.c:2258`), so a coroutine
+that polls its async queries stops every coroutine of the thread for the whole timeout: with the
+server's answer held until another coroutine acts, the query's lock wait runs out first (`mysqli/018`
+prints "poll: 1", "one: 0" before "main: releasing"). Entry 23 left it for a separate request; TrueAsync has the same
+`select()` (its `mysqlnd_connection.c:2272`), read, not run (review M9).
+
+Request: `mysqlnd_poll()` waits through the provider on the connections' streams, an Any of reads
+(`php_io_op_any()` and `php_io_run()`, as `stream_select()` does, `ext/standard/streamsfuncs.c:985-986`)
+with the call's timeout, and keeps `select()` when no provider is installed. The error array adds no
+member to the Any (an except set blocks the thread on the Ring, entry 13) and comes back empty, as
+`select()` reports a connection without out-of-band data.
+
+Waits for it: `mysqli/018` (`core:29` in `tests/lists/S8.txt`).
+
+## 30. IO hooks: a TLS stream waits outside OpenSSL
+
+State: requested 2026-10-12 (S8.5), no branch yet. PR: none.
+
+Need: a TLS read under a provider parks inside `SSL_read()`: the BIO calls `php_io_recv()` and
+`php_io_send()` (`ext/openssl/xp_ssl.c:441-444`). Today B1's freeze keeps a second coroutine out
+(`io_provider/078` gets "Concurrent access to a stream"); with entry 12's per-direction sides a write
+beside the parked read would call `SSL_write()` while `SSL_read()` is suspended on the same `SSL *`,
+a re-entry OpenSSL does not support (review M7); inferred, not run. Certain from the code: the BIO's wait
+state is one per stream (`deadline`, set and cleared by each call, `:3288`, `:3335`), so a write that
+returns while a read is parked leaves the read's next BIO call without a deadline; it runs a plain
+`recv()`, gets `EAGAIN`, and `SSL_read()` retries at once (`:300-306`): the thread spins until the
+record's rest arrives, which in one thread may wait on a coroutine that cannot run. TrueAsync waits with
+`php_pollfd_for()` after `SSL_ERROR_WANT_READ`/`WANT_WRITE`, outside any `SSL_*` call (its
+`ext/openssl/xp_ssl.c:3060`, `3240`), so the write goes through; read, not run.
+
+Request: the BIO sets its retry flag (`BIO_set_retry_read()`, `BIO_set_retry_write()`) instead of
+waiting, and the stream waits through the provider for the direction OpenSSL asked for between `SSL_*`
+calls; the state a call reads (`deadline`, `io_cancelled`, `last_status`) belongs to the call, not to
+the stream. Entry 12 applies to TLS streams with this entry, not before. Without entry 12
+nothing changes for scripts.
+
+Waits for it: `io_provider/078` (`core:30` in `tests/lists/S8.txt`), which needs entry 12 too.
+
+## 31. IO hooks: O_NONBLOCK only on descriptions PHP opened
+
+State: requested 2026-10-12 (S8.5, from `dev/PLAN.md` request A, reproduced 2026-10-10). PR: none.
+
+Need: once hooks are active, the plain wrapper sets `O_NONBLOCK` on any unseekable descriptor it
+reads or writes (`main/streams/plain_wrapper.c:543-566`) and clears it only when the stream closes
+(`:569-582`). On `php://stdin`, `stdout`, `stderr`, `php://fd` and the stdio constants that changes a
+description other processes share: a child that inherits it reads `EAGAIN` (`fgets(STDIN);
+passthru('cat')` makes cat exit 1; `io_provider/079` shows the flag in a grandchild) (review section 5,
+"A TTY switched to non-blocking").
+
+Request: `O_NONBLOCK` only on descriptions PHP opened itself (pipes of `proc_open()`, `popen()`,
+FIFOs it opened); on the others, wait for readiness before a read and write as entry 32 says, cut
+to `PIPE_BUF`. Any stream's descriptor handed to a child (a `proc_open()` descriptor spec,
+`ext/standard/proc_open.c:1239`) becomes one of the others: today both casts keep the flag, the
+plain wrapper's (`main/streams/plain_wrapper.c:985-1002`) and the socket's
+(`main/streams/xp_socket.c:483-485`, the flag set at accept and connect, `main/network.c:1401-1421`), so `proc_open('cat', [0 => $pipe])`
+after a coroutine read `$pipe` makes cat exit with `EAGAIN` (measured on debug, a probe).
+On those descriptions the stream's own mode decides: a blocking stream waits even when the description
+arrived non-blocking (today it reads with no wait, `:559-560`). `stream_set_blocking(false)` stays as it
+is.
+
+Waits for it: `io_provider/079` (`core:31` in `tests/lists/S8.txt`).
+
+## 32. IO hooks: a pipe write tries the syscall first
+
+State: requested 2026-10-12 (S8.5). PR: none.
+
+Need: under a provider a pipe write waits for writability before its first `write()`, even on a pipe
+with room (`php_io_file_op()`, `main/io/php_io_hooks.c:1669-1673`, `1699-1720`; the Ring and our
+provider offer no `F_DIRECT_DATA`). Every write suspends, and the stream stays frozen meanwhile, so two
+coroutines that log to one pipe collide: the second gets "Concurrent access to a stream" with the pipe
+nearly empty, on the Ring and on the Poll queue (review section 5). TrueAsync writes at once and parks
+only when the write could not complete (its `main/streams/plain_wrapper.c:558-563`); read, not run.
+
+Request: every pipe, FIFO or TTY write (any descriptor that is not a regular file), the first
+included and with `F_FILES` on or off, runs `write()` first and
+waits for writability only on `EAGAIN`, as the socket ladder does; with `F_FILES` the offload op
+comes only after `EAGAIN` (today it runs before any syscall, `:1671-1672`). On a description left
+blocking (entry 31) the write first asks a zero-timeout `poll()` and writes at most `PIPE_BUF`, so two
+coroutines logging to `STDERR` still meet no busy stream (`io_provider/081` shows the collision today).
+
+Waits for it: `io_provider/080`, `081` (`core:32` in `tests/lists/S8.txt`).

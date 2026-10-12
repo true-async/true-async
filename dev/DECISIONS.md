@@ -2389,3 +2389,12 @@ stack options were shown with the code).
   the request's end, a signal chain leaked at exit: `149`, `signal/045`) and a no-op Future `dtor_obj` (guarded the
   first collection only). A dropped or cancelled only child leaves its source queued to take the next value, as in
   TrueAsync. The waiter's release can start a GC run inside `channel_put()`, as the value's already can: S9.33.
+- 2026-10-12 S8.5, own defaults: not requested, with the reason in the review's section 9: a "may suspend" predicate
+  in the scheduler API (the provider is the scheduler), a curl multi shared per thread (a lost reuse, not a wrong
+  result; Fog). `mysqli_poll()` gets entry 29 though TrueAsync has the same `select()`: legal code blocks every
+  coroutine. PLAN request A becomes entry 31; a pipe write's readiness wait becomes 32, since two loggers on one pipe
+  or on `STDERR` collide (`081`); 32 asks a borrowed description a zero-timeout `poll()`, so 31 does not undo it.
+  Entry 12 keeps TLS streams frozen until 30 (one BIO wait state per stream); `078` carries `core:30`. The tick-function
+  case of the fiber-switch block joins the open question "A pcntl handler that waits". The XFAILs of S14.4's
+  list get steps: `io/039`, `040`, `042`, `043` and `stream/030` name S8.6 (the core fixes of RFC 3 and 4, a new
+  step), `io/100` names S8.3a.

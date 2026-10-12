@@ -58,6 +58,10 @@ io_provider/074-curl_socket_number_reused_before_its_removal.phpt  own:12c019225
 io_provider/075-cancelled_flock_waiter_leaves_the_lock_free.phpt  own:83cabf3db6b3620cdbb03a40f92e90699c258556707bcae50345405eec724ccc  core:11
 io_provider/076-connect_to_a_second_address_after_a_refusal.phpt  own:8f24fb78c6c037f2a076ae43723a3b712c343a3cc4df96f03d2135a89ba3b67e  skip-on:*(localhost-has-one-address)
 io_provider/077-poll_queue_connect_to_a_second_address_after_a_refusal.phpt  own:8cad2403c9987159fe138ad062a08e6d422156341cddcfb5b12a534f01b6b05b  skip-on:*(localhost-has-one-address)
+io_provider/078-tls_write_beside_a_parked_read.phpt  own:b93a67e4e021fa85faadaf112054a787acb249f564a8f04916575d547ea62c96  core:30
+io_provider/079-stdin_stays_blocking_for_a_child.phpt  own:df51787af3eab82e0bc9a97b45a5ff82fa5a1ea5873582f705aa049de49e3345  core:31  skip-on:*-win(no-proc-self-cmdline)
+io_provider/080-pipe_write_with_room_does_not_wait.phpt  own:57b1b2be029be16a91c27b5e501cfff61583087f0032010c646a8995a9daeba6  core:32  skip-on:*-win(Unix-only)
+io_provider/081-two_coroutines_write_stderr.phpt  own:ccdd8afdfa535422cc54250e0256edd6c45d21a1c7f5ffb00d9b9713131b6a59  core:32  skip-on:*-win(no-proc-self-cmdline)
 
 # mysqli
 mysqli/012-close_after_fatal_error_with_parked_query.phpt  own:3f25f56b614ca4e25520fe124dacfa57d2d179c5e8c8cedb89d6c7ae74d9561f  skip-on:*-win(no-MySQL-server)
@@ -66,3 +70,4 @@ mysqli/014-close_beside_a_parked_query.phpt  own:e3c4290ca1d9eb9a22f18146f3e65ed
 mysqli/015-poll_queue_close_beside_a_parked_query.phpt  own:8a85c57cae944542bec27aec6f0d42f229d859f87ba39b9eae6ab1dbfae52576  skip-on:*-win(no-MySQL-server)
 mysqli/016-cancelled_parked_query.phpt  own:eb420d47d1ea18d6aa34c31037fbd06f380577ebf3b80dfb2308f925192aad07  skip-on:*-win(no-MySQL-server)
 mysqli/017-poll_queue_cancelled_parked_query.phpt  own:3495f31e4aeaa68311ca6681f83c2ff9cccb91f96380c4ed708c5b92a194915f  skip-on:*-win(no-MySQL-server)
+mysqli/018-mysqli_poll_beside_a_coroutine.phpt  own:2e6b53203aacd08001912dea34202d6608d38c3fe0e3e554c164cd5e7f2fe4a7  core:29  skip-on:*-win(no-MySQL-server)

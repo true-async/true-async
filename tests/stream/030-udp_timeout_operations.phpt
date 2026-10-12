@@ -1,7 +1,7 @@
 --TEST--
 UDP timeout operations with stream_socket_recvfrom in async context
 --XFAIL--
-Needs a core change: S8 of dev/PLAN.md (stream_set_timeout() on stream_socket_recvfrom(), dev/RFC-CHANGES.md 4); the commit that removes this section removes the watchdog too
+Needs a core change: S8.6 of dev/PLAN.md (stream_set_timeout() on stream_socket_recvfrom(), dev/RFC-CHANGES.md 4); the commit that removes this section removes the watchdog too
 --FILE--
 <?php
 

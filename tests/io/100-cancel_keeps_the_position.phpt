@@ -1,7 +1,7 @@
 --TEST--
 A cancelled read leaves the bytes it took to the next reader
 --XFAIL--
-Needs a core change: S8 of dev/PLAN.md (files run on the thread until F_FILES, dev/plans/S6.md section 14)
+Needs a core change: S8.3a of dev/PLAN.md (files run on the thread until F_FILES, dev/plans/S6.md section 14)
 --FILE--
 <?php
 

@@ -650,6 +650,8 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   waits for Edmond's answer (Open questions).
 - S8.4 closed 2026-10-12 (PLAN handoff line): M4's curl case reproduces on the Poll queue (RFC 28, S8.4a
   waits for the core slot); M10 reproduces (RFC 11 rewritten). Next: S8.5 (RFC-CHANGES completeness).
+- S8.5 closed 2026-10-12 (PLAN handoff line): section 9 complete, RFC 29-32. Open in S8: S8.3a (next),
+  S8.3b, S8.4a and S8.6 (core slot), S8.3c (Edmond's answer). S14.4's six XFAILs name S8.6 or S8.3a.
 
 ## S14
 
