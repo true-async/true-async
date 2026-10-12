@@ -1,7 +1,5 @@
 --TEST--
 Pool: waiters are served in arrival order
---XFAIL--
-Not implemented yet: S9.35 of dev/PLAN.md
 --FILE--
 <?php
 

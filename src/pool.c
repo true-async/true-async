@@ -20,10 +20,12 @@
 #include "zend_interfaces.h"
 #include "zend_weakrefs.h"
 #include "php_true_async.h"
+#include "collector.h"
 #include "coroutine.h"
 #include "exceptions.h"
 #include "pool.h"
 #include "scheduler.h"
+#include "scope.h"
 #include "pool_arginfo.h"
 
 /* Ports TrueAsync's pool (pool.c of ext/async, cited below by line) as the extension's own class: the core
@@ -259,6 +261,182 @@ static bool pool_take_back(async_pool_t *pool, const zval *resource)
 }
 
 ///////////////////////////////////////////////////////////////////
+/// The POOL wait kind
+///////////////////////////////////////////////////////////////////
+
+/* TrueAsync's waiters (pool.c:440-532) on this extension's wait records, as the channel's: a parked acquire() links
+ * its coroutine's first waker record with the POOL kind and puts it in `waiters`. A wake promises the waiter a place,
+ * an idle resource or room for a new one, which nobody else takes until it runs (S9-pool.md section 4). */
+
+/* A place is promised to the record's coroutine. */
+#define POOL_RECORD_F_RESERVED (1u << ASYNC_CALLBACK_F_KIND_SHIFT)
+
+static zend_always_inline async_pool_t *pool_of_record(const async_coroutine_event_callback_t *record)
+{
+	return (async_pool_t *) ((char *) record->event - offsetof(async_pool_t, base));
+}
+
+/* The places open to a caller that holds no promise: idle resources and room, less those promised. idle + active
+ * never passes max, so the places are max - active. */
+static zend_always_inline uint32_t pool_unreserved_places(const async_pool_t *pool)
+{
+	ZEND_ASSERT(pool->active + pool->reserved <= pool->max && "a promise is made only for a free place");
+
+	return pool->max - pool->active - pool->reserved;
+}
+
+/* Promises a free place to the oldest waiter without one and wakes it; it stays queued until it runs. Called once
+ * for each place freed (pool.c:503-520). */
+static void pool_wake_waiter(async_pool_t *pool)
+{
+	if (pool->is_closed || pool_unreserved_places(pool) == 0) {
+		return;
+	}
+
+	for (uint32_t i = 0; i < pool->waiters.length; i++) {
+		async_coroutine_event_callback_t *const record = pool->waiters.records[i];
+
+		if (record->event_callback.flags & POOL_RECORD_F_RESERVED) {
+			continue;
+		}
+
+		record->event_callback.flags |= POOL_RECORD_F_RESERVED;
+		pool->reserved++;
+#ifdef TRUE_ASYNC_TEST_HOOKS
+		async_collector_check_event_wake(record->coroutine);
+#endif
+		async_scheduler_enqueue(&record->coroutine->coroutine, NULL, false);
+		return;
+	}
+}
+
+/* A caller leaving with a promised place it did not take hands the place to the next waiter (pool.c:1015-1019). */
+static void pool_reservation_drop(async_pool_t *pool, bool *has_reservation)
+{
+	if (EXPECTED(!*has_reservation)) {
+		return;
+	}
+
+	*has_reservation = false;
+	pool->reserved--;
+	pool_wake_waiter(pool);
+}
+
+/* Takes the record out of the queue, unless close() did, and clears its `event`. True when a place was promised to
+ * it, which stays counted in `reserved` until the caller takes it or drops it. */
+static bool pool_record_leave(async_coroutine_event_callback_t *record)
+{
+	async_pool_t *const pool = pool_of_record(record);
+
+	async_wait_queue_remove(&pool->waiters, record);
+	record->event = NULL;
+
+	return (record->event_callback.flags & POOL_RECORD_F_RESERVED) != 0;
+}
+
+/* TrueAsync's line (pool.c:629-639): without `reserved`, idle resources beside parked waiters read as a lost wake. */
+static zend_string *pool_record_info(const async_coroutine_event_callback_t *record)
+{
+	const async_pool_t *const pool = pool_of_record(record);
+
+	return zend_strpprintf(0,
+						   "Pool(idle=%u, active=%u, reserved=%u, max=%u)",
+						   pool->idle.count,
+						   pool->active,
+						   pool->reserved,
+						   pool->max);
+}
+
+/* For a frame that never runs again (a bailout, the request's end): the promise goes with it, and nobody is woken. */
+static void pool_record_abort(async_coroutine_event_callback_t *record)
+{
+	async_pool_t *const pool = pool_of_record(record);
+
+	if (pool_record_leave(record)) {
+		pool->reserved--;
+	}
+}
+
+/* Whoever holds the pool can release, close or free it (S9-pool.md section 6). A running healthcheck holds it in
+ * C, which the walk counts as a holder from outside. */
+static void pool_record_collector_target(const async_coroutine_event_callback_t *record, async_collector_t *collector)
+{
+	async_collector_report_target(collector, &pool_of_record(record)->std, false);
+}
+
+static const async_wait_kind_t pool_wait_kind = {
+	.info = pool_record_info,
+	.abort = pool_record_abort,
+	.collector_target = pool_record_collector_target,
+};
+
+/* Parks the current coroutine until a place is promised to it, close() rejects it, or `deadline`, when given,
+ * passes with TimeoutException (pool.c:450-492). True with `*has_reservation` set when it came back without an
+ * exception; a promise it got along with an exception goes to the next waiter. */
+static bool pool_wait(async_pool_t *pool, const php_deadline *deadline, bool *has_reservation)
+{
+	async_coroutine_t *const waiter = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
+
+	if (UNEXPECTED(waiter == NULL)) {
+		zend_throw_error(NULL, "There is no coroutine to suspend");
+		return false;
+	}
+
+	async_wait_end(waiter);
+	async_wait_queue_make_room(&pool->waiters);
+
+	if (deadline != NULL && UNEXPECTED(!async_reactor_timeout_link(&waiter->waker.records[1], waiter, *deadline))) {
+		return false;
+	}
+
+	async_coroutine_event_callback_t *const record = &waiter->waker.records[0];
+
+	async_wait_link_outside(record, waiter, (async_awaitable_t *) &pool->base, &pool_wait_kind);
+	async_wait_queue_push(&pool->waiters, record);
+
+	ZEND_ASYNC_SUSPEND();
+
+	*has_reservation = pool_record_leave(record);
+
+	if (EXPECTED(EG(exception) == NULL)) {
+		return true;
+	}
+
+	pool_reservation_drop(pool, has_reservation);
+
+	return false;
+}
+
+/* Each waiter with no promised place leaves with a PoolException of its own (S9-pool.md section 8, item 11); a woken
+ * one finds the pool closed when it runs. From the tail, rereading the end at each step, as channel_close(). */
+static void pool_reject_waiters(async_pool_t *pool)
+{
+	uint32_t index = pool->waiters.length;
+
+	while (index > 0) {
+		index--;
+
+		if (UNEXPECTED(index >= pool->waiters.length)) {
+			index = pool->waiters.length;
+			continue;
+		}
+
+		async_coroutine_event_callback_t *const record = pool->waiters.records[index];
+
+		if (record->event_callback.flags & POOL_RECORD_F_RESERVED) {
+			continue;
+		}
+
+		async_wait_queue_remove_at(&pool->waiters, index);
+#ifdef TRUE_ASYNC_TEST_HOOKS
+		async_collector_check_event_wake(record->coroutine);
+#endif
+		async_scheduler_enqueue(
+				&record->coroutine->coroutine, async_new_exception(async_ce_pool_exception, "Pool is closed"), true);
+	}
+}
+
+///////////////////////////////////////////////////////////////////
 /// The circuit breaker
 ///////////////////////////////////////////////////////////////////
 
@@ -344,17 +522,34 @@ typedef enum
 } pool_take_result_t;
 
 /* acquire() and tryAcquire() up to the wait (TrueAsync's pool.c:929-1007): an idle resource beforeAcquire
- * accepts, else a new one while fewer than `max` exist. A hook or the factory may suspend, so a pool closed
- * meanwhile destroys what it gave and the caller finds it closed. */
-static pool_take_result_t pool_take(async_pool_t *pool, zval *result)
+ * accepts, else a new one while fewer than `max` exist, from a place promised to the caller
+ * (`*has_reservation`) or one promised to nobody. A hook or the factory may suspend, so a pool closed
+ * meanwhile destroys what it gave and the caller finds it closed. A place the caller frees and does not
+ * try again goes to the next waiter. */
+static pool_take_result_t pool_take(async_pool_t *pool, zval *result, bool *has_reservation)
 {
 	for (;;) {
 		if (UNEXPECTED(pool->is_closed)) {
+			pool_reservation_drop(pool, has_reservation);
 			return POOL_TAKE_CLOSED;
 		}
 
+		/* The promise stays counted across shouldRecover(), which may suspend. */
 		if (UNEXPECTED(!pool_circuit_allows(pool))) {
+			pool_reservation_drop(pool, has_reservation);
+			/* A place a rejected resource freed on the round before, which this caller meant to take. */
+			pool_wake_waiter(pool);
 			return EG(exception) != NULL ? POOL_TAKE_FAILED : POOL_TAKE_UNAVAILABLE;
+		}
+
+		if (!*has_reservation && pool_unreserved_places(pool) == 0) {
+			return POOL_TAKE_FULL;
+		}
+
+		/* Spent where the place is taken, with nothing run in between. */
+		if (*has_reservation) {
+			*has_reservation = false;
+			pool->reserved--;
 		}
 
 		if (pool->idle.count > 0) {
@@ -379,6 +574,7 @@ static pool_take_result_t pool_take(async_pool_t *pool, zval *result)
 			if (UNEXPECTED(verdict == POOL_HOOK_FAILED)) {
 				pool_destroy_after_failure(pool, &resource);
 				pool->active--;
+				pool_wake_waiter(pool);
 				return POOL_TAKE_FAILED;
 			}
 
@@ -386,22 +582,23 @@ static pool_take_result_t pool_take(async_pool_t *pool, zval *result)
 			pool->active--;
 
 			if (UNEXPECTED(EG(exception) != NULL)) {
+				pool_wake_waiter(pool);
 				return POOL_TAKE_FAILED;
 			}
 
 			continue;
 		}
 
-		if (pool->idle.count + pool->active >= pool->max) {
-			return POOL_TAKE_FULL;
-		}
+		ZEND_ASSERT(pool->idle.count + pool->active < pool->max && "a free place without an idle resource is room");
 
 		zval resource;
 
 		pool->active++;
 
+		/* A waiter that parked while the factory ran is woken for the place it frees (047). */
 		if (UNEXPECTED(!pool_create_resource(pool, &resource))) {
 			pool->active--;
+			pool_wake_waiter(pool);
 			return POOL_TAKE_FAILED;
 		}
 
@@ -436,6 +633,7 @@ static void pool_release(async_pool_t *pool, const zval *resource)
 	if (UNEXPECTED(verdict == POOL_HOOK_FAILED)) {
 		pool_destroy_after_failure(pool, &owned);
 		pool->active--;
+		pool_wake_waiter(pool);
 		return;
 	}
 
@@ -462,12 +660,299 @@ static void pool_release(async_pool_t *pool, const zval *resource)
 	}
 
 	pool->active--;
+	pool_wake_waiter(pool);
 	pool_exception_merge(strategy_error);
 }
 
-/* TrueAsync's pool.c:1121-1181: destroys every idle resource even when a destructor throws; the exceptions
- * chain through `previous`, the last one on top, over an exception in flight when close() started (a pool
- * freed during an unwind). Each resource leaves the buffer before its destructor runs. */
+///////////////////////////////////////////////////////////////////
+/// The healthcheck
+///////////////////////////////////////////////////////////////////
+
+/* S9-pool.md section 5: a soft one-shot timer, which keeps nothing alive, starts a check coroutine, and the check
+ * arms it again as it ends, so no tick comes while a check runs. TrueAsync checks inside the timer's callback,
+ * where a check that suspends ends the request (section 8, item 2). */
+
+static void pool_healthcheck_timer_drop(async_pool_t *pool)
+{
+	async_io_event_t *const timer = pool->healthcheck_timer;
+
+	pool->healthcheck_timer = NULL;
+	async_io_event_orphan(timer);
+	async_callbacks_remove(&timer->base.callbacks, &pool->healthcheck_timer_callback);
+	async_io_event_release(timer);
+}
+
+static void pool_healthcheck_timer_withdraw(async_pool_t *pool)
+{
+	if (EXPECTED(pool->healthcheck_timer == NULL)) {
+		return;
+	}
+
+	zend_hash_index_del(&ASYNC_G(healthcheck_pools), pool->std.handle);
+	pool_healthcheck_timer_drop(pool);
+}
+
+/* An exception of the check has no caller: the check's cancellation and an exit end it and stay pending, anything
+ * else is printed at the request's end. True when the check ends. */
+static bool pool_healthcheck_settle(zend_object *exception)
+{
+	if (exception == NULL) {
+		return false;
+	}
+
+	if (UNEXPECTED(instanceof_function(exception->ce, async_ce_cancellation) || async_is_exit_object(exception))) {
+		pool_exception_merge(exception);
+		return true;
+	}
+
+	async_unobserved_exception_add(exception);
+
+	return false;
+}
+
+/* Checks each idle resource once while a place is promised to nobody, so a place promised to a woken waiter stays
+ * its, then makes resources up to `min`. A refill factory's exception is dropped: the next acquire() calls the
+ * factory again and throws to a caller who can handle it. */
+static void pool_healthcheck_run(async_pool_t *pool)
+{
+	const zend_coroutine_t *const check = ZEND_ASYNC_CURRENT_COROUTINE;
+	uint32_t unchecked = pool->idle.count;
+
+	/* A hook may swallow the check's cancellation (close(), the shutdown): the check stops at it all the same. */
+	while (unchecked > 0 && pool->idle.count > 0 && !pool->is_closed && !ZEND_COROUTINE_IS_CANCELLED(check) &&
+		   pool_unreserved_places(pool) > 0) {
+		zval resource;
+		zend_object *rejection;
+
+		unchecked--;
+		zval_circular_buffer_pop(&pool->idle, &resource);
+		pool->active++;
+
+		const pool_hook_verdict_t verdict = pool_check_resource(&pool->healthcheck, &resource, &rejection);
+		zend_object *const hook_error = EG(exception);
+
+		EG(exception) = NULL;
+
+		if (rejection != NULL) {
+			OBJ_RELEASE(rejection);
+		}
+
+		if (verdict == POOL_HOOK_ACCEPTED && EXPECTED(!pool->is_closed)) {
+			zval_circular_buffer_push(&pool->idle, &resource, pool->max);
+			zval_ptr_dtor(&resource);
+		} else {
+			pool_destroy_resource(pool, &resource);
+		}
+
+		zend_object *const destructor_error = EG(exception);
+
+		EG(exception) = NULL;
+		pool->active--;
+		pool_wake_waiter(pool);
+
+		const bool is_ended = pool_healthcheck_settle(hook_error);
+
+		if (UNEXPECTED(pool_healthcheck_settle(destructor_error) || is_ended)) {
+			return;
+		}
+	}
+
+	while (!pool->is_closed && !ZEND_COROUTINE_IS_CANCELLED(check) && pool->idle.count + pool->active < pool->min &&
+		   pool_unreserved_places(pool) > 0) {
+		zval resource;
+
+		pool->active++;
+
+		if (UNEXPECTED(!pool_create_resource(pool, &resource))) {
+			zend_object *const factory_error = EG(exception);
+
+			EG(exception) = NULL;
+			pool->active--;
+			pool_wake_waiter(pool);
+
+			if (UNEXPECTED(instanceof_function(factory_error->ce, async_ce_cancellation) ||
+						   async_is_exit_object(factory_error))) {
+				EG(exception) = factory_error;
+			} else {
+				OBJ_RELEASE(factory_error);
+			}
+
+			return;
+		}
+
+		if (UNEXPECTED(pool->is_closed)) {
+			pool_destroy_resource(pool, &resource);
+			pool->active--;
+
+			zend_object *const destructor_error = EG(exception);
+
+			EG(exception) = NULL;
+			pool_healthcheck_settle(destructor_error);
+			return;
+		}
+
+		zval_circular_buffer_push(&pool->idle, &resource, pool->max);
+		zval_ptr_dtor(&resource);
+		pool->active--;
+		pool_wake_waiter(pool);
+	}
+}
+
+static void pool_healthcheck_tick(async_awaitable_t *target,
+								  async_event_callback_t *callback,
+								  void *result,
+								  zend_object *exception);
+
+/* Nothing once the pool is closed or the graceful shutdown began. `may_throw`: a failed submit leaves its Error
+ * pending, else it leaves only no healthcheck. */
+static void pool_healthcheck_arm(async_pool_t *pool, const bool may_throw)
+{
+	if (pool->healthcheck_interval_ms == 0 || !ZEND_FCC_INITIALIZED(pool->healthcheck) || pool->is_closed ||
+		UNEXPECTED(!ZEND_ASYNC_IS_ACTIVE || ASYNC_G(graceful_shutdown))) {
+		return;
+	}
+
+	async_io_event_t *const timer = async_io_event_new();
+
+	php_io_op_timer(&timer->op, async_reactor_deadline_from_ms(pool->healthcheck_interval_ms));
+	async_callbacks_reserve(&timer->base.callbacks, 1);
+	async_callbacks_push_reserved(&timer->base.callbacks, &pool->healthcheck_timer_callback);
+	/* After a fatal error no dtor_obj withdraws the timer, and free_obj comes after the reactor is gone. */
+	zend_hash_index_add_new_ptr(&ASYNC_G(healthcheck_pools), pool->std.handle, pool);
+	pool->healthcheck_timer = timer;
+
+	const bool is_submitted =
+			may_throw ? async_reactor_submit_own(timer) == SUCCESS : async_reactor_try_submit_own(timer) == 0;
+
+	if (UNEXPECTED(!is_submitted)) {
+		zend_hash_index_del(&ASYNC_G(healthcheck_pools), pool->std.handle);
+		pool->healthcheck_timer = NULL;
+		async_callbacks_remove(&timer->base.callbacks, &pool->healthcheck_timer_callback);
+		async_io_event_release(timer);
+	}
+}
+
+/* The check's reference may be the pool's last: the close it makes then runs the destructor callable, whose
+ * exception has no caller either and must not become the check's outcome, which the scope's error route takes.
+ * `is_unrun`: a check that never ran has no outcome left, and a cancellation there would end the request. */
+static void pool_healthcheck_release(zend_object *pool_object, const bool is_unrun)
+{
+	zend_object *const pending = EG(exception);
+
+	EG(exception) = NULL;
+	OBJ_RELEASE(pool_object);
+
+	zend_object *const close_error = EG(exception);
+
+	EG(exception) = pending;
+
+	if (UNEXPECTED(is_unrun && close_error != NULL && instanceof_function(close_error->ce, async_ce_cancellation))) {
+		OBJ_RELEASE(close_error);
+		return;
+	}
+
+	pool_healthcheck_settle(close_error);
+}
+
+/* The check holds the pool from its tick to its end, so a free of the pool waits for it. */
+static void pool_healthcheck_entry(void)
+{
+	zend_coroutine_t *const check = ZEND_ASYNC_CURRENT_COROUTINE;
+	zend_object *const pool_object = check->extended_data;
+	async_pool_t *const pool = pool_from_object(pool_object);
+
+	pool_healthcheck_run(pool);
+
+	pool->healthcheck_coroutine = NULL;
+	check->extended_data = NULL;
+	pool_healthcheck_arm(pool, false);
+	pool_healthcheck_release(pool_object, false);
+}
+
+/* A check that never ran (cancelled by close() or the shutdown, or refused) lets the pool go at its free. */
+static void pool_healthcheck_dispose(zend_coroutine_t *check)
+{
+	zend_object *const pool_object = check->extended_data;
+
+	if (pool_object == NULL) {
+		return;
+	}
+
+	async_pool_t *const pool = pool_from_object(pool_object);
+
+	check->extended_data = NULL;
+
+	if (UNEXPECTED(pool->healthcheck_coroutine == check)) {
+		pool->healthcheck_coroutine = NULL;
+	}
+
+	pool_healthcheck_release(pool_object, true);
+}
+
+/* The timer fired, in scheduler context: one check coroutine in a scope of its own under the global scope, as
+ * the task group's reporter (task_group.c, task_group_report()). */
+static void
+pool_healthcheck_tick(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
+{
+	(void) target;
+	(void) result;
+	(void) exception;
+
+	async_pool_t *const pool =
+			(async_pool_t *) ((char *) callback - offsetof(async_pool_t, healthcheck_timer_callback));
+	async_scope_t *const global_scope = ASYNC_G(global_scope);
+
+	pool_healthcheck_timer_withdraw(pool);
+
+	if (UNEXPECTED(pool->is_closed || ASYNC_G(graceful_shutdown) || global_scope == NULL)) {
+		return;
+	}
+
+	async_coroutine_t *const check = async_coroutine_new();
+
+	check->coroutine.internal_entry = pool_healthcheck_entry;
+	check->coroutine.extended_data = &pool->std;
+	check->coroutine.extended_dispose = pool_healthcheck_dispose;
+	GC_ADDREF(&pool->std);
+	async_scope_add_coroutine(async_scope_new(global_scope), check);
+	pool->healthcheck_coroutine = &check->coroutine;
+
+	if (UNEXPECTED(!async_scheduler_enqueue(&check->coroutine, NULL, false))) {
+		async_scope_discard_coroutine(check);
+	}
+}
+
+static void pool_healthcheck_stop(async_pool_t *pool)
+{
+	pool_healthcheck_timer_withdraw(pool);
+
+	if (UNEXPECTED(pool->healthcheck_coroutine != NULL)) {
+		async_coroutine_cancel((async_coroutine_t *) pool->healthcheck_coroutine, NULL, false, false);
+	}
+}
+
+void async_pool_request_startup(void)
+{
+	zend_hash_init(&ASYNC_G(healthcheck_pools), 8, NULL, NULL, false);
+}
+
+void async_pool_request_shutdown(void)
+{
+	async_pool_t *pool;
+
+	ZEND_HASH_FOREACH_PTR(&ASYNC_G(healthcheck_pools), pool)
+	{
+		pool_healthcheck_timer_drop(pool);
+	}
+	ZEND_HASH_FOREACH_END();
+
+	zend_hash_destroy(&ASYNC_G(healthcheck_pools));
+}
+
+/* TrueAsync's pool.c:1121-1181: stops the healthcheck, rejects the waiters, then destroys every idle resource even
+ * when a destructor throws; the exceptions chain through `previous`, the last one on top, over an exception in
+ * flight when close() started (a pool freed during an unwind). Each resource leaves the buffer before its
+ * destructor runs. */
 static void pool_close(async_pool_t *pool)
 {
 	if (pool->is_closed) {
@@ -480,6 +965,8 @@ static void pool_close(async_pool_t *pool)
 	zend_object *destructor_errors = NULL;
 
 	EG(exception) = NULL;
+	pool_healthcheck_stop(pool);
+	pool_reject_waiters(pool);
 
 	while (pool->idle.count > 0) {
 		zval resource;
@@ -506,6 +993,8 @@ static zend_object *pool_object_create(zend_class_entry *class_entry)
 	async_pool_t *const pool = zend_object_alloc(sizeof(async_pool_t), class_entry);
 
 	memset(pool, 0, offsetof(async_pool_t, std));
+	async_event_init_in_object(&pool->base, 0, offsetof(async_pool_t, std));
+	pool->healthcheck_timer_callback.callback = pool_healthcheck_tick;
 	zend_hash_init(&pool->handed_out, 0, NULL, NULL, false);
 	zend_hash_init(&pool->resources_out, 0, NULL, NULL, false);
 	zend_object_std_init(&pool->std, class_entry);
@@ -534,6 +1023,8 @@ static void pool_object_free(zend_object *object)
 {
 	async_pool_t *const pool = pool_from_object(object);
 
+	pool_healthcheck_timer_withdraw(pool);
+	async_wait_queue_free(&pool->waiters);
 	zend_object_std_dtor(object);
 	zval_circular_buffer_dtor(&pool->idle);
 	pool_callable_release(&pool->factory);
@@ -689,6 +1180,8 @@ ZEND_METHOD(Async_Pool, __construct)
 		zval_ptr_dtor(&resource);
 	}
 
+	pool_healthcheck_arm(pool, true);
+
 	return;
 
 	/* A trampoline the parser copied belongs to the pool once duplicated, else it is freed here. */
@@ -709,24 +1202,39 @@ ZEND_METHOD(Async_Pool, acquire)
 		Z_PARAM_LONG(timeout)
 	ZEND_PARSE_PARAMETERS_END();
 
-	(void) timeout;
 	THROW_IF_UNAVAILABLE();
 
-	switch (pool_take(THIS_POOL, return_value)) {
-		case POOL_TAKEN:
-			return;
-		case POOL_TAKE_FAILED:
+	async_pool_t *const pool = THIS_POOL;
+	bool has_reservation = false;
+	/* One deadline for every wait of the call, from the first: a wake that leads to no resource waits on. */
+	php_deadline deadline;
+	bool has_deadline = false;
+
+	for (;;) {
+		switch (pool_take(pool, return_value, &has_reservation)) {
+			case POOL_TAKEN:
+				return;
+			case POOL_TAKE_FAILED:
+				RETURN_THROWS();
+			case POOL_TAKE_CLOSED:
+				zend_throw_exception(async_ce_pool_exception, "Pool is closed", 0);
+				RETURN_THROWS();
+			case POOL_TAKE_UNAVAILABLE:
+				zend_throw_exception(
+						async_ce_service_unavailable_exception, "Service is unavailable (circuit breaker is open)", 0);
+				RETURN_THROWS();
+			case POOL_TAKE_FULL:
+				break;
+		}
+
+		if (timeout > 0 && !has_deadline) {
+			deadline = async_reactor_deadline_from_ms(timeout);
+			has_deadline = true;
+		}
+
+		if (UNEXPECTED(!pool_wait(pool, has_deadline ? &deadline : NULL, &has_reservation))) {
 			RETURN_THROWS();
-		case POOL_TAKE_CLOSED:
-			zend_throw_exception(async_ce_pool_exception, "Pool is closed", 0);
-			RETURN_THROWS();
-		case POOL_TAKE_UNAVAILABLE:
-			zend_throw_exception(
-					async_ce_service_unavailable_exception, "Service is unavailable (circuit breaker is open)", 0);
-			RETURN_THROWS();
-		case POOL_TAKE_FULL:
-			zend_throw_error(NULL, "Waiting in Async\\Pool::acquire() is not implemented yet");
-			RETURN_THROWS();
+		}
 	}
 }
 
@@ -734,7 +1242,9 @@ ZEND_METHOD(Async_Pool, tryAcquire)
 {
 	ZEND_PARSE_PARAMETERS_NONE();
 
-	switch (pool_take(THIS_POOL, return_value)) {
+	bool has_reservation = false;
+
+	switch (pool_take(THIS_POOL, return_value, &has_reservation)) {
 		case POOL_TAKEN:
 			return;
 		case POOL_TAKE_FAILED:

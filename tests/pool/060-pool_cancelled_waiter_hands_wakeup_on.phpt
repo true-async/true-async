@@ -1,7 +1,5 @@
 --TEST--
 Pool: a cancelled waiter hands its reservation to the next one
---XFAIL--
-Not implemented yet: S9.35 of dev/PLAN.md
 --FILE--
 <?php
 

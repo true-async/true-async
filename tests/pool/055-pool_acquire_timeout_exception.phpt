@@ -1,7 +1,5 @@
 --TEST--
 Pool: acquire() reports a timeout as TimeoutException, a dead pool as PoolException
---XFAIL--
-Not implemented yet: S9.35 of dev/PLAN.md
 --FILE--
 <?php
 

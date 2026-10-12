@@ -1066,6 +1066,53 @@ bool async_reactor_delay(async_coroutine_t *waiter, const zend_long ms)
 	return ZEND_ASYNC_SUSPEND();
 }
 
+static zend_string *timeout_record_info(const async_coroutine_event_callback_t *record)
+{
+	(void) record;
+
+	return zend_string_init("await: timeout", sizeof("await: timeout") - 1, false);
+}
+
+/* TrueAsync's zend_async_waker_callback_timeout (Zend/zend_async_API.c:1288-1301 of the fork). */
+static void
+timeout_record_wake(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
+{
+	(void) target;
+	(void) exception;
+
+	async_coroutine_t *waiter = ((async_coroutine_event_callback_t *) callback)->coroutine;
+	zend_object *error = timer_result_error(result);
+
+	if (EXPECTED(error == NULL)) {
+		error = async_new_exception(async_ce_timeout_exception, "Operation has been cancelled by timeout");
+	}
+
+	async_scheduler_enqueue(&waiter->coroutine, error, true);
+}
+
+static const async_wait_kind_t timeout_kind = {
+	.info = timeout_record_info,
+	.unlink = async_io_record_unlink,
+};
+
+bool async_reactor_timeout_link(async_coroutine_event_callback_t *record,
+								async_coroutine_t *waiter,
+								const php_deadline deadline)
+{
+	async_io_event_t *event = async_io_event_new();
+	php_io_op_timer(&event->op, deadline);
+	async_callbacks_reserve(&event->base.callbacks, 1);
+
+	if (UNEXPECTED(async_io_event_submit(event) == FAILURE)) {
+		async_io_event_release(event);
+		return false;
+	}
+
+	async_wait_link(record, waiter, (async_awaitable_t *) event, &timeout_kind, timeout_record_wake);
+
+	return true;
+}
+
 ///////////////////////////////////////////////////////////////////
 /// Triggers
 ///////////////////////////////////////////////////////////////////

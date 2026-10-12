@@ -1,7 +1,5 @@
 --TEST--
 Pool: all waiting coroutines eventually get resources
---XFAIL--
-Not implemented yet: S9.35 of dev/PLAN.md
 --FILE--
 <?php
 

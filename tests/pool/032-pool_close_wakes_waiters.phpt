@@ -1,7 +1,5 @@
 --TEST--
 Pool: close() wakes waiting coroutines with exception
---XFAIL--
-Not implemented yet: S9.35 of dev/PLAN.md
 --FILE--
 <?php
 

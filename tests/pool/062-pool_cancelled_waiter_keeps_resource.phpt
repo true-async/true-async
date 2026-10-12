@@ -1,7 +1,5 @@
 --TEST--
 Pool: a cancelled waiter with no successor leaves its resource reusable
---XFAIL--
-Not implemented yet: S9.35 of dev/PLAN.md
 --FILE--
 <?php
 

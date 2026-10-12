@@ -188,6 +188,13 @@ php_deadline async_reactor_deadline_from_ms(zend_long ms);
  * 3.5). False with the exception that ended the wait (a cancellation). */
 bool async_reactor_delay(async_coroutine_t *waiter, zend_long ms);
 
+/* Links `record` of `waiter`'s wait to a Timer op for `deadline`, whose fire wakes the waiter with
+ * TimeoutException: the second record of a wait that parks elsewhere (Pool::acquire()). False with an Error
+ * when the submit failed, nothing linked. */
+bool async_reactor_timeout_link(async_coroutine_event_callback_t *record,
+								async_coroutine_t *waiter,
+								php_deadline deadline);
+
 /* Whether a submitted op or another thread may still wake a coroutine (S4.md 3.4). */
 static zend_always_inline bool async_reactor_has_waits(const async_reactor_t *reactor)
 {

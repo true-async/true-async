@@ -1,7 +1,5 @@
 --TEST--
 Pool: releasing coroutine does not take its own slot back ahead of a parked waiter
---XFAIL--
-Not implemented yet: S9.35 of dev/PLAN.md
 --FILE--
 <?php
 

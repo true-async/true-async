@@ -1,7 +1,5 @@
 --TEST--
 Pool: acquire blocks when no resources available, wakes on release
---XFAIL--
-Not implemented yet: S9.35 of dev/PLAN.md
 --FILE--
 <?php
 

@@ -1,7 +1,5 @@
 --TEST--
 Pool: release wakes one waiting coroutine
---XFAIL--
-Not implemented yet: S9.35 of dev/PLAN.md
 --FILE--
 <?php
 

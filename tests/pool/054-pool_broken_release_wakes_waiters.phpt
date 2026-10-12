@@ -1,7 +1,5 @@
 --TEST--
 Pool: beforeRelease returning false (broken resource) wakes parked waiters
---XFAIL--
-Not implemented yet: S9.35 of dev/PLAN.md
 --DESCRIPTION--
 Regression for issue #141. When a held resource is "broken" (beforeRelease
 returns false), the pool destroys it instead of returning to idle. The slot

@@ -1,7 +1,5 @@
 --TEST--
 Pool: a waiter leaving through the circuit breaker hands its reservation on
---XFAIL--
-Not implemented yet: S9.35 of dev/PLAN.md
 --FILE--
 <?php
 

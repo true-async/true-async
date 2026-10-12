@@ -1,7 +1,5 @@
 --TEST--
 Pool: tryAcquire does not take a resource reserved for a parked waiter
---XFAIL--
-Not implemented yet: S9.35 of dev/PLAN.md
 --FILE--
 <?php
 

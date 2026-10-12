@@ -170,7 +170,8 @@ which its tests `058`-`066` pin and which this layer keeps:
 - **Close.** Every waiter is taken out of the queue and woken with its own `PoolException` (`063`).
 
 POOL's `info` prints TrueAsync's line `Pool(idle=%zu, active=%u, reserved=%u, max=%u)` (`pool.c:629-639`) in
-`getAwaitingInfo()` and the deadlock report; `unlink` takes the record out of the queue; `abort` (a bailout, the
+`getAwaitingInfo()` and the deadlock report; no `unlink`: the frame takes the record out of the queue after its
+`suspend()`, as the channel's, so a woken waiter keeps its place until it runs; `abort` (a bailout, the
 request's end) drops the record's reservation without a wake; `collector_target` reports the pool (section 6).
 
 **Deadlock.** A pool's waiters at the global deadlock are woken as every parked coroutine is (S4's deadlock
@@ -292,6 +293,9 @@ S9.32, or Edmond's answers to questions 1-3 (items 12-14).
 13. **`release()` refuses an object the pool did not hand out or already got back** (question 2, B), by a weak-key
    count per object; scalars and arrays keep item 4's check.
 14. **`shouldRecover()` is asked while INACTIVE** (question 3, B; section 3).
+15. **One deadline for the whole `acquire()` call** (S9.35): taken at its first park; TrueAsync starts a new timer
+   for each wait (`pool.c:464-470`), so a waiter woken without a resource (a rejected resource, a refused factory)
+   waits up to `$timeout` again.
 
 ## 9. Errors in TrueAsync's documentation
 
@@ -340,7 +344,7 @@ none waits for time (Edmond, 2026-10-09 and 2026-10-12):
   factory; the healthcheck suspending inside the check (the probe `p3`); `close()` during a running check; a tick
   skipped while the check runs; the check making resources up to `min`; a check freeing a place a waiter takes; a
   waiter that parks while the check holds the only resource, woken when the check returns it; a resource reserved
-  for a woken waiter left alone by a tick; a refill factory that throws, printed while the other coroutines run on;
+  for a woken waiter left alone by a tick; a refill factory that throws, dropped while the other coroutines run on;
   no check started after `graceful_shutdown()`; a foreign release while the check holds the only resource; a free of the pool's last reference during a check; a
   bailout while parked in `acquire()`, on debug and ASAN; for the collector: a waiter on a pool nobody reaches
   found, and not found: a pool a running coroutine holds, a pool whose resource a suspended coroutine holds with the

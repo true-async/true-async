@@ -15,6 +15,8 @@
 
 #include "php.h"
 #include "internal/zval_circular_buffer.h"
+#include "true_async_API.h"
+#include "reactor.h"
 
 /* Async\Pool (dev/plans/S9-pool.md): reusable resources that coroutines take with acquire() and give back
  * with release(), at most `max` of them alive, with TrueAsync's hooks and circuit breaker. */
@@ -29,6 +31,7 @@ typedef enum
 
 typedef struct
 {
+	async_event_t base;          /* the target of the POOL records; no subscribers */
 	zval_circular_buffer_t idle; /* the idle resources, oldest first */
 	/* The callables; all but the factory uninitialized when not given. */
 	zend_fcall_info_cache factory;
@@ -45,7 +48,14 @@ typedef struct
 	uint32_t max;
 	uint32_t active;     /* handed out or inside a hook or the factory: count() is idle + active, at most max */
 	uint32_t values_out; /* values other than objects handed out to callers and not yet released */
-	zend_long healthcheck_interval_ms; /* 0: no healthcheck */
+	/* Coroutines parked in acquire(), in arrival order: the POOL records of their wakers. */
+	async_wait_queue_t waiters;
+	uint32_t reserved; /* places promised to woken waiters that have not run yet */
+	/* The soft one-shot Timer op of the next healthcheck while armed; one reference. */
+	async_io_event_t *healthcheck_timer;
+	async_event_callback_t healthcheck_timer_callback; /* in `healthcheck_timer`'s vector while armed */
+	zend_coroutine_t *healthcheck_coroutine;           /* the running check; NULL when none */
+	zend_long healthcheck_interval_ms;                 /* 0: no healthcheck */
 	async_pool_circuit_state_t circuit_state;
 	bool is_constructed; /* a second __construct() throws */
 	bool is_closed;
@@ -59,5 +69,7 @@ extern zend_class_entry *async_ce_circuit_breaker_state;
 extern zend_class_entry *async_ce_circuit_breaker_strategy;
 
 void async_register_pool_ce(zend_class_entry *circuit_breaker);
+void async_pool_request_startup(void);
+void async_pool_request_shutdown(void);
 
 #endif /* TRUE_ASYNC_POOL_H */

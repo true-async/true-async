@@ -2783,3 +2783,17 @@ stack options were shown with the code).
   the other goes unobserved and prints at the request's end. `release()` counts PHP resources by handle, other
   non-objects by number. A by-reference factory or hook is unwrapped. Why: the Critics; Edmond's option C.
   `PoolException` lives in `pool.stub.php`, as in TrueAsync.
+- 2026-10-12 S9.35, own defaults of the pool's waits: one deadline for the whole `acquire()` call, from its first
+  park (S9-pool.md section 8, item 15); the timeout throws TrueAsync's `TimeoutException("Operation has been
+  cancelled by timeout")`; a woken waiter keeps its queue place until it runs, and its timer is withdrawn at the
+  wake, so a promise always wins over a timer not yet fired; every exit of `acquire()` that frees a place without
+  taking it wakes a waiter (`pool/120-circuit_refusal_after_rejection_wakes_waiter.phpt`). Why: the least code
+  that keeps section 4's rule that no waiter stays parked beside a free place.
+- 2026-10-12 S9.35, the healthcheck: the check stops at a closed pool or at its own cancellation even when a hook
+  swallows it (`pool/122-check_stops_at_swallowed_cancellation.phpt`,
+  `pool/123-check_stops_at_swallowed_graceful_shutdown.phpt`); a pool closed by the check's last release prints
+  its destructor's exception at the request's end (`pool/119-destructor_exception_at_check_last_release_printed.phpt`),
+  and a cancellation from it is dropped when the check never ran; an unrun check cancelled by a global cancel
+  leaves the pool without a healthcheck. Not tested, by design or because only time would show them: a tick
+  while a check runs (the timer is re-armed only at the check's end), a check after `graceful_shutdown()`, a tick
+  over a place promised to a woken waiter, a timeout after a wake. Why: the Critic of S9.35.

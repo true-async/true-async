@@ -1,7 +1,5 @@
 --TEST--
 Pool: concurrent workers share limited resources
---XFAIL--
-Not implemented yet: S9.35 of dev/PLAN.md
 --FILE--
 <?php
 

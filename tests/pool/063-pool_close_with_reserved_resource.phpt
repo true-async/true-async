@@ -1,7 +1,5 @@
 --TEST--
 Pool: closing while a resource is reserved for a waiter destroys it exactly once
---XFAIL--
-Not implemented yet: S9.35 of dev/PLAN.md
 --FILE--
 <?php
 

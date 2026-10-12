@@ -1,7 +1,5 @@
 --TEST--
 Pool: healthcheck callback throwing treats the resource as unhealthy
---XFAIL--
-Not implemented yet: S9.35 of dev/PLAN.md
 --FILE--
 <?php
 

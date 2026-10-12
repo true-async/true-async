@@ -1,7 +1,5 @@
 --TEST--
 Pool: a cancelled waiter hands on a reservation that was capacity, not a resource
---XFAIL--
-Not implemented yet: S9.35 of dev/PLAN.md
 --FILE--
 <?php
 

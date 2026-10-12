@@ -1,7 +1,5 @@
 --TEST--
 Pool: acquire with small timeout fails quickly when no resources
---XFAIL--
-Not implemented yet: S9.35 of dev/PLAN.md
 --FILE--
 <?php
 

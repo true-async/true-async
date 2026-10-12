@@ -1,7 +1,5 @@
 --TEST--
 Pool: resources beyond the ones reserved for waiters stay available
---XFAIL--
-Not implemented yet: S9.35 of dev/PLAN.md
 --FILE--
 <?php
 

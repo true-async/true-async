@@ -1,7 +1,5 @@
 --TEST--
 Pool: max_size enforced when factory yields during creation
---XFAIL--
-Not implemented yet: S9.35 of dev/PLAN.md
 --FILE--
 <?php
 
