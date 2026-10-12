@@ -599,6 +599,13 @@ on ASAN (run-tests `--asan` sets `USE_TRACKED_ALLOC`). Mull survivors killed by 
 `task-set.md`. Open for Edmond: the closing after `exit()` (PLAN Open questions). Next: S9.31 (the layer's
 security pass, `dev/plans/S9-taskgroup.md` section 7).
 
+S9.31 done 2026-10-12 (PLAN result line, `SECURITY.md` journal): a release that does not free a value can start
+a GC run, and a live coroutine waits for it while every other coroutine runs, so a C walk over a group's tables
+must not release inside the walk (the composite is built after it) and a read must take a set's entries before
+anything it does can wait. A task queued before one of the graceful shutdown's cancels never starts. Layer 4 is
+done. Open: the same check of the earlier layers' walks (S9.33); the next layer (pools, S9.32) needs its plan
+agreed with Edmond.
+
 ## S10
 
 - S10.1 closed 2026-10-08: `dev/plans/S10.md` approved by Edmond (17:40) except output buffers, which

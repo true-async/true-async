@@ -82,6 +82,8 @@ struct _async_task_group_entry_s
 	task_state_t state;
 	/* Its error needs no report; set before the end, it covers the failure to come (section 3). */
 	bool is_handled;
+	/* QUEUED: the graceful shutdown's cancels when it was queued; after a later one it ends unstarted. */
+	uint32_t shutdown_cancels_when_queued;
 	/* QUEUED: the callable with its own references and arguments; the cache owns a __call trampoline. */
 	zend_fcall_info fci;
 	zend_fcall_info_cache fcc;
@@ -126,7 +128,7 @@ typedef struct
 	async_task_group_t *group; /* the closing holds it */
 } closing_subscriber_t;
 
-/* The call of a queued task that a cancel ended unstarted, released after the cancel's answers. */
+/* The call of a queued task, moved out of its entry before the entry starts or ends unstarted. */
 typedef struct
 {
 	zend_fcall_info fci;
@@ -338,6 +340,7 @@ static void task_group_entry_queue(async_task_group_t *group,
 								   HashTable *named_args)
 {
 	entry->state = TASK_QUEUED;
+	entry->shutdown_cancels_when_queued = ASYNC_G(shutdown_cancel_count);
 	entry->fci = *fci;
 	Z_TRY_ADDREF(entry->fci.function_name);
 	entry->fci.retval = NULL;
@@ -406,6 +409,7 @@ static void task_group_future_waiters_remove(async_task_group_futures_t *futures
 			&futures->waiters[index + 1],
 			(futures->length - index - 1) * sizeof(async_task_group_future_waiter_t *));
 	futures->length--;
+	futures->removal_count++;
 }
 
 /* The Future settled or went: the waiter leaves `futures` unless the group took it out first or went. */
@@ -739,15 +743,17 @@ static void task_group_mark_all_handled(async_task_group_t *group)
 	ZEND_HASH_FOREACH_END();
 }
 
-/* The errors present in spawn order as one CompositeException, or NULL when there is none. A read takes every
+/* The errors of `tasks` in spawn order as one CompositeException, or NULL when there is none. A read takes every
  * error and marks it handled; the closing's report (`only_unreported`) takes those neither handled nor a
  * cancellation (section 3). */
-static zend_object *task_group_composite(async_task_group_t *group, const bool only_unreported)
+static zend_object *task_group_composite(const HashTable *tasks, const bool only_unreported)
 {
-	zend_object *composite = NULL;
+	/* Collected first, built after the walk: building releases values, and a release can run the GC, whose wait
+	 * lets another coroutine spawn into the group and grow the table under the walk. */
+	zend_array *errors = NULL;
 	async_task_group_entry_t *entry;
 
-	ZEND_HASH_FOREACH_PTR(&group->tasks, entry)
+	ZEND_HASH_FOREACH_PTR(tasks, entry)
 	{
 		if (entry->state != TASK_FAILED) {
 			continue;
@@ -758,17 +764,35 @@ static zend_object *task_group_composite(async_task_group_t *group, const bool o
 			continue;
 		}
 
-		if (composite == NULL) {
-			composite = async_new_exception(async_ce_composite_exception, "");
+		if (UNEXPECTED(errors == NULL)) {
+			errors = zend_new_array(1);
 		}
 
-		async_composite_exception_add_exception(composite, entry->exception);
+		zval error;
+
+		ZVAL_OBJ_COPY(&error, entry->exception);
+		zend_hash_next_index_insert_new(errors, &error);
 
 		if (!only_unreported) {
 			entry->is_handled = true;
 		}
 	}
 	ZEND_HASH_FOREACH_END();
+
+	if (EXPECTED(errors == NULL)) {
+		return NULL;
+	}
+
+	zend_object *composite = async_new_exception(async_ce_composite_exception, "");
+	zval *error;
+
+	ZEND_HASH_FOREACH_VAL(errors, error)
+	{
+		async_composite_exception_add_exception(composite, Z_OBJ_P(error));
+	}
+	ZEND_HASH_FOREACH_END();
+
+	zend_array_release(errors);
 
 	return composite;
 }
@@ -789,7 +813,18 @@ static void task_group_take_all(async_task_group_t *group, HashTable *taken)
  * CompositeException of the errors, which then need no report; `ignore_errors` leaves them out, handled too. */
 static void task_group_answer_all(async_task_group_t *group, async_future_event_t *future, const bool ignore_errors)
 {
-	zend_object *composite = ignore_errors ? NULL : task_group_composite(group, false);
+	const bool is_set = task_group_is_task_set(group);
+	HashTable *tasks = &group->tasks;
+	HashTable taken;
+
+	/* A TaskSet's entries leave it before the composite is built: the build may wait for a GC run, during which a
+	 * spawn adds entries that have not ended. */
+	if (is_set) {
+		task_group_take_all(group, &taken);
+		tasks = &taken;
+	}
+
+	zend_object *composite = ignore_errors ? NULL : task_group_composite(tasks, false);
 	zval results;
 
 	ZVAL_UNDEF(&results);
@@ -799,7 +834,7 @@ static void task_group_answer_all(async_task_group_t *group, async_future_event_
 
 		array_init(&results);
 
-		ZEND_HASH_FOREACH_PTR(&group->tasks, entry)
+		ZEND_HASH_FOREACH_PTR(tasks, entry)
 		{
 			if (entry->state == TASK_FAILED) {
 				entry->is_handled = true;
@@ -814,16 +849,11 @@ static void task_group_answer_all(async_task_group_t *group, async_future_event_
 		ZEND_HASH_FOREACH_END();
 	}
 
-	if (!task_group_is_task_set(group)) {
-		task_group_future_settle(future, &results, composite);
-		return;
-	}
-
-	HashTable taken;
-
-	task_group_take_all(group, &taken);
 	task_group_future_settle(future, &results, composite);
-	zend_hash_destroy(&taken);
+
+	if (is_set) {
+		zend_hash_destroy(&taken);
+	}
 }
 
 /* A TaskGroup's race() or any() answered with `entry`: its own outcome. A success needs no report for any entry,
@@ -889,10 +919,13 @@ static async_task_group_entry_t *task_group_first_success_in_completion_order(co
 /* A TaskSet's joinAny() on a settled set with failures only: a CompositeException of them, which it takes. */
 static void task_group_answer_set_any_failed(async_task_group_t *group, async_future_event_t *future)
 {
-	zend_object *composite = task_group_composite(group, false);
 	HashTable taken;
 
+	/* Taken before the build, as joinAll()'s (task_group_answer_all). */
 	task_group_take_all(group, &taken);
+
+	zend_object *composite = task_group_composite(&taken, false);
+
 	task_group_future_settle(future, NULL, composite);
 	zend_hash_destroy(&taken);
 }
@@ -948,7 +981,7 @@ task_group_answer(async_task_group_t *group, async_task_group_future_waiter_t *w
 			if (entry == NULL && is_set) {
 				task_group_answer_set_any_failed(group, future);
 			} else if (entry == NULL) {
-				task_group_future_settle(future, NULL, task_group_composite(group, false));
+				task_group_future_settle(future, NULL, task_group_composite(&group->tasks, false));
 			} else if (is_set) {
 				task_group_answer_take(group, future, entry);
 			} else {
@@ -957,6 +990,16 @@ task_group_answer(async_task_group_t *group, async_task_group_future_waiter_t *w
 
 			break;
 	}
+}
+
+/* An answer's releases may wait for a GC run, during which another coroutine drops a pending Future or answers
+ * one: a waiter leaves `futures`, and one before index `i` shifts the rest. The walk then starts again, so no
+ * waiter is skipped. */
+static zend_always_inline uint32_t task_group_futures_next_index(const async_task_group_t *group,
+																 const uint32_t i,
+																 const uint32_t removal_count)
+{
+	return EXPECTED(group->futures.removal_count == removal_count) ? i : 0;
 }
 
 /* Answers every pending read that can be answered now, oldest first: each gets its own answer, where
@@ -975,7 +1018,11 @@ static void task_group_serve(async_task_group_t *group)
 		}
 
 		task_group_future_waiters_remove(&group->futures, i);
+
+		const uint32_t removal_count = group->futures.removal_count;
+
 		task_group_answer(group, waiter, entry);
+		i = task_group_futures_next_index(group, i, removal_count);
 	}
 }
 
@@ -998,9 +1045,13 @@ static void task_group_reject_set_reads(async_task_group_t *group)
 
 		task_group_future_waiters_remove(&group->futures, i);
 		waiter->group = NULL;
+
+		const uint32_t removal_count = group->futures.removal_count;
+
 		task_group_future_reject(waiter->future,
 								 waiter->kind == READ_RACE ? task_group_empty_race_message
 														   : task_group_empty_any_message);
+		i = task_group_futures_next_index(group, i, removal_count);
 	}
 }
 
@@ -1019,6 +1070,15 @@ static void task_group_update(async_task_group_t *group)
 ///////////////////////////////////////////////////////////////////
 /// Tasks
 ///////////////////////////////////////////////////////////////////
+
+/* A queued entry that ends unstarted: `exception` is an owned reference. */
+static void
+task_group_entry_fail_unstarted(async_task_group_t *group, async_task_group_entry_t *entry, zend_object *exception)
+{
+	entry->state = TASK_FAILED;
+	entry->exception = exception;
+	task_group_entry_list_append(&group->settled_head, &group->settled_tail, entry);
+}
 
 /* An exit() in the task leaves its return value UNDEF: the result is null, as Coroutine::getResult() gives. */
 static void task_group_entry_succeed(async_task_group_entry_t *entry, const zval *result)
@@ -1143,7 +1203,10 @@ static zend_always_inline bool task_group_scope_is_stopped(const async_scope_t *
 
 /* Starts queued tasks from the head while slots are free. A scope cancelled or closed from outside starts
  * nothing: at the first task end that finds it so, queue or not, the group cancels as cancel() does, which wakes
- * its waiters (section 5; TrueAsync's drain starts them, task_group.c:848-889). */
+ * its waiters (section 5; TrueAsync's drain starts them, task_group.c:848-889). A task queued before a cancel of
+ * the graceful shutdown (exit(), an uncaught error, Async\graceful_shutdown()) ends unstarted with its
+ * cancellation, as that cancel ends a queued coroutine unrun (TrueAsync's cancel_queued_coroutines); the group
+ * goes on. */
 static void task_group_drain(async_task_group_t *group)
 {
 	while (true) {
@@ -1156,40 +1219,55 @@ static void task_group_drain(async_task_group_t *group)
 			return;
 		}
 
-		if (EXPECTED(group->queued_head == NULL || !task_group_has_slot(group))) {
+		async_task_group_entry_t *entry = group->queued_head;
+
+		if (EXPECTED(entry == NULL)) {
 			return;
 		}
 
-		async_task_group_entry_t *entry = group->queued_head;
+		/* Ahead of the slot check: an entry that never starts needs no slot. The count only grows, so the ones
+		 * queued since the last cancel come after every one queued before it. */
+		const bool is_unstarted_by_shutdown = entry->shutdown_cancels_when_queued != ASYNC_G(shutdown_cancel_count);
 
+		if (EXPECTED(!is_unstarted_by_shutdown && !task_group_has_slot(group))) {
+			return;
+		}
+
+		/* Out of the entry before the start: a refused start settles it, and a destructor run by the release below
+		 * may take it out of a TaskSet and free it. */
+		task_call_t call = { .fci = entry->fci, .fcc = entry->fcc };
+
+		entry->fci = empty_fcall_info;
+		entry->fcc = empty_fcall_info_cache;
 		task_group_entry_list_remove(&group->queued_head, &group->queued_tail, entry);
 		group->queued_count--;
 
-		/* The coroutine takes the trampoline, whether it starts or the scheduler refuses it. */
-		async_coroutine_t *coroutine = async_scope_spawn(scope,
-														 NULL,
-														 &entry->fci,
-														 &entry->fcc,
-														 entry->fci.params,
-														 entry->fci.param_count,
-														 entry->fci.named_params);
-
-		if (EXPECTED(coroutine != NULL)) {
-			task_group_entry_run(group, entry, coroutine);
+		if (UNEXPECTED(is_unstarted_by_shutdown)) {
+			task_group_entry_fail_unstarted(group, entry, async_scheduler_shutdown_cancellation_new());
 		} else {
-			/* The scheduler could not make a stack: the refusal is the task's outcome. */
-			entry->state = TASK_FAILED;
-			entry->exception = EG(exception);
-			GC_ADDREF(entry->exception);
-			zend_clear_exception();
-			task_group_entry_list_append(&group->settled_head, &group->settled_tail, entry);
+			/* The coroutine takes the trampoline, whether it starts or the scheduler refuses it. */
+			async_coroutine_t *coroutine = async_scope_spawn(
+					scope, NULL, &call.fci, &call.fcc, call.fci.params, call.fci.param_count, call.fci.named_params);
+
+			if (EXPECTED(coroutine != NULL)) {
+				task_group_entry_run(group, entry, coroutine);
+			} else {
+				/* The scheduler could not make a stack: the refusal is the task's outcome. */
+				GC_ADDREF(EG(exception));
+				task_group_entry_fail_unstarted(group, entry, EG(exception));
+				zend_clear_exception();
+			}
 		}
 
 		/* The place it left in the queue goes to the oldest parked spawner (section 4). */
 		task_group_pass_room(group);
 
 		/* After the entry has its new state: a destructor the release runs finds the group as it is. */
-		task_group_call_release(&entry->fci, &entry->fcc);
+		if (UNEXPECTED(is_unstarted_by_shutdown)) {
+			task_group_call_release_unstarted(&call.fci, &call.fcc);
+		} else {
+			task_group_call_release(&call.fci, &call.fcc);
+		}
 	}
 }
 
@@ -1222,10 +1300,8 @@ static void task_group_cancel(async_task_group_t *group, zend_object *cancellati
 		unstarted[i].fcc = entry->fcc;
 		entry->fci = empty_fcall_info;
 		entry->fcc = empty_fcall_info_cache;
-		entry->state = TASK_FAILED;
-		entry->exception = cancellation;
 		GC_ADDREF(cancellation);
-		task_group_entry_list_append(&group->settled_head, &group->settled_tail, entry);
+		task_group_entry_fail_unstarted(group, entry, cancellation);
 	}
 
 	ZEND_ASSERT(group->queued_head == NULL);
@@ -1474,7 +1550,7 @@ static void task_group_closing_end(async_task_group_t *group, const bool caller_
 			OBJ_RELEASE(cancellation);
 		}
 
-		zend_object *composite = task_group_composite(group, true);
+		zend_object *composite = task_group_composite(&group->tasks, true);
 
 		if (UNEXPECTED(composite != NULL)) {
 			/* Read again: the cancel may have freed an external scope. */
@@ -1935,6 +2011,12 @@ ZEND_METHOD(Async_TaskGroup, __construct)
 			RETURN_THROWS();
 		}
 
+		/* The handler reaches the group through debug_backtrace() and may have constructed it meanwhile. */
+		if (UNEXPECTED(group->base.flags & TASK_GROUP_F_CONSTRUCTED)) {
+			zend_throw_error(NULL, "Cannot call constructor twice");
+			RETURN_THROWS();
+		}
+
 		/* The handler may have disposed it. */
 		scope = async_scope_object_from_object(scope_object)->scope;
 	}
@@ -2191,7 +2273,7 @@ ZEND_METHOD(Async_TaskGroup, any)
 	if (entry != NULL) {
 		task_group_answer_entry(group, future, entry);
 	} else if (task_group_is_settled(group)) {
-		task_group_future_settle(future, NULL, task_group_composite(group, false));
+		task_group_future_settle(future, NULL, task_group_composite(&group->tasks, false));
 	} else {
 		task_group_future_waiter_add(group, future, READ_ANY, false);
 	}

@@ -1714,11 +1714,14 @@ static void scheduler_cancel_all(zend_object *cancellation)
 	if (UNEXPECTED(cancellation != NULL)) {
 		GC_ADDREF(cancellation);
 	} else {
-		cancellation = async_new_exception(async_ce_cancellation, "Graceful shutdown");
+		cancellation = async_scheduler_shutdown_cancellation_new();
 	}
 
 	const bool was_in_scheduler_context = ZEND_ASYNC_IN_SCHEDULER_CONTEXT;
 	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
+
+	/* A TaskGroup's task queued before this cancel never starts either (task_group.c, task_group_drain). */
+	ASYNC_G(shutdown_cancel_count)++;
 
 	async_coroutine_t *coroutine = NULL;
 	const uint32_t iterator = zend_hash_iterator_add(&ASYNC_G(coroutines), 0);
@@ -1732,6 +1735,11 @@ static void scheduler_cancel_all(zend_object *cancellation)
 
 	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = was_in_scheduler_context;
 	OBJ_RELEASE(cancellation);
+}
+
+zend_object *async_scheduler_shutdown_cancellation_new(void)
+{
+	return async_new_exception(async_ce_cancellation, "Graceful shutdown");
 }
 
 void async_scheduler_graceful_shutdown(zend_object *cancellation)
@@ -2431,6 +2439,7 @@ void async_scheduler_request_startup(void)
 	ASYNC_G(interrupt_coroutine) = NULL;
 	ASYNC_G(exit_deadline) = NULL;
 	ASYNC_G(graceful_shutdown) = false;
+	ASYNC_G(shutdown_cancel_count) = 0;
 	zend_hash_init(&ASYNC_G(unobserved_exceptions), 0, NULL, unobserved_exception_dtor, false);
 
 #ifdef TRUE_ASYNC_FUZZ

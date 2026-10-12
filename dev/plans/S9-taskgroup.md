@@ -179,7 +179,9 @@ coroutine:
 2. `active_count - 1`, and the drain starts queued tasks from the head of `pending` while slots are free;
    each start frees a queue place and wakes the oldest slot waiter. A group's scope that is cancelled or
    closed starts nothing: the queued tasks end as a `cancel()` ends them, the group seals and cancels the
-   rest (section 5);
+   rest (section 5); a task queued before one of the graceful shutdown's cancels (`exit()`, an uncaught error,
+   `Async\graceful_shutdown()`, each later `exit()`) ends unstarted with `AsyncCancellation("Graceful shutdown")`
+   and the group goes on (section 8, item 31);
 3. the Futures and waiters are served (section 3);
 4. if nothing runs and nothing is queued, the group settles (section 3).
 
@@ -613,6 +615,12 @@ Each was Edmond's decision on 2026-10-09 (DECISIONS 2026-10-09, "S9 layer 4"), u
     printed at the closing. TrueAsync's `cancel()` marks the errors present handled.
 30. **`ignoreErrors: true` handles the errors it skips**, in `all()` and `joinAll()` alike (section 3);
     TrueAsync's `all()` leaves them for the report.
+31. **The graceful shutdown starts no task queued before it** (section 2, S9.31; internal, a bug TrueAsync shares,
+    not yet confirmed by Edmond): a task queued before one of the shutdown's cancels (`exit()`, an uncaught
+    error, `Async\graceful_shutdown()`, each later `exit()`) ends unstarted with a new
+    `AsyncCancellation("Graceful shutdown")`, never the `$e` of `graceful_shutdown($e)`, as that cancel ends a
+    queued coroutine unrun; one queued after the last cancel starts. TrueAsync's drain checks no shutdown
+    (`task_group.c:860-889`, read, not run).
 
 Edmond accepted the six internal ones, items 21-26, on 2026-10-09 at 07:26 («я выбираю то, что лучше», "I choose
 what is better"). Item 28 came later and changes every scope's cancel; Edmond chose it at 10:39 («если корутина уже была

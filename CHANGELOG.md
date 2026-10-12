@@ -106,7 +106,7 @@ can see goes here; tests, tools and CI are in the git history.
 - `Async\Channel`'s `noProducerTimeout` and `noConsumerTimeout` close a channel that waits too long; a
   channel closes when the scope it was made in is cancelled, takes an error, is disposed or is freed, and
   the partial deadlock collector finds coroutines parked on it ([S9](dev/plans/S9-channel.md)).
-- `Async\TaskGroup` and `Async\TaskSet`: tasks under a concurrency limit and a queue, `trySpawn()` that starts a task now or returns false, Futures over their results, `foreach` in completion order, TaskSet's `joinNext()`, `joinAny()` and `joinAll()` that take what they return, a numeric string key as the integer key; dropping a group cancels its unfinished tasks and reports the errors nobody read ([S9](dev/plans/S9-taskgroup.md)).
+- `Async\TaskGroup` and `Async\TaskSet`: tasks under a concurrency limit and a queue, `trySpawn()` that starts a task now or returns false, Futures over their results, `foreach` in completion order, TaskSet's `joinNext()`, `joinAny()` and `joinAll()` that take what they return, a numeric string key as the integer key; dropping a group cancels its unfinished tasks and reports the errors nobody read; a task still queued when `exit()`, an uncaught error or `Async\graceful_shutdown()` cancels the request never starts and ends with `AsyncCancellation` ([S9](dev/plans/S9-taskgroup.md)).
 - A coroutine whose body has returned or thrown keeps its outcome when its scope is cancelled while its
   closure is released, as when the closure held the last reference to the scope or the group
   ([S9](dev/plans/S9-taskgroup.md)).

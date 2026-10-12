@@ -2253,3 +2253,17 @@ stack options were shown with the code).
 - 2026-10-12 S14.4: S2's scenarios, allocator-fault and network-chaos layers are stage S15 (recorded, not
   started), not dropped; its TSAN row waits for threads (Fog). `src/chaos.c`, `fuzz/` and `tests/deps/`,
   never created, leave the PLAN layout. Why: dropping a layer S2 agreed needs Edmond's word.
+- 2026-10-12 S9.31: C code that walks a group's tables releases nothing inside the walk, and a read takes a
+  set's entries before anything it does can wait. A release that does not free a value can start a GC run that
+  the caller waits for while other coroutines run and spawn into the group (`SECURITY.md` 2026-10-12;
+  `task_group/159`, `task_set/036`). So `all()` and `any()` collect the errors first and build the composite
+  after, and `joinAll()` and a failed `joinAny()` take the entries before that build. Why: memory safety.
+- 2026-10-12 S9.31: a task queued before one of the graceful shutdown's cancels (`exit()`, an uncaught error,
+  `Async\graceful_shutdown()`, each later `exit()`) ends unstarted with a new `AsyncCancellation("Graceful
+  shutdown")` at the group's next drain, as that cancel ends a queued coroutine unrun (TrueAsync's
+  `cancel_queued_coroutines()`); the group goes on, and a task queued after the last cancel starts as a `spawn()`
+  then does (`task_group/161`-`164`). TrueAsync's drain checks no shutdown (`task_group.c:860-889`, read, not
+  run); before the fix ours held the request 7.4 s with 30 queued tasks that wait, now 0.03 s (debug). Rejected:
+  cancelling the whole group, which breaks groups made in shutdown functions; giving the tasks the `$e` of
+  `graceful_shutdown($e)`, which needs it held in a global past tasks that never run. Why: `exit()` ends queued
+  work. Cost: a count per entry, 8 bytes with alignment; a queued task still takes 293 bytes (debug, measured).

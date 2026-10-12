@@ -966,7 +966,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, dev/plans/S9-taskgroup.md
-Active: S9.31
+Active: none; layer 4 done; S9.32 needs Edmond, S9.33 needs a thread
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -1410,10 +1410,29 @@ Active: S9.31
         closing after `exit()` (Open questions); the other lists' bailout tests keep `skip-on:*-asan` (S3, S5,
         S9 layers 1-3, S10), a step of their own. On CORE_REF 3aa1cd120f4: debug 1683 PASS, ASAN 1657 PASS, 0
         unexpected.
-- [ ] S9.31 Layer 4 security pass by `dev/SECURITY.md`.
+- [x] S9.31 Layer 4 security pass by `dev/SECURITY.md`.
       done: a journal entry per checklist item of the note's section 7; findings fixed with a test or recorded
       tier: T2 · role: —
-      handoff: `dev/plans/S9-taskgroup.md` section 7.
+      handoff: done 2026-10-12: journal entries in `SECURITY.md` by checklist item and the note's six points,
+        scripts run on the debug and ASAN builds, a second reader of the code. Fixed (DECISIONS 2026-10-12
+        S9.31): a GC run that a release starts lets other coroutines run while the caller waits, so `all()` and
+        `any()` walked a table a spawn grew meanwhile (a use after free on ASAN; `all()`: `task_group/159`) and
+        `joinAll()` and `joinAny()` took entries spawned meanwhile, running ones included (`joinAll()`:
+        `task_set/036`); a constructor re-entered from its warning handler leaked a `Scope` reference (`160`);
+        after `exit()` the drain started queued tasks (`161`-`164`, note section 8 item 31); by reading, the
+        drain's release of a refused start and the walks over the pending Futures. Seen, the open question's class: a destructor that waits where a finished task's
+        teardown releases. Open: the earlier layers' walks against a GC run (S9.33).
+        On CORE_REF 3aa1cd120f4: debug 1690 PASS, ASAN 1664 PASS, 0 unexpected. Two Critics on the design and
+        two on quality; each finding fixed or answered in `SECURITY.md`.
+- [ ] S9.32 Design note `dev/plans/S9-pool.md` (layer 5, pools).
+      done: the note pushed; every Critic finding fixed or answered in the note; its questions answered by
+        Edmond
+      tier: T2 · role: Critic → Sage
+- [ ] S9.33 The C walks of `scope.c`, `channel.c`, `future.c`, `await.c` and `context.c` checked against a GC
+      run that a release inside them starts, and against the caller's cancellation during its wait
+      (`SECURITY.md`, Open findings, S9.31).
+      done: each walk fixed with a test, or recorded in `SECURITY.md` with the reason
+      tier: T2 · role: Critic
 
 ## S10 — Beyond the RFCs  [x]
 

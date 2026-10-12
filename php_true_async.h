@@ -48,6 +48,7 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	uint32_t zombie_coroutines_count;       /* in the registry, left out of get_coroutine_count() */
 	async_io_event_t *exit_deadline;        /* D16's Timer while armed, once per drain; the scheduler's reference */
 	uint32_t last_handler_id;               /* the id of the newest finish or switch handler; 0 is never handed out */
+	uint32_t shutdown_cancel_count;         /* the graceful shutdown's cancels of every coroutine in this request */
 	bool graceful_shutdown;                 /* the graceful shutdown started: once per request */
 	bool debug_deadlock;                    /* true_async.debug_deadlock: the deadlock report lists every coroutine */
 	uint8_t partial_deadlock;               /* true_async.partial_deadlock: an async_partial_deadlock_t */

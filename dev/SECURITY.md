@@ -457,7 +457,73 @@ finding left open gets an owner step in `PLAN.md`.
   before the print released it. The print coroutine prints it through `scheduler_print_uncaught()`,
   which releases it on a bailout; the same script reports no leak now (`scheduler/110` on ASAN).
 
+- 2026-10-12 Security pass of the TaskGroup layer (S9.31) over the S9 commits `25b3431`, `507e2c6`, `4066d82`,
+  `11a9776`, `6c30875` (`src/task_group.c`, `task_group.h`, their parts of `scope.c`, `coroutine.c`, `future.c`,
+  `collector.c`, `await.c`, `scheduler.c`), by checklist item and the six points of `dev/plans/S9-taskgroup.md`
+  section 7. Scripts ran on the debug and ASAN builds; a second reader went over the code; three Critics reviewed
+  the fixes.
+
+  Lifetimes, three defects with tests. A release that does not free a value can start a GC run, and a live
+  coroutine waits for that run in the GC coroutine while other coroutines run (the pinned core's `zend_gc.c`,
+  `zend_gc_collect_cycles()`). `all()` built its composite inside its walk over the tasks, so a spawn during that
+  wait grew the table under the walk: a heap-use-after-free on ASAN (`task_group/159`). `joinAll()` built it
+  before it took the set's entries, so it also took a running and a queued task spawned during the wait: an
+  assertion on debug, and on a release build a freed entry left in the queue (`task_set/036`). Both now collect
+  the errors first and build after; a set's read takes its entries before the build. `any()` and a failed
+  `joinAny()` run the same code and have no test of their own. A warning handler of the constructor that reached
+  the group through `debug_backtrace()` could construct it again, and the outer call then took a second `Scope`
+  reference, which leaked (`task_group/160`).
+
+  Lifetimes, two defects by reading, without a test. The drain released a queued call through its entry after a
+  refused start had settled it, and a destructor run by that release can take the entry out of a `TaskSet` and
+  free it (only when the scheduler cannot make a stack); the call now leaves the entry first. The walks over the
+  pending Futures went on by index after an answer, so a waiter that another coroutine removed meanwhile moved
+  the next waiter past the walk; they now start again after such a removal.
+
+  Cancellation. After `exit()` or an uncaught error the drain kept starting queued tasks: 30 queued tasks that
+  wait held the request 7.4 s on the debug build. A task queued before one of the shutdown's cancels now ends
+  unstarted with a new `AsyncCancellation("Graceful shutdown")`, as that cancel ends a queued coroutine unrun,
+  and the group goes on: 0.03 s (`task_group/161`). A task queued after the last cancel, as in a shutdown
+  function, starts (`162`). The Critics found two faults in the first versions of this fix: cancelling the whole
+  group broke groups made in shutdown functions and cut short the running tasks' `finally`; and an unstarted
+  call leaked its `__call` trampoline (`163`). One flag for "the shutdown began" also let the tasks queued after
+  `Async\graceful_shutdown()` start after a later `exit()`; a count of the cancels fixed it (`164`).
+
+  Answered, no change. A constructor that throws gets no destructor, PHP's rule for any object: a group that the
+  handler constructed before the outer call threw is not cancelled when it is dropped, and its task runs on (no
+  leak; a script on debug). A cancellation of the caller during the GC wait inside `all()` returns with the
+  cancellation pending: the dropped Future warns of its unhandled composite, so no error is lost without a word
+  (a script, debug and ASAN). Tests 159 and 036 print whether the collection ran inside the call.
+
+  Clean, by scripts: the destructors of queued calls that a cancel releases (they throw, `exit()`, spawn into the
+  group, drop it, cancel and dispose it, call `gc_collect_cycles()`); a destructor that reaches the closing group
+  through a `WeakReference`, calls every method, `finally()` included, and keeps the group; the Futures of
+  `all()`, `race()`, `any()`, `joinNext()`, `joinAny()` and `joinAll()` freed after the group, before it, and held
+  in a static past `exit()`, a fatal error and an uncaught error; a finally handler that exits, fails fatally,
+  throws, waits for good, cancels itself or exhausts `memory_limit` (after a bailout the closing's reference is
+  freed with the request); a finally run refused for want of a stack.
+
+  Refcounts on exception and bailout paths: balanced. Engine state: `EG(exception)` is saved and restored around
+  the task's end, the destructor and the closing's end; nothing else. Sizes: nothing is allocated by
+  `$concurrency` or `$queueLimit`; a queued task costs 293 bytes on the debug build, and 100 000 of them spawn in
+  0.08 s, cancel in 0.02 s and answer `all()` in 0.03 s; the room count sums two 32-bit counts and wraps only
+  past 2^31 tasks behind a parked spawner. INI entries: none new. Test-only code: one call under
+  `TRUE_ASYNC_TEST_HOOKS`; a build of the default configuration has no `TrueAsync\Test` string and no test
+  symbol (checked). CI: no change of the layer's.
+- 2026-10-12 Seen in S9.31, the class of the open question on a coroutine cancelled before it ran (`PLAN.md`):
+  where a finished task's teardown releases values, nothing can wait, so a `__destruct()` that waits fails with
+  `Cannot switch coroutines in the current execution context` (a result freed with the group when its closing
+  ends at the last task's end, a queued call the drain's cancel releases); an unheld coroutine's result does the
+  same without the layer. After a pending `exit()` the closing ends in the scheduler's tick (`PLAN.md`, Open
+  questions, S9.30).
+
 ## Open findings
 
-None.
+- 2026-10-12 (S9.31) The walks of the earlier layers were checked against the destructors their own releases
+  run, not against a GC run that any release in a live coroutine can start, which lets every other coroutine run
+  before the release returns (the TaskGroup's two defects above). The C walks of `scope.c`, `channel.c`,
+  `future.c`, `await.c` and `context.c` that release inside a loop need that check. The same wait returns with the
+  caller's cancellation pending in the middle of C code (`zend_gc.c`, `zend_gc_collect_cycles()`): checked for
+  `all()` only; the TaskGroup's `task_group_complete()` would read it as a refused finally run (by reading). Owner:
+  `PLAN.md` S9.33.
 

@@ -69,6 +69,9 @@ bool async_coroutine_cancel(async_coroutine_t *coroutine, zend_object *error, bo
  * blocks run. Once per request: a later call does nothing. */
 void async_scheduler_graceful_shutdown(zend_object *cancellation);
 
+/* A new AsyncCancellation("Graceful shutdown"), the shutdown's own when it is given none; owned by the caller. */
+zend_object *async_scheduler_shutdown_cancellation_new(void);
+
 /* How long the coroutines get to finish after exit() (D16) before they are unwound, and how often
  * what is still alive then is unwound again: TrueAsync's REACTOR_CHECK_INTERVAL (php_async.h:56). */
 #define ASYNC_EXIT_DEADLINE_MS 5000

@@ -29,6 +29,8 @@ typedef struct
 	async_task_group_future_waiter_t **waiters;
 	uint32_t length;
 	uint32_t capacity;
+	/* Counts the removals, each of which shifts the later waiters; it wraps, and only a change is read. */
+	uint32_t removal_count;
 } async_task_group_futures_t;
 
 typedef struct
