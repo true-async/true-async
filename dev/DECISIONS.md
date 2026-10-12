@@ -2752,3 +2752,8 @@ stack options were shown with the code).
   overran the CI runner's paging file ("VirtualAlloc failed: [0x000005af]"); 1M makes 20.1 GiB of stacks, under
   the 27.7 GiB of the old peak (28.4 GB `VmPeak` in the 2026-10-08 entry) that passed. This narrows that entry's
   rejection of a smaller stack: ASAN's reserved 480K rules out 256K, not 1M, which passes on ASAN.
+- 2026-10-12 S8.3a, core `async-core-io-2026-10-12-5` `46369b6a6a5` = `-4` with `io-hooks-fixes` fast-forwarded to
+  `b6ede162357`, the core half of the pid entry above (`RFC-CHANGES.md` 36). Core suites (test_scheduler, poll,
+  stream hooks, curl, sockets; the Ring's curl and hooks) pass as on `-4`, debug and ASAN; lanes pocs-dbg and
+  pocs-asan pass. One ASAN WARN (passed on retry) in `ext/sockets/tests/socket_sendto_recvfrom_afpacket.phpt`
+  was not the change: it passes 5 of 5 alone; it captures every loopback frame, so parallel tests disturb it.

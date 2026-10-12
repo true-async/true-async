@@ -679,6 +679,9 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   curl tests under other libcurl builds (`--enable-versioned-symbols`); eight versions pass. The rename to
   `callback_exception` waits on `io-hooks-fixes-callback-exception` `1c8bb39b882` for S9.33's core update.
   Open in S8: S8.3a (Edmond's F_FILES answer), S8.3b and S8.6 (core slot), S8.3c.
+- S8.3a in progress 2026-10-12: the pid cache is in (main `6f44561`, core `async-core-io-2026-10-12-5`
+  `46369b6a6a5`, RFC 36). Edmond's 19:48 «ок»: `F_FILES` goes on, a coroutine suspends on every Ring op. S8.3c:
+  Edmond's design, a cancellation subclass carrying the result of an op that completed; its name is his.
 
 ## S14
 

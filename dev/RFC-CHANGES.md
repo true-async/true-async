@@ -794,3 +794,20 @@ makes garbage (3 000 000 cycles under 128M peak at 60.3M). An explicit `gc_colle
 before. Tests `ext/test_scheduler/tests/112`-`121`.
 
 Waits for it: nothing; the pinned core carries it.
+
+## 36. IO hooks: a ring compares its owner's pid with one kept per process
+
+State: on `io-hooks-fixes-ring-pid` `b6ede162357` (on `io-hooks-fixes` `c50c23baf28`) and `io-hooks-fixes`
+`b6ede162357`, 2026-10-12 (S8.3a), in the core since `async-core-io-2026-10-12-5` `46369b6a6a5`. PR: none yet;
+a candidate for bukka's branch.
+
+Need: `php_io_ring_foreign()` calls `getpid()` on every op to tell a ring inherited across `fork()`, and glibc
+has not cached it since 2.25: a system call per op, 2 of the 6 a file read through the Ring made (with the
+provider's 4), about 0.8 of the 1.9 µs it lost to a `read()` on the thread.
+
+Request: on Linux the pid is kept, set once by `pthread_once()` at the first ring and refreshed in the child by
+a `pthread_atfork()` handler; `getpid()` stays when the registration fails and on other systems (FreeBSD's
+`rfork()` runs no atfork handler). Release, 32 MiB files from the page cache, 8 KiB reads, with the provider's
+half: Ring 14.3 → 10.8 ms, the thread 6.1 (medians of 11).
+
+Waits for it: nothing; the pinned core carries it.
