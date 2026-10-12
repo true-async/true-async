@@ -41,6 +41,9 @@ Where to look in this repository and around it. Pointers only.
 - `dev/plans/S9-taskgroup.md`: S9 layer 4 notes: `Async\TaskGroup` and `Async\TaskSet` on one implementation,
   the TASK_GROUP wait kind, results and the errors nobody handled, the closing and the destructor that never
   waits, `await_*` narrowed to `Completable`, the departures from TrueAsync.
+- `dev/plans/S9-pool.md`: S9 layer 5 notes: `Async\Pool` and the circuit breaker on the POOL wait kind, the
+  reservations, the healthcheck in a coroutine on a soft timer, the departures from TrueAsync and the errors of its
+  documentation.
 - `dev/plans/S10.md`: S10 notes: per TrueAsync feature beyond the RFCs (output buffers, `Fiber::getCoroutine()`,
   signals, PDO pool, pgsql, threads, Windows) the options and the proposed outcome; the inventory of the
   fork's other core changes and the reference groups without a list.

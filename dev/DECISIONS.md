@@ -2690,3 +2690,16 @@ stack options were shown with the code).
   (an obvious fix), they find the socket libcurl closed by its going, not by log wording or a socket count:
   `io_provider/073-poll_queue_curl_socket_number_reused_before_its_removal.phpt`,
   `io_provider/074-curl_socket_number_reused_before_its_removal.phpt`.
+- 2026-10-12 S9.32: S9 layer 5, `Async\Pool` with the circuit breaker, is TrueAsync's `pool.c` on our wait model,
+  with no pool type in the core and no C-handler pool until the PDO pool needs one, and with the 14 departures of
+  `dev/plans/S9-pool.md` section 8. Why: the core has no pool slots and the PDO pool is out of the first version
+  (2026-10-08 S10 outcomes); items 2-11 fix TrueAsync defects found by probes and by reading
+  (`/mnt/project-files/s9/probes/s9.pool/`), checked by a Critic and the Sage; `acquire(int $timeout)` stays
+  TrueAsync's (a token would break `acquire(5000)` and `catch (TimeoutException)`).
+- 2026-10-12 S9.32, Edmond's answers: an `Exception` from `beforeAcquire`, `beforeRelease` or the healthcheck is a
+  silent rejection, an `Error` destroys the resource and passes to the caller (printed in the check), a strategy's
+  exception passes to the caller (18:38, option C); `release()` refuses an object the pool did not hand out or
+  already got back, by a weak-key count per object, if the code stays small (18:39, B: «это баг в TrueAsync»);
+  while INACTIVE with a strategy set, `acquire()` and `tryAcquire()` ask `shouldRecover()` and on `true` move to
+  RECOVERING (18:39, B). Why: TrueAsync loses bugs and cancellations in hooks, hands one connection to two
+  coroutines, and never calls `shouldRecover()`, which its documentation describes.

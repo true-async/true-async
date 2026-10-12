@@ -40,6 +40,10 @@ true-async/
   `signal/008`, `009`, `012` also need a process-wide signal owner, a request to bukka; until then
   `Async\signal()` on Unix outside the main thread of a threaded CLI is not refused (on Windows it
   is).
+- Pool helpers (S9.32, not in layer 5): a `$pool->use(fn($r) => ...)` that releases in its own `finally`, so a
+  coroutine that ends holding a resource cannot leave it out for good (TrueAsync has none; probe `p5`), and a
+  cancellation token as a second parameter of `acquire()` beside TrueAsync's `int $timeout`
+  (`dev/plans/S9-pool.md` section 8, item 10).
 - Per-coroutine output buffers (S10, not built, Edmond 2026-10-08): the follow-up RFC promised by the
   scheduler RFC (`scheduler_rfc.md:696`) provides them; option C of `dev/plans/S10.md` section 2
   is the extension-level path if they are wanted before that. `output_buffer/001`-`006` stay excluded.
@@ -1157,17 +1161,21 @@ Layer 3, Channel: `Async\Channel`, `ChannelException`, `ChannelCloseReason`, the
 `recvAsync()`, `foreach`, the per-channel timers, the close at the global deadlock and by the owner scope.
 Layer 4, TaskGroup: `Async\TaskGroup`, `Async\TaskSet`, the TASK_GROUP wait kind, the group's closing and
 finally handlers, and `await_*` items and tokens narrowed to `Completable`.
+Layer 5, Pool: `Async\Pool`, `PoolException`, `ServiceUnavailableException`, the circuit-breaker types, the POOL
+wait kind with TrueAsync's reservations, the healthcheck in a coroutine on a soft timer.
 Done when: S9.txt's layer 1 block and `await/062` pass on debug and ASAN; the S3-S7 lists pass as before.
 Layer 2 done when: S9.txt's layer 2 block passes on debug and ASAN; the S3-S7 lists and layer 1 pass as before.
 Layer 3 done when: S9.txt's layer 3 block passes on debug and ASAN; the S3-S7 lists and layers 1 and 2 pass as before.
 Layer 4 done when: S9.txt's layer 4 block passes on debug and ASAN; the S3-S7 lists and layers 1-3 pass as before.
-Pools, iterators, FileSystemWatcher and runtime information have no plan yet: each gets its steps when Edmond
+Layer 5 done when: S9.txt's layer 5 block passes on debug and ASAN; the S3-S7 lists and layers 1-4 pass as before.
+Iterators, FileSystemWatcher and runtime information have no plan yet: each gets its steps when Edmond
 agrees its plan, and S9 is not closed before they have them (S14.4).
 Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
-Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, dev/plans/S9-taskgroup.md
-Active: none; layer 4 done; S9.32 needs Edmond
+Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, dev/plans/S9-taskgroup.md,
+  dev/plans/S9-pool.md
+Active: S9.34, layer 5's list block and the pool without its waits
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -1625,10 +1633,33 @@ Active: none; layer 4 done; S9.32 needs Edmond
         teardown releases. Open: the earlier layers' walks against a GC run (S9.33).
         On CORE_REF 3aa1cd120f4: debug 1690 PASS, ASAN 1664 PASS, 0 unexpected. Two Critics on the design and
         two on quality; each finding fixed or answered in `SECURITY.md`.
-- [ ] S9.32 Design note `dev/plans/S9-pool.md` (layer 5, pools).
+- [x] S9.32 Design note `dev/plans/S9-pool.md` (layer 5, pools).
       done: the note pushed; every Critic finding fixed or answered in the note; its questions answered by
         Edmond
       tier: T2 · role: Critic → Sage
+      handoff: done 2026-10-12: TrueAsync's `Async\Pool` on our wait model with no core change, 14 departures
+        (note section 8, DECISIONS 2026-10-12 S9.32). Found in TrueAsync by probes on its debug build
+        (`/mnt/project-files/s9/probes/s9.pool/`): a healthcheck that suspends ends the request with `DeadlockError`;
+        a double `release()` hands one object to two coroutines and wraps `activeCount()` to 4294967295; hook,
+        healthcheck and strategy exceptions vanish, cancellations inside hooks too; `shouldRecover()` is never
+        called. Edmond answered the three questions at 18:38-18:39: C (an `Exception` rejects, an `Error`
+        passes), B (handed-out objects checked), B (`shouldRecover()` asked). Critic: 4 high findings fixed (the
+        check's error route, its reservations, the GC's `free_obj` order); the Sage kept `acquire(int $timeout)`.
+- [ ] S9.34 The layer 5 block of `tests/lists/S9.txt` and `src/pool.c` without its waits (note section 7).
+      done: the 70 reference tests listed, those needing S9.35 with `--XFAIL--`, the changed ones with
+        `changed:` and DECISIONS lines; the pool, its hooks, the circuit breaker and the release check built
+        with own tests
+      tier: T2 · role: Critic
+- [ ] S9.35 The POOL wait kind, the healthcheck coroutine and the collector (note sections 4-6).
+      done: the S9.35 XFAILs pass; the collector finds a waiter on a pool nobody reaches
+      tier: T2 · role: Critic
+- [ ] S9.36 Layer 5 review and its documentation in `true-async-doc`.
+      done: Critic over S9.34-S9.35, coverage, Mull, 100 fuzz seeds, B21 and B22, the doc pages corrected (note
+        section 9)
+      tier: T2 · role: Critic
+- [ ] S9.37 Layer 5 security pass by `dev/SECURITY.md`.
+      done: a journal entry per item of the note's section 7; findings fixed with a test or recorded
+      tier: T2 · role: —
 - [x] S9.33 The C walks of `scope.c`, `channel.c`, `future.c`, `await.c` and `context.c` checked against a GC
       run that a release inside them starts, and against the caller's cancellation during its wait
       (`SECURITY.md`, Open findings, S9.31).
