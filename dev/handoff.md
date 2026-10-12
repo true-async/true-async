@@ -652,6 +652,9 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   waits for the core slot); M10 reproduces (RFC 11 rewritten). Next: S8.5 (RFC-CHANGES completeness).
 - S8.5 closed 2026-10-12 (PLAN handoff line): section 9 complete, RFC 29-32. Open in S8: S8.3a (next),
   S8.3b, S8.4a and S8.6 (core slot), S8.3c (Edmond's answer). S14.4's six XFAILs name S8.6 or S8.3a.
+- S8.4a closed 2026-10-12 (PLAN result line): core `async-core-io-2026-10-12-1` `36050e31325` carries the
+  curl fix (RFC 28) and the `socket_accept()` fix (RFC 26); PR texts for Edmond in `notes/s8-3`,
+  `notes/s8-4a`. Open in S8: S8.3a (next), S8.3b (only 27 left) and S8.6 (core slot), S8.3c.
 
 ## S14
 

@@ -116,3 +116,4 @@ can see goes here; tests, tools and CI are in the git history.
   when that Future does; before, the Future went with its object and the chain never completed. A dropped
   `recvAsync()->map()` chain stays queued and takes a channel value; its channel, group or signal wait holds
   it, so PHP's GC collects it only with that channel or group ([S9](dev/plans/S9-taskgroup.md), S14.1).
+- On the Poll queue, a stream that takes the number of a socket curl just closed keeps its wait record, and a cancelled `socket_accept()` no longer crashes (core `async-core-io-2026-10-12-1`, S8.4a).

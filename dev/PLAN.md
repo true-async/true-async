@@ -1032,8 +1032,8 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
         `--XFAIL--`, or the XFAIL names where it goes
       tier: T2 · role: Critic
 - [ ] S8.3b The core fixes of S8.3, when the core slot is free: `RFC-CHANGES.md` 26 merged from
-      `io-hooks-fixes`, 27 as one commit on `io-hooks-fixes` with its tests and a PR text for bukka;
-      a core update that carries both.
+      `io-hooks-fixes` (done by S8.4a's core update: `067`, `068` pass), 27 as one commit on
+      `io-hooks-fixes` with its tests and a PR text for bukka; a core update that carries it.
       done: `io_provider/065`-`068`, `071` pass without their `core:` tags on debug and ASAN; the
         connect half of 27 has core tests with a userland provider whose `run()` throws on the Connect
       tier: T1 · role: Critic
@@ -1055,12 +1055,28 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
         opens takes the closed socket's number, and curl's late `remove()` frees the record under it
         (`RFC-CHANGES.md` 28, `073` `core:28`; Ring `074` passes). M10 reproduces: `io/081`, `084`, new
         `io_provider/072`, `075`, all `core:11`; entry 11 now asks for TrueAsync's `LOCK_NB` and timer.
-- [ ] S8.4a The core fix of `RFC-CHANGES.md` 28 for bukka, when the core slot is free: the curl
+- [x] S8.4a The core fix of `RFC-CHANGES.md` 28 for bukka, when the core slot is free: the curl
       callback ends a removed socket's registrations before libcurl closes it; a branch on bukka's
       base and a commit on `io-hooks-fixes` with a core test, a PR text in `notes/`; Edmond hears of
       it first and opens the PR.
       done: `io_provider/073` passes without `core:28` on debug and ASAN; `074` still passes
       tier: T1 · role: Critic
+      result 2026-10-12: core `async-core-io-2026-10-12-1` `36050e31325` (`c53c17cfd47` with
+        `io-hooks-fixes` `b9bc37e11e3` merged, which also brings entry 26 of S8.3b); PR branch
+        `io-hooks-curl-late-remove` `c92a03dd619` on bukka's `8e470c219fc`, PR text
+        `/mnt/project-files/notes/s8-4a/io-hooks-curl-late-remove-pr.md` (Edmond opens it). The provider's
+        `remove()` now runs inside libcurl as a curl callback does (`in_callback` set); its exception is
+        kept for the reconcile; freeing the handle ends the registrations before `curl_multi_cleanup()`.
+        Core tests `curl_exec_io_hook_remove_before_close`, `_throws`, `_reset` (skip on the Ring).
+        `io_provider/067`, `068`, `073` pass without `core:` on debug and ASAN, 20 seeds clean. All lists:
+        pocs-dbg 1760 PASS, 21 SKIP, 9 XFAIL; pocs-asan 1734 PASS, 48 SKIP, 8 XFAIL; 0 unexpected. Core
+        suites (`ext/test_scheduler`, `poll`, `streams/hooks`, `curl`, `sockets`), old core against new:
+        only the new tests differ (528 against 538 PASS on both trees, before `_reset`; with it 539
+        on debug, 537 on ASAN with `--asan`, Poll queue). Not run: the `ext-scheduler-hook` bridge
+        (not in this session; the change does not touch the scheduler API).
+      Critic 2026-10-12: `remove()` inside libcurl could `curl_reset()` the handle under libcurl and a
+        pending callback exception swallowed its failure; the free path ran it inside
+        `curl_multi_cleanup()`. All three fixed (the `_reset` test); the second Critic found nothing blocking.
 - [x] S8.5 `RFC-CHANGES.md` against the review: every item of the review's section 6 (both lists)
       and every section 5 defect a script on our provider shows has an entry or a reason in section
       9; the review's summary states what holds on the core each row of section 9 names.

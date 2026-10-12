@@ -2501,3 +2501,11 @@ stack options were shown with the code).
   asan seeds for 259 tests, and the suite has about 1 780. A shard takes about 13 min (dbg 20 seeds, asan 4).
 - 2026-10-12 S14.7: CI has no `schedule` trigger; the `seeds` jobs run only when CI is dispatched by hand. Why:
   Edmond 2026-10-12 16:22, "пока что ночные проверки не будем вообще запускать".
+- 2026-10-12 S8.4a, own defaults (bukka's curl code, the core slot from the coordinator): the provider's `remove()` for
+  a socket libcurl reports removed runs inside the socket callback, as a curl callback (`in_callback`: no
+  `curl_reset()` under libcurl); its exception is kept and thrown by the reconcile, since a pending one would skip
+  every later PHP callback of the transfer; a pending callback exception is set aside meanwhile, and one left by a
+  bailout is released at the free. Freeing the handle ends the registrations before `curl_multi_cleanup()`, so no
+  `remove()` runs inside it. Not done: a `zend_try` around that (a fatal error in `remove()` at the free leaks
+  libcurl's multi) and the bridge's `opline_before_exception` (Critic, both unrun). The core update also brings
+  entry 26 (`io-hooks-fixes` carries both), so `067`, `068` lose `core:26` here, ahead of S8.3b.

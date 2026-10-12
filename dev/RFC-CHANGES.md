@@ -567,9 +567,9 @@ Waits for it: nothing; the pinned core carries it.
 ## 26. IO hooks: socket_accept() returns a freed Socket when its operation throws
 
 State: on `io-hooks-socket-accept-exception` `73c612a426d` (on bukka's `8e470c219fc`) and
-`io-hooks-fixes` `9458268fe1e`, local, 2026-10-12 (S8.3); PR text for bukka in
-`/mnt/project-files/notes/s8-3/io-hooks-socket-accept-exception-pr.md`, Edmond opens it. Not in the
-core yet: the next core update merges `io-hooks-fixes`. PR: none.
+`io-hooks-fixes` `9458268fe1e`, pushed 2026-10-12 (S8.3); PR text for bukka in
+`/mnt/project-files/notes/s8-3/io-hooks-socket-accept-exception-pr.md`, Edmond opens it. In the core
+since `async-core-io-2026-10-12-1` `36050e31325` (S8.4a). PR: none.
 
 Need: a coroutine cancelled while it waits in `socket_accept()` kills the process: the function
 releases the new `Socket` and returns through `RETURN_THROWS()` with it still in `return_value`
@@ -580,7 +580,7 @@ whose `run()` throws shows it without an extension.
 Request: clear `return_value` before `RETURN_THROWS()`, as `zend_builtin_functions.c:898-900` does;
 test `ext/sockets/tests/socket_io_hooks_accept_throws.phpt`.
 
-Waits for it: `io_provider/067`, `068` (`core:26` in `tests/lists/S8.txt`).
+Waits for it: nothing: `io_provider/067`, `068` pass on the core that carries it.
 
 ## 27. IO hooks: an accept or a connect cancelled by an exception reports nothing else
 
@@ -605,7 +605,10 @@ userland provider's `run()` on the Connect, as `socket_io_hooks_accept_throws.ph
 
 ## 28. IO hooks: a late remove() of a closed descriptor clears the number's next registrations
 
-State: requested 2026-10-12 (S8.4), no branch yet. PR: none.
+State: on `io-hooks-curl-late-remove` `c92a03dd619` (on bukka's `8e470c219fc`) and `io-hooks-fixes`
+`b9bc37e11e3`, pushed 2026-10-12 (S8.4a), in the core since `async-core-io-2026-10-12-1`
+`36050e31325`; PR text for bukka in `/mnt/project-files/notes/s8-4a/io-hooks-curl-late-remove-pr.md`,
+Edmond opens it. PR: none.
 
 Need: on the Poll queue, a stream that takes the number of a socket libcurl just closed has its record
 freed under it. On `CURL_POLL_REMOVE` the curl callback only invalidates the socket's handle
@@ -626,7 +629,7 @@ is kept for the reconcile to report), as the core already does before a close (`
 Not asked: per-registration counts in the Poll queue; it would fix one queue, and `remove()` also
 clears the record's `ready` and `hup` (`:577-580`), which a count alone does not keep.
 
-Waits for it: `io_provider/073` (`core:28` in `tests/lists/S8.txt`).
+Waits for it: nothing: `io_provider/073` passes on the core that carries it.
 
 ## 29. IO hooks: mysqli_poll() waits through the provider
 
