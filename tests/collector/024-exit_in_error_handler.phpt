@@ -43,10 +43,20 @@ register_shutdown_function(function () {
 start_pair();
 
 try {
-    delay(10);
+    wait_for_idle_run();
     echo "main resumed\n";
 } finally {
     echo "main ends\n";
+}
+
+// A delay can end before the scheduler goes idle: a timer due when main parks wakes it in place
+function wait_for_idle_run(): void
+{
+    $runs = TrueAsync\Test\collector_idle_runs();
+
+    while (TrueAsync\Test\collector_idle_runs() === $runs) {
+        delay(1);
+    }
 }
 ?>
 --EXPECTF--

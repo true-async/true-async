@@ -27,7 +27,8 @@ $leaf->setChildScopeExceptionHandler(function (Scope $scope, Async\Coroutine $co
 
 $middleMember = $middle->spawn(function () {
     try {
-        delay(50);
+        // The route cancels this wait; a short one could end first under load
+        delay(100000);
         echo "middle member woke\n";
     } catch (Throwable $e) {
         echo "middle member got ", get_class($e), ": ", $e->getMessage(), "\n";
@@ -35,7 +36,8 @@ $middleMember = $middle->spawn(function () {
 });
 $leafMember = $leaf->spawn(function () {
     try {
-        delay(50);
+        // The route cancels this wait; a short one could end first under load
+        delay(100000);
         echo "leaf member woke\n";
     } catch (Throwable $e) {
         echo "leaf member got ", get_class($e), ": ", $e->getMessage(), "\n";
@@ -45,7 +47,10 @@ $failing = $leaf->spawn(function () {
     throw new RuntimeException("leaf boom");
 });
 
-delay(100);
+// A delay could end before the route has cancelled the members
+while (!$middleMember->isCompleted() || !$leafMember->isCompleted()) {
+    Async\suspend();
+}
 
 echo "leaf: ", var_export($leaf->isCancelled(), true), ", middle: ", var_export($middle->isCancelled(), true),
     ", root: ", var_export($root->isCancelled(), true), "\n";

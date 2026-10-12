@@ -12,7 +12,7 @@ use function Async\delay;
 // at the end, as every unobserved one (TrueAsync drops it).
 $first = spawn(function () {
     try {
-        delay(50);
+        delay(100000);
         echo "first woke\n";
     } catch (Throwable $e) {
         echo "first got ", get_class($e), ": ", $e->getMessage(), "\n";
@@ -27,8 +27,9 @@ $queued = spawn(function () {
     echo "queued ran\n";
 });
 
+// The route cancels this wait; a short one could end first under load
 try {
-    delay(100);
+    delay(100000);
     echo "main woke\n";
 } catch (Throwable $e) {
     echo "main got ", get_class($e), ": ", $e->getMessage(), "\n";

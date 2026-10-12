@@ -22,7 +22,7 @@ $scope->setExceptionHandler(function (Scope $scope, Async\Coroutine $coroutine, 
 
 $sibling = $scope->spawn(function () {
     try {
-        delay(50);
+        delay(100000);
         echo "sibling woke\n";
     } catch (Throwable $e) {
         echo "sibling got ", get_class($e), ": ", $e->getMessage(), "\n";
@@ -32,8 +32,9 @@ $scope->spawn(function () {
     throw new RuntimeException("boom");
 });
 
+// The route cancels this wait; a short one could end first under load
 try {
-    delay(100);
+    delay(100000);
     echo "main woke\n";
 } catch (Throwable $e) {
     echo "main got ", get_class($e), ": ", $e->getMessage(), "\n";

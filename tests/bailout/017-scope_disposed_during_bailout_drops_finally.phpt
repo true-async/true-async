@@ -39,7 +39,8 @@ while (!$started) {
 
 $scope->disposeSafely();
 $disposed = true;
-Async\delay(50);
+// The member's fatal error ends the request; a short delay could end first
+Async\delay(100000);
 
 ?>
 --EXPECTF--

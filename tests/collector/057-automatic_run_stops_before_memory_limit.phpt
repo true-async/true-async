@@ -32,15 +32,24 @@ function start_pair(): void
 }
 
 start_pair();
-delay(10);
-delay(10);
+wait_for_idle_run();
 echo "under 64M: nothing\n";
 ini_set('memory_limit', '512M');
-delay(10);
+wait_for_idle_run();
 echo "under 512M: two warnings\n";
 
 foreach (get_deadlocked_coroutines() as $coroutine) {
     $coroutine->cancel();
+}
+
+// A delay can end before the scheduler goes idle: a timer due when main parks wakes it in place
+function wait_for_idle_run(): void
+{
+    $runs = TrueAsync\Test\collector_idle_runs();
+
+    while (TrueAsync\Test\collector_idle_runs() === $runs) {
+        delay(1);
+    }
 }
 ?>
 --EXPECTF--

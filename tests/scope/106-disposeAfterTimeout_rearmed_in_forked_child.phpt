@@ -7,12 +7,14 @@ pcntl
 use Async\Scope;
 use function Async\delay;
 
+$member_cancelled = false;
 $scope = Scope::inherit()->asNotSafely();
 $scope->spawn(function () {
     try {
         delay(2000);
     } catch (Async\AsyncCancellation $e) {
         echo getmypid() === $GLOBALS['parent'] ? "parent" : "child", " member: ", $e->getMessage(), "\n";
+        $GLOBALS['member_cancelled'] = true;
     }
 });
 $parent = getmypid();
@@ -23,7 +25,11 @@ $pid = pcntl_fork();
 
 if ($pid === 0) {
     $scope->disposeAfterTimeout(500);
-    delay(600);
+
+    // A longer delay could end first: a timer due when the child parks wakes it in place
+    while (!$member_cancelled) {
+        delay(1);
+    }
 
     return;
 }

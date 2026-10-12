@@ -11,6 +11,7 @@ use Async\TaskGroup;
 use function Async\delay;
 use function Async\spawn;
 
+$ended = false;
 spawn(function () {
     $group = new TaskGroup(concurrency: 1, queueLimit: 1);
     $group->spawn(function () {
@@ -29,10 +30,16 @@ spawn(function () {
     foreach ($group as $key => [$result, $error]) {
         echo "task $key: ", $error !== null ? $error->getMessage() : $result, "\n";
     }
+
+    $GLOBALS['ended'] = true;
 });
 
-// The sleep keeps the scheduler from a full deadlock, so the collector runs at its idle point.
-delay(100);
+// The sleeps keep the scheduler from a full deadlock, so the collector runs at its idle point. One sleep
+// could end before the coroutine: a timer due when main parks wakes it in place.
+while (!$ended) {
+    delay(1);
+}
+
 echo "end\n";
 ?>
 --EXPECTF--

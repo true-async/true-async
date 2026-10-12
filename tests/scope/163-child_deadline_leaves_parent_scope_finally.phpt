@@ -6,13 +6,15 @@ Scope: a child scope's disposeAfterTimeout() fire leaves its parent's Scope::fin
 use function Async\delay;
 use function Async\suspend;
 
+$ended = false;
 $parent = new Async\Scope();
 $parent->finally(function () {
     echo "parent finally runs\n";
+    $GLOBALS['ended'] = true;
 });
 $child = Async\Scope::inherit($parent);
 $started = false;
-$child->spawn(function () use (&$started) {
+$member = $child->spawn(function () use (&$started) {
     $started = true;
     delay(100000);
 });
@@ -22,9 +24,18 @@ while (!$started) {
 }
 
 $child->disposeAfterTimeout(10);
-delay(60);
+
+// A longer delay could end first: a timer due when main parks wakes it in place, ahead of the queue
+while (!$member->isCompleted()) {
+    delay(1);
+}
+
 $parent->dispose();
-delay(10);
+
+while (!$ended) {
+    suspend();
+}
+
 echo "end\n";
 ?>
 --EXPECT--

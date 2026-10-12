@@ -16,8 +16,11 @@ $scope->setChildScopeExceptionHandler(function (Scope $scope, Coroutine $corouti
     foreach ($error->getExceptions() as $exception) {
         echo "  ", get_class($exception), ": ", $exception->getMessage(), "\n";
     }
+
+    $GLOBALS['handled'] = true;
 });
 $thrown = false;
+$handled = false;
 $scope->spawn(function () use (&$thrown) {
     $self = Async\current_coroutine();
     $self->finally(function () {
@@ -38,7 +41,13 @@ while (!$thrown) {
 
 echo "deadline\n";
 $scope->disposeAfterTimeout(1);
-delay(20);
+
+// A delay could end before the deadline's error reaches the handler: a timer due when main parks wakes
+// it in place, ahead of the queue
+while (!$handled) {
+    delay(1);
+}
+
 echo "end\n";
 
 ?>

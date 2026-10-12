@@ -12,17 +12,25 @@ use function Async\await_all;
 use function Async\get_deadlocked_coroutines;
 
 $child = null;
+$parked = 0;
+$checked = false;
+$caller_ended = false;
 function items(&$child): Generator
 {
     $child = Scope::inherit();
     $child->spawn(function () {
         try {
+            $GLOBALS['parked']++;
             await(new Future(new FutureState()));
         } catch (Throwable $e) {
             echo "member: ", $e->getMessage(), "\n";
         }
     });
-    delay(50);
+    // Parked on a timer until main has checked: one delay could end before the check
+    while (!$GLOBALS['checked']) {
+        delay(1);
+    }
+
     throw new RuntimeException("items failed");
     yield 1;
 }
@@ -34,10 +42,17 @@ $callerScope->spawn(function () use (&$child) {
     } catch (Throwable $e) {
         echo "caller: ", get_class($e), ": ", $e->getMessage(), "\n";
     }
+
+    $GLOBALS['caller_ended'] = true;
 });
-delay(10);
+
+while ($child === null) {
+    Async\suspend();
+}
+
 spawn(function () use ($child) {
     try {
+        $GLOBALS['parked']++;
         $child->awaitCompletion(new Future(new FutureState()));
         echo "waiter: completed\n";
     } catch (Throwable $e) {
@@ -45,9 +60,18 @@ spawn(function () use ($child) {
     }
 });
 $child = null;
-delay(10);
+
+while ($parked < 2) {
+    Async\suspend();
+}
+
 echo "found: ", count(get_deadlocked_coroutines()), "\n";
-delay(100);
+$checked = true;
+
+while (!$caller_ended) {
+    delay(1);
+}
+
 echo "end\n";
 ?>
 --EXPECT--

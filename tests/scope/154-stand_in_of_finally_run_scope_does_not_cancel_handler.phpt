@@ -6,7 +6,6 @@ Scope: cancel() through the stand-in object a SpawnStrategy's hook gets for a fi
 use Async\Coroutine;
 use Async\Scope;
 use Async\SpawnStrategy;
-use function Async\delay;
 use function Async\spawn_with;
 use function Async\suspend;
 
@@ -31,6 +30,7 @@ final class CurrentScopeStrategy implements SpawnStrategy
     }
 }
 
+$ended = false;
 $scope = new Scope();
 $scope->spawn(function () {
     Async\current_coroutine()->finally(function () {
@@ -42,6 +42,7 @@ $scope->spawn(function () {
         }
 
         echo "finally ends\n";
+        $GLOBALS['ended'] = true;
     });
 });
 
@@ -51,7 +52,12 @@ while (CurrentScopeStrategy::$seen === null) {
 
 CurrentScopeStrategy::$seen->cancel();
 CurrentScopeStrategy::$go = true;
-delay(10);
+
+// A delay could end before the finally handler has run on: a timer due when main parks wakes it in place
+while (!$ended) {
+    suspend();
+}
+
 echo "end\n";
 ?>
 --EXPECT--

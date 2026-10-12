@@ -7,12 +7,14 @@ use Async\Future;
 use Async\FutureState;
 use function Async\await;
 use function Async\spawn;
-use function Async\delay;
 use function Async\get_deadlocked_coroutines;
 
+$parked = 0;
+$ended = false;
 $scope = new Scope();
 $memberId = $scope->spawn(function () {
     try {
+        $GLOBALS['parked']++;
         await(new Future(new FutureState()));
     } catch (Async\AsyncCancellation $e) {
         throw new RuntimeException("member failed");
@@ -20,15 +22,23 @@ $memberId = $scope->spawn(function () {
 })->getId();
 spawn(function () use ($scope) {
     try {
+        $GLOBALS['parked']++;
         $scope->awaitCompletion(new Future(new FutureState()));
         echo "waiter: completed\n";
     } catch (Throwable $e) {
         echo "waiter: ", get_class($e), ": ", $e->getMessage(), "\n";
     }
+
+    $GLOBALS['ended'] = true;
 });
 unset($scope);
 
-delay(10);
+// A coroutine runs on to its park, so the count means they have parked. A delay instead could end
+// first: a timer due when main parks wakes it in place, ahead of the queue.
+while ($parked < 2) {
+    Async\suspend();
+}
+
 $found = get_deadlocked_coroutines();
 echo "found: ", count($found), "\n";
 foreach ($found as $coroutine) {
@@ -37,7 +47,12 @@ foreach ($found as $coroutine) {
     }
 }
 unset($found, $coroutine);
-delay(10);
+
+// The waiter ends after the member, whose error it takes
+while (!$ended) {
+    Async\suspend();
+}
+
 echo "end\n";
 ?>
 --EXPECT--

@@ -26,10 +26,17 @@ $r->spawn(function () use ($s, $r) {
 });
 unset($s, $r);
 spawn(function () {
-    delay(50);
+    // Fails once the automatic run has reported both, whatever the load
+    $runs = TrueAsync\Test\collector_idle_runs();
+
+    while (TrueAsync\Test\collector_idle_runs() === $runs) {
+        delay(1);
+    }
+
     throw new RuntimeException("other failed");
 });
-delay(100);
+// Main holds nothing of the thrower, so its error ends the request and cancels this wait
+delay(100000);
 echo "end\n";
 ?>
 --EXPECTF--
@@ -39,8 +46,8 @@ Warning: Partial deadlock: coroutine #%d spawned at %s:10 can never wake (await:
 Warning: Partial deadlock: coroutine #%d spawned at %s:14 can never wake (await: scope created at %s:9) in %s on line 16
 waiter: Async\AsyncCancellation: Graceful shutdown
 
-Fatal error: Uncaught RuntimeException: other failed in %s:25
+Fatal error: Uncaught RuntimeException: other failed in %s:31
 Stack trace:
 #0 [internal function]: {closure:%s:23}()
 #1 {main}
-  thrown in %s on line 25
+  thrown in %s on line 31

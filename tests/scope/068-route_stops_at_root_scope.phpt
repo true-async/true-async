@@ -11,7 +11,7 @@ use function Async\delay;
 // error starts.
 $outside = spawn(function () {
     try {
-        delay(20);
+        delay(100000);
         echo "outside woke\n";
     } catch (Throwable $e) {
         echo "outside got ", get_class($e), ": ", $e->getMessage(), "\n";
@@ -21,7 +21,7 @@ $outside = spawn(function () {
 $scope = new Scope();
 $member = $scope->spawn(function () {
     try {
-        delay(50);
+        delay(100000);
         echo "member woke\n";
     } catch (Throwable $e) {
         echo "member got ", get_class($e), ": ", $e->getMessage(), "\n";
@@ -31,7 +31,8 @@ $scope->spawn(function () {
     throw new RuntimeException("unheld in root");
 });
 
-delay(30);
+// The unheld error ends the request and cancels this wait; a short one could end first
+delay(100000);
 echo "not reached\n";
 
 ?>

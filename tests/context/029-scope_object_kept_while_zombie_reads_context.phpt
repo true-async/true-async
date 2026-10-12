@@ -7,12 +7,27 @@ use function Async\current_context;
 use function Async\delay;
 use function Async\suspend;
 
+$started = false;
+$collected = false;
+$read = false;
 $scope = Async\Scope::inherit();
 $scope->spawn(function () {
-    delay(20);
+    $GLOBALS['started'] = true;
+
+    // Parked on a timer until main has collected: one delay could end before that
+    while (!$GLOBALS['collected']) {
+        delay(1);
+    }
+
     echo "zombie reads: ", get_debug_type(current_context()->find('scope')), "\n";
+    $GLOBALS['read'] = true;
 });
-suspend();
+
+// Under a seed one suspend() need not run it, and a zombie that never started would never read
+while (!$started) {
+    suspend();
+}
+
 $scope->spawn(fn() => current_context()->set('scope', $scope))->getResult();
 suspend();
 suspend();
@@ -20,7 +35,12 @@ $scope->disposeSafely();
 unset($scope);
 
 echo "collected: ", gc_collect_cycles(), "\n";
-delay(50);
+$collected = true;
+
+while (!$read) {
+    delay(1);
+}
+
 echo "end\n";
 
 ?>

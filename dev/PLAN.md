@@ -1936,8 +1936,7 @@ Tests: interleaved
         Seeds found tests that hung or hit the limit when a `suspend()` left a new coroutine unstarted, now
         fixed. `collector/069`-`073` (S14.2's Sage) wait for the collector's run or a flag; the full lanes on
         core `c53c17cfd47` found `io/046`, `await/119`, `scope/084`, `collector/042`, `043`, `io_provider/013`,
-        `scope/070`. The wider class (a top-level delay as sync point, about 50 tests) is a HEALTH finding with
-        no step yet.
+        `scope/070`. The wider class (a top-level delay as sync point, about 50 tests) is S14.9's.
         Critic twice (14 findings), Sage on two.
 - [x] S14.4 Tests and plan rows with no owner: `gc/020`, `023` (XFAIL "S8 candidate") get an S8 step or a
       DECISIONS outcome; `S3.excluded` lines 4, 7 (`component:S6`) and 13-18 (`component:S9`) get a stage that
@@ -2005,6 +2004,17 @@ Tests: interleaved
       handoff: done 2026-10-12. `scope/124` (200 nested scopes) and `scope/125` (2 000 child scopes) keep their
         checks without `max_execution_time` (`changed:2026-10-12`); `B19`, `B20` (`dev/BENCHMARKS.md`): 7,782
         and 6,271 instructions per operation on debug, flat as N doubles. The open question on them is settled.
+- [x] S14.9 Tests that use `delay()` as a sync point wait for the event instead: the own tests whose top-level
+      `delay()` waits for work of other coroutines (S14.3's survey, project file `s14/delay-sync-survey.md`, and
+      HEALTH's finding, with `scope/074` that failed the asan push job of CI run 38282314790) loop on a flag, a
+      count, `isCompleted()` or the collector's idle run, or await the coroutine; a test whose case is the timer
+      keeps its delay.
+      done: 25 ASAN runs of the changed tests under `--jobs 16` with four busy loops beside, 10 more after the
+        review's fixes, and 20 seeds on `pocs-dbg` and `pocs-asan`, with no failure (the seeds' one find, a hang
+        of `scope/083`, is fixed); the full lanes pass with 0 unexpected
+      tier: T1 · role: Critic
+      handoff: done 2026-10-12, 87 tests (DECISIONS 2026-10-12 S14.9 lists them, the idioms and the tests kept).
+        A loop on an event turns a regression into run-tests' timeout instead of a wrong line.
 
 ## S15 — Test layers of S2 not built yet  [ ]
 

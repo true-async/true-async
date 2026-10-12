@@ -3,6 +3,7 @@ Channel: recvAsync() Future dropped before channel sends — channel does not wr
 --FILE--
 <?php
 
+use function Async\await;
 use function Async\spawn;
 use function Async\delay;
 
@@ -21,7 +22,7 @@ echo "future dropped\n";
 // Sender now wakes the channel. The waiter must have been removed by the
 // future's dispose path, so the channel falls back to either buffering or
 // sees no receiver — in either case no crash.
-spawn(function () use ($ch) {
+$sender = spawn(function () use ($ch) {
     delay(20);
     // recvAsync's queued waiter is gone (removed by future dispose), so the
     // send just stages the value into the rendezvous slot. The point of the
@@ -30,7 +31,7 @@ spawn(function () use ($ch) {
     echo "sendAsync done\n";
 });
 
-delay(60);
+await($sender);
 echo "ok\n";
 
 ?>

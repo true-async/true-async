@@ -6,14 +6,23 @@ Channel: a recvAsync() Future left starving when a reserved receiver's wait ends
 use Async\Channel;
 use Async\ChannelException;
 use function Async\await;
-use function Async\delay;
 use function Async\spawn;
 
 function check_future_after_receiver_exit(bool $hard): void
 {
     $channel = new Channel(0, 100, 0, $hard);
-    $receiver = spawn(fn() => $channel->recv());
-    delay(10);
+    $parked = false;
+    $receiver = spawn(function () use ($channel, &$parked) {
+        $parked = true;
+
+        return $channel->recv();
+    });
+
+    // A coroutine runs on to its park: a delay could end before the receiver parks
+    while (!$parked) {
+        Async\suspend();
+    }
+
     // The value is promised to the receiver: no side starves and the timer goes.
     $channel->sendAsync(1);
     $future = $channel->recvAsync();

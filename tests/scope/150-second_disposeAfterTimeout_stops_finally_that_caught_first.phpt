@@ -9,6 +9,7 @@ use function Async\suspend;
 $scope = new Async\Scope();
 $in_finally = false;
 $caught_first = false;
+$stopped = false;
 $scope->spawn(function () use (&$in_finally, &$caught_first) {
     Async\current_coroutine()->finally(function () use (&$in_finally, &$caught_first) {
         $in_finally = true;
@@ -24,6 +25,7 @@ $scope->spawn(function () use (&$in_finally, &$caught_first) {
             delay(100000);
         } catch (Async\AsyncCancellation $cancellation) {
             echo "second stops it\n";
+            $GLOBALS['stopped'] = true;
         }
     });
 });
@@ -39,7 +41,12 @@ while (!$caught_first) {
 }
 
 $scope->disposeAfterTimeout(10);
-delay(50);
+
+// A longer delay could end first: a timer due when main parks wakes it in place, ahead of the queue
+while (!$stopped) {
+    delay(1);
+}
+
 echo "end\n";
 ?>
 --EXPECT--

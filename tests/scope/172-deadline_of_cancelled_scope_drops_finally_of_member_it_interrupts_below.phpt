@@ -6,12 +6,16 @@ Scope: the Coroutine::finally() handler of a member of a grandchild scope, made 
 use function Async\delay;
 use function Async\suspend;
 
+$cancelled = false;
 $scope = new Async\Scope();
 $scope->spawn(function () {
     try {
         delay(100000);
     } catch (Async\AsyncCancellation $cancellation) {
-        delay(100);
+        // Keeps the scope running until the fire; a fixed delay could end before it under load
+        while (!$GLOBALS['cancelled']) {
+            delay(1);
+        }
     }
 });
 suspend();
@@ -30,6 +34,7 @@ $grandchild->spawn(function () use (&$started) {
         delay(100000);
     } catch (Async\AsyncCancellation $cancellation) {
         echo "member cancelled\n";
+        $GLOBALS['cancelled'] = true;
         throw $cancellation;
     }
 });
@@ -39,7 +44,12 @@ while (!$started) {
 }
 
 $scope->disposeAfterTimeout(10);
-delay(60);
+
+// A longer delay could end first: a timer due when main parks wakes it in place, ahead of the queue
+while (!$cancelled) {
+    delay(1);
+}
+
 echo "end\n";
 ?>
 --EXPECT--

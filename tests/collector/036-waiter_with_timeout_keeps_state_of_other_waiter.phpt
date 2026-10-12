@@ -22,11 +22,11 @@ function start(): void
         }
     });
     spawn(function () use ($future) {
-        $value = $future->await();
-        echo "second waiter got: ", $value, "\n";
+        $GLOBALS['second'] = $future->await();
     });
 }
 
+$second = null;
 start();
 
 for ($i = 0; $i < 4; $i++) {
@@ -34,10 +34,13 @@ for ($i = 0; $i < 4; $i++) {
 }
 
 echo count(get_deadlocked_coroutines()), " found\n";
-delay(60);
-/* Both timers may fire in one tick, and the other waiter's wake then takes two more passes */
-suspend();
-suspend();
+
+// Main prints what the second waiter got: the timeout can fire before the check on a loaded machine
+while ($second === null) {
+    delay(1);
+}
+
+echo "second waiter got: ", $second, "\n";
 echo "end\n";
 ?>
 --EXPECT--

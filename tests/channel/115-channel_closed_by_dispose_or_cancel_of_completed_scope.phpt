@@ -32,11 +32,16 @@ echo "dispose() with a finally handler\n";
 $scope = new Scope();
 $scope->finally(function () {
     echo "finally ran\n";
+    $GLOBALS['finally_ran'] = true;
 });
 $channel = channel_made_in($scope);
 $scope->dispose();
 echo "after dispose: ", var_export($channel->isClosed(), true), "\n";
-delay(10);
+
+// A delay could end before the finally handler has run: a timer due when main parks wakes it in place
+while (!isset($finally_ran)) {
+    Async\suspend();
+}
 
 echo "a parent's cancel\n";
 $parent = new Scope();

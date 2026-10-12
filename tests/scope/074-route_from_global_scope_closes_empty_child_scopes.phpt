@@ -5,7 +5,7 @@ Scope: an unhandled error in the global scope closes its child scopes, empty one
 
 use Async\Scope;
 use function Async\spawn;
-use function Async\delay;
+use function Async\suspend;
 use function Async\await;
 
 $warm = spawn(fn() => null);
@@ -15,7 +15,11 @@ $pool = Scope::inherit();
 $failing = spawn(function () {
     throw new RuntimeException("global boom");
 });
-delay(10);
+
+// A delay could end before the queued coroutine has run: a timer due when main parks wakes it in place
+while (!$failing->isCompleted()) {
+    suspend();
+}
 
 echo "pool closed: ", var_export($pool->isClosed(), true), "\n";
 try {

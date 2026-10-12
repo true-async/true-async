@@ -21,7 +21,10 @@ $selector = spawn(function () use ($peer) {
 });
 
 spawn(function () use ($selector) { $selector->cancel(); });
-Async\delay(10);
+// A delay could end before the cancelled wait has unwound
+while (!$selector->isCompleted()) {
+    Async\suspend();
+}
 
 fwrite($client, 'after');
 $read = [$peer];

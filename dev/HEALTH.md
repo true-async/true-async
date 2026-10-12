@@ -45,10 +45,6 @@ Known dark places: none beyond the open findings
   1691`: a stray `  thrown` glued before scheduler/082's result line), so the nightly dbg job ran 10 of its 100 seeds
   on 2026-10-04, 10-11 and 10-12; io/100 (XFAIL) passes when a seed cancels the reader before its `fread()`, and
   the passing XFAIL fails the seed; nobody watches the scheduled run (S14.2)
-- 2 tests (about 50 of the 128 with a top-level `delay(`): the delay is the sync point for work in other
-  coroutines; their timers start late under load, and a timer due when main parks wakes it ahead of the queue
-  (scope/084 on ASAN, 2026-10-12; scope/074 on the asan push job of run 38282314790,
-  https://github.com/true-async/true-async/actions/runs/38282314790/job/114922292796); list in project file s14/delay-sync-survey.md (no step yet)
 - 2 tests/stream/030 (XFAIL, S8): the UDP receive waits for run-tests' 60 s timeout and is retried, 120 s of the
   150 s suite on 2026-10-12 (S14.2)
 - 2 tests/gc/020, 023: `--XFAIL--` "(S8 candidate)" with no S8 step and no RFC-CHANGES entry that would lift it;

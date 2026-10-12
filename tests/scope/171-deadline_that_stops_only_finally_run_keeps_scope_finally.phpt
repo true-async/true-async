@@ -9,8 +9,10 @@ use function Async\suspend;
 $scope = new Async\Scope();
 $scope->finally(function () {
     echo "scope finally runs\n";
+    $GLOBALS['ended'] = true;
 });
 $in_finally = false;
+$ended = false;
 $scope->spawn(function () use (&$in_finally) {
     Async\current_coroutine()->finally(function () use (&$in_finally) {
         $in_finally = true;
@@ -24,7 +26,12 @@ while (!$in_finally) {
 }
 
 $scope->disposeAfterTimeout(10);
-delay(60);
+
+// A longer delay could end first: a timer due when main parks wakes it in place, ahead of the queue
+while (!$ended) {
+    delay(1);
+}
+
 echo "end\n";
 ?>
 --EXPECT--

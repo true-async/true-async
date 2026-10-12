@@ -10,11 +10,17 @@ $parent = Async\Scope::inherit();
 $child = Async\Scope::inherit($parent);
 $child->finally(function () {
     echo "child finally ends\n";
+    $GLOBALS['ended'] = true;
 });
 $started = false;
+$ended = false;
 $parent->spawn(function () use (&$started) {
     $started = true;
-    delay(100);
+
+    // Keeps the parent running until the fire; a fixed delay could end before it under load
+    while (!$GLOBALS['ended']) {
+        delay(1);
+    }
 });
 
 while (!$started) {
@@ -22,7 +28,12 @@ while (!$started) {
 }
 
 $parent->disposeAfterTimeout(10);
-delay(60);
+
+// A longer delay could end first: a timer due when main parks wakes it in place, ahead of the queue
+while (!$ended) {
+    delay(1);
+}
+
 echo "end\n";
 ?>
 --EXPECT--

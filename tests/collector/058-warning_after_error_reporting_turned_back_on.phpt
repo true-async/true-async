@@ -26,15 +26,24 @@ function start_pair(): void
 }
 
 start_pair();
-delay(10);
-delay(10);
+wait_for_idle_run();
 echo "E_WARNING off: nothing\n";
 ini_set('error_reporting', (string) E_ALL);
-delay(10);
+wait_for_idle_run();
 echo "E_WARNING on: two warnings\n";
 
 foreach (get_deadlocked_coroutines() as $coroutine) {
     $coroutine->cancel();
+}
+
+// A delay can end before the scheduler goes idle: a timer due when main parks wakes it in place
+function wait_for_idle_run(): void
+{
+    $runs = TrueAsync\Test\collector_idle_runs();
+
+    while (TrueAsync\Test\collector_idle_runs() === $runs) {
+        delay(1);
+    }
 }
 ?>
 --EXPECTF--

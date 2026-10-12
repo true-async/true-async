@@ -30,7 +30,11 @@ $failing = $scope->spawn(function () {
     throw new RuntimeException("boom");
 });
 
-delay(20);
+// A delay could end before the queued coroutine has run: a timer due when main parks wakes it in place
+while (!$failing->isCompleted()) {
+    suspend();
+}
+
 echo "scope cancelled: ", var_export($scope->isCancelled(), true), "\n";
 
 ?>

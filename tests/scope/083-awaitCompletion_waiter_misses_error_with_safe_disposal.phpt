@@ -15,38 +15,64 @@ use function Async\timeout;
 $parent = Scope::inherit();
 $scope = Scope::inherit($parent);
 
+$started = 0;
+$waiting = false;
+$waiter_ended = false;
+$sibling_woke = false;
+
 $sibling = $parent->spawn(function () {
+    $GLOBALS['started']++;
+
     try {
-        delay(100);
+        // Fixed delays could end before the error reaches the waiter, or in either order
+        while (!$GLOBALS['waiter_ended']) {
+            delay(1);
+        }
+
         echo "parent sibling woke\n";
+        $GLOBALS['sibling_woke'] = true;
     } catch (Throwable $e) {
         echo "parent sibling: ", $e->getMessage(), "\n";
     }
 });
 $member = $scope->spawn(function () {
+    $GLOBALS['started']++;
+
     try {
-        delay(100);
+        while (!$GLOBALS['sibling_woke']) {
+            delay(1);
+        }
+
         echo "member woke\n";
     } catch (Throwable $e) {
         echo "member: ", get_class($e), ": ", $e->getMessage(), "\n";
     }
 });
 $failing = $scope->spawn(function () {
-    delay(10);
+    // The waiter must be in awaitCompletion() and the others started first, or the cascade cancels them
+    // unstarted; each parks right after its mark
+    while (!$GLOBALS['waiting'] || $GLOBALS['started'] < 2) {
+        Async\suspend();
+    }
+
     throw new RuntimeException("boom");
 });
 
 $waiter = spawn(function () use ($scope) {
     try {
+        $GLOBALS['waiting'] = true;
         $scope->awaitCompletion(timeout(2000));
         echo "waiter returned\n";
     } catch (Throwable $e) {
         echo "waiter: ", get_class($e), ": ", $e->getMessage(), "\n";
     }
+
+    $GLOBALS['waiter_ended'] = true;
 });
 
 await($waiter);
-delay(200);
+await($sibling);
+await($member);
 echo "scope cancelled: ", var_export($scope->isCancelled(), true), "\n";
 echo "parent cancelled: ", var_export($parent->isCancelled(), true), "\n";
 echo "end\n";

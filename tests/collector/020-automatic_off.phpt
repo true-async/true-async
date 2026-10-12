@@ -17,17 +17,27 @@ function start_pair(): void
     $b = null;
     $a = spawn(function () use (&$b) {
         suspend();
+        $GLOBALS['parked']++;
         await($b);
     });
     $b = spawn(function () use (&$a) {
         suspend();
+        $GLOBALS['parked']++;
         await($a);
     });
 }
 
+$parked = 0;
 start_pair();
-delay(10);
-delay(10);
+
+// A coroutine runs on to its park, so the count means both have parked. A delay instead could end
+// first: a timer due when main parks wakes it in place, ahead of the queue.
+while ($parked < 2) {
+    suspend();
+}
+
+// An idle point, where a walk that is on would run
+delay(1);
 var_dump(ini_set('true_async.partial_deadlock', 'kill'));
 
 $found = get_deadlocked_coroutines();

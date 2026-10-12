@@ -4,7 +4,7 @@ Scope: a handler exception that already has the error as previous goes to the pa
 <?php
 
 use Async\Scope;
-use function Async\delay;
+use function Async\suspend;
 
 $parent = Scope::inherit()->asNotSafely();
 $parent->setExceptionHandler(function (Scope $scope, Async\Coroutine $coroutine, Throwable $e) {
@@ -24,7 +24,11 @@ $failing = $child->spawn(function () {
     throw new RuntimeException("boom");
 });
 
-delay(10);
+// A delay could end before the queued coroutine has run: a timer due when main parks wakes it in place
+while (!$failing->isCompleted()) {
+    suspend();
+}
+
 echo "child cancelled: ", var_export($child->isCancelled(), true), "\n";
 
 ?>

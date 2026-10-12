@@ -12,7 +12,7 @@ $child->finally(function () {
     echo "child finally ends\n";
 });
 $started = false;
-$parent->spawn(function () use (&$started) {
+$member = $parent->spawn(function () use (&$started) {
     $started = true;
     delay(100000);
 });
@@ -22,7 +22,12 @@ while (!$started) {
 }
 
 $parent->disposeAfterTimeout(10);
-delay(60);
+
+// A longer delay could end first: a timer due when main parks wakes it in place, ahead of the queue
+while (!$member->isCompleted()) {
+    delay(1);
+}
+
 echo "end\n";
 ?>
 --EXPECT--

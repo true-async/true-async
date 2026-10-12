@@ -11,6 +11,7 @@ $scope->finally(function () {
     echo "scope finally runs\n";
 });
 $started = false;
+$cancelled = false;
 $scope->spawn(function () use (&$started) {
     $started = true;
 
@@ -18,6 +19,7 @@ $scope->spawn(function () use (&$started) {
         delay(100000);
     } catch (Async\AsyncCancellation $cancellation) {
         echo "member cancelled\n";
+        $GLOBALS['cancelled'] = true;
         throw $cancellation;
     }
 });
@@ -27,7 +29,12 @@ while (!$started) {
 }
 
 $scope->disposeAfterTimeout(10);
-delay(60);
+
+// A longer delay could end first: a timer due when main parks wakes it in place, ahead of the queue
+while (!$cancelled) {
+    delay(1);
+}
+
 echo "end\n";
 ?>
 --EXPECT--

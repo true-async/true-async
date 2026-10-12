@@ -12,14 +12,19 @@ function items(): Generator
 {
     yield spawn(function () {
         try {
+            $GLOBALS['parked']++;
             delay(1000);
             echo "item woke\n";
         } catch (Throwable $e) {
             echo "item: ", $e->getMessage(), "\n";
         }
+
+        $GLOBALS['ended']++;
     });
 }
 
+$parked = 0;
+$ended = 0;
 $scope = Scope::inherit()->asNotSafely();
 $caller = $scope->spawn(function () {
     try {
@@ -27,11 +32,22 @@ $caller = $scope->spawn(function () {
     } catch (Throwable $e) {
         echo "caller: ", get_class($e), ": ", $e->getMessage(), "\n";
     }
+
+    $GLOBALS['ended']++;
 });
 
-delay(20);
+// A coroutine runs on to its park, so the count means they have parked. A delay instead could end
+// first: a timer due when main parks wakes it in place, ahead of the queue.
+while ($parked < 1) {
+    Async\suspend();
+}
+
 $scope->cancel();
-delay(20);
+
+while ($ended < 2) {
+    Async\suspend();
+}
+
 echo "end\n";
 
 ?>

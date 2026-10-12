@@ -2551,3 +2551,132 @@ stack options were shown with the code).
   carries `466bdd66486`: bukka's two curl comments back word for word (Edmond 16:32), and the PR branch was
   force-pushed to one commit (17:04). Not in this core: `async-core` `f754dc9b194` (Bob Weinand's comment
   on the fiber cleanup back word for word), local; its push to `async-core` was refused without his word.
+- 2026-10-12 S14.9: a test no longer waits for work of other coroutines with a top-level `delay()`. Main's own park
+  polls the due timers before it pops the run queue at the request's first poll and when 100 ms have passed since
+  the last one (`src/scheduler.c`, `scheduler_tick()`), so main's timer, due by then after a preemption, wakes it
+  ahead of the queued coroutines; and a timer of another coroutine started late under load ends after main's. Under
+  `--jobs 16` with four busy loops beside, 18 of 25 ASAN runs of the 99 own tests with such a delay had 1-3
+  failures: 13 tests failed and 2 more passed only on run-tests' retry; CI run 38282314790 (ASAN, 89c944d) hit
+  `scope/074`. After: 25 such runs of the 87 changed tests and the 15 kept beside them were all clean, and 10 more
+  after the review's fixes; 20 seeds on `pocs-dbg` and `pocs-asan` found `scope/083` hung (fixed, below) and then
+  nothing; the full lanes pass with 0 unexpected.
+- 2026-10-12 S14.9, how: main waits on the event: queued work by a `suspend()` loop on a flag, a count or
+  `isCompleted()`, work behind a timer or a signal by a `delay(1)` loop, a coroutine that ends normally by
+  `await()`. A regression the case guards now shows as run-tests' timeout instead of a wrong line, as with S14.3's
+  loops. A later and longer main delay stays sound only where the earlier timer's fire itself does what main checks
+  (`scope/166`, `168`, `await/116`); where the fire queues a coroutine that prints, it is not.
+- 2026-10-12 S14.9, waits for the coroutine whose error the case routes:
+  `scope/061-route_skipped_for_awaited_error_and_cancellation.phpt`, `scope/065-handler_cannot_suspend.phpt`,
+  `scope/072-handler_fatal_error_ends_request.phpt`,
+  `scope/074-route_from_global_scope_closes_empty_child_scopes.phpt`,
+  `scope/075-handler_exception_wrapping_the_error_keeps_one_previous.phpt`,
+  `scope/079-awaitCompletion_refused_in_exception_handler.phpt` and
+  `scope/103-awaitAfterCancellation_token_and_refusals.phpt`;
+  `scope/062-handler_exception_goes_up_with_the_error_as_previous.phpt` and
+  `scope/063-child_scope_handler_takes_errors_of_child_scopes_only.phpt` wait for the members the route cancels,
+  whose own waits now take `delay(100000)`: a `delay(50)` could end before the thrower ran. In `scope/103` the
+  zombie also starts for sure and waits on a Future main completes after its last line, which a 200 ms delay could
+  not promise.
+- 2026-10-12 S14.9, waits on a flag a finally handler sets after its line:
+  `scope/111-finally_runs_when_error_cancels_scope.phpt`,
+  `scope/142-cancel_leaves_finally_of_member_that_returned_running.phpt`,
+  `scope/143-parent_cancel_leaves_child_scope_member_finally_running.phpt`,
+  `scope/144-sibling_error_route_leaves_member_finally_running.phpt`,
+  `scope/145-cancel_after_fast_finally_ended_leaves_slow_one_running.phpt`,
+  `scope/146-parent_cancel_leaves_scope_finally_after_object_release_running.phpt`,
+  `scope/154-stand_in_of_finally_run_scope_does_not_cancel_handler.phpt`,
+  `scope/155-stand_in_disposeAfterTimeout_of_finally_run_scope_ignored.phpt` and
+  `channel/115-channel_closed_by_dispose_or_cancel_of_completed_scope.phpt`.
+- 2026-10-12 S14.9, counts of the coroutines that reach their park (a coroutine runs on to it) and that end:
+  `scope/076-awaitCompletion_woken_by_cancel.phpt`,
+  `scope/081-await_all_iterator_spawns_cancelled_with_callers_scope.phpt`,
+  `scope/082-awaitCompletion_returns_after_safe_cancel.phpt`,
+  `scope/086-awaitCompletion_waiter_live_while_scope_held.phpt`,
+  `scope/087-awaitCompletion_waiter_found_with_stuck_child_scope_member.phpt`,
+  `scope/088-awaitCompletion_found_waiter_takes_member_error.phpt`,
+  `scope/097-awaitAfterCancellation_waiter_found_with_stuck_zombie.phpt`,
+  `scope/101-dispose_running_scope_cancels_without_closing.phpt` and
+  `scope/108-disposeAfterTimeout_cancelled_scope_timer_not_live.phpt`.
+- 2026-10-12 S14.9, the same: `channel/119-channel_held_receiver_parked_after_scope_completes.phpt`,
+  `channel/128-channel_timer_armed_for_future_at_receiver_exit.phpt` and `collector/032-signal_future_waiter.phpt`
+  wait for a flag set before the park (in `collector/032` after the signal's watch, which a signal sent first would
+  miss and the process die by); `collector/020-automatic_off.phpt` counts both parks, then gives one idle point,
+  which a park that wakes in place would skip, so the check would pass with no walk to check (the walk is off and
+  counts no run).
+- 2026-10-12 S14.9, awaits instead: `channel/066-channel_recvAsync_future_dropped.phpt` awaits the sender; in
+  `scope/067-handled_unheld_error_does_not_end_request.phpt`,
+  `scope/077-awaitCompletion_waiter_takes_unhandled_error.phpt` and
+  `scope/083-awaitCompletion_waiter_misses_error_with_safe_disposal.phpt` the sibling that must outlast the error
+  loops `delay(1)` until the handler or the waiter has run, main awaits it, the cancelled member of `077` waits on
+  `delay(100000)`, and the member of `083` waits for the sibling's line, so the order is the case's, not the
+  timers'. Their thrower waits until the waiter is in `awaitCompletion()` and the others have started: a seed
+  cancelled the sibling unstarted and hung `083`. `scope/071-route_from_global_scope_cancels_child_scopes.phpt`
+  waits until its member completes (a seed can cancel it unstarted, and an await would throw), the member staying on
+  a timer until the safe cancellation has come; `io_provider/005-cancel_parked_pipe_read.phpt` and
+  `io_provider/012-cancel_parked_stream_select.phpt` wait until the cancelled wait has unwound, as S14.3's
+  `io_provider/013`.
+- 2026-10-12 S14.9, the automatic run at interval 0: `collector/018-automatic_report_once.phpt`,
+  `collector/024-exit_in_error_handler.phpt`, `collector/025-fatal_in_error_handler.phpt`,
+  `collector/050-warning_for_internal_callable_body.phpt`,
+  `collector/057-automatic_run_stops_before_memory_limit.phpt`,
+  `collector/058-warning_after_error_reporting_turned_back_on.phpt`, `collector/059-error_handler_that_waits.phpt`,
+  `scope/089-awaitCompletion_waiter_cancelled_by_partial_deadlock.phpt` and
+  `scope/092-awaitCompletion_found_waiter_in_fatal_error.phpt` wait until `TrueAsync\Test\collector_idle_runs()`
+  moves, as S14.3's `collector/069`.
+- 2026-10-12 S14.9, the same for runs that cancel: `collector/044-cancel_again_and_global_deadlock_after.phpt`,
+  `collector/045-cancel_each_even_when_one_finally_would_wake_another.phpt`,
+  `task_group/116-collector_finds_foreach_on_group_of_lone_receiver.phpt` and
+  `task_group/130-collector_finds_spawner_parked_on_group_of_lone_receiver.phpt` loop `delay(1)` on a flag or count
+  their coroutines set, so the idle point still comes.
+- 2026-10-12 S14.9, deadlines: `scope/112-finally_handler_suspends_next_runs.phpt`,
+  `scope/117-finally_error_with_cancelled_handler.phpt`,
+  `scope/140-dispose_of_cancelled_scope_leaves_member_finally_running.phpt`,
+  `scope/147-disposeAfterTimeout_of_cancelled_scope_stops_hanging_finally.phpt`,
+  `scope/148-disposeAfterTimeout_stops_hanging_finally_under_allowZombies.phpt`,
+  `scope/149-disposeAfterTimeout_after_dispose_stops_hanging_finally.phpt`,
+  `scope/150-second_disposeAfterTimeout_stops_finally_that_caught_first.phpt`,
+  `scope/151-deadline_runs_finally_of_idle_child_its_cancel_closes.phpt` and
+  `scope/153-dispose_keeps_deadline_for_scope_finally_it_starts.phpt` loop `delay(1)` until the line the deadline or
+  a finally's timer causes is out, or its cancelled member has ended.
+- 2026-10-12 S14.9, the same for deadlines:
+  `scope/156-deadline_stops_finally_of_finally_worker_after_run_ended.phpt`,
+  `scope/157-deadline_keeps_waiting_finally_worker_out_of_deadlock_report.phpt`,
+  `scope/158-deadline_drops_coroutine_finally_of_member_it_cancels.phpt`,
+  `scope/159-deadline_drops_scope_finally_after_members_unwind.phpt`,
+  `scope/160-parent_deadline_drops_coroutine_finally_in_child_scope.phpt`,
+  `scope/161-deadline_drops_finally_of_finally_worker_it_stops.phpt`,
+  `scope/162-deadline_releases_dropped_finally_closure.phpt` and
+  `scope/163-child_deadline_leaves_parent_scope_finally.phpt`.
+- 2026-10-12 S14.9, the same for deadlines:
+  `scope/165-safe_scope_deadline_drops_finally_of_finally_worker_it_stops.phpt`,
+  `scope/169-safe_scope_deadline_runs_finally_of_idle_child_its_cancel_closes.phpt`,
+  `scope/171-deadline_that_stops_only_finally_run_keeps_scope_finally.phpt`,
+  `scope/172-deadline_of_cancelled_scope_drops_finally_of_member_it_interrupts_below.phpt` and
+  `scope/106-disposeAfterTimeout_rearmed_in_forked_child.phpt` (in the forked child). In `169` and `172` the member
+  that keeps the scope running loops on that line too: a fixed delay could end before the fire, and a long one would
+  hang (the fire leaves it running and the request waits for it).
+- 2026-10-12 S14.9, waits that a cancel must end take `delay(100000)`, S14.3's idiom: the route's or the request's
+  end in `scope/060-route_error_in_unsafe_scope_cancels_request.phpt`, `scope/066-handler_exit_ends_request.phpt`,
+  `scope/068-route_stops_at_root_scope.phpt`,
+  `scope/090-awaitCompletion_found_waiter_woken_by_unheld_error_route.phpt`,
+  `scope/111-finally_runs_when_error_cancels_scope.phpt` and
+  `bailout/017-scope_disposed_during_bailout_drops_finally.phpt` (in `060`, `066` and `068` the members' delays
+  too), the stand-in's deadline in `scope/167-global_scope_stand_in_deadline_keeps_later_finally.phpt`. In
+  `scope/090` main must not hold the thrower: holding skips the check for an unheld error (`src/coroutine.c`), and
+  the request went on; the thrower itself waits for the run with `collector_idle_runs()`.
+- 2026-10-12 S14.9, checks that a timer of the case raced: in
+  `collector/027-future_state_kept_by_running_coroutine.phpt`,
+  `scope/085-awaitCompletion_waiter_live_while_member_may_finish.phpt`,
+  `context/029-scope_object_kept_while_zombie_reads_context.phpt` and
+  `scope/091-await_all_iterator_keeps_its_scope_reachable.phpt` the coroutine (in `091` the iterator) stays parked
+  on a timer (`delay(1)` loop) until main has checked; in `collector/033-await_dead_future_with_timeout_token.phpt`,
+  `collector/034-await_any_with_timeout_token.phpt` and
+  `collector/036-waiter_with_timeout_keeps_state_of_other_waiter.phpt` the waiter keeps its `timeout(30)` and main
+  prints its outcome after the check; in `scope/098-disposeAfterTimeout_timer_keeps_members_reachable.phpt` the
+  deadline is armed after the parks, just before the check.
+- 2026-10-12 S14.9, kept: `collector/003` (main's own timer is the case); `collector/019`, `047`, `074` (each
+  `delay(1)` is one idle point under `collector_age()`; a park that wakes in place would skip one, not seen in 50
+  runs, and only a count of idle points would show it); `channel/141`, `io_provider/020` (a negative check a race
+  can only pass); `scope/113` (the delay follows a line that must not print); `io/081`, `io_provider/072` (SKIP
+  until RFC-CHANGES 11); `io_provider/004` (the delay installs the hooks); `await/116`, `119`, `scope/166`, `168`,
+  `collector/042` (S14.3's timer pairs and loop).

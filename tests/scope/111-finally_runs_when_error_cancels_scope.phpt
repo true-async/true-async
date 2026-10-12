@@ -17,10 +17,15 @@ $child = Scope::inherit($parent);
 $child->spawn(function () {
     Async\current_coroutine()->finally(function () {
         echo "finally, scope cancelled: ", var_export($GLOBALS['child']->isCancelled(), true), "\n";
+        $GLOBALS['finally_ran'] = true;
     });
     throw new Exception('held by the parent');
 });
-delay(20);
+
+// A delay could end before the queued coroutine has run: a timer due when main parks wakes it in place
+while (!isset($finally_ran)) {
+    Async\suspend();
+}
 
 $root = new Scope();
 $root->spawn(function () {
@@ -29,7 +34,8 @@ $root->spawn(function () {
     });
     throw new Exception('held by nobody');
 });
-delay(20);
+// The unheld error ends the request and cancels this wait; a short one could end first
+delay(100000);
 echo "not reached\n";
 
 ?>

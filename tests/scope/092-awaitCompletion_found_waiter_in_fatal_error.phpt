@@ -20,8 +20,17 @@ spawn(function () use ($scope) {
     echo "waiter: completed\n";
 });
 unset($scope);
-delay(20);
+wait_for_idle_run();
 eval("function f() {} function f() {}");
+// A delay can end before the scheduler goes idle: a timer due when main parks wakes it in place
+function wait_for_idle_run(): void
+{
+    $runs = TrueAsync\Test\collector_idle_runs();
+
+    while (TrueAsync\Test\collector_idle_runs() === $runs) {
+        delay(1);
+    }
+}
 ?>
 --EXPECTF--
 

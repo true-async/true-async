@@ -5,12 +5,22 @@ Scope: awaitAfterCancellation() ends with OperationCanceledException when its to
 use Async\Scope;
 use function Async\spawn;
 use function Async\await;
-use function Async\delay;
 use function Async\timeout;
 
+// The zombie outlives main by waiting on a Future main completes last; a delay could end before main
+$release = new Async\FutureState();
+$zombie_started = false;
 $scope = Scope::inherit();
-$scope->spawn(function () { delay(200); echo "zombie done\n"; });
-Async\suspend();
+$scope->spawn(function () use ($release) {
+    $GLOBALS['zombie_started'] = true;
+    await(new Async\Future($release));
+    echo "zombie done\n";
+});
+
+while (!$zombie_started) {
+    Async\suspend();
+}
+
 $scope->cancel();
 
 await(spawn(function () use ($scope) {
@@ -39,12 +49,17 @@ $failing->setExceptionHandler(function (Scope $failing, Async\Coroutine $corouti
         echo "handler: ", get_class($error), ": ", $error->getMessage(), "\n";
     }
 });
-$failing->spawn(function () {
+$thrower = $failing->spawn(function () {
     throw new RuntimeException("boom");
 });
-Async\suspend();
-delay(10);
+
+// A delay could end before the queued coroutine has run: a timer due when main parks wakes it in place
+while (!$thrower->isCompleted()) {
+    Async\suspend();
+}
+
 echo "end\n";
+$release->complete(null);
 ?>
 --EXPECT--
 Async\OperationCanceledException

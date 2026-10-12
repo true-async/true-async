@@ -16,13 +16,20 @@ function start(): void
     spawn(function () use ($future) {
         $value = $future->await();
         echo "awaited: ", $value, "\n";
+        $GLOBALS['awaited'] = true;
     });
     spawn(function () use ($state) {
-        delay(20);
+        // Parked on a timer until main has checked: one delay could end before the check
+        while (!$GLOBALS['checked']) {
+            delay(1);
+        }
+
         $state->complete("value");
     });
 }
 
+$checked = false;
+$awaited = false;
 start();
 
 for ($i = 0; $i < 4; $i++) {
@@ -30,10 +37,12 @@ for ($i = 0; $i < 4; $i++) {
 }
 
 echo count(get_deadlocked_coroutines()), " found\n";
-delay(50);
-/* Both timers may fire in one tick, and the waiter's wake then takes two more passes */
-suspend();
-suspend();
+$checked = true;
+
+while (!$awaited) {
+    delay(1);
+}
+
 echo "end\n";
 ?>
 --EXPECT--

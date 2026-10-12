@@ -19,7 +19,10 @@ $reader = spawn(function () use ($pipes) {
 });
 
 spawn(function () use ($reader) { $reader->cancel(); });
-Async\delay(10);
+// A delay could end before the cancelled wait has unwound
+while (!$reader->isCompleted()) {
+    Async\suspend();
+}
 
 fwrite($pipes[0], "after");
 fclose($pipes[0]);

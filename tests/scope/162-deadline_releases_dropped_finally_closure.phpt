@@ -11,11 +11,13 @@ final class Resource
     public function __destruct()
     {
         echo "resource released\n";
+        $GLOBALS['released'] = true;
     }
 }
 
 $scope = new Async\Scope();
 $started = false;
+$released = false;
 $resource = new Resource();
 $scope->spawn(function () use (&$started, $resource) {
     Async\current_coroutine()->finally(function () use ($resource) {
@@ -30,7 +32,12 @@ while (!$started) {
 }
 
 $scope->disposeAfterTimeout(10);
-delay(60);
+
+// A longer delay could end first: a timer due when main parks wakes it in place, ahead of the queue
+while (!$released) {
+    delay(1);
+}
+
 echo "end\n";
 ?>
 --EXPECT--

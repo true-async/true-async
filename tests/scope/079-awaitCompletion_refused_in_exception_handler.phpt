@@ -22,11 +22,15 @@ $scope->setExceptionHandler(function (Scope $scope, Async\Coroutine $coroutine, 
     }
 });
 
-$scope->spawn(function () {
+$failing = $scope->spawn(function () {
     throw new RuntimeException("boom");
 });
 
-delay(100);
+// A delay could end before the queued coroutine has run: a timer due when main parks wakes it in place
+while (!$failing->isCompleted()) {
+    Async\suspend();
+}
+
 echo "end\n";
 
 ?>

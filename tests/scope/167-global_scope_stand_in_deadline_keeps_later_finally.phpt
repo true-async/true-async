@@ -31,6 +31,7 @@ final class GlobalScopeStrategy implements SpawnStrategy
     }
 }
 
+$ended = false;
 spawn_with(new GlobalScopeStrategy(), function () {
     delay(100000);
 });
@@ -41,8 +42,9 @@ while (GlobalScopeStrategy::$seen === null) {
 
 GlobalScopeStrategy::$seen->asNotSafely()->disposeAfterTimeout(10);
 
+// The deadline cancels this wait; a shorter one could end first under load
 try {
-    delay(60);
+    delay(100000);
 } catch (Async\AsyncCancellation $cancellation) {
     echo "main cancelled\n";
 }
@@ -50,8 +52,13 @@ try {
 spawn(function () {
 })->finally(function () {
     echo "finally runs\n";
+    $GLOBALS['ended'] = true;
 });
-delay(10);
+
+while (!$ended) {
+    suspend();
+}
+
 echo "end\n";
 ?>
 --EXPECT--

@@ -19,13 +19,20 @@ function start(): void
             } catch (Async\AsyncCancellation $e) {
                 echo "round ", $round, ": ", $e->getMessage(), "\n";
             }
+
+            $GLOBALS['rounds'] = $round;
         }
     });
 }
 
+$rounds = 0;
 start();
-delay(10);
-delay(10);
+
+// Main holds nothing of the coroutine, so it waits on a count the coroutine keeps
+while ($rounds < 2) {
+    delay(1);
+}
+
 echo "main parks on a dead Future\n";
 (new Future(new FutureState()))->await();
 ?>

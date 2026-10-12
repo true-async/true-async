@@ -14,7 +14,11 @@ use function Async\delay;
 $child = Scope::inherit();
 $started = $child->spawn(function () {
     try {
-        delay(50);
+        // Safe cancellation leaves this wait running; a fixed delay could end before the error
+        while (!$GLOBALS['child']->isCancelled()) {
+            delay(1);
+        }
+
         echo "started member woke\n";
     } catch (Throwable $e) {
         echo "started member got ", get_class($e), "\n";
@@ -29,7 +33,11 @@ $failing = spawn(function () use ($child, &$unstarted) {
     throw new RuntimeException("global boom");
 });
 
-delay(100);
+// A delay could end before the member has seen the cancellation; an await would throw for a member a seed
+// cancels unstarted
+while (!$started->isCompleted()) {
+    delay(1);
+}
 
 echo "child cancelled: ", var_export($child->isCancelled(), true), "\n";
 

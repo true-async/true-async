@@ -22,6 +22,7 @@ function start(): void
             echo "a: ", $e->getMessage(), "\n";
         } finally {
             $state->complete("value");
+            $GLOBALS['ended']++;
         }
     });
     spawn(function () use ($future) {
@@ -31,13 +32,20 @@ function start(): void
         } catch (Async\AsyncCancellation $e) {
             echo "b: ", $e->getMessage(), "\n";
         }
+
+        $GLOBALS['ended']++;
     });
 }
 
 var_dump(ini_set('true_async.partial_deadlock', 'cancel'));
+$ended = 0;
 start();
-delay(10);
-delay(10);
+
+// Main holds nothing of the coroutines, so it waits on a count they keep
+while ($ended < 2) {
+    delay(1);
+}
+
 echo "end\n";
 ?>
 --EXPECT--

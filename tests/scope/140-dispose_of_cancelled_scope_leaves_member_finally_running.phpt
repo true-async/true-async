@@ -8,11 +8,13 @@ use function Async\delay;
 $scope = new Async\Scope();
 $started = false;
 $in_finally = false;
+$ended = false;
 $scope->spawn(function () use (&$started, &$in_finally) {
     Async\current_coroutine()->finally(function () use (&$in_finally) {
         $in_finally = true;
         delay(10);
         echo "finally ends\n";
+        $GLOBALS['ended'] = true;
     });
     $started = true;
     delay(1000);
@@ -29,7 +31,12 @@ while (!$in_finally) {
 }
 
 $scope->dispose();
-delay(50);
+
+// A longer delay could end first: a timer due when main parks wakes it in place, ahead of the queue
+while (!$ended) {
+    delay(1);
+}
+
 echo "end\n";
 ?>
 --EXPECT--

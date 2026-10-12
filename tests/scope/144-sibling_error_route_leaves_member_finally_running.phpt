@@ -3,12 +3,12 @@ Scope: a sibling's unhandled error, which cancels the scope, leaves a returned m
 --FILE--
 <?php
 
-use function Async\delay;
 use function Async\suspend;
 
 $scope = new Async\Scope();
 $in_finally = false;
 $go = false;
+$ended = false;
 $scope->spawn(function () use (&$in_finally, &$go) {
     Async\current_coroutine()->finally(function () use (&$in_finally, &$go) {
         $in_finally = true;
@@ -18,6 +18,7 @@ $scope->spawn(function () use (&$in_finally, &$go) {
         }
 
         echo "finally ends\n";
+        $GLOBALS['ended'] = true;
     });
 });
 
@@ -34,7 +35,11 @@ while (!$scope->isCancelled()) {
 }
 
 $go = true;
-delay(10);
+
+// A delay could end before the finally handler has run on: a timer due when main parks wakes it in place
+while (!$ended) {
+    suspend();
+}
 
 try {
     Async\await($failing);

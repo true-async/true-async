@@ -20,7 +20,8 @@ $child->setExceptionHandler(function (Scope $scope, Async\Coroutine $coroutine, 
 
 $sibling = $child->spawn(function () {
     try {
-        delay(50);
+        // The route cancels this wait; a short one could end first under load
+        delay(100000);
         echo "sibling woke\n";
     } catch (Throwable $e) {
         echo "sibling got ", get_class($e), ": ", $e->getMessage(), "\n";
@@ -30,7 +31,10 @@ $failing = $child->spawn(function () {
     throw new RuntimeException("boom");
 });
 
-delay(100);
+// A delay could end before the route has cancelled the sibling
+while (!$sibling->isCompleted()) {
+    Async\suspend();
+}
 
 echo "child cancelled: ", var_export($child->isCancelled(), true), "\n";
 echo "parent cancelled: ", var_export($parent->isCancelled(), true), "\n";

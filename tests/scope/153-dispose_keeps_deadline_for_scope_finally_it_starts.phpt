@@ -11,9 +11,11 @@ $scope->finally(function () {
         delay(100000);
     } catch (Async\AsyncCancellation $cancellation) {
         echo "finally stopped: ", $cancellation->getMessage(), "\n";
+        $GLOBALS['stopped'] = true;
     }
 });
 $go = false;
+$stopped = false;
 $member = $scope->spawn(function () use (&$go) {
     while (!$go) {
         Async\suspend();
@@ -24,7 +26,12 @@ $go = true;
 Async\await($member);
 $scope->dispose();
 echo "closed: ", var_export($scope->isClosed(), true), "\n";
-delay(300);
+
+// A longer delay could end first: a timer due when main parks wakes it in place, ahead of the queue
+while (!$stopped) {
+    delay(1);
+}
+
 echo "end\n";
 ?>
 --EXPECT--

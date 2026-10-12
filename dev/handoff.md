@@ -704,3 +704,8 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   `96a52ba65f4` carries the test scheduler's refusal seams and the fixes they and three Critics found (RFC 33).
   The automatic GC run during an unwind holds the exception; a cycle kept only by that frame's live temporary
   waits for the request's end. Open for Edmond: `gc_collect_cycles()` returns 0 while a run is in progress.
+- S14.9 closed 2026-10-12 (PLAN result line, DECISIONS 2026-10-12 S14.9): 87 own tests no longer use a top-level
+  `delay()` as a sync point; S14 is complete. A new test waits on the event it checks: a `suspend()` loop on a flag
+  set before the park, a `delay(1)` loop for work behind a timer or a signal, `collector_idle_runs()` for the
+  automatic run, `delay(100000)` for a wait that a cancel must end; a coroutine that throws at once waits until
+  the others it races have started, or a seed cancels them unstarted.

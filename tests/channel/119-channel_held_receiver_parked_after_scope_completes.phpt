@@ -7,7 +7,6 @@ use Async\Channel;
 use Async\ChannelException;
 use Async\Scope;
 use function Async\await;
-use function Async\delay;
 use function Async\spawn;
 
 final class Holder
@@ -21,15 +20,22 @@ await($scope->spawn(function () use ($holder) {
     $holder->channel = new Channel(0);
 }));
 
-$receiver = spawn(function () use ($holder) {
+$parked = false;
+$receiver = spawn(function () use ($holder, &$parked) {
     try {
+        $parked = true;
         $value = $holder->channel->recv();
         echo "received: ", $value, "\n";
     } catch (ChannelException $exception) {
         echo "receiver: ", $exception->reason->name, "\n";
     }
 });
-delay(50);
+
+// A coroutine runs on to its park: a delay could end before the receiver parks
+while (!$parked) {
+    Async\suspend();
+}
+
 echo "after the scope's coroutines ended: closed=", var_export($holder->channel->isClosed(), true),
     ", receiver parked=", var_export(!$receiver->isCompleted(), true), "\n";
 

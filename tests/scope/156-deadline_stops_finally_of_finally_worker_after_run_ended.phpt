@@ -8,6 +8,7 @@ use function Async\suspend;
 
 $scope = new Async\Scope();
 $in_finally = false;
+$stopped = false;
 $scope->spawn(function () use (&$in_finally) {
     Async\current_coroutine()->finally(function () use (&$in_finally) {
         Async\current_coroutine()->finally(function () {
@@ -15,6 +16,7 @@ $scope->spawn(function () use (&$in_finally) {
                 delay(100000);
             } catch (Async\AsyncCancellation $cancellation) {
                 echo "nested finally stopped: ", $cancellation->getMessage(), "\n";
+                $GLOBALS['stopped'] = true;
             }
         });
         $in_finally = true;
@@ -29,7 +31,12 @@ while (!$in_finally) {
 $scope->cancel();
 $scope->dispose();
 $scope->disposeAfterTimeout(50);
-delay(100);
+
+// A longer delay could end first: a timer due when main parks wakes it in place, ahead of the queue
+while (!$stopped) {
+    delay(1);
+}
+
 echo "end\n";
 ?>
 --EXPECT--

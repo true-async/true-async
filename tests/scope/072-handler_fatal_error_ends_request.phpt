@@ -13,7 +13,7 @@ memory_limit=2M
 <?php
 
 use Async\Scope;
-use function Async\delay;
+use function Async\suspend;
 
 register_shutdown_function(function () {
     echo "shutdown\n";
@@ -30,7 +30,11 @@ $failing = $scope->spawn(function () {
     throw new RuntimeException("boom");
 });
 
-delay(10);
+// A delay could end before the queued coroutine has run: a timer due when main parks wakes it in place
+while (!$failing->isCompleted()) {
+    suspend();
+}
+
 echo "not reached\n";
 
 ?>

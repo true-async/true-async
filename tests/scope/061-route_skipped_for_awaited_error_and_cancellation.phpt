@@ -28,10 +28,22 @@ $scope->setExceptionHandler(function (Scope $scope, Async\Coroutine $coroutine, 
     echo "handler ran: ", get_class($e), "\n";
 });
 
-$sleeper = $scope->spawn(fn() => delay(100));
-delay(1);
+$sleeping = false;
+$sleeper = $scope->spawn(function () {
+    $GLOBALS['sleeping'] = true;
+    delay(100);
+});
+
+// A delay could end before the queued coroutine has run: a timer due when main parks wakes it in place
+while (!$sleeping) {
+    Async\suspend();
+}
+
 $sleeper->cancel();
-delay(10);
+
+while (!$sleeper->isCompleted()) {
+    Async\suspend();
+}
 
 $thrower = $scope->spawn(function () {
     delay(5);
