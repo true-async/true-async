@@ -2340,3 +2340,10 @@ stack options were shown with the code).
   `exit()` does, no further: the gaps a destructor has too (an exit held by a `finally` while live temporaries
   are freed, an exit replaced by a later throwing destructor) stay, recorded in PLAN "Fog". `ZendTestFiber`
   keeps clearing the unwind exit: mirroring the fix leaked the exit into a `pipeTo()` target (second Critic).
+- 2026-10-12 S8.2, own defaults in `RFC-CHANGES.md` 12: `$mysqli->close()` beside a parked query stays refused,
+  since the resumed query reads the `MY_MYSQL` a close frees (`mysqli/014`, `015`); `stream_socket_shutdown()`
+  takes neither side and a read parked on the shut-down direction ends with `''` (`io_provider/054`, `055`); a
+  close from a resource destructor (`proc_close()`) is a close as cancel, so its parked read returns false as
+  after `fclose()` (`056`, `057`), with no notice; only the free waits for the last unpin, so `pclose()` keeps the
+  child's status; accepts and `stream_select()` take no side (`058`, `059`). Each B1 test has a Poll-queue twin:
+  the request's wait op differs per queue.

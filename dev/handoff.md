@@ -659,4 +659,5 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   project files, Edmond opens the PR.
 - S8.1d closed 2026-10-12: branch `fiber-exit-in-destroyed-finally`, picked onto `php-src-fixes`
   (`f1e13b9eaef`); PR text `notes/fiber-exit-in-destroyed-finally-pr.md`. Both fixes reach the core at
-  its next update. Next: S8.2, from `/mnt/project-files/s8/S8.2-wip.patch`.
+  its next update.
+- S8.2 closed 2026-10-12 (PLAN handoff line); the S8.2 patch in project files is spent. Next: S8.3 (B3, M1).

@@ -150,15 +150,28 @@ Waits for it: the Done branch at the end of `io_provider_run()` (`src/io_provide
 State: drafted 2026-10-07 (S6.7), not sent. PR: none.
 
 Need: a coroutine parked in `run()` when a fatal error unwinds the request leaves its stream frozen
-(`PHP_STREAM_FLAG_IN_USE`) and `FG(io_ops_in_flight)` raised until RSHUTDOWN
-(`main/io/php_io_hooks.c:472-498`), since its `php_io_frame_end()` never runs. Shutdown functions
-then get "Concurrent access to a stream" on that stream, and `pcntl_fork()` refuses.
+(`PHP_STREAM_FLAG_IN_USE`) and `FG(io_ops_in_flight)` raised until RSHUTDOWN, since its
+`php_io_frame_end()` never runs. Shutdown functions then get "Concurrent access to a stream" on that
+stream, and `pcntl_fork()` refuses. The request shutdown's own unfreeze walks the resource lists
+(`main/io/php_io_hooks.c:514-521`, `560-564`), and mysqlnd takes its stream off both lists
+(`ext/mysqlnd/mysqlnd_vio.c`, `mysqlnd_fixup_regular_list`), so a mysqli connection is never
+unfrozen. S8.2 (review B2): on the Poll queue a fatal error while a mysqli query is parked leaves
+the connection frozen: `$mysqli->close()` in a shutdown function throws "Concurrent access to a MySQL
+connection", the free at the request's end prints "Fatal error: Concurrent access to a stream in
+Unknown" and the connection leaks (LeakSanitizer). On the Ring the close works: the stream is not
+busy while its op is an orphan, and the free drains the orphan first.
 
-Request: a `PHPAPI` the scheduler calls after it has unwound every coroutine of a bailout: reset
-`FG(io_ops_in_flight)` and unfreeze the streams whose op is not in `FG(io_orphans)` (a Ring op still
-writing into a stream buffer keeps its stream frozen).
+Request: the core keeps the set of streams frozen or pinned by an op in progress: its open frames,
+and the members `stream_select()` and `socket_select()` freeze around their `php_io_run()` without a
+frame (`ext/standard/streamsfuncs.c:836-842`). A `PHPAPI` the scheduler calls after it has unwound
+every coroutine of a bailout resets `FG(io_ops_in_flight)` and, for each stream of that set whose op
+is not in `FG(io_orphans)`, unfreezes it and drops the sides and pins of entry 12 that the abandoned
+frames held, so a close deferred to the last unpin runs (a Ring op still writing into a stream buffer
+keeps its stream until its completion arrives). The request shutdown's unfreeze walks the same set
+instead of the resource lists.
 
-Waits for it: `io_provider/007` records today's behaviour (the shutdown function's read throws).
+Waits for it: `io_provider/007` records today's behaviour (the shutdown function's read throws);
+`mysqli/013` (`core:8` in `tests/lists/S8.txt`).
 
 ## 9. pcntl: block signals around the queue only, not around the handlers
 
@@ -213,14 +226,38 @@ State: drafted 2026-10-07 (S6.7), not sent. PR: none.
 
 Need: a coroutine parked on a stream freezes the whole stream (review B1), so a second user throws
 "Concurrent access to a stream": a writer beside a parked reader (full duplex), `fclose()` or
-`proc_close()` of a stream another coroutine waits on, several acceptors on one listener. TrueAsync
-allows all three.
+`stream_socket_shutdown()` of a stream another coroutine waits on, several acceptors on one listener,
+a read of a member of a parked `stream_select()`, two writers on one pipe, even `feof()` and
+`stream_get_meta_data()`. `proc_close()` does not throw: its resource destructor skips a busy pipe
+(`main/streams/streams.c:1801-1807`), so the pipe stays open and the parked read ends only when the
+child closes its end. TrueAsync allows all of these. S8.2 measured each on the Ring and on the Poll
+queue (review section 9).
 
 Request: the three parts of review B1: a read side and a write side held separately at the stream
 API, contention handed to the provider as a wait op, and `fclose()` completing every op pinned on
-the stream as closed, with the descriptor's `close()` and the free at the last unpin.
+the stream as closed. A read completed as closed returns false with `eof` set and no notice from
+either wrapper (the plain wrapper's read prints one for any other errno,
+`main/streams/plain_wrapper.c:718-738`). Only the free waits for the last unpin: the closer waits until
+the pinned ops have settled (at once on the Poll queue, on the Ring until their cancel completions
+arrive) and runs the descriptor's `close()` in its own context, so `pclose()` and `proc_close()` still
+return the child's status (`FG(pclose_ret)`, `ext/standard/file.c:885-892`). A close from a resource
+destructor (`zend_list_close()` from `proc_close()`, the resource lists' free at the request's end)
+is the same close. `stream_socket_shutdown()` takes neither side and does not wait; a read parked on
+the shut-down direction completes with end of file. `feof()` and `stream_get_meta_data()` take no
+side. `stream_socket_accept()` takes no side: several accepts park on one listener. The freezes
+outside the stream API pin their members and take no side: `stream_select()`
+(`stream_array_freeze()`, `ext/standard/streamsfuncs.c:778`) and `socket_select()`
+(`php_socket_select_freeze()`, `ext/sockets/sockets.c:1295`) neither wait for a parked op nor make
+one wait; the plain wrapper hands out its descriptor only when no op is left
+(`main/streams/plain_wrapper.c:211`). `php_io_stream_busy()` keeps meaning "an op is parked on the
+stream"; the close paths stop calling it (`main/streams/streams.c:309`, `1803`), and its mysqli callers
+keep it (`mysqlnd_conn_is_busy()`, `ext/mysqlnd/mysqlnd_connection.c:2342`, used at
+`ext/mysqli/mysqli_api.c:279`, `1479` and `ext/mysqli/mysqli_nonapi.c:143`): `$mysqli->close()` beside a
+parked query stays refused ("Concurrent access to a MySQL connection"), since the parked query reads
+the connection's `MY_MYSQL` after it resumes and a close frees it.
 
-Waits for it: `io/096`, `098`, `exec/025` (`core:12` in `tests/lists/S6.txt`).
+Waits for it: `io/096`, `098`, `exec/025` (`core:12` in `tests/lists/S6.txt`); `io_provider/042`-`059`
+(`core:12` in `tests/lists/S8.txt`).
 
 ## 13. IO hooks: an except set on the Ring
 

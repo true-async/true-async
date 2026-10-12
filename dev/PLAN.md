@@ -894,7 +894,7 @@ not expressible with why); `RFC-CHANGES.md` complete; the review updated.
 Tier: T1. Roles: Critic after every step.
 Tests: interleaved
 Base: d783cea
-Active: S8.2
+Active: S8.3
 
 Each item is run against our provider on the pinned core, on `pocs-dbg` and `pocs-asan`, over the
 Ring and over the Poll queue (`TrueAsync\Test\` hook) where the item depends on the queue. Its
@@ -959,7 +959,7 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
         and `ext/zend_test/tests` 5038 PASS on debug. PR text `notes/fiber-exit-in-destroyed-finally-pr.md`.
         With the extension the fiber's finally runs in its coroutine and its `exit()` already ends the
         script. The gaps a destructor's `exit()` has too went to "Fog".
-- [ ] S8.2 B1 and B2: each scenario of B1 (a writer beside a parked reader, several acceptors on
+- [x] S8.2 B1 and B2: each scenario of B1 (a writer beside a parked reader, several acceptors on
       one listener, `fclose()`, `stream_socket_shutdown()` and `proc_close()` of a stream another
       coroutine waits on, `stream_select()` beside a read of a member, two writers on one pipe) and
       each path of B2 (`$db->close()` beside a parked query, the query cancelled, a bailout while it
@@ -967,6 +967,11 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
       done: an outcome per scenario and per path; the requests in `RFC-CHANGES.md` for what
         reproduces; entry 12 names every test it waits for
       tier: T1 · role: Critic
+      handoff: 2026-10-12 on core `c53c17cfd47`, debug and ASAN, each case on the Ring and the Poll
+        queue: B1 reproduces in every scenario (`io_provider/042`-`059`, `core:12`); `proc_close()` does not
+        throw but skips the busy pipe. B2: the close is refused and stays refused, a cancelled query
+        closes the connection (`mysqli/014`-`017`); the bailout reproduces on the Poll queue (`013`,
+        `core:8`). `RFC-CHANGES.md` 8 and 12 rewritten from two Critics' findings.
 - [ ] S8.3 B3 and M1: a cancelled read whose completion already happened (a socket and a pipe on
       the Ring and the Poll queue; a regular file with `PHP_IO_HOOKS_F_FILES` on in a test-hook
       build), an `fwrite()` cancelled after its bytes went out, a readiness followed by a
