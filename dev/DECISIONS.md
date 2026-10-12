@@ -2356,3 +2356,9 @@ stack options were shown with the code).
   double free (bukka's code) is on its own branch and `io-hooks-fixes`, not in the core yet: the core slot goes to
   S14.1 first (`core:26`, S8.3b). RFC 27 drops a warning TrueAsync gives, as entry 2 did for reads, since in the
   stream exception mode it replaces the cancellation (`071`).
+- 2026-10-12 S12 removed from the plan (Edmond 14:30): a coroutine that parks with an empty run queue keeps
+  switching into the scheduler coroutine, which blocks on the reactor. The two switches and the tick were about
+  600 of ~8 400 extra instructions per waiting op (2026-10-10), they save only for a script with one coroutine,
+  and blocking in the coroutine's own context would break S4.md 3.3's single blocking site. Edmond never asked
+  for the stage; it came from the session that measured the RINIT install. TrueAsync blocks in place only when
+  its 100 ms throttle lets the tick poll (`scheduler.c:1557-1569`).
