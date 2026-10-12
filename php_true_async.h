@@ -57,6 +57,7 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	uint64_t collector_last_run;            /* zend_hrtime() of the last automatic run; 0 before the first idle */
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	uint8_t fault_site;              /* the armed async_test_fault_site_t; ASYNC_TEST_FAULT_NONE when unarmed */
+	uint8_t io_fault_sites;          /* the armed async_test_io_fault_t bits */
 	uint32_t test_block_releases;    /* test wait blocks released in this request */
 	uint32_t test_typed_unlinks;     /* records unlinked through a test kind's unlink in this request */
 	uint32_t test_aborts;            /* test kind aborts in this request */

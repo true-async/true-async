@@ -36,12 +36,32 @@ typedef enum
 	ASYNC_TEST_FAULT_LINK,    /* async_await_coroutine, the record linked, before the suspend */
 } async_test_fault_site_t;
 
+/* Where TrueAsync\Test\fail_io() makes the reactor's queue fail once (every wait for `wait_always`), as the OS
+ * or the queue would: the call returns its error with errno EIO (EMFILE for the wake pair) and the request
+ * goes on. A new site also goes into io_fault_site_names and the message of fail_io() (test_hooks.c). */
+typedef enum
+{
+	ASYNC_TEST_IO_FAULT_QUEUE_CREATE = 1 << 0,     /* reactor_queue: neither queue can be created */
+	ASYNC_TEST_IO_FAULT_SUBMIT = 1 << 1,           /* queue_push: the queue refuses a submit */
+	ASYNC_TEST_IO_FAULT_WAIT = 1 << 2,             /* reactor_poll: the queue's wait fails */
+	ASYNC_TEST_IO_FAULT_WAKE_PAIR = 1 << 3,        /* wake_pair_open: the descriptors cannot be made */
+	ASYNC_TEST_IO_FAULT_COMPLETE = 1 << 4,         /* reactor_dispatch: the next completion ends with EIO */
+	ASYNC_TEST_IO_FAULT_ANSWER_IN_FLIGHT = 1 << 5, /* io_wait_deliver: the answer leaves the op in flight, as the
+													* Ring's early Timeout does */
+	ASYNC_TEST_IO_FAULT_WAIT_ALWAYS = 1 << 6,      /* reactor_poll: every wait fails, as a broken queue's: never
+													* disarmed */
+} async_test_io_fault_t;
+
 #ifdef TRUE_ASYNC_TEST_HOOKS
 /* Raises the fatal error when `site` is armed, and disarms it. */
 void async_test_fault_hit(async_test_fault_site_t site);
 #define ASYNC_TEST_FAULT(site) async_test_fault_hit(site)
+/* True when `site` is armed: disarms it (except ASYNC_TEST_IO_FAULT_WAIT_ALWAYS) and sets errno. */
+bool async_test_io_fault_take(async_test_io_fault_t site);
+#define ASYNC_TEST_IO_FAULT(site) async_test_io_fault_take(site)
 #else
 #define ASYNC_TEST_FAULT(site) ((void) 0)
+#define ASYNC_TEST_IO_FAULT(site) false
 #endif
 
 #endif /* TRUE_ASYNC_TEST_HOOKS_H */

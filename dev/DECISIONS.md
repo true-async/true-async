@@ -2283,3 +2283,32 @@ stack options were shown with the code).
 - 2026-10-12 S14.2: run-tests retries no crash or hang, and no test under a seed (`tools/run-tests.patch`). Why:
   the retry discards the first attempt, so an XFAIL test that hung once, or a seed's changed output
   (`channel/112`, seed 3, then WARN), was judged by the second attempt. A pass on a retry stays WARN, red.
+- 2026-10-12 S14.5: the reactor's queue gets fault seams of its own, `TrueAsync\Test\fail_io($site)`: the next pass
+  through the queue's creation, a submit, a wait, the wake pair's creation, a completion (ended with `EIO`) or an
+  answer (left in flight, as the Ring's early Timeout) fails once as the OS or the queue would, and the request goes
+  on; `wait_always` fails every wait, as a broken queue would. `fail_at()` stays the scheduler's fatal-error seam.
+  Why: these paths answer a returned error, not a fatal one, and TrueAsync has no fault injection for its reactor
+  (only `ASYNC_FUZZ_CANCELLED_WRITE`, `libuv_reactor.c`); a function of its own leaves `internal/033`'s message as
+  it is. The hooks `read_without_owner()` and `trigger_refire()` drive the two incidents of `SECURITY.md`
+  (`io_provider/043`, `reactor/051`); on the Ring each hangs or prints "refires ran out" with its fix reverted
+  (the Poll queue has no drain, so `io_provider/043` passes there either way; the pocs lanes run the Ring).
+- 2026-10-12 S14.5, bugs the fault tests found (fixed): an `exit()` in main's script arms D16 with no frame, where a
+  throw is a fatal error that skips the drain and every `finally`. D16's submit, the fork rebuild's resubmit of the
+  reactor's own ops and the rebuild's re-arm of a signal wait no longer throw: the Error goes to the exit's chain or
+  to the watch's Futures (`reactor/052`, `054`, `signal/043`); the rebuild's own PHP calls still can (PLAN open
+  questions). A Future completed while no coroutine stack could be had left its mapped children pending for ever,
+  as TrueAsync does; the refused drain rejects them and theirs with the refusal, past a destructor that throws on
+  the way (`future/125`, `126`), and a `map()` that throws it does not report its unreturned child again
+  (`future/127`). A refused reporter of a TaskGroup's unread errors dropped them; they go to the unobserved
+  exceptions printed at the request's end (`task_group/162`).
+- 2026-10-12 S14.5: a wait of the IO queue that fails ends the request once; a wait that fails again after that is
+  answered as a deadlock (`reactor/053`), as a forked child with no queue already is. Why: it added an Error and
+  spun the idle loop on every pass until D16 fired, 5 s later. A coroutine that catches the deadlock's
+  cancellation and waits again loops as in any deadlock, and a timer due later is cancelled, not waited for. A
+  sleep until the next timer was weighed and not built: a queue that cannot wait is a broken process, where
+  TrueAsync's libuv aborts.
+- 2026-10-12 S14.5, not reached by a test: a forked child's signal `Io\Poll\Context` or handle that cannot be made
+  (`os_signal.c`, `async_signal_rebuild`, `signal_watch_renew`: the core creates both; `signal/042` fails the re-arm
+  after them) and "Cannot poll the wake descriptors" (`reactor.c`, `wakeup_arm`: needs the wakeup's POLL to
+  complete inside its own submit; a raised pair left by a failed wakeup, `reactor/049`'s steps, did not on the Ring
+  or the Poll queue in a probe).

@@ -94,6 +94,7 @@ typedef struct
 	uint32_t timers_count;
 	uint32_t timers_capacity;
 	zend_hrtime_t timers_run_now; /* the clock of the running timers' completion, 0 outside it */
+	bool wait_failed;             /* the queue's wait failed and ended the request: it is not waited on again */
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	bool test_poll_queue; /* TrueAsync\Test\reactor_use_poll_queue(): the Poll queue where the Ring exists */
 #endif
@@ -133,6 +134,9 @@ int async_io_event_try_submit(async_io_event_t *event);
 
 /* The same for one of the reactor's own ops. */
 int async_reactor_try_submit_own(async_io_event_t *event);
+
+/* The Error a throwing submit raises for a try-submit's `error` (ENOSYS: no queue), not thrown. */
+zend_object *async_reactor_submit_error(int error);
 
 /* Withdraws a submitted op that has not completed: no completion comes for it. */
 void async_io_event_orphan(async_io_event_t *event);

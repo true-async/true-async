@@ -72,6 +72,11 @@ true-async/
 
 Waiting for Edmond's call; nothing here is being worked on.
 
+- A forked child whose first reactor call is D16's arm after an `exit()` in main's script runs the rebuild with no
+  frame (S14.5): a `SignalHandle` or `Io\Poll\Context` the rebuild cannot make (descriptors exhausted) throws
+  from a PHP call there, a fatal error that skips every `finally`. The other throws of that rebuild are fixed
+  (`reactor/054`, `signal/043`). Options: leave it (it needs a held `signal()`, a fork, an `exit()` and exhausted
+  descriptors at once), or give the arm a frame or move it to the scheduler's loop, which has one. Edmond's call.
 - The gate "the event embedded in a coroutine" of `tools/check-gates.py` (S3.md section 11) greps
   `->event.` and lets through only pointers named `*scope`: it failed main on a scope's own event
   twice (S9.2 `scope->event.`, fixed in the gate on 2026-10-07; S9.24 `level->event.`, fixed by
@@ -1753,11 +1758,20 @@ Tests: interleaved
         is recorded as never created; the layout lists what `src/` holds. `check-lists.py`: 1741 listed, 0
         violations; the four tests pass on `pocs-dbg` and `pocs-asan` and over 20 seeds. Critic and Sage:
         a permanent XFAIL passes a crash or a leak in its test; the runner's fix goes to S14.2.
-- [ ] S14.5 Fault seams of the extension for the reactor's queue (creation, submit, wait, the wake pair) and
+- [x] S14.5 Fault seams of the extension for the reactor's queue (creation, submit, wait, the wake pair) and
       tests through them and through `fiber.stack_size` for the paths HEALTH lists under pass 6; fault tests for
       the two incidents of `dev/SECURITY.md` (the drain with no owner, the trigger that starves timers).
       done: each listed path reached by a test on `pocs-dbg` and `pocs-asan`; coverage of those lines recorded
       tier: T2 · role: Critic → Sage
+      handoff: done 2026-10-12. `TrueAsync\Test\fail_io()` (DECISIONS 2026-10-12 S14.5), 31 tests in
+        `tests/lists/S14.txt`, PASS on pocs-dbg, pocs-asan and 20 seeds. Coverage (pocs-dbg-cov, the 31 tests
+        alone): 138 of 156 executable lines of HEALTH's ranges; the misses are the drain with an owner and the
+        queue's EINTR and EDEADLK answers (other tests), the wakeup's inline resubmit, "Cannot poll the wake
+        descriptors" and a forked child's signal context or handle that cannot be made (not reached, DECISIONS),
+        and an exit() thrown by a release inside the refused drain's rejection. Bugs fixed: a frameless throw on
+        D16's arm (main's exit, a forked child's rebuild), the refused drain's pending children, the refused
+        TaskGroup reporter's lost errors, a failed wait that spun the idle loop. Left for Edmond: the rebuild's
+        PHP calls on D16's frameless arm (open questions). Full pocs-dbg over S9.31: 1725 PASS.
 - [ ] S14.6 The core's test scheduler can fail an enqueue or a cancel at any status and refuse a finish
       handler; tests for the GC coroutine's and the Fiber's paths HEALTH lists, and for "The scheduler failed to
       launch".

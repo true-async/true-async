@@ -17,6 +17,7 @@
 #include "php.h"
 #include "php_true_async.h"
 #include "io_provider.h"
+#include "test_hooks.h"
 #include "reactor.h"
 #include "scheduler.h"
 
@@ -135,6 +136,10 @@ static void io_wait_deliver(const async_io_event_t *event, php_io_op *op, php_io
 {
 	*result = event->result;
 	io_wait_copy_in_flight(event, op);
+
+	if (UNEXPECTED(ASYNC_TEST_IO_FAULT(ASYNC_TEST_IO_FAULT_ANSWER_IN_FLIGHT))) {
+		op->in_flight = true;
+	}
 
 	/* The readiness an Accept waited for: the core accepts itself */
 	if (UNEXPECTED(op->type == PHP_IO_OP_ACCEPT && result->status == PHP_IO_DONE && result->error == 0)) {

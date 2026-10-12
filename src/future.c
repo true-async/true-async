@@ -570,6 +570,61 @@ static void future_drain_coroutine_entry(void)
 	future_drain_run(ZEND_ASYNC_CURRENT_COROUTINE->extended_data);
 }
 
+/* A drain the scheduler refused runs no mapper: each child left in it is rejected with the pending refusal,
+ * which stays pending, instead of waiting for ever. A rejected child's own children join the drain and are
+ * rejected in turn. What a release throws waits aside, as in the drain's run, and ends up over the refusal;
+ * an exit() stops the rejection. */
+static void future_drain_reject(future_drain_t *drain)
+{
+	zend_object *refusal = NULL;
+	zend_object *released_exception = NULL;
+
+	ZEND_ASSERT(EG(exception) != NULL && "the scheduler's refusal is pending");
+	async_exception_save_fast(&EG(exception), &refusal);
+
+	while (drain->head < drain->length) {
+		const future_drain_item_t item = drain->items[drain->head++];
+		future_t *child = future_from_object(item.child);
+		async_future_event_t *child_event = FUTURE_EVENT(child);
+		child_event->base.ref_count++;
+
+		if (EXPECTED(!(child_event->base.flags & ASYNC_EVENT_F_CLOSED))) {
+			future_event_complete(child_event, NULL, refusal, drain);
+		}
+
+		async_future_event_release(child_event);
+		future_release_source(child);
+		OBJ_RELEASE(item.child);
+		async_future_event_release(item.parent);
+
+		if (UNEXPECTED(EG(exception) != NULL)) {
+			if (UNEXPECTED(async_is_exit_object(EG(exception)))) {
+				break;
+			}
+
+			async_exception_save_fast(&EG(exception), &released_exception);
+		}
+	}
+
+	if (drain->head == drain->length) {
+		drain->head = 0;
+		drain->length = 0;
+	}
+
+	/* An exit() is no exception to chain under. */
+	if (UNEXPECTED(EG(exception) != NULL)) {
+		if (released_exception != NULL) {
+			OBJ_RELEASE(released_exception);
+		}
+
+		OBJ_RELEASE(refusal);
+		return;
+	}
+
+	async_exception_restore_fast(&EG(exception), &released_exception);
+	async_exception_restore_fast(&EG(exception), &refusal);
+}
+
 /* A coroutine in the drain, with its own reference. False with an exception when the scheduler
  * refuses it. None while async is not active: no coroutine would run, and in RSHUTDOWN's final release,
  * whose destructors may still map a Future, the scopes and the registry are gone. */
@@ -638,10 +693,16 @@ static future_drain_t *future_drain_new(const uint32_t capacity)
 	return drain;
 }
 
-/* Starts the drain coroutine and drops the creator's reference. */
+/* Starts the drain coroutine and drops the creator's reference. Only here can the scheduler refuse:
+ * a later coroutine of the drain starts from a tick, where the scheduler's own coroutine exists. */
 static void future_drain_start(future_drain_t *drain)
 {
-	future_drain_spawn(drain);
+	const zend_object *const exception_at_entry = EG(exception);
+
+	if (UNEXPECTED(!future_drain_spawn(drain) && EG(exception) != exception_at_entry)) {
+		future_drain_reject(drain);
+	}
+
 	ZEND_ASYNC_MICROTASK_RELEASE(&drain->microtask);
 }
 
@@ -1313,6 +1374,8 @@ static void future_mapper_create(INTERNAL_FUNCTION_PARAMETERS, const future_mapp
 		future_drain_start(drain);
 
 		if (UNEXPECTED(EG(exception) != NULL)) {
+			/* Rejected with the refusal the caller gets: no second report of it. */
+			FUTURE_EVENT(child)->base.flags |= ASYNC_FUTURE_F_IGNORED;
 			OBJ_RELEASE(&child->std);
 			RETURN_THROWS();
 		}

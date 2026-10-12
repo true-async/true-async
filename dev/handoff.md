@@ -647,3 +647,6 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   retries no crash or hang and nothing under a seed; the `seeds` matrix has a dbg `--io-chaos` entry; WORKFLOW gives the
   scheduled run to the coordinator. To close: once S14.1 is in, a nightly or dispatched run with every
   `seeds` job green ticks the step.
+- S14.5 closed 2026-10-12 (PLAN result line): the reactor queue's fault seams
+  (`TrueAsync\Test\fail_io()`), the two SECURITY incidents under test, and five bugs those tests found
+  (DECISIONS 2026-10-12 S14.5). Two paths stay unreached by a test, named in DECISIONS.

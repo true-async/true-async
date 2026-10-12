@@ -1753,8 +1753,9 @@ void async_scheduler_graceful_shutdown(zend_object *cancellation)
 }
 
 /* Submits D16's Timer for `ms`. One that cannot be submitted adds its Error to the request's exit
- * exception, and the shutdown goes on unbounded. A finished coroutine's handlers may have left an
- * exception, which its finish folds after the arm. */
+ * exception, and the shutdown goes on unbounded. The submit does not throw: an exit() in main's script
+ * arms D16 with no frame, where a throw is a fatal error that skips the drain. A finished coroutine's
+ * handlers may have left an exception, which its finish folds after the arm. */
 static void exit_deadline_submit(async_io_event_t *event, const zend_long ms)
 {
 	php_io_op_timer(&event->op, php_io_deadline_from_ms(ms));
@@ -1762,11 +1763,10 @@ static void exit_deadline_submit(async_io_event_t *event, const zend_long ms)
 	zend_object *saved_exception = NULL;
 	async_exception_save_fast(&EG(exception), &saved_exception);
 
-	if (UNEXPECTED(async_reactor_submit_own(event) == FAILURE)) {
-		zend_object *error = EG(exception);
-		GC_ADDREF(error);
-		zend_clear_exception();
-		async_exit_exception_add(error);
+	const int error = async_reactor_try_submit_own(event);
+
+	if (UNEXPECTED(error != 0)) {
+		async_exit_exception_add(async_reactor_submit_error(error));
 	}
 
 	async_exception_restore_fast(&EG(exception), &saved_exception);

@@ -20,6 +20,7 @@
 #include "scheduler.h"
 #include "exceptions.h"
 #include "io_provider.h"
+#include "test_hooks.h"
 
 #ifdef HAVE_IOR
 #include "main/php_io_ring.h"
@@ -257,6 +258,10 @@ static zend_result wake_pair_open(async_wake_pair_t *pair)
 {
 	async_wake_pair_close(pair);
 
+	if (UNEXPECTED(ASYNC_TEST_IO_FAULT(ASYNC_TEST_IO_FAULT_WAKE_PAIR))) {
+		return FAILURE;
+	}
+
 #ifdef __linux__
 	const int fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
 
@@ -371,6 +376,10 @@ static php_io_queue *reactor_queue(async_reactor_t *reactor)
 		return reactor->queue;
 	}
 
+	if (UNEXPECTED(ASYNC_TEST_IO_FAULT(ASYNC_TEST_IO_FAULT_QUEUE_CREATE))) {
+		return NULL;
+	}
+
 	php_io_queue *queue = NULL;
 
 #ifdef HAVE_IOR
@@ -392,6 +401,7 @@ static php_io_queue *reactor_queue(async_reactor_t *reactor)
 	}
 
 	reactor->queue = queue;
+	reactor->wait_failed = false;
 #ifndef PHP_WIN32
 	reactor->queue_pid = getpid();
 #endif
@@ -404,6 +414,7 @@ static php_io_queue *reactor_queue(async_reactor_t *reactor)
 }
 
 static zend_result reactor_submit(async_reactor_t *reactor, async_io_event_t *event, async_reactor_link_t *list);
+static int reactor_try_submit(async_reactor_t *reactor, async_io_event_t *event, async_reactor_link_t *list);
 
 static zend_string *trigger_record_info(const async_coroutine_event_callback_t *record)
 {
@@ -543,20 +554,19 @@ static void reactor_rebuild(async_reactor_t *reactor)
 		ZEND_ASSERT(event->op.queue == NULL && "the destroy detached it");
 		list_remove(&event->reactor_link);
 
-		if (UNEXPECTED(reactor_submit(reactor, event, &reactor->own) == FAILURE)) {
+		/* Not thrown: the call that found the fork may have no frame, D16's arm after an exit() in
+		 * main's script. */
+		const int error = reactor_try_submit(reactor, event, &reactor->own);
+
+		if (UNEXPECTED(error != 0)) {
 			list_add(&reactor->own, &event->reactor_link);
-			zend_object *error = EG(exception);
 
 			/* Not the error of the call that found the fork: the wakeup is made again by the next
-			 * trigger creation or start, which throws to its own caller; D16 lives only in an exit's
+			 * trigger creation or start, which throws to its own caller; a channel's park timer left on
+			 * the list is a soft deadline, which the deadlock resolution ends; D16 lives only in an exit's
 			 * drain, whose exception takes the error. */
-			GC_ADDREF(error);
-			zend_clear_exception();
-
-			if (event == reactor->wakeup) {
-				OBJ_RELEASE(error);
-			} else {
-				async_exit_exception_add(error);
+			if (event == ASYNC_G(exit_deadline)) {
+				async_exit_exception_add(async_reactor_submit_error(error));
 			}
 
 			break;
@@ -709,6 +719,13 @@ static void reactor_dispatch(const php_io_queue_completion *completion)
 	async_io_event_t *event = completion->data;
 
 	event->result = completion->result;
+
+	if (UNEXPECTED(ASYNC_TEST_IO_FAULT(ASYNC_TEST_IO_FAULT_COMPLETE))) {
+		event->result.status = PHP_IO_DONE;
+		event->result.res = -1;
+		event->result.error = EIO;
+	}
+
 	event_complete(event);
 }
 
@@ -767,6 +784,10 @@ static int queue_push(async_reactor_t *reactor,
 		*completed = false;
 
 		return 0;
+	}
+
+	if (UNEXPECTED(ASYNC_TEST_IO_FAULT(ASYNC_TEST_IO_FAULT_SUBMIT))) {
+		return errno;
 	}
 
 	if (UNEXPECTED(queue->ops->submit(queue, &event->op, event) == FAILURE)) {
@@ -845,6 +866,15 @@ static int reactor_try_submit(async_reactor_t *reactor, async_io_event_t *event,
 	}
 
 	return 0;
+}
+
+zend_object *async_reactor_submit_error(const int error)
+{
+	if (error == ENOSYS) {
+		return async_new_exception(zend_ce_error, "Cannot create the IO queue");
+	}
+
+	return async_new_exception(zend_ce_error, "Cannot submit an IO operation: %s", strerror(error));
 }
 
 bool async_reactor_check_fork(void)
@@ -1244,7 +1274,10 @@ static bool reactor_poll(async_reactor_t *reactor, php_deadline deadline)
 
 	for (;;) {
 		php_io_queue *queue = reactor->queue;
-		const int count = queue->ops->wait(queue, &completion, 1, &deadline);
+		const int count = UNEXPECTED(ASYNC_TEST_IO_FAULT(ASYNC_TEST_IO_FAULT_WAIT) ||
+									 ASYNC_TEST_IO_FAULT(ASYNC_TEST_IO_FAULT_WAIT_ALWAYS))
+				? -1
+				: queue->ops->wait(queue, &completion, 1, &deadline);
 
 		if (EXPECTED(count == 0)) {
 			return true;
@@ -1257,6 +1290,13 @@ static bool reactor_poll(async_reactor_t *reactor, php_deadline deadline)
 				case EDEADLK:
 					return false;
 				default:
+					/* A wait that keeps failing would add an Error and spin the idle loop on each pass: after
+					 * the first, which ends the request, nothing can wake the waits, as with no queue. */
+					if (reactor->wait_failed) {
+						return false;
+					}
+
+					reactor->wait_failed = true;
 					async_scheduler_exit_with(
 							async_new_exception(zend_ce_error, "The IO queue's wait failed: %s", strerror(errno)));
 					return true;

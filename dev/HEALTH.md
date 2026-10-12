@@ -20,7 +20,8 @@ Mutants: Mull 0.34.1 (`tools/mull.py`); CI runs only the known-answer check; ref
   cover one stage's diff at its review (S4.6, S5.5, S6.8, S7.5, S9.7, S9.14, S9.20, S9.30, recorded
   in dev/PLAN.md), not a common population
 Practices: mutation tool (known-answer on every push, stage diffs at stage reviews), fault tests (the
-  `fail_at` sites enqueue, reserve, link in 12 tests; IO chaos C1-C3 by `--io-chaos`, S6.8; the core
+  `fail_at` sites enqueue, reserve, link in 12 tests; the reactor queue's `fail_io` sites, S14.5, in 19
+  tests; the refused stack, `fiber.stack_size=1048576G`, in 21; IO chaos C1-C3 by `--io-chaos`, S6.8; the core
   test scheduler's `fail_new_coroutine`/`fail_enqueue` in 8 tests), fuzz seeds (nightly `seeds` job
   only, with an `--io-chaos` entry since S14.2), benchmarks (bench/, `tools/bench.py`, by hand),
   dev/PRINCIPLES.md, CI (lists, linux dbg and asan, mutants-coverage, windows on push; seeds on schedule);
@@ -56,15 +57,9 @@ Known dark places: none beyond the open findings
   common/ tests as `component:S9` with no S9 step naming them (S14.4)
 - 2 collector/063, 064: the walk at the tight `memory_limit` is checked only through the final warning counts,
   which a walk that wrongly completes gives too (S14.3)
-- 6 src/io_provider.c:125-131 (the drain with no owner, dev/SECURITY.md:230-235) and src/reactor.c:1266-1274 (a
-  thread that fires a trigger without pause starves timers, SECURITY.md:198-201): incidents without a fault test
-  (S14.5)
-- 6 src/reactor.c:790-812, 1065-1126, 1253-1263, src/scheduler.c:1757-1762 (D16's timer), src/os_signal.c:533-555,
-  656-682, src/timeout.c:183-189, src/scope.c:1593-1597, src/channel.c:326-331, 906-910: a failed IO queue creation,
-  submit, wait or wake pair has no seam and no test; a failed wait spins the idle loop by reading (S14.5)
-- 6 src/future.c:591-595, src/await.c:1304-1306, src/task_group.c:1338-1344, 1442-1444, 2044-2047,
-  src/scope.c:1081-1087, src/channel.c:931-936: a refused coroutine stack (the `fiber.stack_size` seam reaches
-  them) has no test; the drain's refusal leaves mapped children pending for ever by reading (S14.5)
+- 6 src/os_signal.c `async_signal_rebuild`, `signal_watch_renew` (a forked child's signal context or handle that
+  cannot be made: no test, and a fatal error on D16's frameless arm) and src/reactor.c `wakeup_arm` ("Cannot poll
+  the wake descriptors": no test) (PLAN open questions, DECISIONS 2026-10-12 S14.5)
 - 6 core Zend/zend_gc.c:2082, 2091-2092, zend_fibers.c:908, 930, 935, 962, 1110, 1548, 1585, 815: no fault test
   for the enqueue or cancel of a coroutine that is not CREATED; the seam fires only on a CREATED coroutine (S14.6)
 - 6 core Zend/zend_gc.c:733-740 with 2270-2273 (`fail_enqueue` with the root buffer full), 2293-2296, 2116-2117;

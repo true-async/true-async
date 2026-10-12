@@ -19,7 +19,8 @@
  * vector and returns the names of the callbacks in the order they ran;
  * TrueAsync\Test\buffer_scenario(string $name): string runs one on the circular buffer and returns
  * what it popped and the sizes it saw;
- * TrueAsync\Test\fail_at(string $site): void arms a fault site of the scheduler. The rest reach the
+ * TrueAsync\Test\fail_at(string $site): void arms a fault site of the scheduler, and
+ * TrueAsync\Test\fail_io(string $site): void one of the reactor's queue. The rest reach the
  * core API a PHP script has no path to: defer() queues a microtask; iterate() walks an iterable on the
  * iterator core before iterate() of the iterators layer; add_throwing_finish_handler(),
  * add_clearing_finish_handler() and add_printing_switch_handler() add handlers to a coroutine;
@@ -28,7 +29,8 @@
  * slot. The class TrueAsync\Test\Event, await_records(), link_into_wait(),
  * subscriber_count() and wait_counters() drive the wait-record layer (dev/plans/S4.md section 2) before any event type
  * of the extension exists; reactor_wait(), reactor_state() and reactor_use_poll_queue() drive the reactor
- * (section 3) before delay(), and set_exit_deadline() shortens D16's deadline. zend_sigaction_reinstall()
+ * (section 3) before delay(), read_without_owner() reads as an op with no stream does, and set_exit_deadline()
+ * shortens D16's deadline. zend_sigaction_reinstall()
  * unblocks a signal number as callers of zend_sigaction() outside pcntl do. Each says more above its
  * definition. */
 
@@ -1427,6 +1429,61 @@ static ZEND_FUNCTION(fail_at)
 	zend_argument_value_error(1, "must be \"enqueue\", \"reserve\" or \"link\"");
 }
 
+/* Indexed by the bit of each async_test_io_fault_t. */
+static const char *const io_fault_site_names[] = {
+	"queue_create", "submit", "wait", "wake_pair", "complete", "answer_in_flight", "wait_always",
+};
+
+bool async_test_io_fault_take(const async_test_io_fault_t site)
+{
+	if (EXPECTED(!(ASYNC_G(io_fault_sites) & site))) {
+		return false;
+	}
+
+	if (site != ASYNC_TEST_IO_FAULT_WAIT_ALWAYS) {
+		ASYNC_G(io_fault_sites) &= ~site;
+	}
+
+	if (site == ASYNC_TEST_IO_FAULT_WAKE_PAIR) {
+		errno = EMFILE;
+#ifdef PHP_WIN32
+		WSASetLastError(WSAEMFILE);
+#endif
+	} else {
+		errno = EIO;
+	}
+
+	return true;
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_fail_io, 0, 1, IS_VOID, 0)
+	ZEND_ARG_TYPE_INFO(0, site, IS_STRING, 0)
+ZEND_END_ARG_INFO()
+
+/* The next pass through `site` of the reactor's queue fails as the OS call would, and the request goes
+ * on; each site is armed on its own. "wait_always" fails every wait until the request ends. */
+static ZEND_FUNCTION(fail_io)
+{
+	zend_string *site_name;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_STR(site_name)
+	ZEND_PARSE_PARAMETERS_END();
+
+	const uint8_t site_count = sizeof(io_fault_site_names) / sizeof(io_fault_site_names[0]);
+
+	for (uint8_t bit = 0; bit < site_count; bit++) {
+		if (zend_string_equals_cstr(site_name, io_fault_site_names[bit], strlen(io_fault_site_names[bit]))) {
+			ASYNC_G(io_fault_sites) |= 1 << bit;
+			return;
+		}
+	}
+
+	zend_argument_value_error(1,
+							  "must be \"queue_create\", \"submit\", \"wait\", \"wake_pair\", \"complete\", "
+							  "\"answer_in_flight\" or \"wait_always\"");
+}
+
 ///////////////////////////////////////////////////////////////////
 /// The wait-record layer
 ///////////////////////////////////////////////////////////////////
@@ -1988,6 +2045,53 @@ static ZEND_FUNCTION(stream_queue_registrations)
 	RETURN_LONG(count);
 }
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_read_without_owner, 0, 2, IS_STRING, 0)
+	ZEND_ARG_INFO(0, stream)
+	ZEND_ARG_TYPE_INFO(0, timeout_ms, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
+/* Reads the stream's descriptor through the IO hooks with an op that names neither the stream nor a handle,
+ * as php_network_connect_socket()'s CONNECT without a stream does (ext/ftp), for at most `timeout_ms`.
+ * Returns the op's status: "done", "ready", "timeout", "interrupted", "cancelled" or "unsupported". The Ring may answer
+ * with the Timeout while the read is still in flight, so the buffer is static: the read can land in it after the call.
+ */
+static ZEND_FUNCTION(read_without_owner)
+{
+	static const char *const status_names[] = { "done", "ready", "timeout", "interrupted", "cancelled", "unsupported" };
+	static char buffer[64];
+	zval *zstream;
+	zend_long timeout_ms;
+	php_stream *stream;
+	php_socket_t descriptor;
+
+	ZEND_PARSE_PARAMETERS_START(2, 2)
+		Z_PARAM_RESOURCE(zstream)
+		Z_PARAM_LONG(timeout_ms)
+	ZEND_PARSE_PARAMETERS_END();
+
+	php_stream_from_zval(stream, zstream);
+
+	if (UNEXPECTED(php_stream_cast(stream, PHP_STREAM_AS_FD_FOR_SELECT, (void **) &descriptor, 0) == FAILURE)) {
+		zend_argument_value_error(1, "must be a stream with a descriptor");
+		RETURN_THROWS();
+	}
+
+	php_io_op op;
+	php_io_op_result result;
+
+	php_io_op_read(&op, NULL, descriptor, buffer, sizeof(buffer), -1, php_io_deadline_from_ms(timeout_ms));
+
+	if (UNEXPECTED(php_io_run(&op, &result) == FAILURE)) {
+		if (EG(exception) == NULL) {
+			zend_throw_error(NULL, "Cannot run the read: %s", strerror(errno));
+		}
+
+		RETURN_THROWS();
+	}
+
+	RETURN_STRING(status_names[result.status]);
+}
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_reactor_use_poll_queue, 0, 0, IS_VOID, 0)
 ZEND_END_ARG_INFO()
 
@@ -2347,6 +2451,74 @@ static ZEND_FUNCTION(trigger_relay)
 	async_callbacks_push_reserved(&trigger->base.callbacks, &relay->callback);
 }
 
+/* A holder that fires the trigger again at each of its wakes, as a thread that fires without pause would,
+ * until `left` runs out. */
+typedef struct
+{
+	async_event_callback_t callback;
+	zend_long left;
+} test_refirer_t;
+
+static void test_refirer_dispose(async_event_callback_t *callback, async_awaitable_t *target)
+{
+	async_trigger_stop((async_trigger_t *) target);
+	efree(callback);
+}
+
+static void
+test_refirer_run(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
+{
+	(void) result;
+	(void) exception;
+
+	async_trigger_t *trigger = (async_trigger_t *) target;
+	test_refirer_t *refirer = (test_refirer_t *) callback;
+
+	if (EXPECTED(--refirer->left > 0)) {
+		async_trigger_fire(trigger);
+		return;
+	}
+
+	php_printf("refires ran out\n");
+	async_callbacks_remove(&trigger->base.callbacks, callback);
+	test_refirer_dispose(callback, target);
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_trigger_refire, 0, 1, IS_VOID, 0)
+	ZEND_ARG_TYPE_INFO(0, times, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
+/* Starts the test trigger for a holder that fires it again at each of its next `times` wakes and prints
+ * "refires ran out" when they are spent. trigger_free() stops it before that. */
+static ZEND_FUNCTION(trigger_refire)
+{
+	zend_long times;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_LONG(times)
+	ZEND_PARSE_PARAMETERS_END();
+
+	if (UNEXPECTED(times < 1)) {
+		zend_argument_value_error(1, "must be greater than 0");
+		RETURN_THROWS();
+	}
+
+	async_trigger_t *trigger = test_trigger_get();
+
+	if (UNEXPECTED(trigger == NULL || !async_trigger_start(trigger))) {
+		RETURN_THROWS();
+	}
+
+	test_refirer_t *refirer = emalloc(sizeof(test_refirer_t));
+	refirer->callback.flags = 0;
+	refirer->callback.callback = test_refirer_run;
+	refirer->callback.dispose = test_refirer_dispose;
+	refirer->left = times;
+
+	async_callbacks_reserve(&trigger->base.callbacks, 1);
+	async_callbacks_push_reserved(&trigger->base.callbacks, &refirer->callback);
+}
+
 /* clang-format off */
 const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\callbacks_scenario", ZEND_FN(callbacks_scenario), arginfo_callbacks_scenario, 0, NULL, NULL)
@@ -2357,6 +2529,7 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\enqueue_with_error", ZEND_FN(enqueue_with_error), arginfo_enqueue_with_error, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_throwing_subscriber", ZEND_FN(add_throwing_subscriber), arginfo_add_throwing_subscriber, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\fail_at", ZEND_FN(fail_at), arginfo_fail_at, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\fail_io", ZEND_FN(fail_io), arginfo_fail_io, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_printing_switch_handler", ZEND_FN(add_printing_switch_handler), arginfo_add_printing_switch_handler, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\add_clearing_finish_handler", ZEND_FN(add_clearing_finish_handler), arginfo_add_clearing_finish_handler, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\print_at_teardown", ZEND_FN(print_at_teardown), arginfo_print_at_teardown, 0, NULL, NULL)
@@ -2374,6 +2547,7 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\reactor_state", ZEND_FN(reactor_state), arginfo_reactor_state, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\stream_queue_registrations", ZEND_FN(stream_queue_registrations), arginfo_stream_queue_registrations, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\reactor_use_poll_queue", ZEND_FN(reactor_use_poll_queue), arginfo_reactor_use_poll_queue, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\read_without_owner", ZEND_FN(read_without_owner), arginfo_read_without_owner, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\trigger_new", ZEND_FN(trigger_new), arginfo_trigger_none, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\trigger_fire", ZEND_FN(trigger_fire), arginfo_trigger_fire, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\trigger_wait", ZEND_FN(trigger_wait), arginfo_trigger_none, 0, NULL, NULL)
@@ -2381,6 +2555,7 @@ const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\trigger_stop", ZEND_FN(trigger_stop), arginfo_trigger_none, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\trigger_free", ZEND_FN(trigger_free), arginfo_trigger_none, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\trigger_relay", ZEND_FN(trigger_relay), arginfo_trigger_relay, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\trigger_refire", ZEND_FN(trigger_refire), arginfo_trigger_refire, 0, NULL, NULL)
 #if defined(ZEND_SIGNALS) && !defined(PHP_WIN32)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\zend_sigaction_reinstall", ZEND_FN(zend_sigaction_reinstall), arginfo_zend_sigaction_reinstall, 0, NULL, NULL)
 #endif

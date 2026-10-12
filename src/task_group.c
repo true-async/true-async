@@ -1515,7 +1515,11 @@ static void task_group_report(zend_object *composite, async_scope_t *parent_scop
 	async_finish_handler_add(&reporter->coroutine, task_group_reporter_finished, NULL, NULL);
 	async_scope_add_coroutine(scope, reporter);
 
+	/* A refused reporter leaves the refusal to the caller: the errors nobody saw are still printed, at the
+	 * request's end with the other unobserved ones. */
 	if (UNEXPECTED(!async_scheduler_enqueue(&reporter->coroutine, NULL, false))) {
+		reporter->coroutine.extended_data = NULL;
+		async_unobserved_exception_add(composite);
 		async_scope_discard_coroutine(reporter);
 	}
 }

@@ -456,6 +456,14 @@ finding left open gets an owner step in `PLAN.md`.
   `USE_ZEND_ALLOC=0`): `main.c` printed the exit exception, and the throw with no frame bailed out
   before the print released it. The print coroutine prints it through `scheduler_print_uncaught()`,
   which releases it on a bailout; the same script reports no leak now (`scheduler/110` on ASAN).
+- 2026-10-12 S14.5: the two incidents above have fault tests now: the drain of an op with no owner
+  (`io_provider/043`, which hangs with the fix reverted) and the trigger fired without pause (`reactor/051`,
+  which runs out its million refires with the fix reverted). The seams `fail_io()`, `read_without_owner()` and
+  `trigger_refire()` are test hooks under `TRUE_ASYNC_TEST_HOOKS`, absent from a default build. Found and fixed
+  by the step: an `exit()` in main's script whose exit deadline could not be armed, or whose forked child could not
+  resubmit the reactor's own ops or a signal wait, ended in a fatal error with no frame, which skipped every
+  `finally` block (`reactor/052`, `054`, `signal/043`). Left open: the same rebuild's PHP calls for a signal
+  context or handle (PLAN open questions).
 
 - 2026-10-12 Security pass of the TaskGroup layer (S9.31) over the S9 commits `25b3431`, `507e2c6`, `4066d82`,
   `11a9776`, `6c30875` (`src/task_group.c`, `task_group.h`, their parts of `scope.c`, `coroutine.c`, `future.c`,

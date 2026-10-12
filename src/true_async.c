@@ -228,6 +228,7 @@ static PHP_RINIT_FUNCTION(true_async)
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	/* A fault armed and never reached stays with the request that armed it. */
 	ASYNC_G(fault_site) = ASYNC_TEST_FAULT_NONE;
+	ASYNC_G(io_fault_sites) = 0;
 	ASYNC_G(test_block_releases) = 0;
 	ASYNC_G(test_typed_unlinks) = 0;
 	ASYNC_G(test_aborts) = 0;

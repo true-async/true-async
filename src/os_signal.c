@@ -426,6 +426,13 @@ static void signal_watch_deliver(async_signal_watch_t *watch)
 
 #ifndef PHP_WIN32
 
+/* Fails the watch's Futures with `error`, whose reference it takes. */
+static void signal_watch_fail_with(async_signal_watch_t *watch, zend_object *error)
+{
+	signal_watch_notify(watch, NULL, error);
+	OBJ_RELEASE(error);
+}
+
 /* Fails the watch's Futures with the pending exception, which it clears. */
 static void signal_watch_fail(async_signal_watch_t *watch)
 {
@@ -433,8 +440,7 @@ static void signal_watch_fail(async_signal_watch_t *watch)
 
 	GC_ADDREF(error);
 	zend_clear_exception();
-	signal_watch_notify(watch, NULL, error);
-	OBJ_RELEASE(error);
+	signal_watch_fail_with(watch, error);
 }
 
 static void signal_watch_disarm(async_signal_watch_t *watch)
@@ -477,8 +483,9 @@ static void signal_watch_close(async_signal_watch_t *watch, async_signal_registr
 static void
 signal_op_wake(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception);
 
-/* timeout_arm()'s steps: an op the submit completes at once delivers before the return. */
-static bool signal_watch_arm(async_signal_watch_t *watch)
+/* timeout_arm()'s steps: an op the submit completes at once delivers before the return. 0, or the
+ * submit's error, not thrown: a fork's rebuild may run with no frame (async_reactor_submit_error()). */
+static int signal_watch_arm(async_signal_watch_t *watch)
 {
 	async_io_event_t *sigwait = async_io_event_new();
 
@@ -497,9 +504,9 @@ static bool signal_watch_arm(async_signal_watch_t *watch)
 	watch->sigwait = sigwait;
 	sigwait->base.ref_count++;
 
-	const zend_result submitted = async_io_event_submit(sigwait);
+	const int error = async_io_event_try_submit(sigwait);
 
-	if (UNEXPECTED(submitted == FAILURE)) {
+	if (UNEXPECTED(error != 0)) {
 		watch->sigwait = NULL;
 		async_callbacks_remove(&sigwait->base.callbacks, &watch->sigwait_callback);
 		async_io_event_release(sigwait);
@@ -507,7 +514,7 @@ static bool signal_watch_arm(async_signal_watch_t *watch)
 
 	async_io_event_release(sigwait);
 
-	return submitted == SUCCESS;
+	return error;
 }
 
 /* The completion of the SIGWAIT op: on the Ring the signal is in `info`, on the Poll queue the source
@@ -661,9 +668,15 @@ void async_signal_rebuild(void)
 		registry->context = Z_OBJ(context);
 
 		for (uint32_t index = 0; index < count; index++) {
-			if (UNEXPECTED(!signal_watch_renew(watches[index], registry->context) ||
-						   !signal_watch_arm(watches[index]))) {
+			if (UNEXPECTED(!signal_watch_renew(watches[index], registry->context))) {
 				signal_watch_fail(watches[index]);
+				continue;
+			}
+
+			const int error = signal_watch_arm(watches[index]);
+
+			if (UNEXPECTED(error != 0)) {
+				signal_watch_fail_with(watches[index], async_reactor_submit_error(error));
 			}
 		}
 
@@ -788,11 +801,17 @@ static void signal_watch_settle(async_signal_watch_t *watch)
 	}
 
 #ifndef PHP_WIN32
-	if (watch->sigwait != NULL || EXPECTED(signal_watch_arm(watch))) {
+	if (watch->sigwait != NULL) {
 		return;
 	}
 
-	signal_watch_fail(watch);
+	const int error = signal_watch_arm(watch);
+
+	if (EXPECTED(error == 0)) {
+		return;
+	}
+
+	signal_watch_fail_with(watch, async_reactor_submit_error(error));
 	signal_watch_settle(watch);
 #endif
 }
@@ -1073,9 +1092,12 @@ ZEND_FUNCTION(Async_signal)
 	zend_object *future = signal_wait_new(watch, token);
 
 #ifndef PHP_WIN32
-	if (watch->sigwait == NULL && UNEXPECTED(!signal_watch_arm(watch))) {
+	const int error = watch->sigwait == NULL ? signal_watch_arm(watch) : 0;
+
+	if (UNEXPECTED(error != 0)) {
 		async_future_event_from_object(future)->base.flags |= ASYNC_FUTURE_F_IGNORED;
 		OBJ_RELEASE(future);
+		zend_throw_exception_internal(async_reactor_submit_error(error));
 		RETURN_THROWS();
 	}
 #endif
