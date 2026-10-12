@@ -2336,3 +2336,7 @@ stack options were shown with the code).
   get fiber return value: The fiber was destroyed", keyed on the undefined result as
   `Generator::getReturn()`, so a destroyed fiber whose `finally` returns a value still returns it. TrueAsync's
   coroutine branch returns null there instead; an error tells the programmer the fiber never returned.
+- 2026-10-12 S8.1d: the php/php-src fix lets a destroyed fiber's `exit()` end the script as a destructor's
+  `exit()` does, no further: the gaps a destructor has too (an exit held by a `finally` while live temporaries
+  are freed, an exit replaced by a later throwing destructor) stay, recorded in PLAN "Fog". `ZendTestFiber`
+  keeps clearing the unwind exit: mirroring the fix leaked the exit into a `pipeTo()` target (second Critic).

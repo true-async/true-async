@@ -656,4 +656,7 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   day: core `async-core-io-2026-10-09-3` (`c53c17cfd47`), `RFC-CHANGES.md` 25.
 - S8.1c closed 2026-10-09: branch `fiber-getreturn-destroyed`, picked onto `php-src-fixes`
   (`e7d2d9a25a9`, not in the pinned core yet); PR text `notes/fiber-getreturn-destroyed-pr.md` in
-  project files, Edmond opens the PR. Next: S8.1d, `exit()` in the `finally` of a destroyed fiber.
+  project files, Edmond opens the PR.
+- S8.1d closed 2026-10-12: branch `fiber-exit-in-destroyed-finally`, picked onto `php-src-fixes`
+  (`f1e13b9eaef`); PR text `notes/fiber-exit-in-destroyed-finally-pr.md`. Both fixes reach the core at
+  its next update. Next: S8.2, from `/mnt/project-files/s8/S8.2-wip.patch`.

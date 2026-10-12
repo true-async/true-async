@@ -65,6 +65,11 @@ true-async/
 - An exported C API for other extensions (TrueAsync Server and others): the fork's extended
   `zend_async_API` (events, wakers, `resume_when`) may move into the extension. Not decided; S3
   keeps internal structures open to it, the first version does not promise it.
+- php-src: an `exit()` in a destructor loses to the exception handling around it (S8.1d's second Critic,
+  shown on a debug build without fibers): when live temporaries are freed before a `finally` block, the
+  exit is held there and a `return` in that block drops it; a destructor that throws while an exit is
+  pending replaces it, and an exit with an exception pending makes `UnwindExit::$previous` (a
+  deprecation). A separate php-src fix if wanted; the scripts are in the S8.1d PR text's "Not changed".
 - Stream concurrency: the IO hooks freeze a whole stream (review B1); today's TrueAsync allows
   duplex and close-from-another-coroutine.
 
@@ -889,7 +894,7 @@ not expressible with why); `RFC-CHANGES.md` complete; the review updated.
 Tier: T1. Roles: Critic after every step.
 Tests: interleaved
 Base: d783cea
-Active: S8.1d
+Active: S8.2
 
 Each item is run against our provider on the pinned core, on `pocs-dbg` and `pocs-asan`, over the
 Ring and over the Poll queue (`TrueAsync\Test\` hook) where the item depends on the queue. Its
@@ -939,12 +944,21 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
         onto `php-src-fixes` as `e7d2d9a25a9`; the next core update merges it. FiberError "The fiber
         was destroyed"; `Zend/tests/fibers/get-return-after-destroy-001`-`003` fail before and pass
         after on debug, `Zend/tests/fibers` 92 PASS. PR text `notes/fiber-getreturn-destroyed-pr.md`.
-- [ ] S8.1d php/php-src: `exit()` in the `finally` of a fiber destroyed mid-script is swallowed, and
+- [x] S8.1d php/php-src: `exit()` in the `finally` of a fiber destroyed mid-script is swallowed, and
       the script runs on past it (`zend_fibers.c` clears an unwind exit of a destroyed fiber as a
       graceful one; found by the S8.1c Critic, shown on a debug build). Find whether the clearing is
       meant for the shutdown case; if it is a bug, a fix branch and a PR text as S8.1c.
       done: the outcome in the handoff line; a fix's php-src test fails before and passes after
       tier: T1 · role: Critic
+      handoff: 2026-10-12 a bug: the clearing is left from the first Fibers commit (`c276c16b6`), whose
+        destructor threw an unwind exit itself on a fatal error. Branch `fiber-exit-in-destroyed-finally`
+        `f0f3b660863` on `357fcf12f4e`, picked onto `php-src-fixes` as `f1e13b9eaef`: only the graceful
+        exit is cleared; a pending exception of the owner is released; the try/finally dispatch reads
+        the exception again after freeing a pending return value (the first Critic's use after free).
+        `Zend/tests/fibers/exit-in-destroyed-fiber-001`-`004` fail before and pass after; `Zend/tests`
+        and `ext/zend_test/tests` 5038 PASS on debug. PR text `notes/fiber-exit-in-destroyed-finally-pr.md`.
+        With the extension the fiber's finally runs in its coroutine and its `exit()` already ends the
+        script. The gaps a destructor's `exit()` has too went to "Fog".
 - [ ] S8.2 B1 and B2: each scenario of B1 (a writer beside a parked reader, several acceptors on
       one listener, `fclose()`, `stream_socket_shutdown()` and `proc_close()` of a stream another
       coroutine waits on, `stream_select()` beside a read of a member, two writers on one pipe) and
