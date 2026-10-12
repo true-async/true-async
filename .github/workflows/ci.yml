@@ -6,8 +6,7 @@ on:
   push:
     branches: [main]
   pull_request:
-  schedule:
-    - cron: '30 2 * * *'
+  # No scheduled run (Edmond, 2026-10-12 16:22): the seeds run in a run dispatched by hand.
   workflow_dispatch:
 
 # The workflow only reads the repository; no job needs a write token.
@@ -22,6 +21,7 @@ env:
 jobs:
   lists:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
         with:
@@ -52,6 +52,9 @@ jobs:
 
   linux:
     runs-on: ubuntu-24.04
+    # A job never runs long (Edmond, 2026-10-12): the asan lane's tests took 4 minutes with a cached core
+    # (run 38266038345).
+    timeout-minutes: 30
     # The MySQL fixture (dev/WORKFLOW.md, "Test fixtures"), as TrueAsync's CI runs it.
     env:
       MYSQL_TEST_HOST: 127.0.0.1
@@ -124,12 +127,16 @@ jobs:
           path: results/
 
   seeds:
-    # The scheduler fuzz of dev/plans/S2.md section 4: nightly or by hand, after linux, which leaves
+    # The scheduler fuzz of dev/plans/S2.md section 4: by hand (workflow_dispatch), after linux, which leaves
     # both cores in the cache. A full asan list takes minutes per seed, so it runs fewer seeds. The
-    # io_chaos entry also arms the IO provider's fault points (dev/plans/S6.md section 16).
+    # io_chaos entry also arms the IO provider's fault points (dev/plans/S6.md section 16). Each
+    # line's seeds are spread over five parallel jobs, about 13 minutes each at most; the list `shard`
+    # and the 5 of `--shard` and `name` change together, or a line loses its last seeds.
+    name: seeds (${{ matrix.line.tree }}${{ matrix.line.io_chaos && ', io-chaos' || '' }}, ${{ matrix.shard }}/5)
     needs: linux
-    if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     # The MySQL fixture (dev/WORKFLOW.md, "Test fixtures"), as TrueAsync's CI runs it.
     env:
       MYSQL_TEST_HOST: 127.0.0.1
@@ -149,7 +156,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
+        line:
           - tree: dbg
             seeds: 100
           - tree: asan
@@ -157,6 +164,7 @@ jobs:
           - tree: dbg
             seeds: 50
             io_chaos: true
+        shard: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -172,12 +180,12 @@ jobs:
         id: core
         uses: actions/cache/restore@v5
         with:
-          path: ~/ta-prefix/pocs-${{ matrix.tree }}
-          key: core-${{ matrix.tree }}-${{ env.CORE_REF }}-${{ env.IOR_REF }}-${{ hashFiles('tools/ci/build-core.sh') }}
+          path: ~/ta-prefix/pocs-${{ matrix.line.tree }}
+          key: core-${{ matrix.line.tree }}-${{ env.CORE_REF }}-${{ env.IOR_REF }}-${{ hashFiles('tools/ci/build-core.sh') }}
 
       - name: Build the core
         if: steps.core.outputs.cache-hit != 'true'
-        run: tools/ci/build-core.sh ${{ matrix.tree }} "$CORE_REF" "$IOR_REF"
+        run: tools/ci/build-core.sh ${{ matrix.line.tree }} "$CORE_REF" "$IOR_REF"
 
       - name: Core sources for the tests
         run: |
@@ -188,17 +196,21 @@ jobs:
           git checkout -q FETCH_HEAD
 
       - name: Seeds
+        # A step that runs out of time fails, and the job keeps its results; a job that does is cancelled.
+        timeout-minutes: 25
         env:
           TRUE_ASYNC_CORE_SRC: ${{ runner.temp }}/core-src
+          # The runner's SIGINT at the step limit reaches test.py (exec), and its lines are in the log.
+          PYTHONUNBUFFERED: '1'
         run: >-
-          python3 tools/test.py --lane pocs-${{ matrix.tree }} --seeds ${{ matrix.seeds }}
-          ${{ matrix.io_chaos && '--io-chaos' || '' }}
+          exec python3 tools/test.py --lane pocs-${{ matrix.line.tree }} --seeds ${{ matrix.line.seeds }}
+          --shard ${{ matrix.shard }}/5 ${{ matrix.line.io_chaos && '--io-chaos' || '' }}
 
       - name: Keep the results
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v7
         with:
-          name: results-seeds-pocs-${{ matrix.tree }}${{ matrix.io_chaos && '-io-chaos' || '' }}
+          name: results-seeds-pocs-${{ matrix.line.tree }}${{ matrix.line.io_chaos && '-io-chaos' || '' }}-${{ matrix.shard }}
           path: results/
 
   mutants-coverage:
@@ -206,6 +218,7 @@ jobs:
     needs: linux
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       MULL_DEB: Mull-18-0.34.1-LLVM-18.1.3-ubuntu-amd64-24.04.deb
       MULL_SHA256: 983ea9c84ecab621414d5442a66c1a1ce4127491b79d42fd5e2fd6fe01d02699
@@ -275,6 +288,7 @@ jobs:
     # As php-src's own WINDOWS job for PHP 8.6+ (.github/matrix.php): the whole PHP is built with
     # the extension copied into ext/true_async (dev/plans/S2.md, section 1).
     runs-on: windows-2025-vs2026
+    timeout-minutes: 30
     env:
       PHP_BUILD_CACHE_BASE_DIR: C:\build-cache
       PHP_BUILD_OBJ_DIR: C:\obj

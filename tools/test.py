@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Build the extension for a lane and run the listed tests on it (dev/plans/S2.md, section 2).
 
-    test.py --lane pocs-dbg [--stage N] [--jobs N] [--show-slow N] [--seeds N [--io-chaos]] [TEST...]
+    test.py --lane pocs-dbg [--stage N] [--jobs N] [--show-slow N]
+            [--seeds N [--shard K/M] [--io-chaos]] [TEST...]
 
 A lane is <core>-<tree>[-cov|-mull]; the core is installed in $TRUE_ASYNC_PREFIXES/<core>-<tree>
 (default ~/ta-prefix). TEST narrows the run to listed tests. ASAN lanes need $TRUE_ASYNC_CORE_SRC,
@@ -28,7 +29,9 @@ report, a leak or a timeout; any other change of the output passes, since a rand
 what order-dependent tests print, and so does an unfinished (--XFAIL--) test that an order lets
 pass. A diagnostic (a fatal error, a warning, a notice) the expected output lacks is listed for
 reading. --io-chaos also arms the IO provider's fault points (TRUE_ASYNC_SCHED=random:<seed>:io,
-dev/plans/S6.md section 16); the verdict is the same.
+dev/plans/S6.md section 16); the verdict is the same. --shard K/M runs only the K-th of M equal
+runs of consecutive seeds, so that CI spreads the seeds over parallel jobs and a seed keeps its
+number.
 """
 import argparse
 import contextlib
@@ -485,6 +488,11 @@ def run_tests(lane, entries, jobs, sched=None, show_slow=False):
                 os.killpg(runner_process.pid, signal.SIGKILL)
                 runner_process.wait()
                 out.write(f'\ntest.py: the run did not end in {SEED_RUN_TIMEOUT} s and was killed\n')
+            except BaseException:
+                # test.py is stopped (CI's step limit sends SIGINT): run-tests, in its own session, goes with it.
+                os.killpg(runner_process.pid, signal.SIGKILL)
+                runner_process.wait()
+                raise
     finally:
         shutil.rmtree(runner.parent)
         keep_artifacts(entries, out_dir)
@@ -620,8 +628,9 @@ def verdict(lane, entries, left_out, output):
     return wrong
 
 
-# Seconds a seed run may take (a whole list on asan takes about 2 minutes here).
-SEED_RUN_TIMEOUT = 1800
+# Seconds a seed run may take (a whole list on asan takes about 3 minutes here); well under the CI
+# step's limit, so a killed run still reports its tests MISSING and the job keeps its results.
+SEED_RUN_TIMEOUT = 600
 
 # A diagnostic line of the output: its kind and message without the location, and its kind alone.
 DIAGNOSTIC = re.compile(
@@ -694,24 +703,42 @@ def seed_verdict(entries, output, seed, findings):
 
 
 def run_seeds(lane, entries, jobs, seeds, io_chaos=False):
-    """Run the entries once per seed; returns the number of seeds that failed a test."""
+    """Run the entries once per seed of `seeds`; returns the number of seeds that failed a test."""
     failed_seeds = 0
     changed = 0
     findings = {}
 
-    for seed in range(1, seeds + 1):
+    for seed in seeds:
         output = run_tests(lane, entries, jobs, f'random:{seed}:io' if io_chaos else f'random:{seed}')
+        known = set(findings)
         seed_failed, seed_changed = seed_verdict(entries, output, seed, findings)
         failed_seeds += 1 if seed_failed else 0
         changed += seed_changed
 
-    for path, (seed, diagnostic) in sorted(findings.items()):
-        print(f'new diagnostic, first in seed {seed}: tests/{path}: {diagnostic}')
+        # Printed per seed, so a job stopped by its time limit still shows what it found.
+        for path in sorted(set(findings) - known):
+            print(f'new diagnostic, first in seed {seed}: tests/{path}: {findings[path][1]}')
 
-    print(f'{lane.name}: {seeds} seeds over {len(entries)} tests, {failed_seeds} failed; {len(findings)} tests with a '
-          f'new diagnostic, {changed} other changed outputs; output {RESULTS / lane.build.name}')
+    print(f'{lane.name}: seeds {seeds.start}-{seeds.stop - 1} over {len(entries)} tests, {failed_seeds} failed; '
+          f'{len(findings)} tests with a new diagnostic, {changed} other changed outputs; '
+          f'output {RESULTS / lane.build.name}')
 
     return failed_seeds
+
+
+def seed_range(seeds, shard):
+    """Seeds 1..seeds, or the K-th of M runs of consecutive seeds for a shard "K/M"."""
+    if shard is None:
+        return range(1, seeds + 1)
+
+    match = re.fullmatch(r'(\d+)/(\d+)', shard)
+
+    if match is None or not 1 <= int(match.group(1)) <= int(match.group(2)) <= seeds:
+        sys.exit(f'--shard {shard}: K/M with 1 <= K <= M <= {seeds}')
+
+    part, parts = int(match.group(1)), int(match.group(2))
+
+    return range((part - 1) * seeds // parts + 1, part * seeds // parts + 1)
 
 
 # A line of run-tests' SLOW TEST SUMMARY: "(1.234 s) <title> [tests/<path>.phpt]", slowest first; a
@@ -746,6 +773,7 @@ def main():
     parser.add_argument('--jobs', type=int, default=os.cpu_count())
     parser.add_argument('--show-slow', type=int, metavar='N', help='print the N slowest tests of the run')
     parser.add_argument('--seeds', type=int, help='run the tests once per seed 1..N with the fuzz hook')
+    parser.add_argument('--shard', metavar='K/M', help='with --seeds: run the K-th of M equal parts of the seeds')
     parser.add_argument('--io-chaos', action='store_true', help="with --seeds: arm the IO provider's fault points")
     parser.add_argument('tests', nargs='*')
     args = parser.parse_args()
@@ -760,6 +788,12 @@ def main():
     if args.io_chaos and args.seeds is None:
         sys.exit('--io-chaos runs with --seeds')
 
+    if args.seeds is not None and args.seeds < 1:
+        sys.exit('--seeds takes a count of 1 or more')
+
+    if args.shard is not None and args.seeds is None:
+        sys.exit('--shard runs with --seeds')
+
     if args.show_slow is not None and args.seeds is not None:
         sys.exit('--show-slow runs without --seeds')
 
@@ -772,11 +806,12 @@ def main():
         if lane.variant or lane.tree == 'win':
             sys.exit(f'{lane.name}: seeds run on a plain dbg or asan lane')
 
+        seeds = seed_range(args.seeds, args.shard)
         lane.with_fuzz()
         build(lane)
 
         with mysql_server(lane, entries):
-            return 1 if run_seeds(lane, entries, args.jobs, args.seeds, args.io_chaos) else 0
+            return 1 if run_seeds(lane, entries, args.jobs, seeds, args.io_chaos) else 0
 
     if lane.tree != 'win':
         build(lane)

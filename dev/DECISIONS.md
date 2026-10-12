@@ -2494,3 +2494,10 @@ stack options were shown with the code).
 - 2026-10-12 S14.3, kept as they are: `channel/114`, `118` order by events already; `internal/069`'s
   delays are armed after the timer they race and longer; `scope/102`, `reactor/030`, `038`, `043`
   check a lower bound, where the deadline is the behaviour.
+- 2026-10-12 S14.7: every CI job has `timeout-minutes` (30, `lists` 10; a seed run 10 min), and each line of
+  the `seeds` job runs in five parallel jobs of consecutive seeds (`tools/test.py --seeds N --shard K/5`); all
+  170 seeds stay. Why: Edmond 2026-10-12 16:05, CI tests do not run long. One job ran a line's seeds one after
+  another: 51 to 65 min (run 38266038345), up to 2 h 52 min (run 38230954460); S3.12 picked 100 dbg and 20
+  asan seeds for 259 tests, and the suite has about 1 780. A shard takes about 13 min (dbg 20 seeds, asan 4).
+- 2026-10-12 S14.7: CI has no `schedule` trigger; the `seeds` jobs run only when CI is dispatched by hand. Why:
+  Edmond 2026-10-12 16:22, "пока что ночные проверки не будем вообще запускать".

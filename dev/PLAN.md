@@ -1853,7 +1853,8 @@ Tests: interleaved
       `io/100`'s verdict no longer follows the queue order; `stream/030` fails fast instead of waiting for
       run-tests' timeout; `--show-slow` in `tools/test.py`; an `--io-chaos` entry in the `seeds` matrix;
       WORKFLOW names who looks at the scheduled run.
-      done: one scheduled run green on dbg and asan with all of its seeds; the suite's ten slowest tests in
+      done: one scheduled run green on dbg and asan with all of its seeds (since S14.7 a dispatched run: no
+        nightly run, Edmond 2026-10-12 16:22); the suite's ten slowest tests in
         HEALTH's `Suite:` line
       tier: T1 · role: Critic
       handoff: 2026-10-12, the fixes are in; open until a scheduled run is green, which waits for S14.1
@@ -1914,6 +1915,22 @@ Tests: interleaved
       scheduler failed to launch".
       done: the new core tests pass on dbg and ASAN; `CORE_REF` moved by WORKFLOW "Core update"
       tier: T2 · role: Critic → Sage
+- [ ] S14.7 Every CI job ends within 30 minutes: each line of the `seeds` job (dbg 100 seeds, asan
+      20, dbg `--io-chaos` 50) runs its seeds in five parallel jobs (`tools/test.py --shard K/M`, a seed keeps
+      its number); every job has `timeout-minutes` (30, `lists` 10); no nightly run, the seeds run when CI is
+      dispatched by hand. Edmond 2026-10-12 16:05: CI tests do not run long; 16:22: no nightly checks for now.
+      done: a dispatched run in which no job or step hits its time limit; each line's longest shard recorded
+      tier: T1 · role: Critic
+      handoff: 2026-10-12, the change is in. One job ran a whole line, 51-65 min (run 38266038345), 2 h 52 min
+        for asan at 9bbd906 (run 38230954460): S3.12 picked 100 and 20 seeds for 259 tests, the suite has
+        ~1 780. Close: a dispatched run in which no job or step hits its time limit.
+- [ ] S14.8 No performance tests in CI: `scope/124` and `125`, the last tests whose verdict is a run time under
+      `max_execution_time` (S14.3 made `await/141` and `signal/024` count searches), keep only the mechanism at a
+      small size; their "linear time" claim becomes a benchmark of `bench/`, checked by hand with
+      `tools/bench.py --count`. Settles the open question on them: Edmond 2026-10-12 16:05, no performance tests
+      in CI.
+      done: no listed test has a time bound as its verdict; the two claims are benchmarks of `bench/`
+      tier: T1 · role: Critic
 
 ## S15 — Test layers of S2 not built yet  [ ]
 

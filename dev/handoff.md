@@ -678,3 +678,7 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   waits on it; under a seed one `suspend()` need not run a coroutine just spawned, so a test that needs one
   parked loops on a flag it sets before the park. The seed runner's "new diagnostic" lines for `channel/112`
   and `collector/063`, `064` come from the tests as they were before S14.3 as well.
+- S14.7 (open until a dispatched run in which no job or step hits its time limit): each `seeds` line runs
+  in five parallel jobs (`tools/test.py --shard K/M`), every CI job has `timeout-minutes` (30, `lists` 10).
+  No nightly run (Edmond 16:22): the seeds run only in a run dispatched by hand. S14.8 (not started) moves
+  the "linear time" claim of `scope/124`, `125` to `bench/` (Edmond 16:05: no performance tests in CI).
