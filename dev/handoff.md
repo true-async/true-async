@@ -669,6 +669,10 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   one commit `d12d93ef45f` (Edmond's word). Edmond opened bukka/php-src#7 (RFC 26); the curl PRs (28, 34) are
   his to open. Local only: `async-core` `f754dc9b194` (a restored upstream comment), push refused without
   his word. Rule (Edmond 17:11): «проверь» means only the PR named, no sweep of other branches.
+- S8.8 closed 2026-10-12 (PLAN result line): `tools/curl-versions.py PREFIX...` runs the core's and our
+  curl tests under other libcurl builds (`--enable-versioned-symbols`); eight versions pass. The rename to
+  `callback_exception` waits on `io-hooks-fixes-callback-exception` `1c8bb39b882` for S9.33's core update.
+  Open in S8: S8.3a (Edmond's F_FILES answer), S8.3b and S8.6 (core slot), S8.3c.
 
 ## S14
 

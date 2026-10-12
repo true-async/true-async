@@ -26,47 +26,49 @@ function open_socket_numbers(): array
 
 $server = async_test_server_start();
 $pair = null;
-$sockets_before = open_socket_numbers();
-$curl_socket = null;
+$sockets_at_last_text = [];
 $parked = false;
 
 // The redirect's response closes its connection; libcurl reports the socket removed and closes it, then
 // logs the follow while the removed socket's registrations are still in the queue.
-$transfer = spawn(function () use ($server, $sockets_before, &$pair, &$curl_socket, &$parked) {
+$transfer = spawn(function () use ($server, &$pair, &$sockets_at_last_text, &$parked) {
     $ch = curl_init("http://localhost:{$server->port}/redirect");
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_VERBOSE => true,
-        CURLOPT_DEBUGFUNCTION => function ($ch, $type, $data) use ($sockets_before, &$pair, &$curl_socket, &$parked) {
-            if ($type !== CURLINFO_TEXT) {
+        CURLOPT_DEBUGFUNCTION => function ($ch, $type, $data) use (&$pair, &$sockets_at_last_text, &$parked) {
+            if ($type !== CURLINFO_TEXT || $pair !== null) {
                 return 0;
             }
-            if ($curl_socket === null && str_starts_with($data, 'Connected to')) {
-                // The one socket the transfer has opened so far is its connection.
-                $opened = array_diff(open_socket_numbers(), $sockets_before);
-                $curl_socket = count($opened) === 1 ? reset($opened) : false;
+            if (!str_contains($data, 'Issue another request')) {
+                $sockets_at_last_text = open_socket_numbers();
+                return 0;
             }
-            if ($pair === null && str_contains($data, 'Issue another request')) {
-                $before = open_socket_numbers();
-                $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
-                // socketpair() numbers its first end first, so the lower new number is $pair[0].
-                $pair_numbers = array_diff(open_socket_numbers(), $before);
-                echo "the read end took the closed socket's number: ",
-                    var_export($curl_socket !== false && min($pair_numbers) === $curl_socket, true), "\n";
 
-                // A read that waits registers the number while curl's registrations are still there.
-                $first = spawn(function () use ($pair, &$parked) {
-                    $parked = true;
-                    return fread($pair[0], 1);
-                });
-                while (!$parked) {
-                    suspend();
-                }
-                fwrite($pair[1], "x");
-                $data = await($first);
-                echo "first read: ", $data, "\n";
+            // The one socket gone since libcurl's previous line is the connection it closed; libcurl's other
+            // sockets (7.87 keeps a socketpair to wake its multi handle) stay open.
+            $before = open_socket_numbers();
+            $closed = array_diff($sockets_at_last_text, $before);
+            $curl_socket = count($closed) === 1 ? reset($closed) : false;
+
+            $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+            // socketpair() numbers its first end first, so the lower new number is $pair[0].
+            $pair_numbers = array_diff(open_socket_numbers(), $before);
+            echo "the read end took the closed socket's number: ",
+                var_export($curl_socket !== false && min($pair_numbers) === $curl_socket, true), "\n";
+
+            // A read that waits registers the number while curl's registrations are still there.
+            $first = spawn(function () use ($pair, &$parked) {
+                $parked = true;
+                return fread($pair[0], 1);
+            });
+            while (!$parked) {
+                suspend();
             }
+            fwrite($pair[1], "x");
+            $data = await($first);
+            echo "first read: ", $data, "\n";
 
             return 0;
         },

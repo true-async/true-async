@@ -81,8 +81,8 @@ CORE_SRC = 'TRUE_ASYNC_CORE_SRC'
 
 # The only variables run-tests gets: it writes its environment into a .sh next to every failed
 # test, and results/ is uploaded, so a secret under any name would reach the artifact. Each name is
-# read by run-tests.php, a test (USE_ZEND_ALLOC, TRUE_ASYNC_CORE_SRC), the sanitizers, ior or Windows
-# itself.
+# read by run-tests.php, a test (USE_ZEND_ALLOC, TRUE_ASYNC_CORE_SRC), the sanitizers, ior, the dynamic
+# loader (LD_LIBRARY_PATH: tools/curl-versions.py) or Windows itself.
 TEST_ENV_NAMES = {
     'PATH', 'TMPDIR', 'TMP', 'TEMP',
     'SYSTEMROOT', 'SYSTEMDRIVE', 'WINDIR', 'COMSPEC', 'PATHEXT', 'NUMBER_OF_PROCESSORS',
@@ -91,7 +91,7 @@ TEST_ENV_NAMES = {
     'USE_ZEND_ALLOC', 'USE_TRACKED_ALLOC', 'ZEND_DONT_UNLOAD_MODULES',
     'ASAN_OPTIONS', 'UBSAN_OPTIONS', 'LSAN_OPTIONS', 'MSAN_OPTIONS', 'ASAN_SYMBOLIZER_PATH',
     'LLVM_SYMBOLIZER_PATH',
-    'IOR_BACKEND', 'TRUE_ASYNC_SCHED', CORE_SRC,
+    'IOR_BACKEND', 'TRUE_ASYNC_SCHED', CORE_SRC, 'LD_LIBRARY_PATH',
 }
 
 # run-tests' own switches: TEST_PHP_ARGS, TEST_PHP_JUNIT, ..., SKIP_SLOW_TESTS, ...; the MySQL

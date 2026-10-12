@@ -607,12 +607,13 @@ userland provider's `run()` on the Connect, as `socket_io_hooks_accept_throws.ph
 
 ## 28. IO hooks: a late remove() of a closed descriptor clears the number's next registrations
 
-State: on `io-hooks-curl-late-remove` `d12d93ef45f` (on bukka's `8e470c219fc`; force-pushed over
-`c92a03dd619` on Edmond's word, 2026-10-12 17:04, to put back bukka's two comments the fix had reworded)
-and `io-hooks-fixes` `b9bc37e11e3` with `466bdd66486` (the same comments), pushed 2026-10-12 (S8.4a,
-S8.7), in the core since `async-core-io-2026-10-12-1` `36050e31325`, the comments since
-`async-core-io-2026-10-12-3` `634cbbf94be`; PR text for bukka in
-`/mnt/project-files/notes/s8-4a/io-hooks-curl-late-remove-pr.md`, Edmond opens it. PR: none.
+State: on `io-hooks-curl-late-remove` `5cd8893ec1a` (on bukka's `8e470c219fc`; force-pushed on Edmond's
+word, 2026-10-12 17:04 to put back bukka's two comments the fix had reworded, then to name the kept
+exception `callback_exception` as TrueAsync's `curl_async.c` does) and `io-hooks-fixes` `b9bc37e11e3` with
+`466bdd66486` (the same comments), pushed 2026-10-12 (S8.4a, S8.7), in the core since
+`async-core-io-2026-10-12-1` `36050e31325`, the comments since `async-core-io-2026-10-12-3` `634cbbf94be`;
+the rename is `1c8bb39b882` on `io-hooks-fixes-callback-exception`, for the next core update; PR text
+for bukka in `/mnt/project-files/notes/s8-4a/io-hooks-curl-late-remove-pr.md`, Edmond opens it. PR: none.
 
 Need: on the Poll queue, a stream that takes the number of a socket libcurl just closed has its record
 freed under it. On `CURL_POLL_REMOVE` the curl callback only invalidates the socket's handle

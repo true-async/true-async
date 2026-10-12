@@ -1124,6 +1124,19 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
       Critic 2026-10-12: a check after each wait missed yields inside libcurl (a suspending callback, a socket
         stream's cookie `FILE*`), the cancelled wait, and reset the sink mid-body; redone at the point of use. The
         second Critic: no blocker; the warning moved out of libcurl, the INFILE test waits on a 100-continue.
+- [x] S8.8 The curl tests of the core and of the extension pass under the libcurl versions that broke
+      TrueAsync (Edmond: «посмотри по истории у true async какие именно версии вызывали баги»): a local
+      script, `tools/curl-versions.py`, not a CI job.
+      done: core `ext/curl/tests` and the extension's curl tests pass under 7.87.0, 8.5.0, 8.10.1, 8.11.0,
+      8.11.1, 8.13.0, 8.20.0 and 8.22.0
+      tier: T1 · role: —
+      result 2026-10-12: all eight pass on pocs-dbg (core `634cbbf94be`): core 190 passed (188 on 7.87.0), the
+        extension's 74-75 PASS, 0 unexpected. Three to five core `curl_getinfo_CURLINFO_*` tests need the
+        headers of a newer libcurl than the 8.5.0 the core is built against; the script lists them apart.
+        Found: `tools/test.py` dropped `LD_LIBRARY_PATH`, so the extension's tests ran on 8.5.0 whatever the
+        prefix (now passed through); `io_provider/073` and `074` named libcurl's socket by the text
+        "Connected to" (8.20 logs "Established connection to") and by the only new socket (7.87.0 keeps a
+        socketpair too), now by the socket gone before "Issue another request"; ASAN and 20 seeds clean.
 
 ## S9 — Higher layers, one at a time  [in progress]
 
