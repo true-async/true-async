@@ -1924,7 +1924,7 @@ its scheduler launches; its plain streams get a libuv handle from RINIT (the for
       done: each PR's link and state in `RFC-CHANGES.md`; `S6.md` section 2 corrected
       tier: T1 · role: Critic
 
-## S14 — Crashes under a random scheduling seed, nightly CI, tests without wall-clock waits, fault tests  [ ]
+## S14 — Health check fixes  [ ]
 
 The open findings of the health check of 2026-10-12 (`dev/HEALTH.md`). Edmond 2026-10-12 12:54: all of them are
 fixed at once, ahead of S8, S9.31 and later stages. S14.1 is a crash and a leak on main. S14.1's fiber part and
