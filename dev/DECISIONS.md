@@ -2745,3 +2745,10 @@ stack options were shown with the code).
   `task_group/166-destructor_with_gc_run_due_while_scope_member_finishes.phpt`,
   `task_set/036-joinAll_takes_only_settled_entries_across_gc_wait.phpt`, whose spawner also catches the closed set
   that a random scheduling seed lets `joinAll()` close first (a fatal error in seed 7).
+- 2026-10-12 S9.38, `gc/025-gc_run_first_keeps_100000_coroutines_from_parking.phpt` takes `fiber.stack_size=1M`.
+  Why: main no longer yields at each threshold, so all 100 000 coroutines are queued before any runs and the
+  10 000 that suspend once are parked beside the 10 000 that loop: 20 079 stacks at once, not 14 041 (strace,
+  debug build, the core before and after b318dcd834c). Windows commits whole stacks, and 20 079 stacks of 2M
+  overran the CI runner's paging file ("VirtualAlloc failed: [0x000005af]"); 1M makes 20.1 GiB of stacks, under
+  the 27.7 GiB of the old peak (28.4 GB `VmPeak` in the 2026-10-08 entry) that passed. This narrows that entry's
+  rejection of a smaller stack: ASAN's reserved 480K rules out 256K, not 1M, which passes on ASAN.

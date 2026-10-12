@@ -8,14 +8,19 @@ if (getenv('TRUE_ASYNC_SCHED') !== false) {
     die('skip the random pick of the fuzz lane takes the GC run off the front of the queue');
 }
 ?>
+--INI--
+fiber.stack_size=1M
 --FILE--
 <?php
 
 use function Async\spawn;
 use function Async\suspend;
 
-// Each coroutine that adds a root to a full buffer parks until the run ends; behind 100 000
+// A coroutine that adds a root to a full buffer must not park until the run ends: behind 100 000
 // queued coroutines the parked fibers would pass vm.max_map_count ("Fiber stack protect failed").
+// Main spawns all 100 000 before any runs, so the 10 000 that loop and the 10 000 that suspend
+// once are parked together: 20 000 stacks, which Windows commits whole; at the default 2M they
+// pass the CI runner's commit limit.
 $count = 100000;
 $survivors = [];
 
