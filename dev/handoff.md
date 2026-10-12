@@ -663,6 +663,12 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
 - S8.4a closed 2026-10-12 (PLAN result line): core `async-core-io-2026-10-12-1` `36050e31325` carries the
   curl fix (RFC 28) and the `socket_accept()` fix (RFC 26); PR texts for Edmond in `notes/s8-3`,
   `notes/s8-4a`. Open in S8: S8.3a (next), S8.3b (only 27 left) and S8.6 (core slot), S8.3c.
+- S8.7 closed 2026-10-12 (PLAN result line): core `async-core-io-2026-10-12-3` `634cbbf94be` ends a curl
+  transfer whose FILE/INFILE/WRITEHEADER stream another coroutine closed and swaps a closed STDERR (RFC 34,
+  PR text `notes/s8-7`), and restores bukka's two curl comments; `io-hooks-curl-late-remove` force-pushed to
+  one commit `d12d93ef45f` (Edmond's word). Edmond opened bukka/php-src#7 (RFC 26); the curl PRs (28, 34) are
+  his to open. Local only: `async-core` `f754dc9b194` (a restored upstream comment), push refused without
+  his word. Rule (Edmond 17:11): «проверь» means only the PR named, no sweep of other branches.
 
 ## S14
 

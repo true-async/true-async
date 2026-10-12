@@ -1106,6 +1106,27 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
       done: `io/039`, `040`, `042`, `043` and `stream/030` pass without `--XFAIL--` (and `030` without its
       watchdog) on debug and ASAN
       tier: T1 · role: Critic
+- [x] S8.7 A stream given to `CURLOPT_FILE`, `INFILE`, `WRITEHEADER` or `STDERR` and closed by another
+      coroutine while `curl_exec()` waits is not used after it is freed (TrueAsync's curl history, item E1
+      of `/mnt/project-files/notes/s8-curl/trueasync-curl-history.md`); a core fix for bukka
+      (`RFC-CHANGES.md` 34) in the core update that also restores bukka's two curl comments.
+      done: `io_provider/082` and the core test fail on the old core and pass on debug and ASAN
+      tier: T1 · role: Critic
+      result 2026-10-12: core `async-core-io-2026-10-12-3` `634cbbf94be` (`96a52ba65f4` with `io-hooks-fixes`
+        `a51797d8645` merged: bukka's two curl comments back word for word, then the fix); PR branch
+        `io-hooks-curl-closed-file` `f7fbc4335fe` on bukka's `8e470c219fc`, PR text
+        `/mnt/project-files/notes/s8-7/io-hooks-curl-closed-file-pr.md` (Edmond opens it). `curl_write()`,
+        `curl_write_header()` and `curl_read()` fail the transfer on a closed stream with no PHP code inside libcurl,
+        `curl_exec()` warns after; a closed `STDERR` is swapped for `stderr` after each wait. Core tests
+        `curl_exec_io_hook_{file,infile,stderr}_closed_while_waiting` and `io_provider/082` fail on the old core (a
+        debug build aborts in `munmap_chunk()`; valgrind shows the writes to the freed `FILE*`) and pass on debug and
+        ASAN, Poll queue and Ring, `082` 20 seeds clean. All lists: pocs-dbg 1761 PASS, 21 SKIP, 9 XFAIL; pocs-asan
+        1735 PASS, 48 SKIP, 8 XFAIL; 0 unexpected. Core suites, `96a52ba65f4` against the new core: only the three
+        new tests differ (565 PASS on both trees). History item A3 (DNS on libcurl 8.20.x) does not reproduce:
+        8.20.0 loaded under the debug core resolves names in `curl_exec()` within milliseconds.
+      Critic 2026-10-12: a check after each wait missed yields inside libcurl (a suspending callback, a socket
+        stream's cookie `FILE*`), the cancelled wait, and reset the sink mid-body; redone at the point of use. The
+        second Critic: no blocker; the warning moved out of libcurl, the INFILE test waits on a 100-continue.
 
 ## S9 — Higher layers, one at a time  [in progress]
 

@@ -2541,3 +2541,13 @@ stack options were shown with the code).
   decrement; a replaced value is released after the store; a channel releases its hold on a served Future last and
   marks a rendezvous slot committed when it promises it. Why: a release can start a GC run that the caller waits
   for while other coroutines free or change what the walk reads next (`SECURITY.md` 2026-10-12 S9.33).
+- 2026-10-12 S8.7, own defaults (the step and the core slot from the coordinator): a stream given to curl and closed
+  while `curl_exec()` waits fails the transfer where its `FILE*` is used, with no PHP code inside libcurl, and
+  `curl_exec()` warns after it, not a reset to the default handler mid-body (the first version re-checked after
+  each wait; two Critics showed yields inside libcurl, the spill, and an error handler run inside libcurl).
+  `CURLOPT_STDERR` is swapped for `stderr` after each wait without PHP code; left: it closed during a yield
+  inside libcurl. Not fixed here: `in_exec` covers only the wait, so a
+  callback that suspends lets another coroutine use the handle (Critic, pre-existing). The core update also
+  carries `466bdd66486`: bukka's two curl comments back word for word (Edmond 16:32), and the PR branch was
+  force-pushed to one commit (17:04). Not in this core: `async-core` `f754dc9b194` (Bob Weinand's comment
+  on the fiber cleanup back word for word), local; its push to `async-core` was refused without his word.

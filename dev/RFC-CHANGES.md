@@ -569,8 +569,9 @@ Waits for it: nothing; the pinned core carries it.
 
 State: on `io-hooks-socket-accept-exception` `73c612a426d` (on bukka's `8e470c219fc`) and
 `io-hooks-fixes` `9458268fe1e`, pushed 2026-10-12 (S8.3); PR text for bukka in
-`/mnt/project-files/notes/s8-3/io-hooks-socket-accept-exception-pr.md`, Edmond opens it. In the core
-since `async-core-io-2026-10-12-1` `36050e31325` (S8.4a). PR: none.
+`/mnt/project-files/notes/s8-3/io-hooks-socket-accept-exception-pr.md`; Edmond opened it on
+2026-10-12. In the core since `async-core-io-2026-10-12-1` `36050e31325` (S8.4a). PR:
+https://github.com/bukka/php-src/pull/7.
 
 Need: a coroutine cancelled while it waits in `socket_accept()` kills the process: the function
 releases the new `Socket` and returns through `RETURN_THROWS()` with it still in `return_value`
@@ -606,10 +607,12 @@ userland provider's `run()` on the Connect, as `socket_io_hooks_accept_throws.ph
 
 ## 28. IO hooks: a late remove() of a closed descriptor clears the number's next registrations
 
-State: on `io-hooks-curl-late-remove` `c92a03dd619` (on bukka's `8e470c219fc`) and `io-hooks-fixes`
-`b9bc37e11e3`, pushed 2026-10-12 (S8.4a), in the core since `async-core-io-2026-10-12-1`
-`36050e31325`; PR text for bukka in `/mnt/project-files/notes/s8-4a/io-hooks-curl-late-remove-pr.md`,
-Edmond opens it. PR: none.
+State: on `io-hooks-curl-late-remove` `d12d93ef45f` (on bukka's `8e470c219fc`; force-pushed over
+`c92a03dd619` on Edmond's word, 2026-10-12 17:04, to put back bukka's two comments the fix had reworded)
+and `io-hooks-fixes` `b9bc37e11e3` with `466bdd66486` (the same comments), pushed 2026-10-12 (S8.4a,
+S8.7), in the core since `async-core-io-2026-10-12-1` `36050e31325`, the comments since
+`async-core-io-2026-10-12-3` `634cbbf94be`; PR text for bukka in
+`/mnt/project-files/notes/s8-4a/io-hooks-curl-late-remove-pr.md`, Edmond opens it. PR: none.
 
 Need: on the Poll queue, a stream that takes the number of a socket libcurl just closed has its record
 freed under it. On `CURL_POLL_REMOVE` the curl callback only invalidates the socket's handle
@@ -743,3 +746,28 @@ across the automatic run without moving the frame to the throwing opline, and re
 temporaries at the opline the shield used. Tests `ext/test_scheduler/tests/096`-`118`.
 
 Waits for it: nothing; the pinned core carries it.
+
+## 34. IO hooks: a stream given to curl and closed while `curl_exec()` waits
+
+State: on `io-hooks-curl-closed-file` `f7fbc4335fe` (on bukka's `8e470c219fc`) and `io-hooks-fixes`
+`a51797d8645`, 2026-10-12 (S8.7), in the core since `async-core-io-2026-10-12-3` `634cbbf94be`; PR text
+for bukka in `/mnt/project-files/notes/s8-7/io-hooks-curl-closed-file-pr.md`, Edmond opens it. PR: none.
+
+Need: `CURLOPT_FILE`, `CURLOPT_INFILE`, `CURLOPT_WRITEHEADER` and `CURLOPT_STDERR` keep the stream's raw
+`FILE*`, and `fclose()` frees it whatever the handle's reference. Upstream checks the streams
+(`_php_curl_verify_handlers()`) when `curl_exec()` starts and after each PHP callback, as no other PHP
+code runs inside `curl_easy_perform()`. Under hooks `curl_exec()` waits in `php_io_run()` and another fiber
+may close the stream there: the next `fwrite()` in `curl_write()` used the freed `FILE*` (valgrind; a debug
+build aborts in `munmap_chunk()`), an upload read it, and libcurl's verbose output went into it. Found in
+TrueAsync's curl history (`/mnt/project-files/notes/s8-curl/trueasync-curl-history.md`, E1).
+
+Request: `curl_write()`, `curl_write_header()` and `curl_read()` check the stream before using its
+`FILE*`; a closed one fails the transfer (write error, read abort) without running PHP code inside
+libcurl, and `curl_exec()` reports it with upstream's "resource has gone away" warning once it failed. A
+check after each wait alone was not enough (the S8.7 Critic): a callback that suspends inside libcurl, or
+a cookie `FILE*` of a socket stream, yields there too. `CURLOPT_STDERR` is written by
+libcurl itself: after each wait, a cancelled one included, a closed stream is replaced by `stderr`
+without running PHP code. Left: `STDERR` closed during a yield inside libcurl.
+
+Waits for it: nothing; the pinned core carries it (`io_provider/082`; core tests
+`curl_exec_io_hook_{file,infile,stderr}_closed_while_waiting`).

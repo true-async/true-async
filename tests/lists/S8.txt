@@ -71,3 +71,4 @@ mysqli/015-poll_queue_close_beside_a_parked_query.phpt  own:8a85c57cae944542bec2
 mysqli/016-cancelled_parked_query.phpt  own:eb420d47d1ea18d6aa34c31037fbd06f380577ebf3b80dfb2308f925192aad07  skip-on:*-win(no-MySQL-server)
 mysqli/017-poll_queue_cancelled_parked_query.phpt  own:3495f31e4aeaa68311ca6681f83c2ff9cccb91f96380c4ed708c5b92a194915f  skip-on:*-win(no-MySQL-server)
 mysqli/018-mysqli_poll_beside_a_coroutine.phpt  own:2e6b53203aacd08001912dea34202d6608d38c3fe0e3e554c164cd5e7f2fe4a7  core:29  skip-on:*-win(no-MySQL-server)
+io_provider/082-curl_file_closed_while_curl_exec_waits.phpt  own:accfa51cc52baa884cbdb27fd5f4b828daa8559dc3219a160b9e547b001d48d2

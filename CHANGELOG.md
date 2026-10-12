@@ -118,3 +118,4 @@ can see goes here; tests, tools and CI are in the git history.
   it, so PHP's GC collects it only with that channel or group ([S9](dev/plans/S9-taskgroup.md), S14.1).
 - On the Poll queue, a stream that takes the number of a socket curl just closed keeps its wait record, and a cancelled `socket_accept()` no longer crashes (core `async-core-io-2026-10-12-1`, S8.4a).
 - An exception whose unwind starts an automatic GC run reaches its `catch` unchanged and an `exit()` there stays an exit; a coroutine cancelled while it waits for a GC run keeps its temporaries collectable (core `async-core-io-2026-10-12-2`, S14.6).
+- A file given to curl and closed by another coroutine while `curl_exec()` waits ends the transfer with PHP's "resource has gone away" warning instead of a write to freed memory (core `async-core-io-2026-10-12-3`, S8.7).
