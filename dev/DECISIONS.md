@@ -2516,3 +2516,23 @@ stack options were shown with the code).
   test-build counter of the walk's steps as S14.3 gave `await/141`, was not taken: the benchmark changes no
   code on the finish path. Settles the PLAN open question on the two tests. S14.2 ticked without its seeds
   run (the coordinator, after the nightly was turned off; PLAN Open questions).
+- 2026-10-12 S14.6: the core's test scheduler gets one INI countdown per refusal, as `fail_enqueue` already was:
+  `fail_wake` (an enqueue of a coroutine that is not CREATED), `fail_cancel`, `fail_finish_handler` (returns 0),
+  `fail_defer`, `fail_launch` (returns NULL); a refused enqueue, cancel or defer throws an Error naming its seam.
+  Why: the refusal paths HEALTH listed answer a returned failure, and TrueAsync's only scheduler seam,
+  `ASYNC_TEST_FAULT`, is a fatal error. The enqueue contract now says what the core relies on: every refusal
+  returns false with an Error thrown. Not reached by a test: the fiber entry's caller wake after an `exit()` the
+  scheduler took over (test_scheduler never clears the exit) and `zend_fiber_coroutine_finished`'s wake with an
+  error (it needs a fiber's coroutine cancelled before its start). S8.1b's limit (a kept fiber lives to the
+  request's end when its finish handler throws or is skipped) is gone: the coroutine entry releases it.
+- 2026-10-12 S14.6, the GC's automatic run during an unwind parks the frame with an exception pending: the core
+  holds the exception and `opline_before_exception` across it, as `zend_objects_destroy_object()` does, but leaves
+  the frame on the exception op: moved back to the throwing opline, the TMPVAR walks read temporaries the unwind
+  had freed (ASan, `116`). Cost, Sage's call over an engine change in `cleanup_live_vars` (a stale opline after
+  `FAST_RET` would still be unsafe): a cycle kept only by the current frame's live temporary waits for the
+  request's end. An exit wins over a cancellation delivered meanwhile. test_scheduler asserts that `suspend` is
+  called with no exception pending; our extension still holds one, harmlessly.
+- 2026-10-12 S14.6, own defaults: a refused wake of the GC coroutine leaves it parked with the collector off for
+  the request, documented, no retry (Sage: only a scheduler breaking its contract gets there). A Critic's case,
+  our collector walking a frame parked in a destructor during an unwind, did not reproduce in two probes. The
+  exception lost across that park was first fixed in test_scheduler's suspend; the core's hold replaced the fix.

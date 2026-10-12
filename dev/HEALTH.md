@@ -22,7 +22,8 @@ Mutants: Mull 0.34.1 (`tools/mull.py`); CI runs only the known-answer check; ref
 Practices: mutation tool (known-answer on every push, stage diffs at stage reviews), fault tests (the
   `fail_at` sites enqueue, reserve, link in 12 tests; the reactor queue's `fail_io` sites, S14.5, in 19
   tests; the refused stack, `fiber.stack_size=1048576G`, in 21; IO chaos C1-C3 by `--io-chaos`, S6.8; the core
-  test scheduler's `fail_new_coroutine`/`fail_enqueue` in 8 tests), fuzz seeds (nightly `seeds` job
+  test scheduler's `fail_*` seams: new coroutine, enqueue, wake, cancel, finish handler, defer, launch, S14.6,
+  in 26 tests), fuzz seeds (nightly `seeds` job
   only, with an `--io-chaos` entry since S14.2), benchmarks (bench/, `tools/bench.py`, by hand),
   dev/PRINCIPLES.md, CI (lists, linux dbg and asan, mutants-coverage, windows on push; seeds on schedule);
   missing: specification tests (dev/TESTING.md), the allocator-fault and network-chaos layers of
@@ -55,11 +56,6 @@ Known dark places: none beyond the open findings
 - 6 src/os_signal.c `async_signal_rebuild`, `signal_watch_renew` (a forked child's signal context or handle that
   cannot be made: no test, and a fatal error on D16's frameless arm) and src/reactor.c `wakeup_arm` ("Cannot poll
   the wake descriptors": no test) (PLAN open questions, DECISIONS 2026-10-12 S14.5)
-- 6 core Zend/zend_gc.c:2082, 2091-2092, zend_fibers.c:908, 930, 935, 962, 1110, 1548, 1585, 815: no fault test
-  for the enqueue or cancel of a coroutine that is not CREATED; the seam fires only on a CREATED coroutine (S14.6)
-- 6 core Zend/zend_gc.c:733-740 with 2270-2273 (`fail_enqueue` with the root buffer full), 2293-2296, 2116-2117;
-  a finish handler refused (handler id 0: zend_gc.c:2172, 2270; zend_fibers.c:1132-1133 stores it unchecked);
-  zend_async_API.c:760-764 "The scheduler failed to launch": no test (S14.6)
 - 8 src/exceptions.h:21, 32: `async_composite_exception_add_exception`'s `transfer` is always false, and it and `async_ce_composite_exception` are exported but used only in exceptions.c (S3.19)
 - 8 src/true_async_API.h:132-136: `async_callbacks_add()` is called only by test_hooks.c (S3.19)
 - 8 src/internal/circular_buffer.h:26, .c:58-97: `item_size` is generic while every buffer holds pointers; the `capacity == 0` branch of `count` serves only a test hook (S3.19)

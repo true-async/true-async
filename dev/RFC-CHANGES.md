@@ -558,7 +558,8 @@ the waiting caller to a new field `handoff_coroutine`, kept until that caller ha
 and `resume()`, `throw()`, `isSuspended()` and `isRunning()` count both fields as the legacy path
 counts `caller`; a value the slot releases is detached first and released after the state change.
 `start()` refuses a fiber that already has a coroutine. The destructor of a fiber
-whose body runs keeps the object until the body ends, through a finish handler, and the body's
+whose body runs keeps the object until the body ends (since S14.6 a flag the coroutine entry releases,
+not a finish handler; entry 33), and the body's
 `Fiber::suspend()` refuses as in a force-closed fiber (`044`). TrueAsync's `resume()` (its
 `zend_fibers.c:1043-1078`) has none of these checks; read, not run.
 
@@ -716,3 +717,29 @@ blocking (entry 31) the write first asks a zero-timeout `poll()` and writes at m
 coroutines logging to `STDERR` still meet no busy stream (`io_provider/081` shows the collision today).
 
 Waits for it: `io_provider/080`, `081` (`core:32` in `tests/lists/S8.txt`).
+
+## 33. Scheduler API: the core under a refusing scheduler, and the GC's automatic run during an unwind
+
+State: done in `async-core` `a769c850eb1`..`6bfa8ed44de` (2026-10-12, S14.6), in the core from
+`async-core-io-2026-10-12-2`. PR: none; it goes with php/php-src#22561.
+
+Need: the core's refusal paths had no test, and the test scheduler could fail only the enqueue of a
+CREATED coroutine. Fault tests of the wake, the cancel, the finish handler, the defer and the launch
+found that `Fiber::suspend()` parked before waking its caller (a refused wake left its error to the
+next coroutine), `start()` stored its finish handler unchecked, a body's error was released by a
+refused wake, a fiber kept for its body through a finish handler was freed under the body when the
+handler was refused, the GC's refused hand-off leaked its microtask, and refusal errors surfaced in
+code that only dropped a reference. Reviews of those fixes found that an automatic GC run during an
+unwind parks the frame with the exception pending: its throw position was overwritten meanwhile (the
+frame's `catch` was missed), a cancellation replaced an `exit()`, and a cancelled await dropped the
+frame's shielded temporaries from the root buffer.
+
+Request: every refusal of `enqueue` returns false with an Error thrown; `suspend` is called with no
+exception pending. Fibers wake the caller before parking, add the start handler before the enqueue,
+keep the body's error and an exit on a refused wake, and release a fiber kept for its body at the
+body's end (`ZEND_FIBER_FLAG_HELD_BY_BODY`). The GC sets its hand-off state after the hand-off
+succeeds, clears refusal errors that belong to no caller, holds the exception and its throw position
+across the automatic run without moving the frame to the throwing opline, and re-roots shielded
+temporaries at the opline the shield used. Tests `ext/test_scheduler/tests/096`-`118`.
+
+Waits for it: nothing; the pinned core carries it.

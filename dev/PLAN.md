@@ -83,6 +83,10 @@ Waiting for Edmond's call; nothing here is being worked on.
 - S14.2 was ticked without its done line's green `seeds` run after S14.1: CI has no nightly run (Edmond
   2026-10-12 16:22). Either one run of CI dispatched by hand (15 `seeds` jobs of about 13 minutes) checks S14.1
   and S14.7 together, or both wait until a nightly run is back. Edmond's call.
+- `gc_collect_cycles()` called while a GC run is in progress (its coroutine parked waiting for destructor
+  iterators) returns 0 at once, from any coroutine: the `gc_active` check meant for a call from inside the run
+  (S14.6, Sage). A programmer forcing a collection gets none and no sign of why. Option: await the active run
+  unless the caller is one of its destructor iterators (needs the GC to track them). Edmond's call.
 - A forked child whose first reactor call is D16's arm after an `exit()` in main's script runs the rebuild with no
   frame (S14.5): a `SignalHandle` or `Io\Poll\Context` the rebuild cannot make (descriptors exhausted) throws
   from a PHP call there, a fatal error that skips every `finally`. The other throws of that rebuild are fixed
@@ -1926,11 +1930,20 @@ Tests: interleaved
         D16's arm (main's exit, a forked child's rebuild), the refused drain's pending children, the refused
         TaskGroup reporter's lost errors, a failed wait that spun the idle loop. Left for Edmond: the rebuild's
         PHP calls on D16's frameless arm (open questions). Full pocs-dbg over S9.31: 1725 PASS.
-- [ ] S14.6 Fault tests of the core: the core's test scheduler can fail an enqueue or a cancel at any status and
+- [x] S14.6 Fault tests of the core: the core's test scheduler can fail an enqueue or a cancel at any status and
       refuse a finish handler; tests for the GC coroutine's and the Fiber's paths HEALTH lists, and for "The
       scheduler failed to launch".
       done: the new core tests pass on dbg and ASAN; `CORE_REF` moved by WORKFLOW "Core update"
       tier: T2 · role: Critic → Sage
+      handoff: done 2026-10-12. Core `async-core-io-2026-10-12-2` `96a52ba65f4` (`async-core` `6bfa8ed44de`,
+        seven commits, RFC-CHANGES 33). The test scheduler fails a wake, a cancel, a finish handler, a defer and
+        the launch; `ext/test_scheduler/tests/096`-`118`, 26 tests use the seams; PASS on dbg and ASAN, each
+        commit on dbg. Bugs fixed: `Fiber::suspend()` parked before waking its caller, `start()` stored its
+        handler unchecked, a refused wake released a body's error, a refused finish handler freed a fiber
+        under its body, the GC's refused hand-off leaked its microtask, refusal errors surfaced in unrelated
+        code; three Critics found that the GC's automatic run during an unwind lost the throw position or an
+        `exit()`, walked freed temporaries and, cancelled, dropped live ones from the root buffer (DECISIONS
+        2026-10-12 S14.6). Extension on the new core: pocs-dbg 1760 PASS, pocs-asan 1734 PASS, 0 unexpected.
 - [ ] S14.7 Every CI job ends within 30 minutes: each line of the `seeds` job (dbg 100 seeds, asan
       20, dbg `--io-chaos` 50) runs its seeds in five parallel jobs (`tools/test.py --shard K/M`, a seed keeps
       its number); every job has `timeout-minutes` (30, `lists` 10); no nightly run, the seeds run when CI is

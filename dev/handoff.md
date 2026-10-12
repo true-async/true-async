@@ -684,3 +684,7 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   in five parallel jobs (`tools/test.py --shard K/M`), every CI job has `timeout-minutes` (30, `lists` 10).
   No nightly run (Edmond 16:22): the seeds run only in a run dispatched by hand. S14.8 (done) moved
   the "linear time" claim of `scope/124`, `125` to `bench/` B19, B20 (Edmond 16:05: no performance tests in CI).
+- S14.6 closed 2026-10-12 (PLAN handoff line, DECISIONS 2026-10-12 S14.6): core `async-core-io-2026-10-12-2`
+  `96a52ba65f4` carries the test scheduler's refusal seams and the fixes they and three Critics found (RFC 33).
+  The automatic GC run during an unwind holds the exception; a cycle kept only by that frame's live temporary
+  waits for the request's end. Open for Edmond: `gc_collect_cycles()` returns 0 while a run is in progress.
