@@ -1173,7 +1173,7 @@ Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, dev/plans/S9-taskgroup.md,
   dev/plans/S9-pool.md
-Active: S9.34, layer 5's list block and the pool without its waits
+Active: S9.35, the POOL wait kind, the healthcheck coroutine and the collector
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -1643,11 +1643,19 @@ Active: S9.34, layer 5's list block and the pool without its waits
         called. Edmond answered the three questions at 18:38-18:39: C (an `Exception` rejects, an `Error`
         passes), B (handed-out objects checked), B (`shouldRecover()` asked). Critic: 4 high findings fixed (the
         check's error route, its reservations, the GC's `free_obj` order); the Sage kept `acquire(int $timeout)`.
-- [ ] S9.34 The layer 5 block of `tests/lists/S9.txt` and `src/pool.c` without its waits (note section 7).
+- [x] S9.34 The layer 5 block of `tests/lists/S9.txt` and `src/pool.c` without its waits (note section 7).
       done: the 70 reference tests listed, those needing S9.35 with `--XFAIL--`, the changed ones with
         `changed:` and DECISIONS lines; the pool, its hooks, the circuit breaker and the release check built
         with own tests
       tier: T2 · role: Critic
+      handoff: done 2026-10-12 (DECISIONS 2026-10-12 S9.34): of the 70 reference tests 46 pass and 24 are
+        `--XFAIL--` for S9.35 (the waits, the healthcheck); 6 changed (`024`, `048`, `049`, `054`, `056`, `068`).
+        35 own tests (`070`-`104`). The release check (question 2) is about 60 lines with comments: a weak-key
+        count per object, a count per PHP resource handle, a number for other values. Two Critics: a use after
+        free when the pool closed during the factory, `release(null)` passing while an object was out, chaining
+        into a shared cancellation, by-reference factories and hooks, exits lost in `close()`; all fixed with
+        tests. `048` and `049` as XFAIL each run 10 s until S9.35 (their keeper's `delay(10000)`). On CORE_REF
+        `d06ab339297`: debug 1855 PASS, 0 unexpected; the pool's 105 tests on ASAN 81 PASS, 24 XFAIL.
 - [ ] S9.35 The POOL wait kind, the healthcheck coroutine and the collector (note sections 4-6).
       done: the S9.35 XFAILs pass; the collector finds a waiter on a pool nobody reaches
       tier: T2 · role: Critic

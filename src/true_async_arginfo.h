@@ -1,5 +1,5 @@
 /* This is a generated file, edit true_async.stub.php instead.
- * Stub hash: eabf3397b16a943a998933f545af85c39f42e8ce */
+ * Stub hash: 33086c1369ebfd39068d3b71421fd8648a5831a8 */
 
 #include "zend_enum.h"
 
@@ -105,6 +105,26 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_Async_Completable_isCancelled arginfo_class_Async_Completable_isCompleted
 
+ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_class_Async_CircuitBreaker_getState, 0, 0, Async\\CircuitBreakerState, 0)
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_Async_CircuitBreaker_activate arginfo_Async_suspend
+
+#define arginfo_class_Async_CircuitBreaker_deactivate arginfo_Async_suspend
+
+#define arginfo_class_Async_CircuitBreaker_recover arginfo_Async_suspend
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_CircuitBreakerStrategy_reportSuccess, 0, 1, IS_VOID, 0)
+	ZEND_ARG_TYPE_INFO(0, source, IS_MIXED, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_CircuitBreakerStrategy_reportFailure, 0, 2, IS_VOID, 0)
+	ZEND_ARG_TYPE_INFO(0, source, IS_MIXED, 0)
+	ZEND_ARG_OBJ_INFO(0, error, Throwable, 0)
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_Async_CircuitBreakerStrategy_shouldRecover arginfo_class_Async_Completable_isCompleted
+
 ZEND_FUNCTION(Async_spawn);
 ZEND_FUNCTION(Async_spawn_with);
 ZEND_FUNCTION(Async_await);
@@ -158,6 +178,21 @@ static const zend_function_entry class_Async_Completable_methods[] = {
 	ZEND_RAW_FENTRY("cancel", NULL, arginfo_class_Async_Completable_cancel, ZEND_ACC_PUBLIC|ZEND_ACC_ABSTRACT, NULL, NULL)
 	ZEND_RAW_FENTRY("isCompleted", NULL, arginfo_class_Async_Completable_isCompleted, ZEND_ACC_PUBLIC|ZEND_ACC_ABSTRACT, NULL, NULL)
 	ZEND_RAW_FENTRY("isCancelled", NULL, arginfo_class_Async_Completable_isCancelled, ZEND_ACC_PUBLIC|ZEND_ACC_ABSTRACT, NULL, NULL)
+	ZEND_FE_END
+};
+
+static const zend_function_entry class_Async_CircuitBreaker_methods[] = {
+	ZEND_RAW_FENTRY("getState", NULL, arginfo_class_Async_CircuitBreaker_getState, ZEND_ACC_PUBLIC|ZEND_ACC_ABSTRACT, NULL, NULL)
+	ZEND_RAW_FENTRY("activate", NULL, arginfo_class_Async_CircuitBreaker_activate, ZEND_ACC_PUBLIC|ZEND_ACC_ABSTRACT, NULL, NULL)
+	ZEND_RAW_FENTRY("deactivate", NULL, arginfo_class_Async_CircuitBreaker_deactivate, ZEND_ACC_PUBLIC|ZEND_ACC_ABSTRACT, NULL, NULL)
+	ZEND_RAW_FENTRY("recover", NULL, arginfo_class_Async_CircuitBreaker_recover, ZEND_ACC_PUBLIC|ZEND_ACC_ABSTRACT, NULL, NULL)
+	ZEND_FE_END
+};
+
+static const zend_function_entry class_Async_CircuitBreakerStrategy_methods[] = {
+	ZEND_RAW_FENTRY("reportSuccess", NULL, arginfo_class_Async_CircuitBreakerStrategy_reportSuccess, ZEND_ACC_PUBLIC|ZEND_ACC_ABSTRACT, NULL, NULL)
+	ZEND_RAW_FENTRY("reportFailure", NULL, arginfo_class_Async_CircuitBreakerStrategy_reportFailure, ZEND_ACC_PUBLIC|ZEND_ACC_ABSTRACT, NULL, NULL)
+	ZEND_RAW_FENTRY("shouldRecover", NULL, arginfo_class_Async_CircuitBreakerStrategy_shouldRecover, ZEND_ACC_PUBLIC|ZEND_ACC_ABSTRACT, NULL, NULL)
 	ZEND_FE_END
 };
 
@@ -241,6 +276,39 @@ static zend_class_entry *register_class_Async_Signal(void)
 	zval enum_case_SIGWINCH_value;
 	ZVAL_LONG(&enum_case_SIGWINCH_value, 28);
 	zend_enum_add_case_cstr(class_entry, "SIGWINCH", &enum_case_SIGWINCH_value);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_Async_CircuitBreakerState(void)
+{
+	zend_class_entry *class_entry = zend_register_internal_enum("Async\\CircuitBreakerState", IS_UNDEF, NULL);
+
+	zend_enum_add_case_cstr(class_entry, "ACTIVE", NULL);
+
+	zend_enum_add_case_cstr(class_entry, "INACTIVE", NULL);
+
+	zend_enum_add_case_cstr(class_entry, "RECOVERING", NULL);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_Async_CircuitBreaker(void)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_NS_CLASS_ENTRY(ce, "Async", "CircuitBreaker", class_Async_CircuitBreaker_methods);
+	class_entry = zend_register_internal_interface(&ce);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_Async_CircuitBreakerStrategy(void)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_NS_CLASS_ENTRY(ce, "Async", "CircuitBreakerStrategy", class_Async_CircuitBreakerStrategy_methods);
+	class_entry = zend_register_internal_interface(&ce);
 
 	return class_entry;
 }

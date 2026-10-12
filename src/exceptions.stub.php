@@ -22,6 +22,9 @@ class TimeoutException extends \Exception {}
 /** Common type of exception. */
 class AsyncException extends \Exception {}
 
+/** Thrown by a service whose circuit breaker is INACTIVE. */
+class ServiceUnavailableException extends AsyncException {}
+
 /** Thrown when every coroutine waits and nothing can wake one. */
 class DeadlockError extends \Error {}
 

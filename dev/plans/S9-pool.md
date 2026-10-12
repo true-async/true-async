@@ -64,7 +64,7 @@ $pool->close();                     // waiters get PoolException, idle resources
 
 **State.** The idle resources in a ring buffer (TrueAsync's `circular_buffer_t` of zvals; ours: S3's ring or a
 `zval` array of the same shape, chosen in S9.34), the count of resources out or held by a hook (`active`), the count
-of resources handed out to callers (`out`, section 8 item 4), the count of places reserved
+of resources handed out to callers (by object, PHP resource handle or other value, section 8 item 4), the count of places reserved
 for woken waiters (`reserved`), the waiters' queue (`async_wait_queue_t`, as the channel's and the group's), the five
 callables as `zend_fcall_info_cache` plus their `zval`, the circuit state, the strategy object, the healthcheck timer,
 its interval and the running check coroutine. `count()` is `idle + active`, never above `max`; a resource counts as
@@ -108,7 +108,7 @@ lets another `acquire()` make a resource while the released one is counted nowhe
 (section 8, item 6). A release with nothing handed out throws (section 8, item 4); a release of a value the pool did
 not hand out, or of one already released: question 2. Both checks run when `release()` starts, before `beforeRelease`
 can suspend: a second release of the same object while the first is in its hook would otherwise pass. They count the
-resources handed out to callers (`out`), not `active`, which also counts the resources hooks and the check hold.
+resources handed out to callers, not `active`, which also counts the resources hooks and the check hold.
 
 **`close()`**, TrueAsync's `pool.c:1120-1176`: idempotent (`013`); marks the pool closed, stops the healthcheck,
 rejects every waiter with its own `PoolException("Pool is closed")` (`032`, `036`, `063`; TrueAsync shares one object,
@@ -138,8 +138,8 @@ cancellation set aside, which reaches the caller even when the destructor throws
 `042`); a waiter woken while the pool is INACTIVE takes the exception and hands its reservation to the next waiter,
 which takes it too (`066`). `setCircuitBreakerStrategy(?CircuitBreakerStrategy)` keeps the object (`044`);
 `reportSuccess($pool)` runs at a release the pool keeps, `reportFailure($pool, $error)` at a release `beforeRelease`
-refuses, with `$error` an `Exception("Resource validation failed")` (`045`, `052`). The strategy changes the state by
-calling the pool it is given.
+refuses, with `$error` the `Exception` it threw, or an `Exception("Resource validation failed")` for a `false`
+(`045`, `052`, DECISIONS 2026-10-12 S9.34). The strategy changes the state by calling the pool it is given.
 
 TrueAsync's documentation and code disagree here (probed `p7_should_recover.php`): nothing calls `shouldRecover()`,
 RECOVERING lets every `acquire()` through as ACTIVE does, and the factory's, `beforeAcquire`'s and the healthcheck's
@@ -265,7 +265,7 @@ S9.32, or Edmond's answers to questions 1-3 (items 12-14).
    TrueAsync's `Pool` serializes to `O:10:"Async\Pool":0:{}` and unserializes into an object without a pool (probed
    `p12`). `068` changes to build that object with `newInstanceWithoutConstructor()`.
 4. **`release()` with nothing handed out throws `PoolException`**: TrueAsync decrements an unsigned zero, so
-   `activeCount()` reads 4294967295 and every later room check is wrong (probed `p1`, `p2`). The check counts `out`,
+   `activeCount()` reads 4294967295 and every later room check is wrong (probed `p1`, `p2`). The check counts the resources handed out,
    taken when `release()` starts (section 2). Which values `release()` accepts beyond
    that: question 2.
 5. **Tests wait for events, not for time** (S14.9's rule): `024-pool_max_size_concurrent_factory`, `048`, `049`, `054`,

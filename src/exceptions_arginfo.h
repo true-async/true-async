@@ -1,5 +1,5 @@
 /* This is a generated file, edit exceptions.stub.php instead.
- * Stub hash: f2db10def15b74b9c5a70c90530d6c9af575920a */
+ * Stub hash: ac6f4744164d3e18ac4c7c2603a8162687fbc956 */
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_CompositeException_addException, 0, 1, IS_VOID, 0)
 	ZEND_ARG_OBJ_INFO(0, exception, Throwable, 0)
@@ -53,6 +53,16 @@ static zend_class_entry *register_class_Async_AsyncException(zend_class_entry *c
 
 	INIT_NS_CLASS_ENTRY(ce, "Async", "AsyncException", NULL);
 	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_Exception, 0);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_Async_ServiceUnavailableException(zend_class_entry *class_entry_Async_AsyncException)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_NS_CLASS_ENTRY(ce, "Async", "ServiceUnavailableException", NULL);
+	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_Async_AsyncException, 0);
 
 	return class_entry;
 }

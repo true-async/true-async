@@ -19,6 +19,7 @@ extern zend_class_entry *async_ce_cancellation;
 extern zend_class_entry *async_ce_operation_canceled;
 extern zend_class_entry *async_ce_timeout_exception;
 extern zend_class_entry *async_ce_async_exception;
+extern zend_class_entry *async_ce_service_unavailable_exception;
 extern zend_class_entry *async_ce_deadlock_error;
 extern zend_class_entry *async_ce_composite_exception;
 

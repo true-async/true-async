@@ -96,7 +96,7 @@ SpacesInSquareBrackets: false          # Clean: array[0] not array[ 0 ]
 # PHP macro idioms: blocks opened and closed by macros, and entries that are statements without a
 # trailing semicolon. Without these clang-format flattens arginfo, INI and function tables.
 MacroBlockBegin: '^(PHP_INI_BEGIN|ZEND_BEGIN_ARG_.*|ZEND_PARSE_PARAMETERS_START(_EX)?|ZEND_BEGIN_MODULE_GLOBALS)$'
-MacroBlockEnd: '^(PHP_INI_END|ZEND_END_ARG_INFO|ZEND_PARSE_PARAMETERS_END|ZEND_END_MODULE_GLOBALS)$'
+MacroBlockEnd: '^(PHP_INI_END|ZEND_END_ARG_INFO|ZEND_PARSE_PARAMETERS_END(_EX)?|ZEND_END_MODULE_GLOBALS)$'
 StatementMacros:
   - ZEND_FE
   - ZEND_FE_END

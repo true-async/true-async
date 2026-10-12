@@ -150,3 +150,41 @@ function get_deadlocked_coroutines(): array {}
  * cancellation and the argument is ignored.
  */
 function graceful_shutdown(?AsyncCancellation $cancellationError = null): void {}
+
+/** The state of a circuit breaker. */
+enum CircuitBreakerState
+{
+    /** Requests are served. */
+    case ACTIVE;
+
+    /** Requests are refused. */
+    case INACTIVE;
+
+    /** Requests are served while the service is tested. */
+    case RECOVERING;
+}
+
+/** A service whose state moves between the cases of CircuitBreakerState. */
+interface CircuitBreaker
+{
+    public function getState(): CircuitBreakerState;
+
+    public function activate(): void;
+
+    public function deactivate(): void;
+
+    public function recover(): void;
+}
+
+/** Decides when a CircuitBreaker changes state, by calling the breaker passed to it. */
+interface CircuitBreakerStrategy
+{
+    /** @param mixed $source The breaker reporting, e.g. the Pool. */
+    public function reportSuccess(mixed $source): void;
+
+    /** @param mixed $source The breaker reporting, e.g. the Pool. */
+    public function reportFailure(mixed $source, \Throwable $error): void;
+
+    /** Asked while the breaker is INACTIVE: true moves it to RECOVERING. */
+    public function shouldRecover(): bool;
+}

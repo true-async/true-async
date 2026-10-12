@@ -2757,3 +2757,29 @@ stack options were shown with the code).
   stream hooks, curl, sockets; the Ring's curl and hooks) pass as on `-4`, debug and ASAN; lanes pocs-dbg and
   pocs-asan pass. One ASAN WARN (passed on retry) in `ext/sockets/tests/socket_sendto_recvfrom_afpacket.phpt`
   was not the change: it passes 5 of 5 alone; it captures every loopback frame, so parallel tests disturb it.
+- 2026-10-12 S9.34, changed reference tests: `pool/068-pool_without_a_pool_throws.phpt` checks that
+  `unserialize()` and `ReflectionClass::newInstanceWithoutConstructor()` refuse `Async\Pool`, since our pool is
+  `@not-serializable` and has no state without a constructor (TrueAsync builds an empty pool by `unserialize()`);
+  `pool/048-pool_healthcheck_basic.phpt` and `pool/049-pool_healthcheck_exception.phpt` wait for a `FutureState`
+  the healthcheck (048) or the destructor (049) completes, with a keeper coroutine on a timer, instead of
+  `delay(120)`; `pool/054-pool_broken_release_wakes_waiters.phpt` and
+  `pool/024-pool_max_size_concurrent_factory.phpt` wait in `suspend()` loops for a counter of parked or started
+  coroutines instead of `delay()`; `pool/056-pool_counts_resource_during_hooks.phpt` reads `count()` inside its
+  hooks, before and after their `delay(30)`, instead of from a probe coroutine. Why: no delay as a sync point.
+  All six pass on TrueAsync's build but `068`, which TrueAsync's `unserialize()` fails.
+- 2026-10-12 S9.34, own defaults of the pool: `active` drops after the destructor returns, so `count()` covers a
+  resource being destroyed; a pool closed during `beforeAcquire` or the factory destroys that resource, and
+  `acquire()` throws "Pool is closed"; a pre-warm failure closes the pool before the factory's exception leaves
+  the constructor; `$min` and `$max` above `UINT32_MAX` are clamped to it; the healthcheck callable and interval
+  are kept but unused until S9.35; TrueAsync's "Failed to create pool resource" wrapper is dropped, the factory's
+  own exception passes. Why: each is the reading of `dev/plans/S9-pool.md` with the least code.
+- 2026-10-12 S9.34, hook outcomes: an `Exception` from `beforeRelease` is itself passed to `reportFailure()`,
+  a `false` passes a new `Exception("Resource validation failed")`. A token's `OperationCanceledException` in a
+  hook is an `Error` as any other (`pool/097-token_cancel_in_beforeAcquire_passes_to_caller.phpt`): a hook that
+  takes a timeout as a dead resource catches it and returns false; the class cannot tell the hook's token from a
+  cancel of the caller. After an `Error`, a cancellation or `exit()` the destructor still runs; its exception goes
+  beneath the hook's error, a cancellation of the destructor goes on top. One rule merges two exceptions at every
+  site: an exit wins, and an exception other holders share (a scope cancel, a Future's error) gets no previous,
+  the other goes unobserved and prints at the request's end. `release()` counts PHP resources by handle, other
+  non-objects by number. A by-reference factory or hook is unwrapped. Why: the Critics; Edmond's option C.
+  `PoolException` lives in `pool.stub.php`, as in TrueAsync.
