@@ -446,7 +446,11 @@ static void channel_future_give_value(async_channel_t *channel, async_future_eve
 
 	channel_take_value(channel, &value);
 	async_future_event_resolve(future, &value, NULL);
-	zval_ptr_dtor(&value);
+
+	/* The Future holds it too. Not zval_ptr_dtor(): the GC run it may start lets other coroutines send before the
+	 * caller has woken the sender. */
+	ZEND_ASSERT(!Z_REFCOUNTED(value) || Z_REFCOUNT(value) > 1);
+	Z_TRY_DELREF(value);
 }
 
 static void channel_future_reject(async_future_event_t *future, const async_channel_close_reason_t reason)
@@ -460,11 +464,20 @@ static void channel_future_reject(async_future_event_t *future, const async_chan
 /* A Future has no later run, so it takes the value at once and reserves nothing (channel.c:448-460). */
 static void channel_future_serve(async_channel_t *channel, async_coroutine_event_callback_t *record)
 {
+	channel_future_waiter_t *const waiter = CHANNEL_FUTURE_WAITER_OF(record, queue_record);
+	/* Released last, not by the waiter's dispose: the take and the senders' wake come first. */
+	zend_object *const future_object = waiter->future_object;
+
+	waiter->future_object = NULL;
 	async_wait_queue_remove(&channel->receivers, record);
 	record->event = NULL;
 	/* Disposes the waiter. */
-	channel_future_give_value(channel, CHANNEL_FUTURE_WAITER_OF(record, queue_record)->future);
+	channel_future_give_value(channel, waiter->future);
 	channel_wake_sender(channel);
+
+	if (future_object != NULL) {
+		OBJ_RELEASE(future_object);
+	}
 }
 
 /* Gives a free value to the oldest receiver without a reservation: a Future takes it, a coroutine is
@@ -485,6 +498,10 @@ static bool channel_wake_receiver(async_channel_t *channel)
 		channel_future_serve(channel, record);
 	} else {
 		channel_promise(record, &channel->reserved_receivers);
+		/* A woken receiver has not taken the value yet, and a close keeps it for that receiver
+		 * (channel.c:1146-1151). Marked here, not by the sender after the call: a Future's serve releases its
+		 * hold last, and another sender may fill the slot the Future emptied before the call returns. */
+		channel->rendezvous_committed = !channel_is_buffered(channel);
 	}
 
 	channel_timer_refresh(channel, false);
@@ -628,7 +645,9 @@ static void channel_owner_scope_notified(async_awaitable_t *target,
 }
 
 /* The scope is freed before the channel. Once async is off, RSHUTDOWN's free of the request's scopes and a scope
- * object's free in zend_deactivate() leave the channel to its own free. */
+ * object's free in zend_deactivate() leave the channel to its own free. The close runs in scheduler context, which
+ * the scope's free does not set: a release in it may start a GC run, and its wait would let another coroutine free
+ * the channel under the close. */
 static void channel_owner_scope_dispose(async_event_callback_t *callback, async_awaitable_t *target)
 {
 	(void) target;
@@ -638,7 +657,10 @@ static void channel_owner_scope_dispose(async_event_callback_t *callback, async_
 	channel->owner_scope = NULL;
 
 	if (EXPECTED(ZEND_ASYNC_IS_ACTIVE)) {
+		const bool was_in_scheduler_context = ZEND_ASYNC_IN_SCHEDULER_CONTEXT;
+		ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
 		async_channel_close_for_owner_scope(callback);
+		ZEND_ASYNC_IN_SCHEDULER_CONTEXT = was_in_scheduler_context;
 	}
 }
 
@@ -986,15 +1008,7 @@ static bool channel_put(async_channel_t *channel, const zval *value)
 	channel->rendezvous_has_value = true;
 	channel->rendezvous_committed = false;
 
-	if (!channel_wake_receiver(channel)) {
-		return false;
-	}
-
-	/* A woken receiver has not taken the value yet, and a close keeps it for that receiver; a Future took
-	 * it already (channel.c:1146-1151). */
-	channel->rendezvous_committed = channel->rendezvous_has_value;
-
-	return true;
+	return channel_wake_receiver(channel);
 }
 
 /* TrueAsync's send() loop (channel.c:1113-1172). */
@@ -1080,9 +1094,23 @@ static bool channel_token_acquire(zend_object *cancellation, async_awaitable_t *
 
 static void channel_token_release(async_awaitable_t *const token)
 {
-	if (token != NULL) {
-		async_awaitable_release(token);
+	if (token == NULL) {
+		return;
 	}
+
+	/* The caller's argument holds a coroutine token too. Not OBJ_RELEASE(): after a receive the value is taken,
+	 * and the GC run it may start would let a cancel of the caller throw and drop it. An event's release that
+	 * does not free it starts no GC run. */
+	if (ASYNC_AWAITABLE_IS_COROUTINE(token)) {
+		zend_object *const coroutine_object = &((async_coroutine_t *) token)->std;
+
+		if (EXPECTED(GC_REFCOUNT(coroutine_object) > 1)) {
+			GC_DELREF(coroutine_object);
+			return;
+		}
+	}
+
+	async_awaitable_release(token);
 }
 
 ///////////////////////////////////////////////////////////////////

@@ -657,7 +657,7 @@ static void scope_close_bound_channels(async_scope_t *scope)
 	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = was_in_scheduler_context;
 }
 
-void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_error, const bool is_safely)
+static void scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_error, const bool is_safely)
 {
 	/* A closed scope has nothing left to cancel; a finally run's scope, which a stand-in object can reach,
 	 * is out of every scope cancel's reach, and only an ancestor's deadline stops it from outside. */
@@ -681,7 +681,7 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 			async_scope_t *const child_scope = scope->child_scopes.data[i];
 
 			if (EXPECTED(child_scope->coroutines.length == 0)) {
-				async_scope_cancel(child_scope, error, false, is_safely);
+				scope_cancel(child_scope, error, false, is_safely);
 			}
 		}
 
@@ -724,7 +724,7 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 		async_scope_t *const child_scope = scope->child_scopes.data[i];
 
 		if (EXPECTED(!scope_is_finally_run(child_scope))) {
-			async_scope_cancel(child_scope, error, false, is_safely);
+			scope_cancel(child_scope, error, false, is_safely);
 		}
 	}
 
@@ -742,19 +742,19 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 	}
 }
 
-void async_scope_cancel_remaining(async_scope_t *scope, zend_object *error)
+static void scope_cancel_remaining(async_scope_t *scope, zend_object *error)
 {
 	if (UNEXPECTED(scope_is_finally_run(scope))) {
 		return;
 	}
 
 	if (!(scope->event.flags & (ASYNC_SCOPE_F_CLOSED | ASYNC_SCOPE_F_CANCELLED))) {
-		async_scope_cancel(scope, error, false, false);
+		scope_cancel(scope, error, false, false);
 	}
 
 	/* A cancel only queues, so no PHP code changes either vector under the loops. */
 	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
-		async_scope_cancel_remaining(scope->child_scopes.data[i], error);
+		scope_cancel_remaining(scope->child_scopes.data[i], error);
 	}
 
 	for (uint32_t i = 0; i < scope->coroutines.length; i++) {
@@ -764,6 +764,25 @@ void async_scope_cancel_remaining(async_scope_t *scope, zend_object *error)
 			async_coroutine_cancel(scope->coroutines.data[i], error, false, false);
 		}
 	}
+}
+
+/* The walks run in scheduler context, as scheduler_cancel_all(): a release in them (a cancellation, a coroutine's
+ * earlier error) may start a GC run, and its wait would let other coroutines free the scopes and coroutines the
+ * walks read next. */
+void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_error, const bool is_safely)
+{
+	const bool was_in_scheduler_context = ZEND_ASYNC_IN_SCHEDULER_CONTEXT;
+	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
+	scope_cancel(scope, error, transfer_error, is_safely);
+	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = was_in_scheduler_context;
+}
+
+void async_scope_cancel_remaining(async_scope_t *scope, zend_object *error)
+{
+	const bool was_in_scheduler_context = ZEND_ASYNC_IN_SCHEDULER_CONTEXT;
+	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
+	scope_cancel_remaining(scope, error);
+	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = was_in_scheduler_context;
 }
 
 ///////////////////////////////////////////////////////////////////

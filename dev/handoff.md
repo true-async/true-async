@@ -606,6 +606,14 @@ anything it does can wait. A task queued before one of the graceful shutdown's c
 done. Open: the same check of the earlier layers' walks (S9.33); the next layer (pools, S9.32) needs its plan
 agreed with Edmond.
 
+S9.33 done 2026-10-12 (PLAN result line, `SECURITY.md` journal): the earlier layers' walks had the same GC-wait
+hazard as S9.31's: five uses after free (scope cancel, a channel closed by its owner scope's free, a Traversable's
+repeated key) and six behaviour defects (the channel's slot, also behind S14.1's hold on a chained Future; a
+receive's message; a chained error). Scheduler context, plain decrements and store-then-release fixed them. Open
+for Edmond: whether the GC wait should defer a cancellation; the VM's release of `$this` after a call keeps a
+window no extension fix closes (`channel/154`, XFAIL; PLAN Open questions). Next in S9: pools (S9.32) need their
+plan agreed with Edmond.
+
 ## S10
 
 - S10.1 closed 2026-10-08: `dev/plans/S10.md` approved by Edmond (17:40) except output buffers, which

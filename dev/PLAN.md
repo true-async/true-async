@@ -87,6 +87,13 @@ Waiting for Edmond's call; nothing here is being worked on.
   iterators) returns 0 at once, from any coroutine: the `gc_active` check meant for a call from inside the run
   (S14.6, Sage). A programmer forcing a collection gets none and no sign of why. Option: await the active run
   unless the caller is one of its destructor iterators (needs the GC to track them). Edmond's call.
+- A C function that releases something after it has taken a value can lose that value to a cancel of the caller
+  when the release suspends: a destructor that waits, or the core's GC wait, which is cancellable (S9.33 fixed the
+  sites that change shared state). The extension cannot fix the GC share site by site: the VM's release of `$this`
+  after any method call can start the wait, and `recv()` then throws with its message taken (`channel/154`, XFAIL).
+  Options: accept it, or let the GC wait defer the cancellation to the caller's next suspend, which needs a
+  delivery point beside `protect()`'s, leaves the caller uncancellable while a destructor in the run hangs, and
+  does not cover a destructor that waits (`SECURITY.md`, Open findings). Edmond's call.
 - A forked child whose first reactor call is D16's arm after an `exit()` in main's script runs the rebuild with no
   frame (S14.5): a `SignalHandle` or `Io\Poll\Context` the rebuild cannot make (descriptors exhausted) throws
   from a PHP call there, a fatal error that skips every `finally`. The other throws of that rebuild are fixed
@@ -1129,7 +1136,7 @@ Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, dev/plans/S9-taskgroup.md
-Active: none; layer 4 done; S9.32 needs Edmond, S9.33 needs a thread
+Active: none; layer 4 done; S9.32 needs Edmond
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -1591,11 +1598,22 @@ Active: none; layer 4 done; S9.32 needs Edmond, S9.33 needs a thread
       done: the note pushed; every Critic finding fixed or answered in the note; its questions answered by
         Edmond
       tier: T2 · role: Critic → Sage
-- [ ] S9.33 The C walks of `scope.c`, `channel.c`, `future.c`, `await.c` and `context.c` checked against a GC
+- [x] S9.33 The C walks of `scope.c`, `channel.c`, `future.c`, `await.c` and `context.c` checked against a GC
       run that a release inside them starts, and against the caller's cancellation during its wait
       (`SECURITY.md`, Open findings, S9.31).
       done: each walk fixed with a test, or recorded in `SECURITY.md` with the reason
       tier: T2 · role: Critic
+      handoff: done 2026-10-12 (`SECURITY.md` journal, DECISIONS 2026-10-12 S9.33): five uses after free on ASAN,
+        fixed with tests: the scope cancel's walks (`scope/191`, `192`, `task_group/166`) and the close of a channel
+        by its owner scope's free (`scope/190`, `channel/155`) run in scheduler context; a key a Traversable gives
+        twice releases the replaced result after the store (`await/148`). Six behaviour defects: `recvAsync()` and a
+        `send()` to a pending one decrement the taken value (`channel/156`, `150`); a served Future's hold is
+        released last and a promised slot is marked committed at the promise (`152`, `153`, S14.1's finding);
+        `recv()` decrements a coroutine token (`151`; the VM's release of `$this` keeps the window, `154` XFAIL);
+        `await_any_or_fail()` chains in scheduler context (`await/149`). By reading, `iterator.c` stores a worker's
+        exception before chaining it; `context.c` and `future.c` clean. Open: whether the GC wait should defer a
+        cancellation (Open questions). On CORE_REF 96a52ba65f4: debug 1772 PASS, ASAN 1746 PASS, 0 unexpected;
+        100 fuzz seeds over the new tests, 0 failed. Critics and Sage.
 
 ## S10 — Beyond the RFCs  [x]
 

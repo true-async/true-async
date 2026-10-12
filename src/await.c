@@ -497,25 +497,32 @@ await_trigger_add(await_context_t *context, await_chunk_t *chunk, async_awaitabl
 ///////////////////////////////////////////////////////////////////
 
 /* Stores under `key`, or under the table's next index for a NULL key, which `key` then becomes, as
- * TrueAsync's callback does (async_API.c:398-407). Takes `value`. */
+ * TrueAsync's callback does (async_API.c:398-407). Takes `value`. A value it replaces, under a key a Traversable
+ * gave twice, is released after the store: its destructor or a GC run may suspend the iterator coroutine, and the
+ * waiter may free the table meanwhile. */
 static void await_table_update(HashTable *table, zval *key, zval *value)
 {
+	zval *slot;
+
 	if (Z_TYPE_P(key) == IS_STRING) {
-		zend_hash_update(table, Z_STR_P(key), value);
+		slot = zend_hash_lookup(table, Z_STR_P(key));
+	} else if (Z_TYPE_P(key) == IS_LONG) {
+		slot = zend_hash_index_lookup(table, Z_LVAL_P(key));
+	} else {
+		if (UNEXPECTED(zend_hash_next_index_insert(table, value) == NULL)) {
+			zval_ptr_dtor(value);
+			return;
+		}
+
+		ZVAL_LONG(key, table->nNextFreeElement - 1);
 		return;
 	}
 
-	if (Z_TYPE_P(key) == IS_LONG) {
-		zend_hash_index_update(table, Z_LVAL_P(key), value);
-		return;
-	}
+	zval replaced;
 
-	if (UNEXPECTED(zend_hash_next_index_insert(table, value) == NULL)) {
-		zval_ptr_dtor(value);
-		return;
-	}
-
-	ZVAL_LONG(key, table->nNextFreeElement - 1);
+	ZVAL_COPY_VALUE(&replaced, slot);
+	ZVAL_COPY_VALUE(slot, value);
+	zval_ptr_dtor(&replaced);
 }
 
 /* The places of the results in the input's order: NULL with `fill_null`, else markers that the end
@@ -1014,8 +1021,13 @@ static void await_array(await_context_t *context, HashTable *items, const bool w
 				continue;
 			}
 
-			/* Takes the reference `error` holds. */
+			/* Takes the reference `error` holds. In scheduler context: when the chain has it already, the call
+			 * releases it, and a GC wait there could leave this caller's cancellation pending, which the throw
+			 * below would chain into the item's error. */
+			const bool was_in_scheduler_context = ZEND_ASYNC_IN_SCHEDULER_CONTEXT;
+			ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
 			zend_exception_set_previous(exception, error);
+			ZEND_ASYNC_IN_SCHEDULER_CONTEXT = was_in_scheduler_context;
 			error = exception;
 
 			continue;
@@ -1155,7 +1167,8 @@ static bool await_iterator_item(await_context_t *context, zval *item, zval *key)
 	if (await_outcome(awaitable, &result, &exception)) {
 		zend_object *error = NULL;
 
-		if (await_take(context, key, result, exception, &error)) {
+		/* The take may have suspended this coroutine (await_table_update), and the wait may have ended meanwhile. */
+		if (await_take(context, key, result, exception, &error) && !context->finished) {
 			await_wake_waiter(context, error);
 		}
 

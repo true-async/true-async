@@ -504,9 +504,12 @@ static void iterator_take_exception(async_iterator_t *iterator)
 	GC_ADDREF(exception);
 	zend_clear_exception();
 
-	zend_exception_set_previous(exception, iterator->exception);
+	/* Stored before the chaining, which may release the earlier one and wait for the GC run that starts: another
+	 * worker's exception then chains over this one, not over the reference given away. */
+	zend_object *const previous_exception = iterator->exception;
 
 	iterator->exception = exception;
+	zend_exception_set_previous(exception, previous_exception);
 
 	async_scope_t *scope = iterator->scope;
 

@@ -525,17 +525,68 @@ finding left open gets an owner step in `PLAN.md`.
   same without the layer. After a pending `exit()` the closing ends in the scheduler's tick (`PLAN.md`, Open
   questions, S9.30).
 
+- 2026-10-12 The walks of the earlier layers against a GC run that a release inside them starts (S9.33, the open
+  finding of S9.31 and S14.1's on `channel_put()`), over `scope.c`, `channel.c`, `future.c`, `await.c` and
+  `context.c`, with `iterator.c` and the TaskGroup's `task_group_complete()` the open finding named. Three readers
+  went over the files, every finding ran as a script on the debug and ASAN builds before its fix, a Critic and the
+  Sage reviewed the fixes.
+
+  Lifetimes, five defects with six tests, each a use after free on ASAN. `Scope::cancel()`, `dispose()`,
+  `disposeSafely()` and a scope object's destruction walk the child scopes and coroutines and release a cancellation
+  on the way (a coroutine's earlier one, a zombie's); during the wait a coroutine finished and freed itself and the
+  scope (`scope/191`, `192`). The TaskGroup destructor's cancel of what remains in an external scope did the same
+  (`task_group/166`). A child scope's free closes the channels made in it and releases the rejected Futures'
+  exceptions: another coroutine freed the parent, which the free read next (`scope/190`), or dropped the channel,
+  which a pending `recvAsync()` Future does not hold (`channel/155`). Both walks and the close by the owner scope now
+  run in scheduler context, as `scheduler_cancel_all()` does: a GC run defers to the next tick instead of parking
+  the walk. By reading, what they free is exceptions the C code made and timer events; a refused finally start keeps
+  its handlers for the scope's disposal, so no destructor that could wait runs there.
+  A Traversable giving a key twice made `zend_hash_update()` release the earlier result in place; its destructor
+  suspended the walk, the wait ended and freed the results table, and the store wrote into it
+  (`await/148`). The replaced value is now released after the store, and the walk wakes no waiter once the wait
+  has ended.
+
+  The channel's state, four defects with tests. `recvAsync()` and a `send()` to a pending one released the taken
+  value before the channel woke the sender and marked the slot: a sender run during the wait put its value into the
+  free slot, so a parked sender was never woken (`channel/156`), or the later value was marked committed and was
+  received after its `send()` threw (`150`). The Future holds the value, so the release is a plain decrement now,
+  as `await.c`'s walk does. S14.1's hold on a Future with a `map()` child was released by the waiter's dispose in
+  the same place: the later value was marked committed again (`152`), and a buffered slot freed by a value handed
+  on from a cancelled receiver went to a later sender before the one waiting (`153`). The serve releases the hold
+  last, and the slot is marked committed when a receiver is promised it, not by `channel_put()` after the wake.
+
+  Cancellation, two defects with tests. The GC wait returns with the caller's cancellation thrown in the middle of
+  C code. `recv()` with a coroutine as its token released the token after the take, so the cancel dropped the
+  message (`channel/151`); the caller's argument holds that coroutine, so the release is a plain decrement too, and
+  an event token's release that does not free it starts no run. This closes the window inside the C code only: the
+  VM's release of `$this` when the call ends can start the run too, and the cancel then drops the message as before
+  (`154`, XFAIL, the open finding below). Accepted: a Future token whose event the release
+  frees, after a second `Future::__construct()` during the call, can run a destructor that suspends there.
+  `await_any_or_fail()` chaining a later item's error over an earlier one that its chain held already released it,
+  and the throw that followed chained the cancellation into the items' stored errors (`await/149`); that call runs
+  in scheduler context now.
+
+  By reading, without a test: `iterator.c` chained a worker's exception over the iterator's before storing it, and
+  the chain's release of the earlier one could let another worker chain over the reference given away; the new one
+  is stored first. Clean, by reading: `context.c` (lookups only; the core's set and unset release the old value
+  last), `future.c`'s chain free (a detached stack copy), drain (copies by value, re-reads its head) and reporting
+  walks, `await.c`'s rest and array walks (unique keys, no release inside), `Channel::close()`'s receivers walk
+  (holds `$this`, re-reads the length), the scope's completion, give-back and error-route walks (scheduler context, or
+  a finished coroutine, which cannot wait). `task_group_complete()` reads a refused finally start right: the start
+  returns false without its own exception only when async is off, where no GC run waits. Accepted: a drain coroutine
+  cancelled by the shutdown during a GC wait after a mapper reads the cancellation as the mapper's throw, as it does
+  for a mapper that suspends; a channel iterator step that finds a value another step stored meanwhile releases it
+  after its own, so a cancel there leaves that value unseen.
+
 ## Open findings
 
-- 2026-10-12 (S9.31) The walks of the earlier layers were checked against the destructors their own releases
-  run, not against a GC run that any release in a live coroutine can start, which lets every other coroutine run
-  before the release returns (the TaskGroup's two defects above). The C walks of `scope.c`, `channel.c`,
-  `future.c`, `await.c` and `context.c` that release inside a loop need that check. The same wait returns with the
-  caller's cancellation pending in the middle of C code (`zend_gc.c`, `zend_gc_collect_cycles()`): checked for
-  `all()` only; the TaskGroup's `task_group_complete()` would read it as a refused finally run (by reading). Owner:
-  `PLAN.md` S9.33.
-- 2026-10-12 (S14.1, Critic, by reading) `channel_put()` reads `rendezvous_has_value` after `channel_wake_receiver()`,
-  whose serve of a `recvAsync()` Future releases the value and, with a chain, the waiter's hold on the Future: a GC
-  run there lets a second sender fill the slot, which the first then marks committed, and `close()` fails the
-  second sender although its value is delivered. Owner: `PLAN.md` S9.33.
+- 2026-10-12 (S9.33) A C function that releases something after it has taken a value can lose that value to a
+  cancel of the caller when the release suspends: a destructor that waits, or the core's GC wait, which is
+  cancellable (`zend_gc.c`, "false means this coroutine was cancelled"). S9.33 fixed the sites that change shared
+  state. The extension cannot close the rest: after any method call the VM releases `$this` (`zend_vm_def.h`,
+  `ZEND_DO_FCALL`), and when that release starts the run, a cancel let in during the wait is thrown by the call,
+  after `recv()` took its message (`channel/154`, XFAIL) or `send()` delivered its value (scheduler context on the
+  release of a served Future's hold only moved the wait there: a debugger, a test that stayed red). Letting the GC
+  wait defer the cancellation would close its share; it needs a delivery point that `protect()` alone has today
+  (the Sage's ruling). Owner: `PLAN.md`, Open questions.
 

@@ -2536,3 +2536,8 @@ stack options were shown with the code).
   the request, documented, no retry (Sage: only a scheduler breaking its contract gets there). A Critic's case,
   our collector walking a frame parked in a destructor during an unwind, did not reproduce in two probes. The
   exception lost across that park was first fixed in test_scheduler's suspend; the core's hold replaced the fix.
+- 2026-10-12 S9.33: a C walk in which a release could let other coroutines run runs in scheduler context (the scope
+  cancel's walks, a channel's close by its owner scope's free); a value another reference holds gets a plain
+  decrement; a replaced value is released after the store; a channel releases its hold on a served Future last and
+  marks a rendezvous slot committed when it promises it. Why: a release can start a GC run that the caller waits
+  for while other coroutines free or change what the walk reads next (`SECURITY.md` 2026-10-12 S9.33).
