@@ -147,6 +147,12 @@ the section is removed in that step's commit. `check-lists.py` hashes a test wit
   reported to that thread or to Edmond with the job's link. Edmond, 2026-10-09, after the lists job
   stayed red unnoticed from S9.24 (8432655) to 8b9ba78; it replaces the habit "threads do not wait
   for CI" (`dev/HEALTH.md`, 2026-10-05). Held by discipline, no gate.
+- The scheduled run (the nightly `schedule` run of CI on `main`, the only one with the `seeds` jobs)
+  is the coordinator's: it looks at each one after it ends (`actions/runs?event=schedule&branch=main`),
+  and every thread that starts a plan step looks at the latest before the step's first commit. Each
+  failing test that no open plan step names goes into a plan step, with the job's link. S14.2, after
+  the health check of 2026-10-12 found the scheduled run red every night from 2026-10-04 with nobody
+  looking. Held by discipline, no gate.
 - `CHANGELOG.md` at the root, Keep a Changelog 1.1.0: every user-visible change gets a line under
   `[Unreleased]` in the commit that makes it; tests, tools and CI do not. Held by discipline, no gate.
 - `dev/DECISIONS.md`: as short as possible, a line for the decision and a line for the reason.

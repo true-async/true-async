@@ -52,25 +52,29 @@
      }
      if ($stat["exitcode"] > 128 && $stat["exitcode"] < 160) {
          $data .= "\nTermsig=" . ($stat["exitcode"] - 128) . "\n";
-@@ -2885,7 +2907,21 @@
+@@ -2885,7 +2907,24 @@
  
          $wanted_re = null;
      }
+-    if (!$passed && !$retried && error_may_be_retried($test, $output)) {
 +    /* true_async runner: a test the timeout or a signal killed, or with a sanitizer or leak report,
 +     * never passes, even when a trailing %A takes whatever output it left; such a pass would also
 +     * lift the XFAIL of a step still to come. */
-+    if ($passed && (str_contains($output, '** ERROR: process timed out **')
-+            || preg_match('/^Termsig=\d+$/m', $output) || str_contains($output, 'ERROR: AddressSanitizer')
-+            || str_contains($output, 'ERROR: LeakSanitizer') || str_contains($output, 'runtime error:')
-+            || str_contains($output, 'memory leaks detected ==='))) {
++    $crashed = str_contains($output, '** ERROR: process timed out **') || preg_match('/^Termsig=-?\d+$/m', $output)
++        || str_contains($output, 'ERROR: AddressSanitizer') || str_contains($output, 'ERROR: LeakSanitizer')
++        || str_contains($output, 'runtime error:') || str_contains($output, 'memory leaks detected ===');
++    if ($passed && $crashed) {
 +        $passed = false;
 +    }
 +
-     if (!$passed && !$retried && error_may_be_retried($test, $output)) {
++    /* true_async runner: a crash or a hang is never retried, since the retry's output would hide it;
++     * nor is any test of a run under a scheduling seed (TRUE_ASYNC_SCHED), whose verdict is the
++     * order's own. */
++    if (!$passed && !$retried && !$crashed && getenv('TRUE_ASYNC_SCHED') === false
++            && error_may_be_retried($test, $output)) {
 +        /* true_async runner: a retry discards the first attempt, and a test that passes on it
-+         * would leave only a WARN behind. */
-+        echo "RETRY $shortname: the first attempt failed\n",
-+            generate_diff($wanted, $wanted_re, $output), "\n";
++         * would leave only a WARN behind. One write, so no result line lands inside it. */
++        echo "RETRY $shortname: the first attempt failed\n" . generate_diff($wanted, $wanted_re, $output) . "\n";
          $retried = true;
          goto retry;
      }

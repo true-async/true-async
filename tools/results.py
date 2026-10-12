@@ -16,8 +16,17 @@ LISTED_LINE = re.compile(r'^(' + STATUS + r') (\S+\.phpt)$', re.M)
 ANSI = re.compile(r'\x1b\[[0-9;]*m')
 
 
+class CountMismatch(Exception):
+    """The parsed tests are fewer or more than run-tests counted: a line of a test's own output
+    glued to a result line hides it. `results` holds what was parsed."""
+
+    def __init__(self, message, results):
+        super().__init__(message)
+        self.results = results
+
+
 def parse(path):
-    """Map test path to status; exits non-zero if the count disagrees with run-tests' own."""
+    """Map test path to status; raises CountMismatch if the count disagrees with run-tests' own."""
     with open(path, encoding='utf-8', errors='replace') as f:
         # Progress lines are overwritten with \r on a terminal and coloured.
         text = ANSI.sub('', f.read()).replace('\r', '\n')
@@ -30,7 +39,7 @@ def parse(path):
     total = re.search(r'Number of tests\s*:\s*(\d+)', text)
 
     if total is not None and int(total.group(1)) != len(results):
-        sys.exit(f'{path}: parsed {len(results)} tests, run-tests counted {total.group(1)}')
+        raise CountMismatch(f'{path}: parsed {len(results)} tests, run-tests counted {total.group(1)}', results)
 
     return results
 
@@ -57,4 +66,7 @@ def main(argv):
 
 
 if __name__ == '__main__':
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except CountMismatch as mismatch:
+        sys.exit(str(mismatch))

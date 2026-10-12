@@ -15,7 +15,7 @@ $first = spawn(function () use (&$second) {
     try {
         await($second);
     } catch (Throwable $error) {
-        echo get_class($error), ": ", $error->getMessage(), "\n";
+        fwrite(STDERR, get_class($error) . ": " . $error->getMessage() . "\n");
     }
 });
 
@@ -23,11 +23,11 @@ $second = spawn(function () use (&$first) {
     try {
         await($first);
     } catch (Throwable $error) {
-        echo get_class($error), ": ", $error->getMessage(), "\n";
+        fwrite(STDERR, get_class($error) . ": " . $error->getMessage() . "\n");
     }
 });
 
-echo "main end\n";
+fwrite(STDERR, "main end\n");
 ?>
 --EXPECTF--
 %A=== DEADLOCK REPORT START ===

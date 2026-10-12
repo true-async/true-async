@@ -1727,6 +1727,12 @@ Tests: interleaved
       done: one scheduled run green on dbg and asan with all of its seeds; the suite's ten slowest tests in
         HEALTH's `Suite:` line
       tier: T1 · role: Critic
+      handoff: 2026-10-12, the fixes are in; open until a scheduled run is green, which waits for S14.1
+        (`channel/145`, `fiber/035` are the only failed seeds: 8 dbg, 3 dbg `--io-chaos`, 2 asan, locally). The
+        stray text came from `scheduler/084`, `085`; a lost result line is reported and MISSING; run-tests
+        retries no crash or hang and nothing under a seed; a crashing XFAIL fails; `stream/030` ends in 2 s
+        (DECISIONS 2026-10-12 S14.2). The dbg suite runs 38.5 s locally, was 150 s. Close: after S14.1, the
+        next nightly run with every `seeds` job green (a dispatched run has the same jobs and counts).
 - [ ] S14.3 The own tests HEALTH lists under "wall-clock delays" and "wall-clock bound" wait on the event they
       test instead of on time; `collector/063`, `064` check the walk's outcome at each margin; the cases
       `fiber/023`, `028` and `scope/043` leave unchecked get own tests. Ported tests change only with a

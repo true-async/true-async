@@ -641,4 +641,9 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   names a closed stage as its owner; S2's unbuilt test layers are S15, recorded only. The six XFAILs naming S8 (`io/039`,
   `040`, `042`, `043`, `100`, `stream/030`) wait on core changes that S8 only requests: when S8 closes they
   will name a closed stage unless S8.5 gives them a step. An XFAIL test that crashes, leaks or trips a
-  sanitizer still reports XFAIL (`tools/run-tests.patch` stops only a false PASS); sent to S14.2.
+  sanitizer reported XFAIL (`tools/run-tests.patch` stopped only a false PASS); S14.2 makes it fail.
+- S14.2 (open until a scheduled run is green after S14.1): `tools/test.py` keeps run-tests' stderr in `run.err`,
+  reports a lost result line as MISSING and goes on, fails a crashing XFAIL, prints `--show-slow N`; run-tests
+  retries no crash or hang and nothing under a seed; the `seeds` matrix has a dbg `--io-chaos` entry; WORKFLOW gives the
+  scheduled run to the coordinator. To close: once S14.1 is in, a nightly or dispatched run with every
+  `seeds` job green ticks the step.

@@ -7,8 +7,12 @@ Check day: Monday
 Time budget: 15 minutes per run
 Suite: `tools/test.py --lane pocs-dbg`, 1,691 tests on the CI coverage lane `pocs-dbg-cov` (1,664 PASS,
   16 SKIP, 11 XFAIL), run-tests 152.0 s, `ubuntu-24.04` runner (run 38081141533, 9bbd906, 2026-10-10);
-  the dbg lane's Test step 2 min 31 s, asan 9 min 22 s, windows 2 min 57 s. The runner keeps no
-  per-test times; run-tests' `--show-slow 1000` gives them (passed by hand on 2026-10-12).
+  the dbg lane's Test step 2 min 31 s, asan 9 min 22 s, windows 2 min 57 s. `tools/test.py --show-slow 10`
+  prints the ten slowest (the linux lanes pass it); locally after S14.2 and S14.4 (cloud container, 4 CPUs,
+  `pocs-dbg`, 2026-10-12): 1,687 PASS, 19 SKIP, 9 XFAIL, run-tests 40.7 s; slowest: stream/034 10.0 s,
+  mysqli/009 3.0 s, collector/064 2.2 s, stream/027 2.0 s, stream/030 2.0 s (XFAIL, S8), signal/024 1.8 s,
+  await/141 1.7 s, reactor/042 1.5 s, channel/044 1.5 s, reactor/036 1.3 s; `pocs-asan` before S14.4:
+  run-tests 160.8 s, its slowest io/100 29.8 s (XFAIL, S8).
 Coverage: CI lane `pocs-dbg-cov`, `coverage.info` in the `results-mutants-coverage` artifact;
   last: 94.3 % of `src/` lines (9,383 of 9,947), CI run 38081141533 at 9bbd906 (2026-10-10)
 Mutants: Mull 0.34.1 (`tools/mull.py`); CI runs only the known-answer check; reference run S3.13
@@ -18,9 +22,9 @@ Mutants: Mull 0.34.1 (`tools/mull.py`); CI runs only the known-answer check; ref
 Practices: mutation tool (known-answer on every push, stage diffs at stage reviews), fault tests (the
   `fail_at` sites enqueue, reserve, link in 12 tests; IO chaos C1-C3 by `--io-chaos`, S6.8; the core
   test scheduler's `fail_new_coroutine`/`fail_enqueue` in 8 tests), fuzz seeds (nightly `seeds` job
-  only), benchmarks (bench/, `tools/bench.py`, by hand), dev/PRINCIPLES.md, CI (lists, linux dbg and
-  asan, mutants-coverage, windows on push; seeds on schedule); missing: specification tests
-  (dev/TESTING.md), IO chaos in CI, the allocator-fault and network-chaos layers of
+  only, with an `--io-chaos` entry since S14.2), benchmarks (bench/, `tools/bench.py`, by hand),
+  dev/PRINCIPLES.md, CI (lists, linux dbg and asan, mutants-coverage, windows on push; seeds on schedule);
+  missing: specification tests (dev/TESTING.md), the allocator-fault and network-chaos layers of
   dev/plans/S2.md section 4
 Scope: the extension (`src/`, `tests/`, `tools/`, `dev/`) and our core diff on `async-core`
   against the php-src master it is based on

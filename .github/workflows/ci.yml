@@ -114,7 +114,7 @@ jobs:
       - name: Test
         env:
           TRUE_ASYNC_CORE_SRC: ${{ runner.temp }}/core-src
-        run: python3 tools/test.py --lane pocs-${{ matrix.tree }}
+        run: python3 tools/test.py --lane pocs-${{ matrix.tree }} --show-slow 10
 
       - name: Keep the results
         if: failure()
@@ -125,7 +125,8 @@ jobs:
 
   seeds:
     # The scheduler fuzz of dev/plans/S2.md section 4: nightly or by hand, after linux, which leaves
-    # both cores in the cache. A full asan list takes minutes per seed, so it runs fewer seeds.
+    # both cores in the cache. A full asan list takes minutes per seed, so it runs fewer seeds. The
+    # io_chaos entry also arms the IO provider's fault points (dev/plans/S6.md section 16).
     needs: linux
     if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-24.04
@@ -153,6 +154,9 @@ jobs:
             seeds: 100
           - tree: asan
             seeds: 20
+          - tree: dbg
+            seeds: 50
+            io_chaos: true
     steps:
       - uses: actions/checkout@v5
         with:
@@ -186,13 +190,15 @@ jobs:
       - name: Seeds
         env:
           TRUE_ASYNC_CORE_SRC: ${{ runner.temp }}/core-src
-        run: python3 tools/test.py --lane pocs-${{ matrix.tree }} --seeds ${{ matrix.seeds }}
+        run: >-
+          python3 tools/test.py --lane pocs-${{ matrix.tree }} --seeds ${{ matrix.seeds }}
+          ${{ matrix.io_chaos && '--io-chaos' || '' }}
 
       - name: Keep the results
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: results-seeds-pocs-${{ matrix.tree }}
+          name: results-seeds-pocs-${{ matrix.tree }}${{ matrix.io_chaos && '-io-chaos' || '' }}
           path: results/
 
   mutants-coverage:

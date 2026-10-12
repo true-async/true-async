@@ -1,7 +1,7 @@
 --TEST--
 UDP timeout operations with stream_socket_recvfrom in async context
 --XFAIL--
-Needs a core change: S8 of dev/PLAN.md (stream_set_timeout() on stream_socket_recvfrom(), dev/RFC-CHANGES.md 4)
+Needs a core change: S8 of dev/PLAN.md (stream_set_timeout() on stream_socket_recvfrom(), dev/RFC-CHANGES.md 4); the commit that removes this section removes the watchdog too
 --FILE--
 <?php
 
@@ -48,7 +48,14 @@ $server = spawn(function() use (&$server_address, &$output) {
     return $server_address;
 });
 
+// Until S8 the receive ignores its timeout and waits for run-tests' 60 s timeout, then its retry's
+$watchdog = spawn(function() use ($server) {
+    delay(2000);
+    $server->cancel();
+});
+
 await_all([$server]);
+$watchdog->cancel();
 $output['z'] = "End UDP timeout operations test";
 
 // Sort output by keys to ensure deterministic test results

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the extension for a lane and run the listed tests on it (dev/plans/S2.md, section 2).
 
-    test.py --lane pocs-dbg [--stage N] [--jobs N] [--seeds N [--io-chaos]] [TEST...]
+    test.py --lane pocs-dbg [--stage N] [--jobs N] [--show-slow N] [--seeds N [--io-chaos]] [TEST...]
 
 A lane is <core>-<tree>[-cov|-mull]; the core is installed in $TRUE_ASYNC_PREFIXES/<core>-<tree>
 (default ~/ta-prefix). TEST narrows the run to listed tests. ASAN lanes need $TRUE_ASYNC_CORE_SRC,
@@ -13,16 +13,22 @@ copied into ext/true_async, and $TRUE_ASYNC_WIN_BUILD names the directory with p
 php_true_async.dll; run-tests.php comes from $TRUE_ASYNC_CORE_SRC.
 
 The exit code is the verdict: 0 only when every listed test has its expected status. run-tests'
-own exit code ignores SKIP and WARN and is not used.
+own exit code ignores SKIP and WARN and is not used. run-tests' standard output goes to run.out of
+the run's results directory and its standard error to run.err: a test that captures only one of
+its streams (--CAPTURE_STDIO--) writes the other into run-tests' own, and on run.out such a line
+could hide a result line. A result line that is still lost is reported and its test is MISSING.
+
+--show-slow N prints the N slowest tests of the run, each attempt of a retried test apart.
 
 --seeds N builds the module with the fuzz hook (--enable-true-async-fuzz) into _build/<lane>-fuzz
 and runs the tests once per seed 1..N with TRUE_ASYNC_SCHED=random:<seed>, and with the collector of
 coroutines that can never wake running at every idle point, so its oracle checks every finding
 (dev/plans/S7.md, section 11). A seed fails a test only by a crash, an assertion, a sanitizer
 report, a leak or a timeout; any other change of the output passes, since a random order changes
-what order-dependent tests print. A diagnostic (a fatal error, a warning, a notice) the expected
-output lacks is listed for reading. --io-chaos also arms the IO provider's fault points
-(TRUE_ASYNC_SCHED=random:<seed>:io, dev/plans/S6.md section 16); the verdict is the same.
+what order-dependent tests print, and so does an unfinished (--XFAIL--) test that an order lets
+pass. A diagnostic (a fatal error, a warning, a notice) the expected output lacks is listed for
+reading. --io-chaos also arms the IO provider's fault points (TRUE_ASYNC_SCHED=random:<seed>:io,
+dev/plans/S6.md section 16); the verdict is the same.
 """
 import argparse
 import contextlib
@@ -419,9 +425,9 @@ def wait_mysql_ready(server_process, log):
         time.sleep(0.1)
 
 
-def run_tests(lane, entries, jobs, sched=None):
+def run_tests(lane, entries, jobs, sched=None, show_slow=False):
     """Run the entries with the lane's core; returns the path of the saved output. `sched` is the
-    TRUE_ASYNC_SCHED of a seed run."""
+    TRUE_ASYNC_SCHED of a seed run; `show_slow` makes run-tests list every test's time in it."""
     runner = patched_runner(lane)
 
     lane.build.mkdir(parents=True, exist_ok=True)
@@ -437,6 +443,9 @@ def run_tests(lane, entries, jobs, sched=None):
     if sched is not None:
         env['TRUE_ASYNC_SCHED'] = sched
         cmd += ['-d', 'true_async.partial_deadlock_interval=0']
+
+    if show_slow:
+        cmd += ['--show-slow', '0']
 
     if lane.tree == 'win':
         for dll in lane.win_extension_dlls:
@@ -459,12 +468,13 @@ def run_tests(lane, entries, jobs, sched=None):
         except FileExistsError:
             suffix += 1
             out_dir = RESULTS / lane.build.name / f'{stamp}-{suffix}'
+
     output = out_dir / 'run.out'
 
     # An interrupted run leaves its artifacts in tests/ too, where no list names them.
     try:
-        with output.open('w') as out:
-            runner_process = subprocess.Popen(cmd, cwd=ROOT, stdout=out, stderr=subprocess.STDOUT, env=env,
+        with output.open('w') as out, (out_dir / 'run.err').open('w') as err:
+            runner_process = subprocess.Popen(cmd, cwd=ROOT, stdout=out, stderr=err, env=env,
                                               start_new_session=True)
 
             # run-tests' own timeout waits for silence: a test that loops printing never ends. Its
@@ -518,9 +528,47 @@ def lsan_suppressions():
     return str(path)
 
 
+# What fails a test whatever output it expects, an unfinished one's and one's under a seed too: a crash,
+# a debug assertion, a sanitizer report, a leak of the debug allocator, a hang.
+CRASH = re.compile(r'Termsig=|AddressSanitizer|LeakSanitizer|runtime error:|Assertion `|'
+                   r'memory leaks detected|process timed out')
+
+
+def parsed_statuses(output, label):
+    """{test path: status} of a run's output. A count that disagrees with run-tests' own is printed
+    after `label` and the run goes on: the tests whose result line was lost are MISSING."""
+    try:
+        parsed = results.parse(output)
+    except results.CountMismatch as mismatch:
+        print(f'{label}{mismatch}')
+        parsed = mismatch.results
+
+    return {name.replace('\\', '/'): status for name, status in parsed.items()}
+
+
+def saved_output(output, entry):
+    """The output run-tests saved for a test that did not pass, or '' when it saved none."""
+    out = output.parent / Path(entry.path).with_suffix('.out')
+
+    return out.read_text(errors='replace') if out.is_file() else ''
+
+
+def runner_crash(output, label):
+    """True, and printed after `label`, when run-tests' stderr holds a crash report: one from a test
+    that leaves its stderr uncaptured, which no test's own output shows."""
+    errors = output.parent / 'run.err'
+
+    if not CRASH.search(errors.read_text(errors='replace')):
+        return False
+
+    print(f'{label}a crash report outside any test\'s output, in {errors}')
+
+    return True
+
+
 def verdict(lane, entries, left_out, output):
     """Print each test whose status is not the expected one; returns the number of them."""
-    statuses = {name.replace('\\', '/'): status for name, status in results.parse(output).items()}
+    statuses = parsed_statuses(output, f'{lane.name}: ')
     retried = {name.replace('\\', '/') for name in
                re.findall(r'^RETRY (\S+):', output.read_text(errors='replace'), re.M)}
     wrong = 0
@@ -542,11 +590,16 @@ def verdict(lane, entries, left_out, output):
             expected = 'XFAIL' if xfail else 'PASS'
 
         allowed = {expected} | ({'SKIP'} if skip_allowed(lane, entry) else set())
+        crashed = status == 'XFAIL' and CRASH.search(saved_output(output, entry))
 
-        if status not in allowed:
+        if status not in allowed or crashed:
             wrong += 1
 
-            if status == 'WARN' and xfail:
+            if crashed:
+                hint = ' (crashed: an unfinished test may only fail by its output)'
+            elif status == 'WARN' and name in retried:
+                hint = f' (passed on a retry; first attempt in {output})'
+            elif status == 'WARN' and xfail:
                 hint = ' (passes: remove its --XFAIL-- section)'
             elif status == 'PASS' and xfail_step:
                 hint = f' (passes: remove its xfail-on tag for {xfail_step})'
@@ -554,12 +607,12 @@ def verdict(lane, entries, left_out, output):
                 hint = ''
 
             print(f'{status:7} {name}{hint}')
-        elif name in retried and status == 'PASS':
-            # An unfinished test that failed both attempts is XFAIL as expected, not a retry pass.
-            print(f'RETRY   {name} (passed on a retry; first attempt in {output})')
 
     for entry, reason in left_out:
         print(f'SKIP({reason}) tests/{entry.path}')
+
+    if runner_crash(output, f'{lane.name}: '):
+        wrong += 1
 
     summary = ', '.join(f'{n} {s}' for s, n in sorted(counts.items()))
     print(f'{lane.name}: {summary}; {len(left_out)} left out; {wrong} unexpected; output {output}')
@@ -569,11 +622,6 @@ def verdict(lane, entries, left_out, output):
 
 # Seconds a seed run may take (a whole list on asan takes about 2 minutes here).
 SEED_RUN_TIMEOUT = 1800
-
-# What fails a test under a seed: a crash, a debug assertion, a sanitizer report, a leak of the debug
-# allocator, a hang.
-SEED_FAILURE = re.compile(r'Termsig=|AddressSanitizer|LeakSanitizer|runtime error:|Assertion `|'
-                          r'memory leaks detected|process timed out')
 
 # A diagnostic line of the output: its kind and message without the location, and its kind alone.
 DIAGNOSTIC = re.compile(
@@ -605,23 +653,28 @@ def seed_verdict(entries, output, seed, findings):
     """Print each test the seed failed; adds to `findings` the tests whose output has a diagnostic
     the expected output lacks (an order change alone adds nothing). Returns the number it failed and
     the number of other failed tests, whose output only changed."""
-    statuses = {name.replace('\\', '/'): status for name, status in results.parse(output).items()}
+    statuses = parsed_statuses(output, f'seed {seed}: ')
     failed = 0
     changed = 0
 
     for entry in entries:
         status = statuses.get(f'tests/{entry.path}', 'MISSING')
+        unfinished = lists.has_xfail(TESTS / entry.path)
 
-        if status in ('PASS', 'SKIP') or (status == 'XFAIL' and lists.has_xfail(TESTS / entry.path)):
+        # WARN: an unfinished test passed; the plain lanes judge when it is finished.
+        if status in ('PASS', 'SKIP') or (status == 'WARN' and unfinished):
             continue
 
-        out = output.parent / Path(entry.path).with_suffix('.out')
         exp = output.parent / Path(entry.path).with_suffix('.exp')
-        actual = out.read_text(errors='replace') if out.is_file() else ''
+        actual = saved_output(output, entry)
+        crashed = CRASH.search(actual)
 
-        if status != 'FAIL' or SEED_FAILURE.search(actual) or not exp.is_file():
+        if status == 'XFAIL' and unfinished and not crashed:
+            continue
+
+        if status != 'FAIL' or crashed or not exp.is_file():
             failed += 1
-            print(f'seed {seed}: {status} tests/{entry.path}')
+            print(f'seed {seed}: {status} tests/{entry.path}{" (crashed)" if crashed else ""}')
             continue
 
         expected = expected_diagnostics(exp.read_text(errors='replace'))
@@ -633,6 +686,9 @@ def seed_verdict(entries, output, seed, findings):
             findings.setdefault(entry.path, (seed, new_diagnostics[0]))
         else:
             changed += 1
+
+    if runner_crash(output, f'seed {seed}: '):
+        failed += 1
 
     return failed, changed
 
@@ -658,6 +714,22 @@ def run_seeds(lane, entries, jobs, seeds, io_chaos=False):
     return failed_seeds
 
 
+# A line of run-tests' SLOW TEST SUMMARY: "(1.234 s) <title> [tests/<path>.phpt]", slowest first; a
+# SKIPIF section's own time is "(0.012 s) SKIPIF of <title> [...]".
+SLOW_LINE = re.compile(r'^\((\d+\.\d+) s\) (?!SKIPIF of ).*\[([^\]\n]+\.phpt)\]\s*$', re.M)
+
+
+def print_slowest(output, count):
+    """Print the `count` slowest tests of a run made with show_slow."""
+    slowest = SLOW_LINE.findall(output.read_text(errors='replace'))[:count]
+
+    if not slowest:
+        print(f'no SLOW TEST SUMMARY in {output} ($NO_PHPTEST_SUMMARY drops it)')
+
+    for seconds, name in slowest:
+        print(f'slow    {seconds} s {name}')
+
+
 def skip_allowed(lane, entry):
     return any(fnmatchcase(lane.name, pattern) for pattern, _ in entry.skip_on)
 
@@ -672,6 +744,7 @@ def main():
     parser.add_argument('--lane', required=True)
     parser.add_argument('--stage', type=int, help='last stage list to take (default: all)')
     parser.add_argument('--jobs', type=int, default=os.cpu_count())
+    parser.add_argument('--show-slow', type=int, metavar='N', help='print the N slowest tests of the run')
     parser.add_argument('--seeds', type=int, help='run the tests once per seed 1..N with the fuzz hook')
     parser.add_argument('--io-chaos', action='store_true', help="with --seeds: arm the IO provider's fault points")
     parser.add_argument('tests', nargs='*')
@@ -686,6 +759,12 @@ def main():
 
     if args.io_chaos and args.seeds is None:
         sys.exit('--io-chaos runs with --seeds')
+
+    if args.show_slow is not None and args.seeds is not None:
+        sys.exit('--show-slow runs without --seeds')
+
+    if args.show_slow is not None and args.show_slow < 1:
+        sys.exit('--show-slow takes a count of 1 or more')
 
     entries, left_out = compose(lane, args.stage, args.tests)
 
@@ -706,9 +785,13 @@ def main():
         run(['lcov', '--quiet', '--zerocounters', '--directory', lane.build], ROOT)
 
     with mysql_server(lane, entries):
-        output = run_tests(lane, entries, args.jobs)
+        output = run_tests(lane, entries, args.jobs, show_slow=args.show_slow is not None)
 
     wrong = verdict(lane, entries, left_out, output)
+
+    if args.show_slow is not None:
+        print_slowest(output, args.show_slow)
+
     junit_add_files()
 
     if lane.variant == 'cov' and not coverage(lane, output.parent):

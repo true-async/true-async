@@ -2267,3 +2267,19 @@ stack options were shown with the code).
   cancelling the whole group, which breaks groups made in shutdown functions; giving the tasks the `$e` of
   `graceful_shutdown($e)`, which needs it held in a global past tasks that never run. Why: `exit()` ends queued
   work. Cost: a count per entry, 8 bytes with alignment; a queued task still takes 293 bytes (debug, measured).
+- 2026-10-12 S14.2: `scheduler/085-deadlock_report_on_stderr.phpt` (ours, `changed:2026-10-12`) writes its own
+  lines to stderr, and `tools/test.py` keeps run-tests' stderr in `run.err` apart from `run.out`. Why: a test that
+  captures one stream (`--CAPTURE_STDIO--`) writes the other into run-tests' own output, where 085's stdout and
+  `084`'s stderr met the result lines; a line glued to one hid it (`parsed 1690 tests, run-tests counted 1691`) and
+  stopped the nightly seeds. A count that still disagrees is printed, the run goes on, and the lost test is MISSING;
+  a crash report in `run.err` fails the run.
+- 2026-10-12 S14.2: `stream/030-udp_timeout_operations.phpt` (`changed:2026-10-12`) cancels its server after 2 s;
+  the commit that lifts its XFAIL removes the watchdog. Why: the receive ignores `stream_set_timeout()` until S8
+  (`RFC-CHANGES.md` 4) and waited for run-tests' 60 s timeout, retried as "timed out": 120 of the suite's 150 s.
+- 2026-10-12 S14.2: a crash (a signal, a sanitizer or leak report, a debug assertion, a hang) fails a test with
+  `--XFAIL--` too, on every lane and under a seed; under a seed such a test that passes (WARN) is no failure,
+  as `io/100` when a seed cancels its reader before the `fread()`. Why: an unfinished test may only fail by its
+  output, and the plain lanes judge when it passes.
+- 2026-10-12 S14.2: run-tests retries no crash or hang, and no test under a seed (`tools/run-tests.patch`). Why:
+  the retry discards the first attempt, so an XFAIL test that hung once, or a seed's changed output
+  (`channel/112`, seed 3, then WARN), was judged by the second attempt. A pass on a retry stays WARN, red.
