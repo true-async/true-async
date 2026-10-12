@@ -534,4 +534,8 @@ finding left open gets an owner step in `PLAN.md`.
   caller's cancellation pending in the middle of C code (`zend_gc.c`, `zend_gc_collect_cycles()`): checked for
   `all()` only; the TaskGroup's `task_group_complete()` would read it as a refused finally run (by reading). Owner:
   `PLAN.md` S9.33.
+- 2026-10-12 (S14.1, Critic, by reading) `channel_put()` reads `rendezvous_has_value` after `channel_wake_receiver()`,
+  whose serve of a `recvAsync()` Future releases the value and, with a chain, the waiter's hold on the Future: a GC
+  run there lets a second sender fill the slot, which the first then marks committed, and `close()` fails the
+  second sender although its value is delivered. Owner: `PLAN.md` S9.33.
 

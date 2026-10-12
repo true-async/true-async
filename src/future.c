@@ -23,6 +23,7 @@
 #include "coroutine.h"
 #include "exceptions.h"
 #include "future.h"
+#include "os_signal.h"
 #include "scheduler.h"
 #include "scope.h"
 #include "task_group.h"
@@ -1339,6 +1340,22 @@ ZEND_METHOD(Async_Future, ignore)
 	RETURN_OBJ_COPY(Z_OBJ_P(ZEND_THIS));
 }
 
+/* The provider that completes `source` (a channel, a task group, a signal wait) holds `source_object` once
+ * a chain hangs on it, and a channel or a group reports it to the GC. A borrowed pointer let the GC free the
+ * chain while the provider could still complete it (DECISIONS 2026-10-12 S14.1). */
+static void future_provider_hold(async_future_event_t *source, zend_object *source_object)
+{
+	async_event_callback_t *const *const subscribers = async_callbacks_slots(&source->base.callbacks);
+
+	for (uint32_t i = 0; i < source->base.callbacks.length; i++) {
+		if (async_channel_future_waiter_hold(subscribers[i], source_object) ||
+			async_task_group_future_waiter_hold(subscribers[i], source_object) ||
+			async_signal_wait_hold(subscribers[i], source_object)) {
+			return;
+		}
+	}
+}
+
 /* TrueAsync's async_future_create_mapper (future.c:1678-1778): the child joins the source's chain,
  * or, on a completed source, goes to a drain of its own at once. */
 static void future_mapper_create(INTERNAL_FUNCTION_PARAMETERS, const future_mapper_kind_t mapper_kind)
@@ -1392,6 +1409,7 @@ static void future_mapper_create(INTERNAL_FUNCTION_PARAMETERS, const future_mapp
 	if (source_object->state == NULL && Z_ISUNDEF(source_object->mapper)) {
 		child->source = Z_OBJ_P(ZEND_THIS);
 		GC_ADDREF(child->source);
+		future_provider_hold(source, child->source);
 	}
 
 	RETURN_OBJ(&child->std);

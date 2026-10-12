@@ -653,6 +653,12 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
 
 ## S14
 
+- S14.1 closed 2026-10-12 (PLAN result line, DECISIONS 2026-10-12 S14.1): a provider (channel, group, signal
+  wait) holds a pending Future once a chain hangs on it, and the channel and the group report it to the GC, so a
+  dropped chain is collected only with its provider. Consequence: a dropped or cancelled only child keeps the
+  source queued until a value or the close. `fiber/035` passes on core `c53c17cfd47` (S8). S14.2 can now
+  wait for its green scheduled run.
+
 - S14.4 closed 2026-10-12 (PLAN result line, DECISIONS 2026-10-12 S14.4): no list line, exclusion or XFAIL
   names a closed stage as its owner; S2's unbuilt test layers are S15, recorded only. The six XFAILs naming S8 (`io/039`,
   `040`, `042`, `043`, `100`, `stream/030`) wait on core changes that S8 only requests: when S8 closes they

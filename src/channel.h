@@ -87,6 +87,11 @@ bool async_channel_resolve_deadlocks(void);
  * (collector.h), whoever holds the channel can complete the waiter's Future. */
 zend_object *async_channel_of_future_waiter(const async_event_callback_t *subscriber);
 
+/* A chain hangs on the queued Future `future_object`: the waiter holds it and the channel reports it to
+ * the GC while the waiter is queued, so the GC frees the chain only with the channel. False when
+ * `subscriber` is no channel's queued waiter. */
+bool async_channel_future_waiter_hold(async_event_callback_t *subscriber, zend_object *future_object);
+
 /* For the collector: what closes `channel_object` without a holder, its armed timer and its owner
  * scope, makes it live, once per run. */
 void async_channel_collector_sources(async_collector_t *collector, zend_object *channel_object);

@@ -114,5 +114,5 @@ can see goes here; tests, tools and CI are in the git history.
   ([S9](dev/plans/S9-taskgroup.md)).
 - `map()`, `catch()` and `finally()` on a `recvAsync()`, signal or group Future nobody else holds complete
   when that Future does; before, the Future went with its object and the chain never completed. A dropped
-  `recvAsync()->map()` chain now stays queued until PHP's GC collects it and takes a channel value
-  ([S9](dev/plans/S9-taskgroup.md)).
+  `recvAsync()->map()` chain stays queued and takes a channel value; its channel, group or signal wait holds
+  it, so PHP's GC collects it only with that channel or group ([S9](dev/plans/S9-taskgroup.md), S14.1).

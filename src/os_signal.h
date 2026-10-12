@@ -48,8 +48,13 @@ typedef struct
 
 extern zend_class_entry *async_ce_signal;
 
-/* Withdraws every watch: a Future still waiting stays pending. */
+/* Withdraws every watch: a Future still waiting stays pending, and the chains its wait held go. */
 void async_signal_request_shutdown(void);
+
+/* A chain hangs on the signal wait's Future `future_object`: the wait holds it until the signal or the
+ * request's shutdown, as the registry it sits in is a root the GC does not see. False when `subscriber`
+ * is no signal wait. */
+bool async_signal_wait_hold(async_event_callback_t *subscriber, zend_object *future_object);
 
 /* For the collector of coroutines that can never wake (collector.h): every Future a watch will
  * complete is live, since the watch, which the walk does not reach, delivers the signal. */

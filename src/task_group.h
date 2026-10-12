@@ -74,6 +74,11 @@ void async_task_group_scope_freed(zend_object *group_object);
  * holds the group can settle the Future. */
 zend_object *async_task_group_of_future_waiter(const async_event_callback_t *subscriber);
 
+/* A chain hangs on the pending read's Future `future_object`: the waiter holds it and the group reports it
+ * to the GC while the read is pending, so the GC frees the chain only with the group. False when
+ * `subscriber` is no group's pending read. */
+bool async_task_group_future_waiter_hold(async_event_callback_t *subscriber, zend_object *future_object);
+
 /* For the collector: the running tasks of `group_object` settle its Futures without a holder, so each one
  * that can run makes the group live, once per run. */
 void async_task_group_collector_sources(async_collector_t *collector, zend_object *group_object);

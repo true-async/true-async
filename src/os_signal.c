@@ -86,6 +86,7 @@ typedef struct
 	async_event_callback_t on_token;  /* in the token's vector while `token` is set */
 	async_signal_watch_t *watch;      /* NULL once the request's shutdown withdrew the watch */
 	async_future_event_t *future;     /* borrowed: the event disposes on_future before it goes */
+	zend_object *future_object;       /* NULL, or the Future held for its chain while `watch` is set */
 	async_awaitable_t *token;         /* a reference, a Timeout's subscription; NULL without */
 } signal_wait_t;
 
@@ -850,6 +851,11 @@ static async_signal_watch_t *signal_watch_get(const int signo, zend_object *sign
 
 void async_signal_request_shutdown(void)
 {
+	/* Released after every watch is withdrawn: a release may free a Future whose chain frees other waits. */
+	zend_object **held_objects = NULL;
+	uint32_t held_count = 0;
+	uint32_t held_capacity = 0;
+
 	for (int signo = 1; ASYNC_G(signals) != NULL && signo < ASYNC_SIGNAL_SLOTS; signo++) {
 		async_signal_watch_t *watch = ASYNC_G(signals)->watches[signo];
 
@@ -861,11 +867,31 @@ void async_signal_request_shutdown(void)
 		async_event_callback_t **slots = async_callbacks_slots(&watch->base.callbacks);
 
 		for (uint32_t index = 0; index < watch->base.callbacks.length; index++) {
-			SIGNAL_WAIT_OF(slots[index], on_signal)->watch = NULL;
+			signal_wait_t *const wait = SIGNAL_WAIT_OF(slots[index], on_signal);
+
+			wait->watch = NULL;
+
+			if (wait->future_object != NULL) {
+				if (held_count == held_capacity) {
+					held_capacity = held_capacity == 0 ? 8 : held_capacity * 2;
+					held_objects = safe_erealloc(held_objects, held_capacity, sizeof(zend_object *), 0);
+				}
+
+				held_objects[held_count++] = wait->future_object;
+				wait->future_object = NULL;
+			}
 		}
 
 		watch->base.callbacks.length = 0;
 		signal_watch_free(watch);
+	}
+
+	for (uint32_t i = 0; i < held_count; i++) {
+		OBJ_RELEASE(held_objects[i]);
+	}
+
+	if (held_objects != NULL) {
+		efree(held_objects);
 	}
 }
 
@@ -940,6 +966,7 @@ static void signal_wait_leave(async_event_callback_t *callback, async_awaitable_
 	signal_wait_t *wait = SIGNAL_WAIT_OF(callback, on_future);
 	async_signal_watch_t *watch = wait->watch;
 	async_awaitable_t *token = wait->token;
+	zend_object *const future_object = wait->future_object;
 
 	if (token != NULL) {
 		async_callbacks_remove(async_awaitable_callbacks(token), &wait->on_token);
@@ -958,6 +985,26 @@ static void signal_wait_leave(async_event_callback_t *callback, async_awaitable_
 	if (token != NULL) {
 		signal_token_release(token);
 	}
+
+	if (future_object != NULL) {
+		OBJ_RELEASE(future_object);
+	}
+}
+
+bool async_signal_wait_hold(async_event_callback_t *subscriber, zend_object *future_object)
+{
+	if (EXPECTED((subscriber->flags & ASYNC_CALLBACK_F_RECORD) || subscriber->dispose != signal_wait_leave)) {
+		return false;
+	}
+
+	signal_wait_t *const wait = SIGNAL_WAIT_OF(subscriber, on_future);
+
+	if (wait->watch != NULL && wait->future_object == NULL) {
+		wait->future_object = future_object;
+		GC_ADDREF(future_object);
+	}
+
+	return true;
 }
 
 /* A hold on the token for the wait: a Timeout's subscription arms its timer. False when a Timeout
@@ -981,6 +1028,7 @@ static zend_object *signal_wait_new(async_signal_watch_t *watch, async_awaitable
 
 	wait->watch = watch;
 	wait->future = future;
+	wait->future_object = NULL;
 	wait->token = token;
 
 	wait->on_signal.flags = 0;

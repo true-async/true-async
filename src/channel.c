@@ -64,6 +64,7 @@ typedef struct
 	async_coroutine_event_callback_t queue_record; /* `event`: the channel while queued, NULL once out */
 	async_event_callback_t on_future;
 	async_future_event_t *future; /* borrowed: the event disposes `on_future` before it goes */
+	zend_object *future_object;   /* NULL, or the Future held for its chain and reported to the GC */
 } channel_future_waiter_t;
 
 #define CHANNEL_FUTURE_WAITER_OF(member_pointer, member) \
@@ -1097,6 +1098,7 @@ static void channel_future_waiter_dispose(async_event_callback_t *callback, asyn
 
 	channel_future_waiter_t *const waiter = CHANNEL_FUTURE_WAITER_OF(callback, on_future);
 	async_channel_t *const channel = (async_channel_t *) waiter->queue_record.event;
+	zend_object *const future_object = waiter->future_object;
 
 	if (channel != NULL) {
 		async_wait_queue_remove(&channel->receivers, &waiter->queue_record);
@@ -1104,6 +1106,10 @@ static void channel_future_waiter_dispose(async_event_callback_t *callback, asyn
 	}
 
 	efree(waiter);
+
+	if (future_object != NULL) {
+		OBJ_RELEASE(future_object);
+	}
 }
 
 /* Queues a waiter for the pending `future`, which the next free value completes. */
@@ -1120,6 +1126,7 @@ static void channel_future_wait(async_channel_t *channel, async_future_event_t *
 	waiter->queue_record.coroutine = NULL;
 	waiter->queue_record.event = (async_awaitable_t *) &channel->base;
 	waiter->future = future;
+	waiter->future_object = NULL;
 
 	waiter->on_future.flags = 0;
 	waiter->on_future.callback = async_callback_ignore;
@@ -1143,19 +1150,61 @@ zend_object *async_channel_of_future_waiter(const async_event_callback_t *subscr
 	return channel != NULL ? &channel->std : NULL;
 }
 
+bool async_channel_future_waiter_hold(async_event_callback_t *subscriber, zend_object *future_object)
+{
+	if (async_channel_of_future_waiter(subscriber) == NULL) {
+		return false;
+	}
+
+	channel_future_waiter_t *const waiter = CHANNEL_FUTURE_WAITER_OF(subscriber, on_future);
+
+	if (waiter->future_object == NULL) {
+		waiter->future_object = future_object;
+		GC_ADDREF(future_object);
+	}
+
+	return true;
+}
+
 /* Detaches the waiters of Futures that outlive the channel: their dispose must not reach a freed queue.
  * They stay pending, as the channel's destructor did not run to reject them (after a fatal error;
  * S9-channel.md 8, item 8). */
 static void channel_future_waiters_detach(async_channel_t *channel)
 {
-	for (uint32_t i = 0; i < channel->receivers.length; i++) {
+	const uint32_t count = channel->receivers.length;
+	/* Taken before any release: a release may free a Future whose chain frees other waiters. */
+	zend_object **held_objects = NULL;
+	uint32_t held_count = 0;
+
+	for (uint32_t i = 0; i < count; i++) {
 		async_coroutine_event_callback_t *const record = channel->receivers.records[i];
 
 		ZEND_ASSERT(channel_record_is_future(record) && "a parked coroutine holds its channel through its frame");
 		record->event = NULL;
+
+		channel_future_waiter_t *const waiter = CHANNEL_FUTURE_WAITER_OF(record, queue_record);
+		zend_object *const future_object = waiter->future_object;
+
+		waiter->future_object = NULL;
+
+		if (future_object != NULL) {
+			if (held_objects == NULL) {
+				held_objects = safe_emalloc(count, sizeof(zend_object *), 0);
+			}
+
+			held_objects[held_count++] = future_object;
+		}
 	}
 
 	channel->receivers.length = 0;
+
+	for (uint32_t i = 0; i < held_count; i++) {
+		OBJ_RELEASE(held_objects[i]);
+	}
+
+	if (held_objects != NULL) {
+		efree(held_objects);
+	}
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -1363,6 +1412,18 @@ static HashTable *channel_object_gc(zend_object *object, zval **table, int *num)
 
 	zend_get_gc_buffer_add_zval(gc_buffer, &channel->rendezvous_value);
 	zend_get_gc_buffer_add_zval(gc_buffer, &channel->dropped_value);
+
+	for (uint32_t i = 0; i < channel->receivers.length; i++) {
+		const async_coroutine_event_callback_t *const record = channel->receivers.records[i];
+
+		if (channel_record_is_future(record)) {
+			zend_object *const future_object = CHANNEL_FUTURE_WAITER_OF(record, queue_record)->future_object;
+
+			if (future_object != NULL) {
+				zend_get_gc_buffer_add_obj(gc_buffer, future_object);
+			}
+		}
+	}
 
 	zend_get_gc_buffer_use(gc_buffer, table, num);
 

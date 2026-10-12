@@ -117,6 +117,7 @@ struct _async_task_group_future_waiter_s
 	async_event_callback_t on_future;
 	async_task_group_t *group;    /* NULL once out of `futures` */
 	async_future_event_t *future; /* borrowed: the event disposes `on_future` before it goes */
+	zend_object *future_object;   /* NULL, or the Future held for its chain and reported to the GC */
 	read_kind_t kind;
 	bool ignore_errors;
 };
@@ -419,6 +420,7 @@ static void task_group_future_waiter_dispose(async_event_callback_t *callback, a
 
 	async_task_group_future_waiter_t *const waiter = (async_task_group_future_waiter_t *) callback;
 	async_task_group_t *const group = waiter->group;
+	zend_object *const future_object = waiter->future_object;
 
 	if (group != NULL) {
 		async_task_group_futures_t *futures = &group->futures;
@@ -432,13 +434,32 @@ static void task_group_future_waiter_dispose(async_event_callback_t *callback, a
 	}
 
 	efree(waiter);
+
+	if (future_object != NULL) {
+		OBJ_RELEASE(future_object);
+	}
 }
 
 /* The group goes: its pending Futures stay pending, their waiters forget it. */
 static void task_group_future_waiters_detach(async_task_group_futures_t *futures)
 {
+	/* Taken before any release: a release may free a Future whose chain frees other waiters. */
+	zend_object **held_objects = NULL;
+	uint32_t held_count = 0;
+
 	for (uint32_t i = 0; i < futures->length; i++) {
-		futures->waiters[i]->group = NULL;
+		async_task_group_future_waiter_t *const waiter = futures->waiters[i];
+
+		waiter->group = NULL;
+
+		if (waiter->future_object != NULL) {
+			if (held_objects == NULL) {
+				held_objects = safe_emalloc(futures->length, sizeof(zend_object *), 0);
+			}
+
+			held_objects[held_count++] = waiter->future_object;
+			waiter->future_object = NULL;
+		}
 	}
 
 	if (futures->waiters != NULL) {
@@ -448,6 +469,14 @@ static void task_group_future_waiters_detach(async_task_group_futures_t *futures
 
 	futures->length = 0;
 	futures->capacity = 0;
+
+	for (uint32_t i = 0; i < held_count; i++) {
+		OBJ_RELEASE(held_objects[i]);
+	}
+
+	if (held_objects != NULL) {
+		efree(held_objects);
+	}
 }
 
 /* Records a pending read of `future` at the end of `futures`. */
@@ -473,6 +502,7 @@ static void task_group_future_waiter_add(async_task_group_t *group,
 	waiter->on_future.dispose = task_group_future_waiter_dispose;
 	waiter->group = group;
 	waiter->future = future;
+	waiter->future_object = NULL;
 	waiter->kind = kind;
 	waiter->ignore_errors = ignore_errors;
 
@@ -512,6 +542,22 @@ zend_object *async_task_group_of_future_waiter(const async_event_callback_t *sub
 	const async_task_group_t *group = ((const async_task_group_future_waiter_t *) subscriber)->group;
 
 	return group != NULL ? (zend_object *) &group->std : NULL;
+}
+
+bool async_task_group_future_waiter_hold(async_event_callback_t *subscriber, zend_object *future_object)
+{
+	if (async_task_group_of_future_waiter(subscriber) == NULL) {
+		return false;
+	}
+
+	async_task_group_future_waiter_t *const waiter = (async_task_group_future_waiter_t *) subscriber;
+
+	if (waiter->future_object == NULL) {
+		waiter->future_object = future_object;
+		GC_ADDREF(future_object);
+	}
+
+	return true;
 }
 
 void async_task_group_collector_sources(async_collector_t *collector, zend_object *group_object)
@@ -1727,6 +1773,12 @@ static HashTable *task_group_object_gc(zend_object *object, zval **table, int *n
 
 	if (group->scope_object != NULL) {
 		zend_get_gc_buffer_add_obj(gc_buffer, group->scope_object);
+	}
+
+	for (uint32_t i = 0; i < group->futures.length; i++) {
+		if (group->futures.waiters[i]->future_object != NULL) {
+			zend_get_gc_buffer_add_obj(gc_buffer, group->futures.waiters[i]->future_object);
+		}
 	}
 
 	zend_get_gc_buffer_use(gc_buffer, table, num);

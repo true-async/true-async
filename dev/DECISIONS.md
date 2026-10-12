@@ -2378,3 +2378,14 @@ stack options were shown with the code).
   hooks are active, instead of a blocking work op. RFC 28 asks for the curl-side fix (any provider keyed by
   descriptor meets the late `remove()`), not Poll queue counts. The fix is bukka's code: Edmond hears first,
   it waits for the core slot (S8.4a).
+- 2026-10-12 S14.1 (Edmond 14:31: «нужно показывать GC сильную ссылку»): once `map()`, `catch()` or `finally()` hangs
+  a chain on a pending `recvAsync()`, group read or signal Future, its channel, group or signal wait holds the Future
+  (`future_provider_hold()`) until the waiter goes; the channel and the group report it from `get_gc`, the signal
+  registry is a root. A borrowed pointer let the GC free a dropped chain the provider could still complete (SIGSEGV
+  of `tests/channel/145-channel_collected_future_served_by_destructor.phpt` under seeds, `channel/148` in FIFO). A
+  dropped chain stays queued until a value, the close or the request's end, as TrueAsync's self-pin
+  (`future.c:1746-1756`); a cycle through the provider is collected with it (`149`). `145` (`changed:2026-10-12`)
+  now asserts the chain survives a collection. Rejected: an unreported chain (cycles through the provider lived to
+  the request's end, a signal chain leaked at exit: `149`, `signal/045`) and a no-op Future `dtor_obj` (guarded the
+  first collection only). A dropped or cancelled only child leaves its source queued to take the next value, as in
+  TrueAsync. The waiter's release can start a GC run inside `channel_put()`, as the value's already can: S9.33.

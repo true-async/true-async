@@ -1807,12 +1807,19 @@ S14.6 are core changes and take the core slot.
 Tier: T2. Roles: Critic, Sage.
 Tests: interleaved
 
-- [ ] S14.1 Crash and leak under a random scheduling seed: `channel/145` (SIGSEGV) and `fiber/035` (the body
+- [x] S14.1 Crash and leak under a random scheduling seed: `channel/145` (SIGSEGV) and `fiber/035` (the body
       runs after the `exit()`, two leaks): cause found and fixed, with a test that fails without the fix in
       plain FIFO order where one can be built.
       done: `tools/test.py --seeds 100` over `channel/` and `fiber/` with no failed seed on `pocs-dbg` and
         `pocs-asan`; the S9 and S10 lists pass as before
       tier: T2 · role: Critic → Sage
+      handoff: done 2026-10-12 on core `c53c17cfd47`. `channel/145`: the GC freed a dropped `recvAsync()->map()`
+        chain the channel could still complete; a channel, group or signal wait now holds a chained Future and
+        the channel and the group report it (Edmond 14:31; DECISIONS 2026-10-12 S14.1); FIFO reproducer
+        `channel/148`, tests `149`, `task_group/165`, `signal/044`, `045`. `fiber/035`: fixed by S8's core
+        (`8c0d98dd7e0`). 100 seeds over `channel/` and `fiber/` (192 tests): 0 failed on pocs-dbg and pocs-asan;
+        full pocs-dbg 1753 PASS, pocs-asan 1727 PASS, 0 unexpected. Two Critics; Sage not needed. The GC run a
+        release can start inside `channel_put()` is S9.33's (SECURITY.md).
 - [ ] S14.2 Nightly CI with random seeds: the run completes, means something and is watched: a seed run that
       cannot parse an output reports it and goes on, and the test that writes the stray `  thrown` is found;
       `io/100`'s verdict no longer follows the queue order; `stream/030` fails fast instead of waiting for
