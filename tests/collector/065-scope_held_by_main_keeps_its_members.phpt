@@ -7,7 +7,6 @@ use Async\Future;
 use Async\FutureState;
 use function Async\await;
 use function Async\suspend;
-use function Async\delay;
 use function Async\get_deadlocked_coroutines;
 
 $scope = new Scope();
@@ -37,10 +36,13 @@ $scope->spawn(function () {
     }
 });
 
-delay(10);
+// Yields, not a delay: a timer already due when main parks resumes main before the queued members run.
+// a and b reach their await on their second turn.
+suspend();
+suspend();
 echo "found: ", count(get_deadlocked_coroutines()), "\n";
 $scope->cancel();
-delay(10);
+suspend();
 echo "end\n";
 ?>
 --EXPECT--

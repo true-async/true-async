@@ -7,7 +7,7 @@ use Async\Future;
 use Async\FutureState;
 use function Async\spawn;
 use function Async\await;
-use function Async\delay;
+use function Async\suspend;
 use function Async\get_deadlocked_coroutines;
 
 function start(): void
@@ -23,13 +23,14 @@ function start(): void
 }
 
 start();
-delay(10);
+// A yield, not a delay: a timer already due when main parks resumes main before the queued members run.
+suspend();
 $found = get_deadlocked_coroutines();
 echo "found: ", count($found), "\n";
 foreach ($found as $coroutine) {
     $coroutine->cancel();
 }
-delay(10);
+suspend();
 echo "end\n";
 ?>
 --EXPECT--

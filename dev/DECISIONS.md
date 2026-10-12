@@ -2362,3 +2362,12 @@ stack options were shown with the code).
   and blocking in the coroutine's own context would break S4.md 3.3's single blocking site. Edmond never asked
   for the stage; it came from the session that measured the RINIT install. TrueAsync blocks in place only when
   its 100 ms throttle lets the tick poll (`scheduler.c:1557-1569`).
+- 2026-10-12 S14.2: `collector/065-scope_held_by_main_keeps_its_members.phpt`,
+  `collector/066-scope_held_by_stuck_coroutine_found.phpt`,
+  `collector/067-parent_scope_held_keeps_child_scope_members.phpt` and
+  `collector/068-child_scope_held_leaves_parent_members_found.phpt` (ours, `changed:2026-10-12`): main yields with
+  `suspend()`, not `delay(10)`, until their members park, as the S4 notes of the handoff ask. Why: a timer already
+  due when main parks wakes main in its own tick (`scheduler.c`, U2) before any queued member ran. Under 16
+  parallel ASAN runs on 4 cores, 300 runs each, 065 failed 9 (members cancelled unstarted skip their catch), 066 4,
+  067 6, 068 5 (red `linux (asan)` of fd1f9c4: 067); with yields none failed. 065 yields twice: its members park on
+  their second turn.
