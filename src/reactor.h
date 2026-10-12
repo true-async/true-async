@@ -100,6 +100,9 @@ typedef struct
 #endif
 } async_reactor_t;
 
+/* Once per process, before any reactor runs: the pid a reactor entry compares with its queue's. */
+void async_reactor_process_startup(void);
+
 void async_reactor_request_startup(void);
 
 /* Withdraws what is still submitted and destroys the queue, after the scheduler unlinked every

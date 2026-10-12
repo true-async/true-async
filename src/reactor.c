@@ -36,9 +36,44 @@
 #include <fcntl.h>
 #include <unistd.h>
 #ifdef __linux__
+#include <pthread.h>
 #include <sys/eventfd.h>
 #endif
 #endif
+
+#ifndef PHP_WIN32
+#ifdef __linux__
+/* getpid() is a system call (glibc caches nothing since 2.25), and every reactor entry compares the pid
+ * with its queue's: kept here, refreshed by fork() in the child before it runs any PHP code. Elsewhere a
+ * fork may run no atfork handler (FreeBSD's rfork()), so getpid() stays; the wake pair asks it always,
+ * from any thread and signal handler. */
+static pid_t reactor_process_pid;
+static bool reactor_process_pid_kept;
+
+static void reactor_process_pid_refresh(void)
+{
+	reactor_process_pid = getpid();
+}
+#endif
+
+static zend_always_inline pid_t reactor_current_pid(void)
+{
+#ifdef __linux__
+	if (EXPECTED(reactor_process_pid_kept)) {
+		return reactor_process_pid;
+	}
+#endif
+	return getpid();
+}
+#endif
+
+void async_reactor_process_startup(void)
+{
+#ifdef __linux__
+	reactor_process_pid_refresh();
+	reactor_process_pid_kept = pthread_atfork(NULL, NULL, reactor_process_pid_refresh) == 0;
+#endif
+}
 
 ///////////////////////////////////////////////////////////////////
 /// The lists
@@ -403,7 +438,7 @@ static php_io_queue *reactor_queue(async_reactor_t *reactor)
 	reactor->queue = queue;
 	reactor->wait_failed = false;
 #ifndef PHP_WIN32
-	reactor->queue_pid = getpid();
+	reactor->queue_pid = reactor_current_pid();
 #endif
 
 	/* The second install trigger of the IO provider (dev/plans/S6.md section 2), and the point
@@ -760,7 +795,7 @@ static void timers_run(async_reactor_t *reactor)
 static zend_always_inline bool reactor_check_fork(async_reactor_t *reactor)
 {
 #ifndef PHP_WIN32
-	if (UNEXPECTED(reactor->queue != NULL && reactor->queue_pid != getpid())) {
+	if (UNEXPECTED(reactor->queue != NULL && reactor->queue_pid != reactor_current_pid())) {
 		reactor_rebuild(reactor);
 		return true;
 	}
@@ -901,7 +936,7 @@ php_io_queue *async_reactor_live_queue(void)
 	const async_reactor_t *reactor = &ASYNC_G(reactor);
 
 #ifndef PHP_WIN32
-	if (UNEXPECTED(reactor->queue != NULL && reactor->queue_pid != getpid())) {
+	if (UNEXPECTED(reactor->queue != NULL && reactor->queue_pid != reactor_current_pid())) {
 		return NULL;
 	}
 #endif

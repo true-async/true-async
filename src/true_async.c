@@ -167,6 +167,8 @@ static PHP_MINIT_FUNCTION(true_async)
 		return SUCCESS;
 	}
 
+	async_reactor_process_startup();
+
 #ifdef PHP_WIN32
 #ifdef HAVE_IOR
 	/* proc_open() makes pipes the Ring reads and writes without blocking the thread (S6.md 9.1) */

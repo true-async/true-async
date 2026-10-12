@@ -2703,3 +2703,11 @@ stack options were shown with the code).
   while INACTIVE with a strategy set, `acquire()` and `tryAcquire()` ask `shouldRecover()` and on `true` move to
   RECOVERING (18:39, B). Why: TrueAsync loses bugs and cancellations in hooks, hands one connection to two
   coroutines, and never calls `shouldRecover()`, which its documentation describes.
+- 2026-10-12 S8.3a, own default (Edmond 18:43: «сперва пофикси Ring»): on Linux a reactor entry compares its
+  queue's pid with one kept per process (set in MINIT, refreshed by a `pthread_atfork()` child handler), not
+  with `getpid()`: a file read through the Ring asked it 6 times per op, 4 here and 2 in the core's
+  `php_io_ring_foreign()`, about 0.8 of the 1.9 µs it lost to a `read()` on the thread. The core half is
+  `io-hooks-fixes-ring-pid`, for the next core update. Elsewhere `getpid()` stays: FreeBSD's `pcntl_rfork()`
+  runs no atfork handler (the Critic), and macOS may keep a handler after its library is unloaded (not
+  checked). It also stays for the wake pair (any thread, a signal handler) and after a failed registration.
+  Release, 32 MiB files from the page cache, 8 KiB reads: Ring 14.3 → 10.8 ms, the thread 6.1 (medians of 11).
