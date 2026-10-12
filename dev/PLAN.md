@@ -1710,7 +1710,7 @@ its scheduler launches; its plain streams get a libuv handle from RINIT (the for
       done: each PR's link and state in `RFC-CHANGES.md`; `S6.md` section 2 corrected
       tier: T1 · role: Critic
 
-## S14 — Health fixes of 2026-10-12  [ ]
+## S14 — Crashes under a random scheduling seed, nightly CI, tests without wall-clock waits, fault tests  [ ]
 
 The open findings of the health check of 2026-10-12 (`dev/HEALTH.md`). Edmond 2026-10-12 12:54: all of them are
 fixed at once, ahead of S8, S9.31 and later stages. S14.1 is a crash and a leak on main. S14.1's fiber part and
@@ -1718,17 +1718,17 @@ S14.6 are core changes and take the core slot.
 Tier: T2. Roles: Critic, Sage.
 Tests: interleaved
 
-- [ ] S14.1 `channel/145` (SIGSEGV) and `fiber/035` (the body runs after the `exit()`, two leaks) under a random
-      scheduling seed: cause found and fixed, with a test that fails without the fix in plain FIFO order where
-      one can be built.
+- [ ] S14.1 Crash and leak under a random scheduling seed: `channel/145` (SIGSEGV) and `fiber/035` (the body
+      runs after the `exit()`, two leaks): cause found and fixed, with a test that fails without the fix in
+      plain FIFO order where one can be built.
       done: `tools/test.py --seeds 100` over `channel/` and `fiber/` with no failed seed on `pocs-dbg` and
         `pocs-asan`; the S9 and S10 lists pass as before
       tier: T2 · role: Critic → Sage
-- [ ] S14.2 The nightly seeds run completes, means something and is watched: a seed run that cannot parse an
-      output reports it and goes on, and the test that writes the stray `  thrown` is found; `io/100`'s verdict
-      no longer follows the queue order; `stream/030` fails fast instead of waiting for run-tests' timeout;
-      `--show-slow` in `tools/test.py`; an `--io-chaos` entry in the `seeds` matrix; WORKFLOW names who looks at
-      the scheduled run.
+- [ ] S14.2 Nightly CI with random seeds: the run completes, means something and is watched: a seed run that
+      cannot parse an output reports it and goes on, and the test that writes the stray `  thrown` is found;
+      `io/100`'s verdict no longer follows the queue order; `stream/030` fails fast instead of waiting for
+      run-tests' timeout; `--show-slow` in `tools/test.py`; an `--io-chaos` entry in the `seeds` matrix;
+      WORKFLOW names who looks at the scheduled run.
       done: one scheduled run green on dbg and asan with all of its seeds; the suite's ten slowest tests in
         HEALTH's `Suite:` line
       tier: T1 · role: Critic
@@ -1738,10 +1738,10 @@ Tests: interleaved
         retries no crash or hang and nothing under a seed; a crashing XFAIL fails; `stream/030` ends in 2 s
         (DECISIONS 2026-10-12 S14.2). The dbg suite runs 38.5 s locally, was 150 s. Close: after S14.1, the
         next nightly run with every `seeds` job green (a dispatched run has the same jobs and counts).
-- [ ] S14.3 The own tests HEALTH lists under "wall-clock delays" and "wall-clock bound" wait on the event they
-      test instead of on time; `collector/063`, `064` check the walk's outcome at each margin; the cases
-      `fiber/023`, `028` and `scope/043` leave unchecked get own tests. Ported tests change only with a
-      `changed:` tag and a DECISIONS entry (P2.2).
+- [ ] S14.3 Tests without wall-clock waits: the own tests HEALTH lists under "wall-clock delays" and "wall-clock
+      bound" wait on the event they test instead of on time; `collector/063`, `064` check the walk's outcome at
+      each margin; the cases `fiber/023`, `028` and `scope/043` leave unchecked get own tests. Ported tests
+      change only with a `changed:` tag and a DECISIONS entry (P2.2).
       done: each listed test passes under `--jobs 16` on 4 cores and over 20 seeds; none compares elapsed time
         except where the deadline itself is the behaviour
       tier: T1 · role: Critic
@@ -1758,9 +1758,10 @@ Tests: interleaved
         is recorded as never created; the layout lists what `src/` holds. `check-lists.py`: 1741 listed, 0
         violations; the four tests pass on `pocs-dbg` and `pocs-asan` and over 20 seeds. Critic and Sage:
         a permanent XFAIL passes a crash or a leak in its test; the runner's fix goes to S14.2.
-- [x] S14.5 Fault seams of the extension for the reactor's queue (creation, submit, wait, the wake pair) and
-      tests through them and through `fiber.stack_size` for the paths HEALTH lists under pass 6; fault tests for
-      the two incidents of `dev/SECURITY.md` (the drain with no owner, the trigger that starves timers).
+- [x] S14.5 Fault tests of the extension: fault seams for the reactor's queue (creation, submit, wait, the wake
+      pair) and tests through them and through `fiber.stack_size` for the paths HEALTH lists under pass 6; fault
+      tests for the two incidents of `dev/SECURITY.md` (the drain with no owner, the trigger that starves
+      timers).
       done: each listed path reached by a test on `pocs-dbg` and `pocs-asan`; coverage of those lines recorded
       tier: T2 · role: Critic → Sage
       handoff: done 2026-10-12. `TrueAsync\Test\fail_io()` (DECISIONS 2026-10-12 S14.5), 31 tests in
@@ -1772,9 +1773,9 @@ Tests: interleaved
         D16's arm (main's exit, a forked child's rebuild), the refused drain's pending children, the refused
         TaskGroup reporter's lost errors, a failed wait that spun the idle loop. Left for Edmond: the rebuild's
         PHP calls on D16's frameless arm (open questions). Full pocs-dbg over S9.31: 1725 PASS.
-- [ ] S14.6 The core's test scheduler can fail an enqueue or a cancel at any status and refuse a finish
-      handler; tests for the GC coroutine's and the Fiber's paths HEALTH lists, and for "The scheduler failed to
-      launch".
+- [ ] S14.6 Fault tests of the core: the core's test scheduler can fail an enqueue or a cancel at any status and
+      refuse a finish handler; tests for the GC coroutine's and the Fiber's paths HEALTH lists, and for "The
+      scheduler failed to launch".
       done: the new core tests pass on dbg and ASAN; `CORE_REF` moved by WORKFLOW "Core update"
       tier: T2 · role: Critic → Sage
 
