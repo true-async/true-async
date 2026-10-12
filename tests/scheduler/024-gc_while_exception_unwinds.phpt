@@ -5,12 +5,13 @@ A collection started while an exception unwinds a frame waits for its run and le
 use function Async\spawn;
 use function Async\await;
 
-/* Fills the root buffer up to one short of a collection; the next possible root starts one. */
+/* Fills the root buffer past the threshold, which queues a collection, up to one root short of the
+ * 100 000 roots past it at which the coroutine waits for that collection. */
 function fill_root_buffer(): void
 {
-    $threshold = gc_status()['threshold'];
+    $limit = gc_status()['threshold'] - 1 + 100000;
 
-    while (gc_status()['roots'] < $threshold - 1) {
+    while (gc_status()['roots'] < $limit) {
         $object = new stdClass();
         $object->self = $object;
         unset($object);
@@ -23,8 +24,8 @@ function throw_with_cycle(int &$runs): void
     $node->self = $node;
     fill_root_buffer();
     $runs = gc_status()['runs'];
-    /* Unwinding releases $node: its root fills the buffer, and the collection runs while the
-     * exception is pending. */
+    /* Unwinding releases $node: its root makes the coroutine wait for the collection, which runs
+     * while the exception is pending. */
     throw new RuntimeException("unwinding");
 }
 

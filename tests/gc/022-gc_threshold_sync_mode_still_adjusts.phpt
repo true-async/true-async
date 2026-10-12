@@ -1,16 +1,17 @@
 --TEST--
-GC 022: threshold adjustment in sync mode survives the async rework
+GC 022: the threshold still adjusts both ways, by the run a full buffer queues
 --INI--
 zend.enable_gc=1
 --FILE--
 <?php
 
-// No async operation runs here, so every collection is inline and the caller
-// adjusts from the real count - the pre-async contract, in both directions.
+// Main is a coroutine (DECISIONS 2026-10-02): a full buffer queues the run,
+// gc_collect_cycles() waits for it, and the run adjusts from the real count -
+// the pre-async contract, in both directions (DECISIONS 2026-10-12 S9.38).
 
 $live = [];
 
-// Live cycles fill the buffer: the inline run frees nothing, one step up.
+// Live cycles fill the buffer: the run frees nothing, one step up.
 for ($i = 1; $i <= 5100; $i++) {
     $a = new stdClass();
     $b = new stdClass();
@@ -20,10 +21,11 @@ for ($i = 1; $i <= 5100; $i++) {
     unset($a, $b);
 }
 
+gc_collect_cycles();
 $raised = gc_status()['threshold'];
 
 // The cycles become garbage and enough new garbage fills the raised buffer:
-// the inline run collects everything, one step back down.
+// the run collects everything, one step back down.
 $live = null;
 for ($i = 1; $i <= 7500; $i++) {
     $a = new stdClass();
@@ -33,6 +35,7 @@ for ($i = 1; $i <= 7500; $i++) {
     unset($a, $b);
 }
 
+gc_collect_cycles();
 $lowered = gc_status()['threshold'];
 
 echo "after raise: $raised\n";

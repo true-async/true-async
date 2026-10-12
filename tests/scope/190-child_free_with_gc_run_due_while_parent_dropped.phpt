@@ -6,9 +6,9 @@ Scope: a child scope's free with a GC run due inside the close of its channel re
 use Async\Channel;
 use Async\Scope;
 
-// The close rejects the pending recvAsync() Future and releases its ChannelException. One root short of the
-// threshold puts that release inside the child's free, where a wait for the collection would let the queued
-// coroutine drop the parent before the child's free reads it.
+// The close rejects the pending recvAsync() Future and releases its ChannelException. One root short of the core's
+// wait for a queued collection (100 000 roots past the threshold) puts that release inside the child's free, where a
+// wait for the collection would let the queued coroutine drop the parent before the child's free reads it.
 $parent = new Scope();
 $child = Scope::inherit($parent);
 $channel = Async\await($child->spawn(fn() => new Channel()));
@@ -22,7 +22,7 @@ Async\spawn(function () use (&$parent) {
 $held = [];
 $status = gc_status();
 
-for ($i = $status['threshold'] - $status['roots'] - 1; $i > 0; $i--) {
+for ($i = $status['threshold'] - $status['roots'] - 1 + 100000; $i > 0; $i--) {
     $object = new stdClass();
     $held[] = $object;
     unset($object);

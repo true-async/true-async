@@ -6,8 +6,9 @@ TaskGroup: all() builds its composite after the walk, so a spawn during a GC wai
 use Async\TaskGroup;
 
 // Eight tasks fill the table's first allocation; the ninth, spawned while all() waits for the collection that its
-// release starts, grows it. One root short of the threshold puts that release inside all() on the pinned core;
-// the last line shows the collection ran there, or the test exercises nothing.
+// release starts, grows it. One root short of the core's wait for a queued collection (100 000 roots past the
+// threshold) puts that release inside all() on the pinned core; the last line shows the collection ran there, or the
+// test exercises nothing.
 $group = new TaskGroup();
 
 for ($i = 0; $i < 8; $i++) {
@@ -34,7 +35,7 @@ Async\spawn(function () use ($group, &$spawned) {
 $held = [];
 $status = gc_status();
 
-for ($i = $status['threshold'] - $status['roots'] - 1; $i > 0; $i--) {
+for ($i = $status['threshold'] - $status['roots'] - 1 + 100000; $i > 0; $i--) {
     $object = new stdClass();
     $held[] = $object;
     unset($object);

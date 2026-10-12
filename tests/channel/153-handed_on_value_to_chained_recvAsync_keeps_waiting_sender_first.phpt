@@ -1,5 +1,5 @@
 --TEST--
-Channel: a buffered value handed on from a cancelled receiver to a pending recvAsync() that has a map() child, with a GC run due when the channel lets the Future go, gives the freed slot to the sender already waiting, not to a later one
+Channel: a buffered value handed on from a cancelled receiver to a pending recvAsync() that has a map() child, with a GC run queued when the channel lets the Future go, gives the freed slot to the sender already waiting, not to a later one
 --FILE--
 <?php
 
@@ -7,7 +7,9 @@ use Async\Channel;
 
 // The receiver is promised the first value and cancelled before it takes it, so its frame hands the value on to
 // the Future. One root short of the threshold puts the release of the channel's hold on the Future inside that
-// hand-on, where a wait for the collection would let the third sender take the slot the second one waits for.
+// hand-on. Before S9.38 the core waited for the collection there, which let the third sender take the slot the
+// second one waits for; it now queues the collection, and only a coroutine 100 000 roots past it waits, which the
+// receiver, resumed by its cancel, cannot be. The test keeps the order: the second sender's value comes first.
 $channel = new Channel(1);
 $receiver = Async\spawn(function () use ($channel) {
     try {
@@ -60,8 +62,8 @@ echo "recv(): ", $channel->recv(), "\n";
 echo "collection after: ", gc_status()['runs'] > $runs ? "yes" : "no", "\n";
 ?>
 --EXPECT--
-third sender runs
 receiver cancelled
+third sender runs
 map(): 1
 recv(): 2
 recv(): 3

@@ -413,5 +413,5 @@ output_buffer/007-ob_start_in_handler_fatal.phpt  ref:930beeb44f9e3d733b508be20f
 output_buffer/008-ob_flush_after_file_write.phpt  ref:9bfdbf22dbeb60811a36455ee2438e18c6929ff1feb4244fc025096edcd1f719
 
 # S14.4: excluded in S3.excluded as component:S6 and left there when S6 closed.
-gc/018-gc_threshold_stable_without_coroutine.phpt  ref:7f82ec740e7cc5d13f3243d9a88a0e59696fc044482692d693c6f00b9e8844de  changed:2026-10-12:8b8ebe0ca04c78a8eb4887f4d8f93d3cfced21bb6fe09561ad1492421de56091
+gc/018-gc_threshold_stable_without_coroutine.phpt  ref:7f82ec740e7cc5d13f3243d9a88a0e59696fc044482692d693c6f00b9e8844de  changed:2026-10-12:7f82ec740e7cc5d13f3243d9a88a0e59696fc044482692d693c6f00b9e8844de
 include/008-file_get_contents_in_coroutine.phpt  ref:81d53236ca5563e91e1f8d15e45df7106fba5e904790e44257a2de690c7f637c

@@ -33,6 +33,8 @@ unset($nodes, $node);
 echo "end\n";
 ?>
 --EXPECTF--
+end
+
 Fatal error: Uncaught Exception: Fiber stack allocate failed: %s in %s:%d
 Stack trace:
 #0 {main}

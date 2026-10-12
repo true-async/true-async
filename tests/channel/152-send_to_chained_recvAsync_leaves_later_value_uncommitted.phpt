@@ -5,9 +5,10 @@ Channel: send() to a pending recvAsync() that has a map() child, with a GC run d
 
 use Async\Channel;
 
-// The child makes the channel hold the Future until the Future completes. One root short of the threshold puts
-// the release of that hold inside send(), after the take, where a wait for the collection would let the second
-// sender put its value in the free slot before the first send() marks the slot committed.
+// The child makes the channel hold the Future until the Future completes. One root short of the core's wait for a
+// queued collection (100 000 roots past the threshold) puts the release of that hold inside send(), after the take,
+// where a wait for the collection would let the second sender put its value in the free slot before the first send()
+// marks the slot committed.
 $channel = new Channel();
 $first = new stdClass();
 $first->name = "first";
@@ -34,7 +35,7 @@ Async\spawn(function () use ($channel, $second) {
 $held = [];
 $status = gc_status();
 
-for ($i = $status['threshold'] - $status['roots'] - 1; $i > 0; $i--) {
+for ($i = $status['threshold'] - $status['roots'] - 1 + 100000; $i > 0; $i--) {
     $object = new stdClass();
     $held[] = $object;
     unset($object);

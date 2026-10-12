@@ -754,7 +754,7 @@ Waits for it: nothing; the pinned core carries it.
 State: on `io-hooks-curl-closed-file` `b985d2dded3` (`f7fbc4335fe` on bukka's `8e470c219fc`, then two
 commits shortening its comments on Edmond's word) and `io-hooks-fixes` `a51797d8645`, 2026-10-12 (S8.7),
 in the core since `async-core-io-2026-10-12-3` `634cbbf94be`; the shortened comments are `c50c23baf28` on
-`io-hooks-fixes-closed-file-comment`, for the next core update; PR text for bukka in
+`io-hooks-fixes-closed-file-comment`, in the core since `async-core-io-2026-10-12-4` `d06ab339297`; PR text for bukka in
 `/mnt/project-files/notes/s8-7/io-hooks-curl-closed-file-pr.md`. PR: bukka/php-src#9 (Edmond, 2026-10-12).
 
 Need: `CURLOPT_FILE`, `CURLOPT_INFILE`, `CURLOPT_WRITEHEADER` and `CURLOPT_STDERR` keep the stream's raw
@@ -775,3 +775,22 @@ without running PHP code. Left: `STDERR` closed during a yield inside libcurl.
 
 Waits for it: nothing; the pinned core carries it (`io_provider/082`; core tests
 `curl_exec_io_hook_{file,infile,stderr}_closed_while_waiting`).
+
+## 35. Scheduler API: the GC's automatic run does not park the coroutine that filled the buffer
+
+State: done in `async-core` `b318dcd834c` (2026-10-12, S9.38, Edmond's decision), in the core from
+`async-core-io-2026-10-12-4`; the RFC text in true-async/php-async-core-rfc says so. PR: none; it
+goes with php/php-src#22561.
+
+Need: a root added to a full buffer made the live coroutine wait for the GC coroutine's run, at any
+refcount decrement, the VM's release of `$this` after every method call included: other coroutines
+ran inside C code that holds what they change, and a cancellation was thrown there, after
+`Channel::recv()` had taken its message (`channel/154`).
+
+Request: in a coroutine, `gc_possible_root_when_full()` only queues the run, as TrueAsync does; the
+run takes the threshold step once. A coroutine that adds another 100 000 roots of its own before the
+run starts waits for it, with the exception and its throw position held, which bounds a loop that
+makes garbage (3 000 000 cycles under 128M peak at 60.3M). An explicit `gc_collect_cycles()` waits as
+before. Tests `ext/test_scheduler/tests/112`-`121`.
+
+Waits for it: nothing; the pinned core carries it.

@@ -37,8 +37,9 @@ can see goes here; tests, tools and CI are in the git history.
   uncaught); refused for the current coroutine itself.
 - `Async\Coroutine::getAwaitingInfo()`: `await: coroutine #<id>` for a coroutine parked in
   `await()`, an empty array otherwise.
-- A garbage collection runs in its own coroutine and the code that started it, main included,
-  waits for it to end, destructors included.
+- A garbage collection runs in its own coroutine. `gc_collect_cycles()` waits for it to end,
+  destructors included; a full root buffer only starts it, and the code that filled it goes on
+  unless it adds another 100 000 possible roots before the collection runs.
 - `Async\Coroutine::cancel()`: cancels a coroutine with `AsyncCancellation` (or the given one),
   delivered at its next switch; a coroutine cancelled before it ran finishes without running.
 - `Async\protect()`: a cancellation requested inside the closure waits until the outermost

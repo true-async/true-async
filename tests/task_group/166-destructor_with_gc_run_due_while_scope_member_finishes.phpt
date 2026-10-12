@@ -7,8 +7,9 @@ use Async\Scope;
 use Async\TaskGroup;
 
 // The scope's own coroutine is cancelled twice, by the scope's cancel and by the walk over what remains; the second
-// releases its cancellation. One root short of the threshold puts that release inside the walk, where a wait for
-// the collection would let the coroutine finish and free the scope before the walk reads it again.
+// releases its cancellation. One root short of the core's wait for a queued collection (100 000 roots past the
+// threshold) puts that release inside the walk, where a wait for the collection would let the coroutine finish and
+// free the scope before the walk reads it again.
 $scope = new Scope();
 $group = new TaskGroup(scope: $scope);
 $group->spawn(fn() => 1);
@@ -24,7 +25,7 @@ Async\suspend();
 $held = [];
 $status = gc_status();
 
-for ($i = $status['threshold'] - $status['roots'] - 1; $i > 0; $i--) {
+for ($i = $status['threshold'] - $status['roots'] - 1 + 100000; $i > 0; $i--) {
     $object = new stdClass();
     $held[] = $object;
     unset($object);

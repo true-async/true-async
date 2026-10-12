@@ -7,8 +7,9 @@ use Async\Channel;
 use Async\Future;
 use Async\FutureState;
 
-// One root short of the threshold puts the token's release after the take inside recv(), where a wait for the
-// collection would let the queued coroutine cancel the receiver and recv() throw with the message taken.
+// One root short of the core's wait for a queued collection (100 000 roots past the threshold) puts the token's
+// release after the take inside recv(), where a wait for the collection would let the queued coroutine cancel the
+// receiver and recv() throw with the message taken.
 $channel = new Channel(1);
 $channel->send("message");
 $token = Async\spawn(fn() => (new Future(new FutureState()))->await());
@@ -18,7 +19,7 @@ $runs = gc_status()['runs'];
 $receiver = Async\spawn(function () use ($channel, $token, &$held) {
     $status = gc_status();
 
-    for ($i = $status['threshold'] - $status['roots'] - 1; $i > 0; $i--) {
+    for ($i = $status['threshold'] - $status['roots'] - 1 + 100000; $i > 0; $i--) {
         $object = new stdClass();
         $held[] = $object;
         unset($object);

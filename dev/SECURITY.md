@@ -578,15 +578,20 @@ finding left open gets an owner step in `PLAN.md`.
   for a mapper that suspends; a channel iterator step that finds a value another step stored meanwhile releases it
   after its own, so a cancel there leaves that value unseen.
 
+- 2026-10-12 S9.38: the core's automatic GC run no longer parks the coroutine whose release fills the root buffer
+  (DECISIONS 2026-10-12 S9.38), which narrows the GC's share of the S9.33 open finding: a release, the VM's of
+  `$this` included, lets a cancel in only when its coroutine is 100 000 roots of its own past the queued run, and
+  `channel/154`, whose release fills the buffer, passes. S9.33's tests reach their
+  windows 100 000 roots past the threshold (ten fail on ASAN with S9.33's fixes reverted), except `channel/153`:
+  a receiver resumed by its cancel cannot get that far, so the hold released last has no reproducer now. What is
+  left is the open finding below, narrowed.
+
 ## Open findings
 
-- 2026-10-12 (S9.33) A C function that releases something after it has taken a value can lose that value to a
-  cancel of the caller when the release suspends: a destructor that waits, or the core's GC wait, which is
-  cancellable (`zend_gc.c`, "false means this coroutine was cancelled"). S9.33 fixed the sites that change shared
-  state. The extension cannot close the rest: after any method call the VM releases `$this` (`zend_vm_def.h`,
-  `ZEND_DO_FCALL`), and when that release starts the run, a cancel let in during the wait is thrown by the call,
-  after `recv()` took its message (`channel/154`, XFAIL) or `send()` delivered its value (scheduler context on the
-  release of a served Future's hold only moved the wait there: a debugger, a test that stayed red). Letting the GC
-  wait defer the cancellation would close its share; it needs a delivery point that `protect()` alone has today
-  (the Sage's ruling). Owner: `PLAN.md`, Open questions.
+- 2026-10-12 (S9.33, narrowed by S9.38) A C function that releases something after it has taken a value can lose
+  that value to a cancel of the caller when the release suspends: a destructor that waits, or the core's GC wait,
+  which is cancellable (`zend_gc.c`, "false means this coroutine was cancelled") and since S9.38 happens only to a
+  coroutine that has added 100 000 roots past the queued run without yielding, as a loop that makes garbage does.
+  S9.33 fixed the sites that change shared state. Letting that wait defer the cancellation would close its share;
+  it needs a delivery point that `protect()` alone has today (the Sage's ruling). Owner: `PLAN.md`, Open questions.
 

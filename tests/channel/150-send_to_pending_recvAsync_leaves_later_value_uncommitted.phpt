@@ -5,9 +5,10 @@ Channel: send() to a pending recvAsync() with a GC run due after the take leaves
 
 use Async\Channel;
 
-// The Future takes the first value at once. One root short of the threshold puts a release after the take inside
-// send(), where a wait for the collection would let the second sender put its value in the free slot before the
-// first send() marks the slot committed: the value would then outlive the second send()'s failure.
+// The Future takes the first value at once. One root short of the core's wait for a queued collection (100 000 roots
+// past the threshold) puts a release after the take inside send(), where a wait for the collection would let the
+// second sender put its value in the free slot before the first send() marks the slot committed: the value would
+// then outlive the second send()'s failure.
 $channel = new Channel();
 $first = new stdClass();
 $first->name = "first";
@@ -27,7 +28,7 @@ Async\spawn(function () use ($channel, $second) {
 $held = [];
 $status = gc_status();
 
-for ($i = $status['threshold'] - $status['roots'] - 1; $i > 0; $i--) {
+for ($i = $status['threshold'] - $status['roots'] - 1 + 100000; $i > 0; $i--) {
     $object = new stdClass();
     $held[] = $object;
     unset($object);

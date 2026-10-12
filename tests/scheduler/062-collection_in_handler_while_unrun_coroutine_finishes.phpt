@@ -9,13 +9,13 @@ $coroutine = spawn(function () {
 });
 $coroutine->cancel();
 
-/* The assignment that passes the GC threshold starts the collection inside its handler; main waits
- * for it while the cancelled coroutine finishes. */
+/* The assignment that passes the GC threshold queues the collection; the one 100 000 roots past it
+ * makes main wait for it inside its handler while the cancelled coroutine finishes. */
 $status = gc_status();
 $keep = [];
 $object = null;
 
-for ($i = $status['roots'] - 3; $i < $status['threshold']; $i++) {
+for ($i = $status['roots'] - 3; $i < $status['threshold'] + 100000; $i++) {
     $object = new stdClass();
     $keep[] = $object;
 }

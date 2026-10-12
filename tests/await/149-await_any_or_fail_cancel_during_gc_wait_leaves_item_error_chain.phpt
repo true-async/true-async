@@ -6,8 +6,9 @@ await_any_or_fail(): with a GC run due where a later item's error is chained ove
 use Async\Future;
 
 // The second item's error already has the first as its previous, so chaining them releases the first. Collected
-// before and one root short of the threshold after, that release starts the collection, where a wait would let the
-// queued coroutine cancel the waiter and the throw that follows chain the cancellation into the first error.
+// before and one root short of the core's wait for a queued collection (100 000 roots past the threshold) after,
+// that release starts the collection, where a wait would let the queued coroutine cancel the waiter and the throw
+// that follows chain the cancellation into the first error.
 $first = new Exception("first");
 $second = new Exception("second", 0, $first);
 $failed_first = Future::failed($first);
@@ -22,7 +23,7 @@ $runs = gc_status()['runs'];
 $waiter = Async\spawn(function () use ($failed_first, $failed_second, &$held) {
     $status = gc_status();
 
-    for ($i = $status['threshold'] - $status['roots'] - 1; $i > 0; $i--) {
+    for ($i = $status['threshold'] - $status['roots'] - 1 + 100000; $i > 0; $i--) {
         $object = new stdClass();
         $held[] = $object;
         unset($object);

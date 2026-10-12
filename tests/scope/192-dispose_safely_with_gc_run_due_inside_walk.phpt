@@ -5,9 +5,9 @@ Scope: disposeSafely() with a GC run due inside its walk, where it makes a zombi
 
 use Async\Scope;
 
-// The started coroutine becomes a zombie and the walk releases the cancellation it would have got. One root short
-// of the threshold puts that release inside the walk, where a wait for the collection would let the zombie finish
-// and free the scope before the walk reads it again.
+// The started coroutine becomes a zombie and the walk releases the cancellation it would have got. One root short of
+// the core's wait for a queued collection (100 000 roots past the threshold) puts that release inside the walk,
+// where a wait for the collection would let the zombie finish and free the scope before the walk reads it again.
 $scope = new Scope();
 $scope->spawn(function () {
     Async\suspend();
@@ -19,7 +19,7 @@ Async\suspend();
 $held = [];
 $status = gc_status();
 
-for ($i = $status['threshold'] - $status['roots'] - 1; $i > 0; $i--) {
+for ($i = $status['threshold'] - $status['roots'] - 1 + 100000; $i > 0; $i--) {
     $object = new stdClass();
     $held[] = $object;
     unset($object);

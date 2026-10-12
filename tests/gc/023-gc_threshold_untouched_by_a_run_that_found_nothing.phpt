@@ -1,5 +1,5 @@
 --TEST--
-GC 023: a run that finds the suspected objects still alive raises the threshold as PHP does
+GC 023: a collection that found the buffer already drained does not adjust the threshold
 --INI--
 zend.enable_gc=1
 --FILE--
@@ -9,10 +9,10 @@ use function Async\await;
 use function Async\delay;
 use function Async\spawn;
 
-// The buffer fills with objects that are alive but suspected of cycles. The
-// coroutine waits for the GC coroutine's run (DECISIONS 2026-10-02), which finds
-// them alive and collects nothing, so the threshold takes PHP's step. Released
-// afterwards, they leave no roots behind.
+// The buffer fills with objects that are alive but suspected of cycles, which
+// hands a collection to the GC coroutine. They are then released outright, so
+// the run finds an empty buffer and examines nothing. Its zero says nothing
+// about how much garbage there is, and the threshold must not move on it.
 await(spawn(function () {
     $keep = [];
 
@@ -37,4 +37,4 @@ echo "threshold: ", $status['threshold'], "\n";
 --EXPECT--
 roots: 0
 collected: 0
-threshold: 20001
+threshold: 10001

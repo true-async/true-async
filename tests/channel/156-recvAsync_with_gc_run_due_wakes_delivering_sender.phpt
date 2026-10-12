@@ -5,9 +5,10 @@ Channel: recvAsync() of a rendezvous value with a GC run due after the take wake
 
 use Async\Channel;
 
-// The first sender waits for its value to be taken. One root short of the threshold puts a release after the take
-// inside recvAsync(), where a wait for the collection would let the second sender put its value in the free slot
-// before the first sender is woken; the first would then wait on, and the second be woken for its value.
+// The first sender waits for its value to be taken. One root short of the core's wait for a queued collection (100
+// 000 roots past the threshold) puts a release after the take inside recvAsync(), where a wait for the collection
+// would let the second sender put its value in the free slot before the first sender is woken; the first would then
+// wait on, and the second be woken for its value.
 $channel = new Channel();
 $first = new stdClass();
 $first->name = "first";
@@ -29,7 +30,7 @@ Async\spawn(function () use ($channel, $second) {
 $held = [];
 $status = gc_status();
 
-for ($i = $status['threshold'] - $status['roots'] - 1; $i > 0; $i--) {
+for ($i = $status['threshold'] - $status['roots'] - 1 + 100000; $i > 0; $i--) {
     $object = new stdClass();
     $held[] = $object;
     unset($object);

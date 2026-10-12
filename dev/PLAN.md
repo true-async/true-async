@@ -89,12 +89,10 @@ Waiting for Edmond's call; nothing here is being worked on.
   (S14.6, Sage). A programmer forcing a collection gets none and no sign of why. Option: await the active run
   unless the caller is one of its destructor iterators (needs the GC to track them). Edmond's call.
 - A C function that releases something after it has taken a value can lose that value to a cancel of the caller
-  when the release suspends: a destructor that waits, or the core's GC wait, which is cancellable (S9.33 fixed the
-  sites that change shared state). The extension cannot fix the GC share site by site: the VM's release of `$this`
-  after any method call can start the wait, and `recv()` then throws with its message taken (`channel/154`, XFAIL).
-  Options: accept it, or let the GC wait defer the cancellation to the caller's next suspend, which needs a
-  delivery point beside `protect()`'s, leaves the caller uncancellable while a destructor in the run hangs, and
-  does not cover a destructor that waits (`SECURITY.md`, Open findings). Edmond's call.
+  when the release suspends: a destructor that waits, or the core's GC wait, which since S9.38 happens only to a
+  coroutine 100 000 roots past the queued run without yielding (S9.33 fixed the sites that change shared state).
+  Option: let that wait defer the cancellation to the caller's next suspend, which needs a delivery point beside
+  `protect()`'s and does not cover a destructor that waits (`SECURITY.md`, Open findings). Edmond's call.
 - A forked child whose first reactor call is D16's arm after an `exit()` in main's script runs the rebuild with no
   frame (S14.5): a `SignalHandle` or `Io\Poll\Context` the rebuild cannot make (descriptors exhausted) throws
   from a PHP call there, a fatal error that skips every `finally`. The other throws of that rebuild are fixed
@@ -1676,6 +1674,17 @@ Active: S9.34, layer 5's list block and the pool without its waits
         exception before chaining it; `context.c` and `future.c` clean. Open: whether the GC wait should defer a
         cancellation (Open questions). On CORE_REF 96a52ba65f4: debug 1772 PASS, ASAN 1746 PASS, 0 unexpected;
         100 fuzz seeds over the new tests, 0 failed. Critics and Sage.
+- [x] S9.38 The core's automatic GC run in a coroutine does not wait: a root that finds the buffer full queues
+      the run and goes on; a coroutine 100 000 roots past the queued run without yielding waits; an explicit
+      `gc_collect_cycles()` waits as before (Edmond 2026-10-12, a Critic agreeing).
+      done: the core change with tests on a new `async-core-io` pin; `channel/154` passes; the RFC's GC text and
+        DECISIONS say so
+      tier: T2 · role: Critic
+      result 2026-10-12: core `async-core` `b318dcd834c`, `async-core-io-2026-10-12-4` `d06ab339297` (with S8's
+        comments `c50c23baf28`); the count is per coroutine and restarts after any wait (Critic). Core tests 317
+        debug, 311 ASAN pass (`ext/test_scheduler`, `Zend/tests/gc*`, fibers). Debug 1774 PASS, ASAN 1748 PASS, 0
+        unexpected; 100 fuzz seeds over the 20 changed tests, 0 failed, 0 new diagnostics after `task_set/036`'s
+        fix; ten of them fail on ASAN with S9.33's fixes reverted. RFC text in php-async-core-rfc. Two Critics, Sage.
 
 ## S10 — Beyond the RFCs  [x]
 

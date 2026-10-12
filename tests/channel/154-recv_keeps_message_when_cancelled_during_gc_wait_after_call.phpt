@@ -1,7 +1,5 @@
 --TEST--
 Channel: recv() with a GC run due at the VM's release of the channel after the call keeps the message when the receiver is cancelled during the wait
---XFAIL--
-Open question (PLAN.md, S9.33): the core's GC wait returns the caller's cancellation, here after the take, at the release of `$this` that ends the call
 --FILE--
 <?php
 

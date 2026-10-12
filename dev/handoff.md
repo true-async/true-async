@@ -614,6 +614,12 @@ for Edmond: whether the GC wait should defer a cancellation; the VM's release of
 window no extension fix closes (`channel/154`, XFAIL; PLAN Open questions). Next in S9: pools (S9.32) need their
 plan agreed with Edmond.
 
+S9.38 done 2026-10-12 (PLAN result line, DECISIONS S9.38): the core's automatic GC run no longer parks the
+coroutine whose release fills the root buffer; a coroutine 100 000 roots of its own past the queued run waits, and
+`gc_collect_cycles()` waits as before (core `async-core-io-2026-10-12-4`). `channel/154` passes; S9.31's and
+S9.33's GC-window tests fill 100 000 roots past the threshold; `channel/153` keeps the order only. Open for Edmond:
+whether that remaining wait should defer a cancellation (PLAN Open questions). Next in S9: pools (S9.32).
+
 ## S10
 
 - S10.1 closed 2026-10-08: `dev/plans/S10.md` approved by Edmond (17:40) except output buffers, which

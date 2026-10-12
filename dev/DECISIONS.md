@@ -2711,3 +2711,37 @@ stack options were shown with the code).
   runs no atfork handler (the Critic), and macOS may keep a handler after its library is unloaded (not
   checked). It also stays for the wake pair (any thread, a signal handler) and after a failed registration.
   Release, 32 MiB files from the page cache, 8 KiB reads: Ring 14.3 → 10.8 ms, the thread 6.1 (medians of 11).
+- 2026-10-12 S9.38: in a coroutine, a root that finds the buffer full only queues the GC run and goes on, as in
+  TrueAsync; it waits only after adding another 100 000 roots past the queued run without yielding; an explicit
+  `gc_collect_cycles()` waits as before (Edmond 17:29, a Critic agreeing; core `async-core` `b318dcd834c`). Why: the
+  wait was a suspension at any release, the VM's of `$this` after every call included: other coroutines ran inside
+  C code and a cancel was thrown after `recv()` took its message
+  (`channel/154-recv_keeps_message_when_cancelled_during_gc_wait_after_call.phpt`, no longer XFAIL). Supersedes the
+  rejection in the 2026-10-07 HI-priority entry: that loop of 3 000 000 cycles in a coroutine under 128M peaks at 60.3M
+  with 27 runs (debug build, measured 2026-10-12).
+  Rejected: a wait at 3/4 of `memory_limit` (no limit getter in the core, `-1` never fires, an application whose
+  live data sits above it would wait at every run). The RFC's GC chapter and impact section say so.
+- 2026-10-12 S9.38, tests that waited at the threshold: `gc/018-gc_threshold_stable_without_coroutine.phpt` and
+  `gc/023-gc_threshold_untouched_by_a_run_that_found_nothing.phpt` are the reference's again, word for word;
+  `gc/022-gc_threshold_sync_mode_still_adjusts.phpt` waits for the run with `gc_collect_cycles()` before it reads
+  the threshold; `scheduler/016-no_stack_full_gc_buffer.phpt` prints "end" before the refused GC coroutine's
+  fatal error; `scheduler/024-gc_while_exception_unwinds.phpt` and
+  `scheduler/062-collection_in_handler_while_unrun_coroutine_finishes.phpt` fill 100 000 roots past the threshold
+  to wait where they waited before. Why: no coroutine waits at the threshold any more (the S9.38 entry above).
+- 2026-10-12 S9.38, S9.31's and S9.33's channel tests of a release that waits for the run inside a C walk fill
+  100 000 roots past the threshold, where the coroutine still waits:
+  `await/149-await_any_or_fail_cancel_during_gc_wait_leaves_item_error_chain.phpt`,
+  `channel/150-send_to_pending_recvAsync_leaves_later_value_uncommitted.phpt`,
+  `channel/151-recv_with_token_keeps_message_when_cancelled_during_gc_wait.phpt`,
+  `channel/152-send_to_chained_recvAsync_leaves_later_value_uncommitted.phpt`,
+  `channel/155-owner_scope_free_with_gc_run_due_while_channel_dropped.phpt`,
+  `channel/156-recvAsync_with_gc_run_due_wakes_delivering_sender.phpt`. Why: at the threshold they passed without
+  reaching their window. `channel/153-handed_on_value_to_chained_recvAsync_keeps_waiting_sender_first.phpt`
+  cannot reach it now (the receiver resumes by its cancel, never 100 000 roots past) and keeps the order only.
+- 2026-10-12 S9.38, the same for the scope and group walks:
+  `scope/190-child_free_with_gc_run_due_while_parent_dropped.phpt`,
+  `scope/191-cancel_with_gc_run_due_inside_walk.phpt`, `scope/192-dispose_safely_with_gc_run_due_inside_walk.phpt`,
+  `task_group/159-gc_wait_inside_all_while_group_grows.phpt`,
+  `task_group/166-destructor_with_gc_run_due_while_scope_member_finishes.phpt`,
+  `task_set/036-joinAll_takes_only_settled_entries_across_gc_wait.phpt`, whose spawner also catches the closed set
+  that a random scheduling seed lets `joinAll()` close first (a fatal error in seed 7).

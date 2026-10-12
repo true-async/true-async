@@ -6,8 +6,9 @@ Scope: cancel() with a GC run due inside its walk, where it releases a coroutine
 use Async\Scope;
 
 // The coroutine's own cancellation is pending, so the scope's cancel releases the one it brings. One root short of
-// the threshold puts that release inside the walk, where a wait for the collection would let the coroutine finish
-// unrun and free itself and the scope before the walk reads them again.
+// the core's wait for a queued collection (100 000 roots past the threshold) puts that release inside the walk,
+// where a wait for the collection would let the coroutine finish unrun and free itself and the scope before the walk
+// reads them again.
 $scope = new Scope();
 $scope->spawn(function () {
     echo "not reached\n";
@@ -16,7 +17,7 @@ $scope->spawn(function () {
 $held = [];
 $status = gc_status();
 
-for ($i = $status['threshold'] - $status['roots'] - 1; $i > 0; $i--) {
+for ($i = $status['threshold'] - $status['roots'] - 1 + 100000; $i > 0; $i--) {
     $object = new stdClass();
     $held[] = $object;
     unset($object);
