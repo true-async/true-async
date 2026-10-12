@@ -18,7 +18,7 @@ internal/072-fail_io_arguments.phpt  own:7dd9bd4d9de356a2a85c1bed1d30a4942b0c290
 internal/073-read_without_owner_needs_descriptor.phpt  own:8fbde2127371b8361390bcecc9fda488efadeca8f305045f18f8b26e64095263
 
 # io_provider
-io_provider/042-submit_refused_answers_read_with_error.phpt  own:3919d6cd76646b680563432125166676f7582047ba8a704f36146e04ac83aedf  skip-on:*-win(Unix-only)
+io_provider/042-submit_refused_answers_read_with_error.phpt  own:3919d6cd76646b680563432125166676f7582047ba8a704f36146e04ac83aedf  skip-on:*-win(Unix-only)  changed:2026-10-12:db44c2f7023d30bcfee5aac571c1bfbb58dc75de2a7aa1f609e43e6624d2f0bb
 io_provider/043-answer_in_flight_without_owner_skips_drain.phpt  own:d8b3cfa2cbf98a9dbbed08ee2d65500b3fb0a4256294397958405ebf6d11d66c  skip-on:*-win(Unix-only)
 
 # reactor

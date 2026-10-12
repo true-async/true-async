@@ -2312,3 +2312,6 @@ stack options were shown with the code).
   after them) and "Cannot poll the wake descriptors" (`reactor.c`, `wakeup_arm`: needs the wakeup's POLL to
   complete inside its own submit; a raised pair left by a failed wakeup, `reactor/049`'s steps, did not on the Ring
   or the Poll queue in a probe).
+- 2026-10-12 S14.5: `io_provider/042-submit_refused_answers_read_with_error.phpt` skips on Windows, as its
+  `skip-on:*-win(Unix-only)` tag said: Windows has no `STREAM_PF_UNIX` socket pair, and the test lacked the
+  SKIPIF (red `windows` job of 2f277fa).

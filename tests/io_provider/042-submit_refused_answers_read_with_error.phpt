@@ -1,5 +1,9 @@
 --TEST--
 IO provider: a read the IO queue refuses is answered with the queue's error, as the syscall would fail, and the coroutine goes on
+--SKIPIF--
+<?php
+if (PHP_OS_FAMILY === 'Windows') echo "skip Unix-only test";
+?>
 --FILE--
 <?php
 use TrueAsync\Test;
