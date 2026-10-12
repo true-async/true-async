@@ -613,7 +613,8 @@ exception `callback_exception` as TrueAsync's `curl_async.c` does) and `io-hooks
 `466bdd66486` (the same comments), pushed 2026-10-12 (S8.4a, S8.7), in the core since
 `async-core-io-2026-10-12-1` `36050e31325`, the comments since `async-core-io-2026-10-12-3` `634cbbf94be`;
 the rename is `1c8bb39b882` on `io-hooks-fixes-callback-exception`, for the next core update; PR text
-for bukka in `/mnt/project-files/notes/s8-4a/io-hooks-curl-late-remove-pr.md`, Edmond opens it. PR: none.
+for bukka in `/mnt/project-files/notes/s8-4a/io-hooks-curl-late-remove-pr.md`. PR: bukka/php-src#8 (Edmond,
+2026-10-12).
 
 Need: on the Poll queue, a stream that takes the number of a socket libcurl just closed has its record
 freed under it. On `CURL_POLL_REMOVE` the curl callback only invalidates the socket's handle
@@ -750,9 +751,11 @@ Waits for it: nothing; the pinned core carries it.
 
 ## 34. IO hooks: a stream given to curl and closed while `curl_exec()` waits
 
-State: on `io-hooks-curl-closed-file` `f7fbc4335fe` (on bukka's `8e470c219fc`) and `io-hooks-fixes`
-`a51797d8645`, 2026-10-12 (S8.7), in the core since `async-core-io-2026-10-12-3` `634cbbf94be`; PR text
-for bukka in `/mnt/project-files/notes/s8-7/io-hooks-curl-closed-file-pr.md`, Edmond opens it. PR: none.
+State: on `io-hooks-curl-closed-file` `b985d2dded3` (`f7fbc4335fe` on bukka's `8e470c219fc`, then two
+commits shortening its comments on Edmond's word) and `io-hooks-fixes` `a51797d8645`, 2026-10-12 (S8.7),
+in the core since `async-core-io-2026-10-12-3` `634cbbf94be`; the shortened comments are `c50c23baf28` on
+`io-hooks-fixes-closed-file-comment`, for the next core update; PR text for bukka in
+`/mnt/project-files/notes/s8-7/io-hooks-curl-closed-file-pr.md`. PR: bukka/php-src#9 (Edmond, 2026-10-12).
 
 Need: `CURLOPT_FILE`, `CURLOPT_INFILE`, `CURLOPT_WRITEHEADER` and `CURLOPT_STDERR` keep the stream's raw
 `FILE*`, and `fclose()` frees it whatever the handle's reference. Upstream checks the streams
