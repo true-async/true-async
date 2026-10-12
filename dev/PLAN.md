@@ -19,10 +19,11 @@ M1-M13 below refer to is `dev/reviews/io-hooks-design-review.md`.
 ```
 true-async/
 ├── config.m4, config.w32, php_true_async.h
-├── src/            flat: true_async.c, scheduler.c, coroutine.c, exceptions.c, reactor.c,
-│                   future.c, await.c, io_provider.c, collector.c, chaos.c (+ .h, .stub.php)
-├── tests/          <group>/*.phpt; lists/ (frozen per stage), deps/ (core dependencies)
-├── fuzz/           seed runs, chaos, scenarios
+├── src/            true_async.c, scheduler.c, coroutine.c, exceptions.c, reactor.c, future.c,
+│                   await.c, io_provider.c (with IO chaos), collector.c, ... (+ .h, .stub.php);
+│                   internal/: circular buffers and the scheduler fuzz hook
+├── tests/          <group>/*.phpt; lists/ (frozen per stage)
+├── bench/          benchmark scripts of dev/BENCHMARKS.md
 ├── tools/          core build (async-core-io + ior), runner, coverage, Mull config
 ├── .github/workflows/
 ├── dev/            INDEX, WORKFLOW, PLAN, PRINCIPLES, DECISIONS, RFC-CHANGES, reviews/
@@ -938,12 +939,15 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
 
 ## S9 — Higher layers, one at a time  [in progress]
 
-Scope, context, channels, task groups, pools, iterators, FileSystemWatcher: each its own plan,
-agreed with Edmond. FileSystemWatcher came from S10 (`dev/plans/S10.md` section 9, Edmond
+Scope, context, channels, task groups, pools, iterators, FileSystemWatcher, runtime information:
+each its own plan, agreed with Edmond. FileSystemWatcher came from S10 (`dev/plans/S10.md` section 9, Edmond
 2026-10-08). It has its own iterator, not the iterators layer's (TrueAsync's `fs_watcher.c:596-721`),
 so the two layers do not overlap. On Linux and macOS it would wait on an inotify or kqueue descriptor
 with `php_io_poll()` (not yet tried); on Windows it needs a directory-change op, which its plan will
 request from bukka. 13 `fs_watcher` tests.
+Runtime information came from S3's exclusions (S14.4): TrueAsync's `available_parallelism()`,
+`loadavg()`, `CpuSnapshot`, `cpu_usage()` and `runtime_stats()`; 6 `common` tests in
+`tests/lists/S3.excluded`.
 Layer 1, Scope: `Async\Scope`, `ScopeProvider`, `SpawnStrategy`, `spawn_with()`, the global scope,
 zombies, the error route through scopes, both `finally` methods on TrueAsync's iterator core.
 Layer 2, Context: `Async\Context` over the core's storage, the context of a coroutine and of a scope,
@@ -956,6 +960,8 @@ Done when: S9.txt's layer 1 block and `await/062` pass on debug and ASAN; the S3
 Layer 2 done when: S9.txt's layer 2 block passes on debug and ASAN; the S3-S7 lists and layer 1 pass as before.
 Layer 3 done when: S9.txt's layer 3 block passes on debug and ASAN; the S3-S7 lists and layers 1 and 2 pass as before.
 Layer 4 done when: S9.txt's layer 4 block passes on debug and ASAN; the S3-S7 lists and layers 1-3 pass as before.
+Pools, iterators, FileSystemWatcher and runtime information have no plan yet: each gets its steps when Edmond
+agrees its plan, and S9 is not closed before they have them (S14.4).
 Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
@@ -1709,12 +1715,19 @@ Tests: interleaved
       done: each listed test passes under `--jobs 16` on 4 cores and over 20 seeds; none compares elapsed time
         except where the deadline itself is the behaviour
       tier: T1 · role: Critic
-- [ ] S14.4 Tests and plan rows with no owner: `gc/020`, `023` (XFAIL "S8 candidate") get an S8 step or a
+- [x] S14.4 Tests and plan rows with no owner: `gc/020`, `023` (XFAIL "S8 candidate") get an S8 step or a
       DECISIONS outcome; `S3.excluded` lines 4, 7 (`component:S6`) and 13-18 (`component:S9`) get a stage that
       ports them or an exclusion reason that holds; `dev/plans/S2.md` section 4's scenarios, allocator-fault and
       network-chaos rows get a step or a recorded drop; PLAN's layout drops `src/chaos.c` and `fuzz/`.
       done: `check-lists.py` passes; no list line or XFAIL names a closed stage
       tier: T1 · role: Critic
+      handoff: done 2026-10-12: `gc/020`, `023` and the reference's `gc/018` are `changed:` ports that expect
+        the awaited collection (DECISIONS 2026-10-02, 2026-10-12); `include/008` passes as written; both new
+        ports in S6.txt; the six `common` tests name a new S9 layer, runtime information; S2's scenarios,
+        allocator faults and network chaos are S15.1-S15.3, its TSAN row waits for threads, `tests/deps/`
+        is recorded as never created; the layout lists what `src/` holds. `check-lists.py`: 1741 listed, 0
+        violations; the four tests pass on `pocs-dbg` and `pocs-asan` and over 20 seeds. Critic and Sage:
+        a permanent XFAIL passes a crash or a leak in its test; the runner's fix goes to S14.2.
 - [ ] S14.5 Fault seams of the extension for the reactor's queue (creation, submit, wait, the wake pair) and
       tests through them and through `fiber.stack_size` for the paths HEALTH lists under pass 6; fault tests for
       the two incidents of `dev/SECURITY.md` (the drain with no owner, the trigger that starves timers).
@@ -1725,3 +1738,31 @@ Tests: interleaved
       launch".
       done: the new core tests pass on dbg and ASAN; `CORE_REF` moved by WORKFLOW "Core update"
       tier: T2 · role: Critic → Sage
+
+## S15 — Test layers of S2 not built yet  [ ]
+
+Recorded 2026-10-12 by S14.4, not started; no design yet. `dev/plans/S2.md` section 4 planned three
+layers that no step built: scenarios (TrueAsync's `fuzzy-tests/`, 104 `.feature` files at
+`tests/lists/REFERENCE`, which its CI regenerates and runs), allocator faults
+(`zend_mm_set_custom_handlers`, a test-only hook) and network chaos (`tc netem` or Toxiproxy between
+the extension and its MySQL and HTTP fixtures). The Scope, Context and Channel plans of S9 left their
+fuzzy features unported for want of the first.
+Tier: T2. Roles: Critic.
+Tests: interleaved
+
+- [ ] S15.1 Scenarios: TrueAsync's `fuzzy-tests/` ported with its generator, `_generated/` gitignored
+      and regenerated before the run, as its CI does; features of groups this extension does not build
+      (threads, pools, remote futures) excluded with a reason.
+      done: every `.feature` of a built group listed or excluded; the generated tests pass on
+        `pocs-dbg` and `pocs-asan` and over 20 seeds
+      tier: T2 · role: Critic
+- [ ] S15.2 Allocator faults: a test-only hook ends the request at the n-th allocation as an exhausted
+      `memory_limit` does, first checked to be fit for this (S2 section 4 left it unverified); the
+      lists run under it with n from a seed.
+      done: the hook's known answer; no crash, assertion, sanitizer report or leak over 20 seeds on
+        `pocs-dbg` and `pocs-asan`
+      tier: T2 · role: Critic
+- [ ] S15.3 Network chaos: delays, drops and resets between the extension and its MySQL and HTTP
+      fixtures, in the nightly run, with attempts, successes and failures counted.
+      done: one scheduled run green with the counts recorded
+      tier: T1 · role: Critic

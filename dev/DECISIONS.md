@@ -2235,3 +2235,21 @@ stack options were shown with the code).
   100 000: the reference's queue scans every entry per start, 905 568 instructions per task at 10 000 and
   growing with the count, so a run at 100 000 under cachegrind was stopped. Ours runs at both sizes
   (`dev/BENCHMARKS.md` 2026-10-09).
+- 2026-10-12 S14.4: `gc/020-gc_threshold_adjusts_when_buffer_fills_behind_explicit_collect.phpt`,
+  `gc/023-gc_threshold_untouched_by_a_run_that_found_nothing.phpt` and
+  `gc/018-gc_threshold_stable_without_coroutine.phpt` are `changed:` ports, titles and comments included. A
+  collection in a coroutine, main included, waits for its run (2026-10-02 entry): 020's explicit run empties
+  the buffer, so no step is owed (10001); 023's run finds the objects alive and takes PHP's step (20001); 018's
+  main waits for 8 runs that free the cycles, and a coroutine it spawned runs first. The fork defers each run;
+  the file names are the reference's and describe the fork. Replaces the 2026-10-06 entry's "S8 change-request
+  candidate". The core's drained-buffer guard (`zend_gc_coroutine()`, `gc_runs != runs`) keeps no test here;
+  whether a buffer can drain before a run started without waiting is unchecked. Why: a permanent XFAIL also
+  passes a crash or a leak (the Critic, the Sage).
+- 2026-10-12 S14.4: `include/008` passes and is listed in S6.txt with `gc/018`. Why: both were excluded as
+  `component:S6`, and S6 closed without them.
+- 2026-10-12 S14.4: TrueAsync's runtime information (`available_parallelism()`, `loadavg()`, `CpuSnapshot`,
+  `cpu_usage()`, `runtime_stats()`; 6 `common` tests) is an S9 layer, its plan agreed with Edmond as every
+  layer's. Why: its exclusion named S9 with no step, and a drop removes TrueAsync API, which needs his word.
+- 2026-10-12 S14.4: S2's scenarios, allocator-fault and network-chaos layers are stage S15 (recorded, not
+  started), not dropped; its TSAN row waits for threads (Fog). `src/chaos.c`, `fuzz/` and `tests/deps/`,
+  never created, leave the PLAN layout. Why: dropping a layer S2 agreed needs Edmond's word.

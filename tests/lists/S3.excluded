@@ -1,21 +1,15 @@
 # S3: reference tests of the S3 groups not ported in S3, one reason each (dev/plans/S2.md, section 3).
 
-# gc
-gc/018-gc_threshold_stable_without_coroutine.phpt  component:S6 (stream read switches the reference GC to async; see report)
-
-# include
-include/008-file_get_contents_in_coroutine.phpt  component:S6 (file IO in a coroutine)
-
 # info
 info/003-phpinfo_async_section.phpt  rfc-rule:2026-10-01 Reactor = one per-thread php_io_queue (expects "LibUv Reactor" in phpinfo)
 
 # common
-common/available_parallelism.phpt  component:S9 (TrueAsync API outside S3.md section 1; no stage in PLAN.md names it)
-common/cpu_loadavg.phpt  component:S9 (TrueAsync API outside S3.md section 1; no stage in PLAN.md names it)
-common/cpu_snapshot_basic.phpt  component:S9 (TrueAsync API outside S3.md section 1; no stage in PLAN.md names it)
-common/cpu_snapshot_invariants.phpt  component:S9 (TrueAsync API outside S3.md section 1; no stage in PLAN.md names it)
-common/cpu_usage_basic.phpt  component:S9 (TrueAsync API outside S3.md section 1; no stage in PLAN.md names it)
-common/runtime_stats.phpt  component:S9 (TrueAsync API outside S3.md section 1; no stage in PLAN.md names it)
+common/available_parallelism.phpt  component:S9 (runtime information, an S9 layer: DECISIONS 2026-10-12)
+common/cpu_loadavg.phpt  component:S9 (runtime information, an S9 layer: DECISIONS 2026-10-12)
+common/cpu_snapshot_basic.phpt  component:S9 (runtime information, an S9 layer: DECISIONS 2026-10-12)
+common/cpu_snapshot_invariants.phpt  component:S9 (runtime information, an S9 layer: DECISIONS 2026-10-12)
+common/cpu_usage_basic.phpt  component:S9 (runtime information, an S9 layer: DECISIONS 2026-10-12)
+common/runtime_stats.phpt  component:S9 (runtime information, an S9 layer: DECISIONS 2026-10-12)
 
 # output_buffer
 output_buffer/001-ob_start_basic_isolation.phpt  rfc-rule:2026-10-08 S10 outcomes (per-coroutine output buffers are not built)

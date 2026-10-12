@@ -154,8 +154,8 @@ of the day): D16's graceful exit reaching a coroutine woken in its own tick is t
 completion, and the wake pair is close-on-exec with `pipe2()` and not inheritable on Windows. As
 built: `dev/plans/S4.md` 2-3 and its "As built (S4.6)" parts, with the recorded limits. Open for
 Edmond: a pcntl handler that waits (`PLAN.md` "Open questions"); php-src's `socketpair_win32()`
-binding `INADDR_ANY` (SECURITY, the php-src entry). `gc/020`, `023` stay XFAIL for the core's
-awaited collection (S8). A test that needs spawned coroutines parked before main goes on yields with
+binding `INADDR_ANY` (SECURITY, the php-src entry). `gc/020`, `023` expect the core's awaited
+collection since S14.4. A test that needs spawned coroutines parked before main goes on yields with
 `suspend()`: a short `delay()` may wake in main's own tick (U2). Full local runs need
 `mysql-server-core-8.0`; the B1 count needs a release core and `bench/alloc_count.so`.
 
@@ -627,3 +627,11 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   way: `Fiber::resume()` after the deactivation asserts (`RFC-CHANGES.md` 24); its core fix is S8.1a,
   which needs the coordinator's go for the core slot. S8.2 (B1, B2) is measured already: a patch of
   its tests and texts is `/mnt/project-files/s8/S8.2-wip.patch` (project files).
+
+## S14
+
+- S14.4 closed 2026-10-12 (PLAN result line, DECISIONS 2026-10-12 S14.4): no list line, exclusion or XFAIL
+  names a closed stage as its owner; S2's unbuilt test layers are S15, recorded only. The six XFAILs naming S8 (`io/039`,
+  `040`, `042`, `043`, `100`, `stream/030`) wait on core changes that S8 only requests: when S8 closes they
+  will name a closed stage unless S8.5 gives them a step. An XFAIL test that crashes, leaks or trips a
+  sanitizer still reports XFAIL (`tools/run-tests.patch` stops only a false PASS); sent to S14.2.

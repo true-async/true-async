@@ -1,7 +1,5 @@
 --TEST--
-GC 020: a buffer filling behind an explicitly requested collection still adjusts the threshold
---XFAIL--
-The pinned core awaits a full root buffer's collection; the threshold record of a deferred one is the fork's (S8 candidate)
+GC 020: an explicit collection in a coroutine owes no threshold step, since nothing fills behind it
 --INI--
 zend.enable_gc=1
 --FILE--
@@ -13,10 +11,9 @@ use function Async\spawn;
 
 $live = [];
 
-// The explicit request spawns the GC coroutine; the buffer then fills while
-// that coroutine is still pending. The run frees nothing, so the full-buffer
-// heuristic must still raise the threshold - the adjustment is not lost to
-// the coroutine having been requested explicitly.
+// The explicit request waits for the GC coroutine's whole run, which empties
+// the buffer (DECISIONS 2026-10-02). The later cycles do not fill it again, so
+// no full-buffer step is owed and the threshold stays at the default.
 await(spawn(function () use (&$live) {
     for ($i = 1; $i <= 4000; $i++) {
         $a = new stdClass();
@@ -45,4 +42,4 @@ echo "threshold: ", gc_status()['threshold'], "\n";
 
 ?>
 --EXPECT--
-threshold: 20001
+threshold: 10001
