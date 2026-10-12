@@ -3,6 +3,28 @@
 The results journal: every measurement with its date, builds and outcome. The method and the
 benchmarks are `dev/plans/S3.md`, section 12; the scripts are `bench/`, the runner `tools/bench.py`.
 
+## 2026-10-12, S14.8: the scope walks of scope/124 and 125, counted
+
+**Builds.** Debug, ZTS, gcc 13.3, run with `-n`, no opcache; the core `c53c17cfd47` built by
+`tools/ci/build-core.sh dbg`, ior `d46649f6425`, our extension as the `pocs-dbg` module of `418d1d9` with S14.8.
+A debug build: the counts are for the shape, not for comparison with the release rows.
+
+`B19` makes a chain of N nested scopes, awaits one member of the innermost and releases the chain innermost
+first (`bench/b19.php`, `scope/124`'s claim); one operation is one level. `B20` makes N child scopes of one
+parent and drops them newest first (`bench/b20.php`, `scope/125`'s claim); one operation is one child. Both
+claims were checked by the tests' `max_execution_time` until S14.8 (Edmond 2026-10-12: no performance tests
+in CI).
+
+| Bench | ours, N to 2N | instructions at another N to 2N |
+|---|---|---|
+| B19 | 7,782.3 / 3.000 (10 000 to 20 000) | 7,748.1 (5 000 to 10 000) |
+| B20 | 6,271.3 / 2.000 (100 000 to 200 000) | 6,271.4 (200 000 to 400 000) |
+
+Instructions / allocations per operation; page faults at most 0.13 and no system calls per operation. The
+third column is `tools/bench.py`'s `instructions()` called with the other sizes. The cost per operation does
+not grow with N: both walks are linear. `B20` drops the newest child first, which a search of the vector from
+its back would not see; the search S9.8 removed ran from the front.
+
 ## 2026-10-09, S9.30: TaskGroup with and without a concurrency limit, counted
 
 **Builds.** Release, ZTS, `-O2`, gcc 13.3, run with `-n`, no opcache; one count per side, the child pinned to one

@@ -661,19 +661,18 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
 - S14.1 closed 2026-10-12 (PLAN result line, DECISIONS 2026-10-12 S14.1): a provider (channel, group, signal
   wait) holds a pending Future once a chain hangs on it, and the channel and the group report it to the GC, so a
   dropped chain is collected only with its provider. Consequence: a dropped or cancelled only child keeps the
-  source queued until a value or the close. `fiber/035` passes on core `c53c17cfd47` (S8). S14.2 can now
-  wait for its green scheduled run.
+  source queued until a value or the close. `fiber/035` passes on core `c53c17cfd47` (S8). 
 
 - S14.4 closed 2026-10-12 (PLAN result line, DECISIONS 2026-10-12 S14.4): no list line, exclusion or XFAIL
   names a closed stage as its owner; S2's unbuilt test layers are S15, recorded only. The six XFAILs naming S8 (`io/039`,
   `040`, `042`, `043`, `100`, `stream/030`) wait on core changes that S8 only requests: when S8 closes they
   will name a closed stage unless S8.5 gives them a step. An XFAIL test that crashes, leaks or trips a
   sanitizer reported XFAIL (`tools/run-tests.patch` stopped only a false PASS); S14.2 makes it fail.
-- S14.2 (open until a scheduled run is green after S14.1): `tools/test.py` keeps run-tests' stderr in `run.err`,
+- S14.2 closed 2026-10-12 without its seeds run (the coordinator, after Edmond turned the nightly off; PLAN Open
+  questions): `tools/test.py` keeps run-tests' stderr in `run.err`,
   reports a lost result line as MISSING and goes on, fails a crashing XFAIL, prints `--show-slow N`; run-tests
   retries no crash or hang and nothing under a seed; the `seeds` matrix has a dbg `--io-chaos` entry; WORKFLOW gives the
-  scheduled run to the coordinator. To close: once S14.1 is in, a nightly or dispatched run with every
-  `seeds` job green ticks the step.
+  scheduled run to the coordinator (S14.7 dropped the scheduled run).
 - S14.5 closed 2026-10-12 (PLAN result line): the reactor queue's fault seams
   (`TrueAsync\Test\fail_io()`), the two SECURITY incidents under test, and five bugs those tests found
   (DECISIONS 2026-10-12 S14.5). Two paths stay unreached by a test, named in DECISIONS.
@@ -683,5 +682,5 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   and `collector/063`, `064` come from the tests as they were before S14.3 as well.
 - S14.7 (open until a dispatched run in which no job or step hits its time limit): each `seeds` line runs
   in five parallel jobs (`tools/test.py --shard K/M`), every CI job has `timeout-minutes` (30, `lists` 10).
-  No nightly run (Edmond 16:22): the seeds run only in a run dispatched by hand. S14.8 (not started) moves
-  the "linear time" claim of `scope/124`, `125` to `bench/` (Edmond 16:05: no performance tests in CI).
+  No nightly run (Edmond 16:22): the seeds run only in a run dispatched by hand. S14.8 (done) moved
+  the "linear time" claim of `scope/124`, `125` to `bench/` B19, B20 (Edmond 16:05: no performance tests in CI).

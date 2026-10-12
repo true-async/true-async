@@ -2509,3 +2509,10 @@ stack options were shown with the code).
   `remove()` runs inside it. Not done: a `zend_try` around that (a fatal error in `remove()` at the free leaks
   libcurl's multi) and the bridge's `opline_before_exception` (Critic, both unrun). The core update also brings
   entry 26 (`io-hooks-fixes` carries both), so `067`, `068` lose `core:26` here, ahead of S8.3b.
+- 2026-10-12 S14.8: `scope/124-member_finish_in_nested_scope_chain_in_linear_time.phpt` (200 nested scopes) and
+  `scope/125-child_scopes_leave_in_linear_time.phpt` (2 000 children) keep their checks, with no
+  `max_execution_time`; their linear-time claims are benchmarks `B19` and `B20`, counted by hand with
+  `tools/bench.py --count`. Why: Edmond 2026-10-12 16:05, no performance tests in CI. The other option, a
+  test-build counter of the walk's steps as S14.3 gave `await/141`, was not taken: the benchmark changes no
+  code on the finish path. Settles the PLAN open question on the two tests. S14.2 ticked without its seeds
+  run (the coordinator, after the nightly was turned off; PLAN Open questions).

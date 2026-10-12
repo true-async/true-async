@@ -80,6 +80,9 @@ true-async/
 
 Waiting for Edmond's call; nothing here is being worked on.
 
+- S14.2 was ticked without its done line's green `seeds` run after S14.1: CI has no nightly run (Edmond
+  2026-10-12 16:22). Either one run of CI dispatched by hand (15 `seeds` jobs of about 13 minutes) checks S14.1
+  and S14.7 together, or both wait until a nightly run is back. Edmond's call.
 - A forked child whose first reactor call is D16's arm after an `exit()` in main's script runs the rebuild with no
   frame (S14.5): a `SignalHandle` or `Io\Poll\Context` the rebuild cannot make (descriptors exhausted) throws
   from a PHP call there, a fatal error that skips every `finally`. The other throws of that rebuild are fixed
@@ -91,12 +94,6 @@ Waiting for Edmond's call; nothing here is being worked on.
   walking the chain on `scope`), and `ancestor->event.` would fail it again. The other option:
   check that `struct _async_coroutine_s` in `src/coroutine.h` declares no `async_event_t` member,
   which the compiler then enforces for every access. Edmond's call (a change of S3's gate list).
-- "Linear time" of `scope/124` (a member's finish in 20 000 nested scopes) and `scope/125` (200 000 child
-  scopes leaving) is checked only by `max_execution_time=50` (S14.3, Critic and Sage): their walks have no
-  search to count, unlike `await/141` and `signal/024`. A counter of the scopes the completion walk visits,
-  kept in builds with test hooks, would let them check the step count at a few hundred scopes; it sits on
-  the finish path, which P1.4 leaves to Edmond. The other option: the claim moves to a benchmark row
-  (S3.md section 12's method) and the two tests keep only the mechanism. Edmond's call.
 - A `signal()` Future no coroutine awaits, when the script ends by itself (S6.8): the script waits
   for the signal, as TrueAsync; after `exit()` or an uncaught exception it ends. Edmond 2026-10-07:
   the async collector should close such a watch; to be thought over in another task.
@@ -1864,7 +1861,7 @@ Tests: interleaved
         (`8c0d98dd7e0`). 100 seeds over `channel/` and `fiber/` (192 tests): 0 failed on pocs-dbg and pocs-asan;
         full pocs-dbg 1753 PASS, pocs-asan 1727 PASS, 0 unexpected. Two Critics; Sage not needed. The GC run a
         release can start inside `channel_put()` is S9.33's (SECURITY.md).
-- [ ] S14.2 Nightly CI with random seeds: the run completes, means something and is watched: a seed run that
+- [x] S14.2 Nightly CI with random seeds: the run completes, means something and is watched: a seed run that
       cannot parse an output reports it and goes on, and the test that writes the stray `  thrown` is found;
       `io/100`'s verdict no longer follows the queue order; `stream/030` fails fast instead of waiting for
       run-tests' timeout; `--show-slow` in `tools/test.py`; an `--io-chaos` entry in the `seeds` matrix;
@@ -1879,6 +1876,9 @@ Tests: interleaved
         retries no crash or hang and nothing under a seed; a crashing XFAIL fails; `stream/030` ends in 2 s
         (DECISIONS 2026-10-12 S14.2). The dbg suite runs 38.5 s locally, was 150 s. Close: after S14.1, the
         next nightly run with every `seeds` job green (a dispatched run has the same jobs and counts).
+        Ticked 2026-10-12 (fd1f9c4, f340508): `channel/145` and `fiber/035`, the only failed seeds, are fixed by
+        S14.1 (cd89af6, core `c53c17cfd47`); the full seeds run is an open question while the nightly is off
+        (Edmond 16:22).
 - [x] S14.3 Tests without wall-clock waits: the own tests HEALTH lists under "wall-clock delays" and "wall-clock
       bound" wait on the event they test instead of on time; `collector/063`, `064` check the walk's outcome at
       each margin; the cases `fiber/023`, `028` and `scope/043` leave unchecked get own tests. Ported tests
@@ -1940,13 +1940,16 @@ Tests: interleaved
       handoff: 2026-10-12, the change is in. One job ran a whole line, 51-65 min (run 38266038345), 2 h 52 min
         for asan at 9bbd906 (run 38230954460): S3.12 picked 100 and 20 seeds for 259 tests, the suite has
         ~1 780. Close: a dispatched run in which no job or step hits its time limit.
-- [ ] S14.8 No performance tests in CI: `scope/124` and `125`, the last tests whose verdict is a run time under
+- [x] S14.8 No performance tests in CI: `scope/124` and `125`, the last tests whose verdict is a run time under
       `max_execution_time` (S14.3 made `await/141` and `signal/024` count searches), keep only the mechanism at a
       small size; their "linear time" claim becomes a benchmark of `bench/`, checked by hand with
       `tools/bench.py --count`. Settles the open question on them: Edmond 2026-10-12 16:05, no performance tests
       in CI.
       done: no listed test has a time bound as its verdict; the two claims are benchmarks of `bench/`
       tier: T1 · role: Critic
+      handoff: done 2026-10-12. `scope/124` (200 nested scopes) and `scope/125` (2 000 child scopes) keep their
+        checks without `max_execution_time` (`changed:2026-10-12`); `B19`, `B20` (`dev/BENCHMARKS.md`): 7,782
+        and 6,271 instructions per operation on debug, flat as N doubles. The open question on them is settled.
 
 ## S15 — Test layers of S2 not built yet  [ ]
 

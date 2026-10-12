@@ -1,8 +1,5 @@
 --TEST--
-Scope: a member of the innermost of 20 000 nested scopes finishes in time linear in the depth, as each parent walks only its other child scopes for completion
---INI--
-max_execution_time=50
-memory_limit=1G
+Scope: members of the innermost of 200 nested scopes finish and every scope of the chain is finished; the chain is released innermost first
 --FILE--
 <?php
 
@@ -12,7 +9,8 @@ use function Async\await;
 $scope = Scope::inherit();
 $scopes = [$scope];
 
-for ($i = 0; $i < 20000; $i++) {
+// The time linear in the depth is benchmark B19 (bench/b19.php), not a test.
+for ($i = 0; $i < 200; $i++) {
     $scopes[] = $scope = Scope::inherit($scope);
 }
 
