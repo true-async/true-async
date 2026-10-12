@@ -2347,3 +2347,12 @@ stack options were shown with the code).
   after `fclose()` (`056`, `057`), with no notice; only the free waits for the last unpin, so `pclose()` keeps the
   child's status; accepts and `stream_select()` take no side (`058`, `059`). Each B1 test has a Poll-queue twin:
   the request's wait op differs per queue.
+- 2026-10-12 S8.3, own defaults: a cancelled pipe read is measured on a FIFO a coroutine writes (a `cat`
+  child echoed after the canceller ran). The file-read test (`io/100` with `F_FILES` forced on) was dropped with its hook: a page-cache
+  read completes at its submit, so the test showed the reader's own discarded read (probe and hook patch in
+  `/mnt/project-files/s8/probes/s8.3/`). `063` and `069` record today's Ring behaviour, not TrueAsync's under an
+  XFAIL: under seeds the order changes and an XFAIL that passes fails the run; S8.3c rewrites them. Ring tests
+  whose outcome rests on two completions' order retry as `009` does, and skip off io_uring. `socket_accept()`'s
+  double free (bukka's code) is on its own branch and `io-hooks-fixes`, not in the core yet: the core slot goes to
+  S14.1 first (`core:26`, S8.3b). RFC 27 drops a warning TrueAsync gives, as entry 2 did for reads, since in the
+  stream exception mode it replaces the cancellation (`071`).

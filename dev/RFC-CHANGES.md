@@ -545,3 +545,42 @@ whose body runs keeps the object until the body ends, through a finish handler, 
 `zend_fibers.c:1043-1078`) has none of these checks; read, not run.
 
 Waits for it: nothing; the pinned core carries it.
+
+## 26. IO hooks: socket_accept() returns a freed Socket when its operation throws
+
+State: on `io-hooks-socket-accept-exception` `73c612a426d` (on bukka's `8e470c219fc`) and
+`io-hooks-fixes` `9458268fe1e`, local, 2026-10-12 (S8.3); PR text for bukka in
+`/mnt/project-files/notes/s8-3/io-hooks-socket-accept-exception-pr.md`, Edmond opens it. Not in the
+core yet: the next core update merges `io-hooks-fixes`. PR: none.
+
+Need: a coroutine cancelled while it waits in `socket_accept()` kills the process: the function
+releases the new `Socket` and returns through `RETURN_THROWS()` with it still in `return_value`
+(`ext/sockets/sockets.c:1710-1714`), and the VM releases it again, an assertion failure in
+`zend_objects_store_del()` on debug and ASAN, on the Ring and on the Poll queue. A userland provider
+whose `run()` throws shows it without an extension.
+
+Request: clear `return_value` before `RETURN_THROWS()`, as `zend_builtin_functions.c:898-900` does;
+test `ext/sockets/tests/socket_io_hooks_accept_throws.phpt`.
+
+Waits for it: `io_provider/067`, `068` (`core:26` in `tests/lists/S8.txt`).
+
+## 27. IO hooks: an accept or a connect cancelled by an exception reports nothing else
+
+State: requested 2026-10-12 (S8.3), no branch yet. PR: none.
+
+Need: a coroutine cancelled in `stream_socket_accept()` gets the cancellation and also "Warning:
+stream_socket_accept(): Accept failed: Operation canceled" (`ext/standard/streamsfuncs.c:332`); one
+cancelled in `stream_socket_client()` gets "Warning: stream_socket_client(): Unable to connect to ...
+(Operation canceled)" (`:183`), on the Ring and on the Poll queue. On a listener in the stream exception
+mode (`'error_mode' => StreamErrorMode::Exception`) the accept's report is a StreamException, which
+replaces the cancellation and keeps it only as its previous, so `catch (Async\AsyncCancellation)` misses
+it and the coroutine ends failed. TrueAsync warns too, for an accept with the cancellation's message
+(its `main/network_async.c:1264-1272`), for a connect with the errno's text (`:1387-1391`); read, not run.
+
+Request: as entry 2 for reads and writes: `stream_socket_accept()`, `stream_socket_client()` and
+`fsockopen()` (`ext/standard/fsock.c:121`) report nothing when an exception is pending after the
+failed call, whatever errno says; without an exception the report stays.
+
+Waits for it: `io_provider/065`, `066`, `071` (`core:27` in `tests/lists/S8.txt`). The connect half has
+no test here (a pending connect needs a network that drops the SYN); the fix's own tests throw from a
+userland provider's `run()` on the Connect, as `socket_io_hooks_accept_throws.phpt` does (S8.3b).

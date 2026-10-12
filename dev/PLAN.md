@@ -200,6 +200,22 @@ Waiting for Edmond's call; nothing here is being worked on.
   `/mnt/project-files/s9/probes/s9.taskgroup/s930_closing_after_exit.php`, debug build). S9.25 accepted that tick
   release after an exit for a run's handlers and target only; the group makes its whole closing such a target.
   Move the closing out of the tick, or accept it? Edmond's call.
+- A data op the Ring completed before its cancelled coroutine resumed (review M1): a socket
+  `fwrite()` throws the cancellation while the peer has the bytes, so a retry sends them twice
+  (`io_provider/063`); a `socket_read()` throws and its bytes are lost (`069`); inferred, not run: a
+  `pcntl_waitpid()` loses the child's status, a `pcntl_sigwaitinfo()` the signal. A stream `fread()`
+  is safe: its bytes stay in the stream buffer (`009`). TrueAsync waits for writability and sends
+  after the resume, and `socket_read()` waits and reads after it, so its cancellation sends and reads
+  nothing (its `main/streams/xp_socket.c:94-106`, `ext/sockets/sockets.c:517-524`); a stream read
+  runs `recv()` after a cancelled wait and drops the bytes (`xp_socket.c:218-227`); read, not run.
+  Options: submit every Send and every Recv without a stream buffer (`socket_read()`, `socket_recv()`)
+  as a readiness POLL, as the provider already submits an Accept; a stream-buffered Recv stays a data
+  op. That is TrueAsync's order, but it changes `dev/plans/S6.md` section 4 (the Ring answers Done
+  with the bytes) and leaves WAITPID and SIGWAIT. Or let a completed op return its result and hold
+  the cancellation for the coroutine's next suspension, in our own scheduler
+  (`async_scheduler_enqueue()`): it covers every op, but departs from TrueAsync, which throws at that
+  resume. Recommended: the POLL for Send and unbuffered Recv, then measure WAITPID and SIGWAIT
+  (S8.3c). Edmond's call.
 
 ## Parallel tracks
 
@@ -894,7 +910,7 @@ not expressible with why); `RFC-CHANGES.md` complete; the review updated.
 Tier: T1. Roles: Critic after every step.
 Tests: interleaved
 Base: d783cea
-Active: S8.3
+Active: S8.4
 
 Each item is run against our provider on the pinned core, on `pocs-dbg` and `pocs-asan`, over the
 Ring and over the Poll queue (`TrueAsync\Test\` hook) where the item depends on the queue. Its
@@ -972,13 +988,47 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
         throw but skips the busy pipe. B2: the close is refused and stays refused, a cancelled query
         closes the connection (`mysqli/014`-`017`); the bailout reproduces on the Poll queue (`013`,
         `core:8`). `RFC-CHANGES.md` 8 and 12 rewritten from two Critics' findings.
-- [ ] S8.3 B3 and M1: a cancelled read whose completion already happened (a socket and a pipe on
+- [x] S8.3 B3 and M1: a cancelled read whose completion already happened (a socket and a pipe on
       the Ring and the Poll queue; a regular file with `PHP_IO_HOOKS_F_FILES` on in a test-hook
       build), an `fwrite()` cancelled after its bytes went out, a readiness followed by a
       cancellation in the wrapper ladders.
       done: outcomes in section 9; whether the core's commit-on-settle lets the provider turn
         `F_FILES` on (`dev/plans/S6.md` section 6), and if it does, a step that turns it on; the
         requests in `RFC-CHANGES.md`
+      tier: T1 · role: Critic
+      handoff: 2026-10-12 on core `c53c17cfd47`, debug and ASAN: B3 reproduces for `socket_read()` on
+        the Ring (`io_provider/069` records the loss); streams keep their bytes (`009`, `060`-`062`), and
+        on the Poll queue `socket_read()` does (`070`). M1
+        reproduces on the Ring for a socket write (`063` records the send; nothing sent on the Poll queue,
+        `064`), an Open question; the ladders stop on a cancellation. A cancelled file read could not be
+        built (a page-cache read completes at its submit): S8.3a. Found: a cancelled `socket_accept()`
+        frees its `Socket` twice (bukka's code, `RFC-CHANGES.md` 26, fix branch
+        `io-hooks-socket-accept-exception`); a cancelled accept or connect warns, and in the stream
+        exception mode replaces the cancellation (27); `065`-`068`, `071` wait for them.
+- [ ] S8.3a `F_FILES` on: what a regular-file read costs through the Ring against the thread, for a
+      page-cache read and for a cold one (the core keeps file ops opt-in because the page-cache read
+      loses, `main/io/php_io_ring.c:279-289`), and what a read cancelled in flight gives (the thread
+      backend, or a cold read on ext4). The flag also moves pipe, FIFO and tty reads and writes from
+      readiness to Ring READ and WRITE ops (`main/io/php_io_hooks.c:1671-1672`), the op types a file
+      uses (on Unix only `op->registration`, set for a non-regular descriptor at `:1682`, tells them
+      apart), so M1 applies to their writes; and an unbuffered file stream whose read is cancelled in
+      flight is marked lost for good. Turn it on if the cold read gains, the page-cache read loses
+      little and the pipe writes keep S8.3c's answer, as TrueAsync runs file IO off the thread
+      (`dev/plans/S6.md` sections 6, 11).
+      done: the numbers in `BENCHMARKS.md`; `F_FILES` on with the `io/` and `include/` lists and
+        `io_provider/020` passing on the Ring, and `061` checking that no byte is lost (the stream
+        buffer may now hold them), or the reason it stays off in section 11
+      tier: T2 · role: Critic
+- [ ] S8.3b The core fixes of S8.3, when the core slot is free: `RFC-CHANGES.md` 26 merged from
+      `io-hooks-fixes`, 27 as one commit on `io-hooks-fixes` with its tests and a PR text for bukka;
+      a core update that carries both.
+      done: `io_provider/065`-`068`, `071` pass without their `core:` tags on debug and ASAN; the
+        connect half of 27 has core tests with a userland provider whose `run()` throws on the Connect
+      tier: T1 · role: Critic
+- [ ] S8.3c M1 on the Ring after Edmond's answer to the Open question: a data op that completed
+      before its cancelled coroutine resumed.
+      done: `io_provider/063`, `069` expect the chosen behaviour (`changed:` tags) and `009` still
+        passes; WAITPID and SIGWAIT under the same race measured
       tier: T1 · role: Critic
 - [ ] S8.4 M4 and M10: a connect whose first address refuses and whose second accepts, on both
       queues; curl's `remove()` after libcurl closed the socket; a contended `flock()` with the lock

@@ -633,7 +633,21 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   outcomes go to section 9 of `dev/reviews/io-hooks-design-review.md`, one row per item. Found on the
   way: `Fiber::resume()` after the deactivation asserts (`RFC-CHANGES.md` 24); its core fix is S8.1a,
   which needs the coordinator's go for the core slot. S8.2 (B1, B2) is measured already: a patch of
-  its tests and texts is `/mnt/project-files/s8/S8.2-wip.patch` (project files).
+  its tests and texts is `/mnt/project-files/s8/S8.2-wip.patch` (project files); its tests
+  `io_provider/038`-`042` become `042`-`046`.
+- S8.1a closed 2026-10-09: core `async-core-io-2026-10-09-2` (`a60017a0ec0`). S8.1b closed the same
+  day: core `async-core-io-2026-10-09-3` (`c53c17cfd47`), `RFC-CHANGES.md` 25.
+- S8.1c closed 2026-10-09: branch `fiber-getreturn-destroyed`, picked onto `php-src-fixes`
+  (`e7d2d9a25a9`, not in the pinned core yet); PR text `notes/fiber-getreturn-destroyed-pr.md` in
+  project files, Edmond opens the PR.
+- S8.1d closed 2026-10-12: branch `fiber-exit-in-destroyed-finally`, picked onto `php-src-fixes`
+  (`f1e13b9eaef`); PR text `notes/fiber-exit-in-destroyed-finally-pr.md`. Both fixes reach the core at
+  its next update.
+- S8.2 closed 2026-10-12 (PLAN handoff line); the S8.2 patch in project files is spent.
+- S8.3 closed 2026-10-12 (PLAN handoff line). Branches pushed to true-async/php-src 2026-10-12:
+  `io-hooks-socket-accept-exception` `73c612a426d`, `io-hooks-fixes` `9458268fe1e` (PR text
+  `notes/s8-3/io-hooks-socket-accept-exception-pr.md`). Next: S8.4 (M4, M10); S8.3a and S8.3b wait, S8.3c
+  waits for Edmond's answer (Open questions).
 
 ## S14
 
@@ -650,14 +664,3 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
 - S14.5 closed 2026-10-12 (PLAN result line): the reactor queue's fault seams
   (`TrueAsync\Test\fail_io()`), the two SECURITY incidents under test, and five bugs those tests found
   (DECISIONS 2026-10-12 S14.5). Two paths stay unreached by a test, named in DECISIONS.
-  its tests and texts is `/mnt/project-files/s8/S8.2-wip.patch` (project files); its tests
-  `io_provider/038`-`042` become `042`-`046`.
-- S8.1a closed 2026-10-09: core `async-core-io-2026-10-09-2` (`a60017a0ec0`). S8.1b closed the same
-  day: core `async-core-io-2026-10-09-3` (`c53c17cfd47`), `RFC-CHANGES.md` 25.
-- S8.1c closed 2026-10-09: branch `fiber-getreturn-destroyed`, picked onto `php-src-fixes`
-  (`e7d2d9a25a9`, not in the pinned core yet); PR text `notes/fiber-getreturn-destroyed-pr.md` in
-  project files, Edmond opens the PR.
-- S8.1d closed 2026-10-12: branch `fiber-exit-in-destroyed-finally`, picked onto `php-src-fixes`
-  (`f1e13b9eaef`); PR text `notes/fiber-exit-in-destroyed-finally-pr.md`. Both fixes reach the core at
-  its next update.
-- S8.2 closed 2026-10-12 (PLAN handoff line); the S8.2 patch in project files is spent. Next: S8.3 (B3, M1).
