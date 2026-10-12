@@ -910,7 +910,7 @@ not expressible with why); `RFC-CHANGES.md` complete; the review updated.
 Tier: T1. Roles: Critic after every step.
 Tests: interleaved
 Base: d783cea
-Active: S8.4
+Active: S8.5
 
 Each item is run against our provider on the pinned core, on `pocs-dbg` and `pocs-asan`, over the
 Ring and over the Poll queue (`TrueAsync\Test\` hook) where the item depends on the queue. Its
@@ -1030,11 +1030,24 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
       done: `io_provider/063`, `069` expect the chosen behaviour (`changed:` tags) and `009` still
         passes; WAITPID and SIGWAIT under the same race measured
       tier: T1 · role: Critic
-- [ ] S8.4 M4 and M10: a connect whose first address refuses and whose second accepts, on both
+- [x] S8.4 M4 and M10: a connect whose first address refuses and whose second accepts, on both
       queues; curl's `remove()` after libcurl closed the socket; a contended `flock()` with the lock
       holder parked on a timer.
       done: outcomes in section 9; M4's request in `RFC-CHANGES.md` if it reproduces; entry 11
         names its tests
+      tier: T1 · role: Critic
+      handoff: 2026-10-12 on core `c53c17cfd47`, debug and ASAN, both queues: M4's connect retry does
+        not reproduce (the core unregisters before it closes a failed attempt, `main/network.c:1121-1124`;
+        `io_provider/076`, `077` skip where localhost has one address, run here with a second
+        `/etc/hosts` line). M4's curl case reproduces on the Poll queue: a descriptor a curl callback
+        opens takes the closed socket's number, and curl's late `remove()` frees the record under it
+        (`RFC-CHANGES.md` 28, `073` `core:28`; Ring `074` passes). M10 reproduces: `io/081`, `084`, new
+        `io_provider/072`, `075`, all `core:11`; entry 11 now asks for TrueAsync's `LOCK_NB` and timer.
+- [ ] S8.4a The core fix of `RFC-CHANGES.md` 28 for bukka, when the core slot is free: the curl
+      callback ends a removed socket's registrations before libcurl closes it; a branch on bukka's
+      base and a commit on `io-hooks-fixes` with a core test, a PR text in `notes/`; Edmond hears of
+      it first and opens the PR.
+      done: `io_provider/073` passes without `core:28` on debug and ASAN; `074` still passes
       tier: T1 · role: Critic
 - [ ] S8.5 `RFC-CHANGES.md` against the review: every item of the review's section 6 (both lists)
       and every section 5 defect a script on our provider shows has an entry or a reason in section

@@ -207,7 +207,7 @@ WaitPid op a provider parks on, as `proc_close()` already is.
 Waits for it (before `bdfa5fa7a12`): nothing listed fails; a coroutine that `exec()`s a slow child
 stalls the thread at the close.
 
-## 11. IO hooks: a Flock op
+## 11. IO hooks: a stream lock that waits sleeps through the provider's timer
 
 State: drafted 2026-10-07 (S6.7), not sent. PR: none.
 
@@ -215,10 +215,24 @@ Need: `flock()` without `LOCK_NB` blocks the thread (review M10). Under a schedu
 deadlock: the holder parks on a timer and never runs again to unlock. `ext/session/mod_files.c`
 does the same for two coroutines with one session id.
 
-Request: a Flock op: a work op on the Ring, and `LOCK_NB` with a Timer backoff through
-`php_io_sleep()` as the fallback for a readiness-only queue (review M10).
+Request: as TrueAsync does (its `main/streams/plain_wrapper.c:1298-1390`, `:1473-1487`): a plain-file
+stream lock that can wait (no `LOCK_NB`, not `LOCK_UN`) takes the async path only while hooks are active
+(`php_io_hooks_active()`): it tries `LOCK_NB` and, while the lock is busy, sleeps through `php_io_sleep()`
+and tries again, the sleep doubling from 1 ms to 100 ms and then starting over at 1 ms, since a waiter
+that stays at the longest sleep keeps losing the lock to newer ones. The stream is pinned while it
+sleeps; a close during the sleep ends the wait without a lock, since the number may name another file
+by then; a cancellation during the sleep ends it without a lock too. Without hooks the lock blocks as
+today, so a process without async still queues in the kernel. The path is `php_stream_lock()`, so
+`flock()`, `file_put_contents(..., LOCK_EX)` and `SplFileObject::flock()` share it;
+`ext/session/mod_files.c:207` calls libc `flock()` itself and stays out, as in TrueAsync. A blocking
+work op on the Ring is not asked for: waiters beyond the pool take every thread and stall the file IO
+queued behind them (`io/084`; TrueAsync's reason, php-async#221), and a cancelled waiter's op would be
+orphaned and take the lock after the cancel, so the next locker waits for a coroutine that is gone
+(`io_provider/075`); inferred from how the core orphans a cancelled Ring op (review B2, B3 rows), not run.
 
-Waits for it: `io/081`, `084` (`core:11` in `tests/lists/S6.txt`).
+Waits for it: `io/081`, `084` (`core:11` in `tests/lists/S6.txt`); `io_provider/072`, a holder parked
+on a timer on the Poll queue, and `075`, a cancelled waiter (`core:11` in `tests/lists/S8.txt`). S8.4
+measured the hang on both queues, on debug and ASAN.
 
 ## 12. IO hooks: per-direction exclusion and close as cancel
 
@@ -584,3 +598,28 @@ failed call, whatever errno says; without an exception the report stays.
 Waits for it: `io_provider/065`, `066`, `071` (`core:27` in `tests/lists/S8.txt`). The connect half has
 no test here (a pending connect needs a network that drops the SYN); the fix's own tests throw from a
 userland provider's `run()` on the Connect, as `socket_io_hooks_accept_throws.phpt` does (S8.3b).
+
+## 28. IO hooks: a late remove() of a closed descriptor clears the number's next registrations
+
+State: requested 2026-10-12 (S8.4), no branch yet. PR: none.
+
+Need: on the Poll queue, a stream that takes the number of a socket libcurl just closed has its record
+freed under it. On `CURL_POLL_REMOVE` the curl callback only invalidates the socket's handle
+(`ext/curl/interface.c:2535-2541`), libcurl closes the socket, and the registrations end later, in the
+reconcile after libcurl returns (`:2590-2597`). A PHP callback libcurl runs in between (`073` uses the
+debug callback) may open a descriptor, get the same number, and wait on it: the Poll queue finds the
+record by descriptor (`main/io/php_io_queue_poll.c:544`) and the stream's registration shares curl's.
+The late `remove()` clears the direction for both (`:563-583`) and, with nothing left, frees the record
+(`:165-176`, `:192-193`); the stream's next wait reads it (`:336`). `io_provider/073`: a heap use after
+free on ASAN with `USE_ZEND_ALLOC=0`, a hang on debug and on ASAN with ZendMM; the timed probe
+`/mnt/project-files/s8/probes/s8.4/curl_socket_number_reused.php` gives a SIGSEGV on debug. The Ring
+takes no Level registrations and is unaffected (`074`). Any provider that keys by descriptor (a userland
+`Io\Hooks` provider) meets the same late `remove()`; the review's section 6 item 7.
+
+Request: the curl callback ends a removed socket's registrations itself, at `CURL_POLL_REMOVE` and so
+before libcurl closes the socket, through a `remove()` that cannot throw (a provider's exception there
+is kept for the reconcile to report), as the core already does before a close (`main/network.c:1121`).
+Not asked: per-registration counts in the Poll queue; it would fix one queue, and `remove()` also
+clears the record's `ready` and `hup` (`:577-580`), which a count alone does not keep.
+
+Waits for it: `io_provider/073` (`core:28` in `tests/lists/S8.txt`).

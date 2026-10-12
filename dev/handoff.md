@@ -648,6 +648,8 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   `io-hooks-socket-accept-exception` `73c612a426d`, `io-hooks-fixes` `9458268fe1e` (PR text
   `notes/s8-3/io-hooks-socket-accept-exception-pr.md`). Next: S8.4 (M4, M10); S8.3a and S8.3b wait, S8.3c
   waits for Edmond's answer (Open questions).
+- S8.4 closed 2026-10-12 (PLAN handoff line): M4's curl case reproduces on the Poll queue (RFC 28, S8.4a
+  waits for the core slot); M10 reproduces (RFC 11 rewritten). Next: S8.5 (RFC-CHANGES completeness).
 
 ## S14
 

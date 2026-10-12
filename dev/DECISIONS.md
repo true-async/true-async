@@ -2371,3 +2371,10 @@ stack options were shown with the code).
   parallel ASAN runs on 4 cores, 300 runs each, 065 failed 9 (members cancelled unstarted skip their catch), 066 4,
   067 6, 068 5 (red `linux (asan)` of fd1f9c4: 067); with yields none failed. 065 yields twice: its members park on
   their second turn.
+- 2026-10-12 S8.4, own defaults: the connect retry tests (`io_provider/076`, `077`) first prove the address order,
+  then the refusal; they skip where localhost has one address (here) and ran with a second `/etc/hosts` line,
+  never with IPv6. `073`-`077` order their steps with a flag and `suspend()`, no timers; `073` checks through
+  `/proc/self/fd` that the read end took curl's number. RFC 11 follows TrueAsync's `LOCK_NB` and timer, only while
+  hooks are active, instead of a blocking work op. RFC 28 asks for the curl-side fix (any provider keyed by
+  descriptor meets the late `remove()`), not Poll queue counts. The fix is bukka's code: Edmond hears first,
+  it waits for the core slot (S8.4a).
