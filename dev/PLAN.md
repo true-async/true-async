@@ -1905,9 +1905,13 @@ Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, 
         that also replaces the affinity count). Edmond agreed the note 14:15 and chose B for question 1:
         `process_percent` is a share of the CPUs the process may use, capped at 100. Probes r1-r7 in
         `/mnt/project-files/s9/probes/s9.runtime/`.
-- [ ] S9.49 The layer 8 block of `tests/lists/S9.txt` and the five probes on Linux and Windows (note sections 3, 6).
+- [x] S9.49 The layer 8 block of `tests/lists/S9.txt` and the five probes on Linux and Windows (note sections 3, 6).
       done: the 6 reference tests and an own test per row of note sections 2 and 6 pass on debug, ASAN and `pocs-win`
       tier: T2 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S9.49): `src/runtime_info.c`, `src/runtime_info.stub.php`, the
+        hook `TrueAsync\Test\cpu_limits()`; tests `common/` (6, `runtime_stats` changed: main counted) and
+        `runtime_info/001`-`025`, which pass on debug and ASAN. Critic: Windows reads the affinity mask on every host,
+        only the innermost job object, no CPU sets (note section 3). The Windows job object has no test.
 - [ ] S9.50 Layer 8 review and its documentation in `true-async-doc` (note section 5).
       done: Critic over S9.49, coverage, Mull, 100 fuzz seeds, doc pages with note section 6
       tier: T2 · role: Critic

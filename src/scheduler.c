@@ -55,13 +55,6 @@
 #include "internal/circular_buffer.h"
 #include "test_hooks.h"
 
-/* Contexts the pool keeps however short the run queue is: TrueAsync's policy (D23) with 1024 for its
- * 4. A chain of awaits up to that deep, or that many waiters woken together, then take no new stack:
- * B4 at depth 100 runs 21 % fewer instructions per link, B5 (1000 waiters) 11 % fewer and in a tenth
- * of the time (dev/BENCHMARKS.md). A pooled context keeps about 20 KiB of its stack resident and
- * 0.14 KiB of the request's memory, until the scheduler ends. */
-#define ASYNC_FIBER_POOL_SIZE 1024
-
 /* The bottom frame of every coroutine's VM stack. Nameless: backtraces skip a frame without a
  * function name, as they skip the core's own fiber root frame. */
 static zend_function root_function = { ZEND_INTERNAL_FUNCTION };

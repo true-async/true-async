@@ -208,6 +208,7 @@ static PHP_MINIT_FUNCTION(true_async)
 	async_register_channel_ce();
 	async_register_task_group_ce();
 	async_register_fs_watcher_ce();
+	async_register_runtime_info_ce();
 	async_ce_circuit_breaker_state = register_class_Async_CircuitBreakerState();
 	async_ce_circuit_breaker_strategy = register_class_Async_CircuitBreakerStrategy();
 	async_register_pool_ce(register_class_Async_CircuitBreaker());
@@ -253,6 +254,7 @@ static PHP_RINIT_FUNCTION(true_async)
 		async_io_provider_request_startup();
 		ASYNC_G(signals) = NULL;
 		ASYNC_G(fs_watchers) = NULL;
+		ASYNC_G(cpu_usage_started) = false;
 		async_collector_request_startup();
 		async_channel_request_startup();
 		async_pool_request_startup();
@@ -273,6 +275,8 @@ static PHP_RINIT_FUNCTION(true_async)
 	ASYNC_G(test_print_at_teardown) = false;
 	ASYNC_G(test_polls) = 0;
 	ASYNC_G(test_stalls) = 0;
+	ASYNC_G(test_cpu_root) = NULL;
+	ASYNC_G(test_cpu_affinity) = 0;
 #endif
 
 	return SUCCESS;

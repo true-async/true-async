@@ -72,6 +72,13 @@ void async_scheduler_graceful_shutdown(zend_object *cancellation);
 /* A new AsyncCancellation("Graceful shutdown"), the shutdown's own when it is given none; owned by the caller. */
 zend_object *async_scheduler_shutdown_cancellation_new(void);
 
+/* Contexts the pool keeps however short the run queue is: TrueAsync's policy (D23) with 1024 for its
+ * 4. A chain of awaits up to that deep, or that many waiters woken together, then take no new stack:
+ * B4 at depth 100 runs 21 % fewer instructions per link, B5 (1000 waiters) 11 % fewer and in a tenth
+ * of the time (dev/BENCHMARKS.md). A pooled context keeps about 20 KiB of its stack resident and
+ * 0.14 KiB of the request's memory, until the scheduler ends. */
+#define ASYNC_FIBER_POOL_SIZE 1024
+
 /* How long the coroutines get to finish after exit() (D16) before they are unwound, and how often
  * what is still alive then is unwound again: TrueAsync's REACTOR_CHECK_INTERVAL (php_async.h:56). */
 #define ASYNC_EXIT_DEADLINE_MS 5000

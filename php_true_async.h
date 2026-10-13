@@ -27,6 +27,7 @@ extern zend_module_entry true_async_module_entry;
 #include "src/io_provider.h"
 #include "src/os_signal.h"
 #include "src/fs_watcher.h"
+#include "src/runtime_info.h"
 #ifdef TRUE_ASYNC_FUZZ
 #include "src/internal/fuzz.h"
 #endif
@@ -58,6 +59,8 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	uint8_t collector_backoff;              /* the automatic collector waits the interval << this (collector.c) */
 	zend_long partial_deadlock_interval;    /* true_async.partial_deadlock_interval, ms */
 	uint64_t collector_last_run;            /* zend_hrtime() of the last automatic run; 0 before the first idle */
+	async_cpu_snapshot_t cpu_usage_last;    /* the snapshot of cpu_usage()'s last call in this request */
+	bool cpu_usage_started;                 /* cpu_usage() ran in this request: cpu_usage_last is set */
 #ifdef TRUE_ASYNC_TEST_HOOKS
 	uint8_t fault_site;              /* the armed async_test_fault_site_t; ASYNC_TEST_FAULT_NONE when unarmed */
 	uint8_t io_fault_sites;          /* the armed async_test_io_fault_t bits */
@@ -76,6 +79,8 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	zend_long test_stall_every;      /* true_async.test_stall_every; 1 or less for every poll */
 	uint32_t test_polls;             /* async_reactor_poll_due() calls in this request */
 	uint32_t test_stalls;            /* the calls that stalled */
+	zend_string *test_cpu_root;      /* cpu_limits(): the directory /proc/self and the cgroup mounts are read under */
+	zend_long test_cpu_affinity;     /* cpu_limits(): the affinity count; 0 for the process's own */
 #endif
 #ifdef TRUE_ASYNC_FUZZ
 	async_fuzz_state_t fuzz; /* TRUE_ASYNC_SCHED of this request */

@@ -97,7 +97,7 @@ Behaviour that looks like a defect, each a departure in section 6:
 **`src/runtime_info.c`** holds the five entry points and three readers per platform, as `cpu_info.c`:
 
 - **Process CPU**: `getrusage(RUSAGE_SELF)`; Windows `GetProcessTimes()`.
-- **Host CPU**: the first line of `/proc/stat`, read with one `read()` into a stack buffer, ticks converted by
+- **Host CPU**: the first line of `/proc/stat`, read into a 512-byte stack buffer, ticks converted by
   `sysconf(_SC_CLK_TCK)`; Windows `GetSystemTimes()` (its kernel time includes idle, subtracted as TrueAsync does).
   Elsewhere both are 0, as TrueAsync's POSIX path without `/proc`.
 - **Wall time**: `zend_hrtime()`, the clock of `hrtime()`, instead of TrueAsync's own `clock_gettime()` and
@@ -109,13 +109,15 @@ Behaviour that looks like a defect, each a departure in section 6:
 **`available_parallelism()`**, at every call, as libuv 1.51 with its two defects fixed (section 6, item 2):
 
 1. The affinity count: on Linux `sched_getaffinity()`'s count, `sysconf(_SC_NPROCESSORS_ONLN)` when it fails;
-   elsewhere `sysconf(_SC_NPROCESSORS_ONLN)`. On Windows `GetProcessAffinityMask()`'s count while the host has one
-   processor group (`GetActiveProcessorGroupCount()` is 1); with more groups, or a mask of 0 (a process whose threads
-   span groups), the sum of `GetActiveProcessorCount(group)` over the groups `GetProcessGroupAffinity()` returns (it
-   gives group numbers, not masks; Windows keeps no per-group process mask), and when that fails
-   `GetActiveProcessorCount(ALL_PROCESSOR_GROUPS)`. An explicit restriction through CPU sets
-   (`GetProcessDefaultCpuSetMasks()`, Windows 11 and Server 2022) is counted where the call exists. libuv's Windows code (`uv: win/util.c`) reads the one mask and so
-   sees at most 64 CPUs, or 1 when the mask is 0.
+   elsewhere `sysconf(_SC_NPROCESSORS_ONLN)`. On Windows `GetProcessAffinityMask()`'s count, the mask of the
+   process's processor group (S9.49: also on a host with several groups, so `start /affinity` counts there); with a
+   mask of 0 (a process whose threads span groups), the sum of `GetActiveProcessorCount(group)` over the groups
+   `GetProcessGroupAffinity()` returns (it gives group numbers, not masks; Windows keeps no per-group process
+   mask), and when that fails
+   `GetActiveProcessorCount(ALL_PROCESSOR_GROUPS)`. A restriction through CPU sets
+   (`GetProcessDefaultCpuSetMasks()`, Windows 11 and Server 2022) is not read (S9.49: the call needs a run-time
+   lookup, and affinity masks, `start /affinity` included, cover the common case). libuv's Windows code
+   (`uv: win/util.c`) reads the one mask and so sees at most 64 CPUs, or 1 when the mask is 0.
 2. The quota, as a fraction of CPUs:
    - Linux. The controller is v1's `cpu` when `/proc/self/cgroup` has a line whose comma-separated controller list
      holds `cpu` (a hybrid host keeps the CPU controller in v1), otherwise v2's `0::` line. The line's path is made
@@ -128,15 +130,17 @@ Behaviour that looks like a defect, each a departure in section 6:
    - Windows. The job object the process runs in (`QueryInformationJobObject(NULL,
      JobObjectCpuRateControlInformation)`), when its control is enabled with a hard cap: `CpuRate / 10000` of the
      host's CPUs, as a container started with `--cpus` gets, and with the min-max mode `MaxRate / 10000` of them. A
-     weight-based or absent control is no quota. To check against the API reference in S9.49.
+     weight-based or absent control is no quota. Only the innermost job is read: the API gives no handle to the
+     job around it (S9.49).
    - Elsewhere no quota. A missing or unreadable file, a malformed line, or a path longer than the buffer is no
      quota at that level.
 3. `available_parallelism()` is the smaller of the affinity count and the quota rounded up, at least 1: a quota of
    1.5 CPUs gives 2, one of 0.5 gives 1.
 
 The unrounded smaller of the two (a float, at least a tiny positive value) is kept apart as the process's effective
-CPUs for question 1's option B. The files are read with `open()` and `read()` into stack buffers. Only `/proc/self`
-is a constant: the cgroup mount points come from its `mountinfo`. Under the test hook (below) `$root` is prefixed to
+CPUs for question 1's option B. The cgroup files are read into stack buffers, `/proc/self/cgroup` and `mountinfo`
+whole into a heap buffer of up to 1 MiB, a larger one counting as unreadable (DECISIONS S9.49). Only `/proc/self` is
+a constant: the cgroup mount points come from its `mountinfo`. Under the test hook (below) `$root` is prefixed to
 `/proc/self` and to every mount point read from the fixture's `mountinfo`.
 
 **`CpuSnapshot`** is declared in the stub with `@strict-properties` and `@not-serializable`; `now()` fills the six
@@ -153,7 +157,7 @@ no mutex.
 | Key | Ours |
 |---|---|
 | `coroutines_total` | `zend_hash_num_elements(&ASYNC_G(coroutines))`, the registry, which also holds the core's own coroutines (the collector's, the shutdown destructors') while they run |
-| `coroutines_active` | what `scheduler_get_coroutine_count()` (`src/scheduler.c:2283`, `static`, so exported through `src/scheduler.h`) returns: the registry's count minus `ASYNC_G(zombie_coroutines_count)`, which `async_scope_mark_zombie()` raises (`src/scope.c:124`) and a zombie's end lowers (`src/coroutine.c:434`) |
+| `coroutines_active` | the core's `ZEND_ASYNC_GET_COROUTINE_COUNT()`, our `scheduler_get_coroutine_count()` (`src/scheduler.c`): the registry's count minus `ASYNC_G(zombie_coroutines_count)`, which `async_scope_mark_zombie()` raises (`src/scope.c:124`) and a zombie's end lowers (`src/coroutine.c:434`) |
 | `microtasks_queue` | `ASYNC_G(microtasks)`'s length |
 | `coroutine_queue` | `ASYNC_G(run_queue)`'s length |
 | `resumed_queue` | 0: our scheduler cleans a coroutine's wait at its wake and keeps no such list (section 6, item 4) |
@@ -164,11 +168,12 @@ no mutex.
 
 **Test hook.** `TrueAsync\Test\cpu_limits(?string $root, ?int $affinity = null)` in `src/test_hooks.c`, beside
 `fail_io()`: `$root` replaces both production roots, so the fixture holds `$root/proc/self/cgroup`,
-`$root/proc/self/mountinfo` and the cgroup tree under `$root` followed by the mount points it names; `$affinity` replaces the affinity
-count, so a fixture's result does not depend on the CPUs of the CI machine; `null` restores both. Both live in
+`$root/proc/self/mountinfo` and the cgroup tree under `$root` followed by the mount points it names; `$affinity`
+replaces the affinity count, so a fixture's result does not depend on the CPUs of the CI machine; `null` restores
+both. Both live in
 `ASYNC_G` and are released in `async_test_hooks_request_shutdown()`, as the other hooks. No CI machine runs in a
-cgroup with a CPU quota, and the parsing is the layer's most error-prone code. The Windows job object is not faked:
-its test runs a child under a job with a hard cap on `pocs-win`, if the runner lets a process create one.
+cgroup with a CPU quota, and the parsing is the layer's most error-prone code. The Windows job object has no test:
+a PHP test cannot put a process into a job without a helper program (S9.49).
 
 **Threads.** Every reader is thread-safe (`getrusage()`, `read()` on a fresh descriptor, `sched_getaffinity()`), and
 the only state is per request, so ZTS needs no lock.
@@ -187,7 +192,8 @@ past its return. The layer adds no wait kind.
   keys.
 - S9.51 Security pass by `dev/SECURITY.md`: the cgroup and `/proc` reads (path lengths, short and long reads, a file
   without a newline, numbers that overflow, among them the host's nanosecond counters past `ZEND_LONG_MAX` on a host
-  with hundreds of CPUs and months of uptime, as TrueAsync), the test hook's absence from release builds, what
+  with hundreds of CPUs and months of uptime, and every nanosecond property within seconds on a 32-bit build, as
+  TrueAsync), the test hook's absence from release builds, what
   `runtime_stats()` and the host counters expose to a script.
 
 ## 6. Departures from TrueAsync
@@ -253,7 +259,7 @@ depends on no clock.
 **Own tests** (S9.49), one case each: the affinity mask (`taskset -c 0` through `proc_open()`, skipped without
 `taskset`); through the hook, cgroup v2 with a quota at a middle level and none at the leaf, a fractional quota,
 "max", a mount root stripped from the path, a path outside the mount's root, v1, a hybrid host (v1 `cpu` beside a
-`0::` line), a missing file; on `pocs-win` a child under a job object with a hard cap; `runtime_stats()` after three spawns (`coroutine_queue` 3), with a zombie
+`0::` line), a missing file; `runtime_stats()` after three spawns (`coroutine_queue` 3), with a zombie
 (`coroutines_active` one less than `coroutines_total`), after the coroutines end (`fiber_pool_count`); `cpu_usage()`'s
 first call returns zeros in a second request of the same process (two requests to the CLI server);
 `CpuSnapshot`'s clone, serialization and uninitialised reflection object as `r2`.

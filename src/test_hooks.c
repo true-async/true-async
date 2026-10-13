@@ -32,8 +32,8 @@
  * reactor_wait(), reactor_state() and reactor_use_poll_queue() drive the reactor
  * (section 3) before delay(), read_without_owner() reads as an op with no stream does, and set_exit_deadline()
  * shortens D16's deadline. zend_sigaction_reinstall()
- * unblocks a signal number as callers of zend_sigaction() outside pcntl do. Each says more above its
- * definition. */
+ * unblocks a signal number as callers of zend_sigaction() outside pcntl do. cpu_limits() gives runtime
+ * information a fixture of cgroup files and an affinity count. Each says more above its definition. */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -2291,9 +2291,46 @@ void async_test_hooks_request_shutdown(void)
 {
 	test_trigger_free();
 
+	if (ASYNC_G(test_cpu_root) != NULL) {
+		zend_string_release(ASYNC_G(test_cpu_root));
+		ASYNC_G(test_cpu_root) = NULL;
+	}
+
 	if (UNEXPECTED(zend_execute_ex == test_execute_ex)) {
 		zend_execute_ex = execute_ex;
 	}
+}
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_cpu_limits, 0, 1, IS_VOID, 0)
+	ZEND_ARG_TYPE_INFO(0, root, IS_STRING, 1)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, affinity, IS_LONG, 1, "null")
+ZEND_END_ARG_INFO()
+
+/* Runtime information reads /proc/self/cgroup, /proc/self/mountinfo and the cgroup mounts under `root`
+ * (a fixture directory) and takes `affinity` as the process's affinity count; null restores both. */
+static ZEND_FUNCTION(cpu_limits)
+{
+	zend_string *root = NULL;
+	zend_long affinity = 0;
+	bool affinity_is_null = true;
+
+	ZEND_PARSE_PARAMETERS_START(1, 2)
+		Z_PARAM_STR_OR_NULL(root)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_LONG_OR_NULL(affinity, affinity_is_null)
+	ZEND_PARSE_PARAMETERS_END();
+
+	if (UNEXPECTED(!affinity_is_null && affinity < 1)) {
+		zend_argument_value_error(2, "must be greater than 0 or null");
+		RETURN_THROWS();
+	}
+
+	if (ASYNC_G(test_cpu_root) != NULL) {
+		zend_string_release(ASYNC_G(test_cpu_root));
+	}
+
+	ASYNC_G(test_cpu_root) = root != NULL ? zend_string_copy(root) : NULL;
+	ASYNC_G(test_cpu_affinity) = affinity_is_null ? 0 : affinity;
 }
 
 static async_trigger_t *test_trigger_get(void)
@@ -2576,6 +2613,7 @@ static ZEND_FUNCTION(trigger_refire)
 /* clang-format off */
 const zend_function_entry true_async_test_hooks_functions[] = {
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\callbacks_scenario", ZEND_FN(callbacks_scenario), arginfo_callbacks_scenario, 0, NULL, NULL)
+	ZEND_RAW_FENTRY("TrueAsync\\Test\\cpu_limits", ZEND_FN(cpu_limits), arginfo_cpu_limits, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\buffer_scenario", ZEND_FN(buffer_scenario), arginfo_callbacks_scenario, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\defer", ZEND_FN(defer), arginfo_defer, 0, NULL, NULL)
 	ZEND_RAW_FENTRY("TrueAsync\\Test\\iterate", ZEND_FN(iterate), arginfo_iterate, 0, NULL, NULL)

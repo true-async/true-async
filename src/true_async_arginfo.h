@@ -1,5 +1,5 @@
 /* This is a generated file, edit true_async.stub.php instead.
- * Stub hash: 8bb7d6494cc6e3fedb3ddf157aac8816dc7d1427 */
+ * Stub hash: e5ba79c3df8bb372809fd3ee5644e3f057dda904 */
 
 #include "zend_enum.h"
 
@@ -103,6 +103,16 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_Async_iterate, 0, 2, IS_VOID, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, cancelPending, _IS_BOOL, 0, "true")
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_Async_available_parallelism, 0, 0, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_Async_loadavg, 0, 0, IS_ARRAY, 1)
+ZEND_END_ARG_INFO()
+
+#define arginfo_Async_cpu_usage arginfo_Async_get_coroutines
+
+#define arginfo_Async_runtime_stats arginfo_Async_get_coroutines
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_Completable_cancel, 0, 0, IS_VOID, 0)
 	ZEND_ARG_OBJ_INFO_WITH_DEFAULT_VALUE(0, cancellation, Async\\AsyncCancellation, 1, "null")
 ZEND_END_ARG_INFO()
@@ -155,6 +165,10 @@ ZEND_FUNCTION(Async_get_coroutines);
 ZEND_FUNCTION(Async_get_deadlocked_coroutines);
 ZEND_FUNCTION(Async_graceful_shutdown);
 ZEND_FUNCTION(Async_iterate);
+ZEND_FUNCTION(Async_available_parallelism);
+ZEND_FUNCTION(Async_loadavg);
+ZEND_FUNCTION(Async_cpu_usage);
+ZEND_FUNCTION(Async_runtime_stats);
 
 static const zend_function_entry ext_functions[] = {
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "spawn"), zif_Async_spawn, arginfo_Async_spawn, 0, NULL, NULL)
@@ -180,6 +194,10 @@ static const zend_function_entry ext_functions[] = {
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "get_deadlocked_coroutines"), zif_Async_get_deadlocked_coroutines, arginfo_Async_get_deadlocked_coroutines, 0, NULL, NULL)
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "graceful_shutdown"), zif_Async_graceful_shutdown, arginfo_Async_graceful_shutdown, 0, NULL, NULL)
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "iterate"), zif_Async_iterate, arginfo_Async_iterate, 0, NULL, NULL)
+	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "available_parallelism"), zif_Async_available_parallelism, arginfo_Async_available_parallelism, 0, NULL, NULL)
+	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "loadavg"), zif_Async_loadavg, arginfo_Async_loadavg, 0, NULL, NULL)
+	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "cpu_usage"), zif_Async_cpu_usage, arginfo_Async_cpu_usage, 0, NULL, NULL)
+	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "runtime_stats"), zif_Async_runtime_stats, arginfo_Async_runtime_stats, 0, NULL, NULL)
 	ZEND_FE_END
 };
 

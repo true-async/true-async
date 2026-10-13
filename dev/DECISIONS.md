@@ -3163,3 +3163,11 @@ stack options were shown with the code).
   bug is not copied; its keys are kept for code written for it. Cgroup parsing is tested through a test hook that
   replaces `/proc/self`, `/sys/fs/cgroup` and the affinity count, since no CI machine runs under a CPU quota.
   Edmond, 14:15, question 1 B: `process_percent` is a share of the CPUs the process may use (unrounded), capped at 100.
+- 2026-10-13 S9.49: layer 8 in `src/runtime_info.c`. `common/runtime_stats.phpt` is changed (`changed:` tag): at the
+  top level `coroutines_total` is 1, not 0, since the RFC core starts the scheduler with the script and the main
+  coroutine is in the registry from the start (as `info/001` in S3.4); its title and comments say so. Decided here:
+  `coroutines_active` is the core's `ZEND_ASYNC_GET_COROUTINE_COUNT()` (0 after the core deactivates), no export;
+  `ASYNC_FIBER_POOL_SIZE` moves to `src/scheduler.h`; on Windows the affinity mask is read on every host and only
+  the innermost job object (the API gives no handle to the outer one); CPU sets are not read. A proc or cgroup file
+  is read whole, again into a twice larger buffer when it fills one, so no allocation happens with the descriptor
+  open (S9.47). Why: TrueAsync's code for each, less what our core already gives; the Windows limits are the API's.

@@ -163,6 +163,30 @@ function graceful_shutdown(?AsyncCancellation $cancellationError = null): void {
  */
 function iterate(iterable $iterable, callable $callback, int $concurrency = 0, bool $cancelPending = true): void {}
 
+/**
+ * The CPUs this process may run on: the affinity mask's count, lowered to a CPU quota (a Linux cgroup's,
+ * a Windows job object's hard cap) rounded up. At least 1; read at every call.
+ */
+function available_parallelism(): int {}
+
+/** The host's load averages over 1, 5 and 15 minutes, or null where the system has none (Windows). */
+function loadavg(): ?array {}
+
+/**
+ * The CPU use since this request's previous call: process_cores (process CPU time / wall time),
+ * process_percent (process_cores as a share of the CPUs the process may use, at most 100), system_percent
+ * (the host's busy share), cpu_count (the host's online CPUs), interval_sec and loadavg. The request's first
+ * call stores a snapshot and returns zeros.
+ */
+function cpu_usage(): array {}
+
+/**
+ * The scheduler's counters: coroutines_total, coroutines_active (not zombies), microtasks_queue,
+ * coroutine_queue, resumed_queue (always 0), fiber_pool_count, fiber_pool_capacity, fiber_pool_min,
+ * fiber_stack_size and fiber_pool_virtual_bytes.
+ */
+function runtime_stats(): array {}
+
 /** The state of a circuit breaker. */
 enum CircuitBreakerState
 {
