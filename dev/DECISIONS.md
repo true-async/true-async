@@ -2849,3 +2849,12 @@ stack options were shown with the code).
   where the check is small; `exit()` in a callback ends the request (TrueAsync returns from `iterate()`, i11); a
   spawned coroutine's error during the walk is `iterate()`'s exception, as after the walk (TrueAsync ends the
   request with "Uncaught", i22).
+- 2026-10-13 S8.6, `stream_set_timeout()` bounds `stream_socket_recvfrom()` and `sendto()` only once it is called;
+  `default_socket_timeout` stays off them, in a coroutine too. TrueAsync applies it in a coroutine (60 s), which
+  would end a UDP server's receive loop after a quiet minute; the PoC's `stream_socket_recvfrom_blocking_no_timeout.phpt`
+  keeps it off. Why: my default on Edmond's card of 2026-10-13 (one behaviour in and out of a coroutine).
+- 2026-10-13 S8.6, a pipe's read timeout works on Unix only: Windows refuses `stream_set_timeout()` on a pipe as
+  before, and `tests/io/039-pipe_read_timeout.phpt`, `tests/io/040-pipe_read_timeout_then_success.phpt`,
+  `tests/io/042-pipe_timeout_concurrent_coroutines.phpt`, `tests/io/043-pipe_fread_timeout.phpt` carry
+  `xfail-on:pocs-win(S8.9)`. Why: the S8.6 Critic: a timed-out overlapped READ cancelled at its completion loses
+  its bytes, and the provider-less paths still wait; a readiness wait first, as on Unix, is S8.9.

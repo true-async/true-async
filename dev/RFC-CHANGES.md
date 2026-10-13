@@ -43,7 +43,9 @@ Waits for it: nothing; the pinned core carries the branch (`async-core-io-2026-1
 
 ## 3. IO hooks: stream_set_timeout() on a pipe
 
-State: drafted 2026-10-06 (S6.3), not sent. PR: none.
+State: on `io-hooks-stream-timeouts` `2791d414caf` (on bukka's `8e470c219fc`, after entry 4's commit) and
+`io-hooks-fixes` `cee42c3db37`, 2026-10-13 (S8.6), in the core since `async-core-io-2026-10-13-2` `8568d99bd3e`. PR text
+with entry 4: `/mnt/project-files/notes/s8-6/io-hooks-stream-timeouts-pr.md`. PR: none yet.
 
 Need: TrueAsync honours `stream_set_timeout()` on a `proc_open()` pipe for a read in a coroutine
 (`io/039`, `040`, `042`, `043`). The plain wrapper has no `PHP_STREAM_OPTION_READ_TIMEOUT` case, so the call
@@ -55,11 +57,17 @@ plain wrapper and, when set, wait with `php_io_poll(stream, fd, PHP_POLL_READ, &
 read, so the core's synchronous queue honours it too; `timed_out` in the metadata. A feature, not a
 fix: vanilla PHP has no such option.
 
-Waits for it: `io/039`, `040`, `042`, `043` (`--XFAIL--` naming S8.6).
+Done on Unix as requested, with what its Critic found: with data already buffered, or a zero timeout, the
+read only looks, as a socket read does; a write end and a regular file still refuse the option. Windows
+refuses it too: a pipe read there cannot stop at a deadline yet (cancelling a timed-out overlapped READ can
+lose its bytes; a readiness wait first, as on Unix, is the way), S8.9.
+
+Waits for it: nothing on Linux; `io/039`, `040`, `042`, `043` on Windows (`xfail-on:pocs-win(S8.9)`).
 
 ## 4. IO hooks: stream_set_timeout() on stream_socket_recvfrom() and stream_socket_sendto()
 
-State: drafted 2026-10-06 (S6.4), not sent. PR: none.
+State: on `io-hooks-stream-timeouts` `05b8336f85f` (on bukka's `8e470c219fc`) and `io-hooks-fixes`
+`ed09096e238`, 2026-10-13 (S8.6), in the core since `async-core-io-2026-10-13-2` `8568d99bd3e`. PR: with entry 3.
 
 Need: TrueAsync honours a socket stream's timeout in `stream_socket_recvfrom()` and
 `stream_socket_sendto()` and sets `timed_out` in the metadata (F `main/streams/xp_socket.c:368-392`,
@@ -73,7 +81,13 @@ Request: `sock_xport_deadline()` builds the deadline from `sock->timeout`, as `p
 `STREAM_XPORT_OP_SEND` set `sock->timeout_event` on `ETIMEDOUT`. A feature, not a fix: vanilla PHP
 ignores the timeout there.
 
-Waits for it: `stream/030` (`--XFAIL--` naming S8.6).
+Done only after an explicit `stream_set_timeout()` (`php_netstream_data_t.timeout_set`): the PoC's own
+`stream_socket_recvfrom_blocking_no_timeout.phpt` keeps `default_socket_timeout` off these calls, while
+TrueAsync applies it inside a coroutine (its `sock_async_poll()`); Edmond's card of 2026-10-13. A failed
+receive no longer reads the unset peer address (its Critic: `sl` stays `sizeof(sa)` and the garbage family
+was formatted, a string leaked).
+
+Waits for it: nothing; `stream/030` runs as the reference has it.
 
 ## 5. Poll API additions: zend_sigaction() leaves a SignalHandle's signals blocked
 

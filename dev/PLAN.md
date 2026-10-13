@@ -928,7 +928,7 @@ not expressible with why); `RFC-CHANGES.md` complete; the review updated.
 Tier: T1. Roles: Critic after every step.
 Tests: interleaved
 Base: d783cea
-Active: S8.3b
+Active: S8.9
 
 Each item is run against our provider on the pinned core, on `pocs-dbg` and `pocs-asan`, over the
 Ring and over the Poll queue (`TrueAsync\Test\` hook) where the item depends on the queue. Its
@@ -1110,13 +1110,18 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
         PLAN request A), 32 a pipe write tries the syscall first (`080`, `081`: two loggers on one pipe
         or on `STDERR` collide today). Not requested, with reasons in
         section 9: M2's predicate, M8's shared multi (Fog), M6 under ZTS outside the CLI.
-- [ ] S8.6 Make `stream_set_timeout()` work on a pipe and on `stream_socket_recvfrom()`/`sendto()` under
+- [x] S8.6 Make `stream_set_timeout()` work on a pipe and on `stream_socket_recvfrom()`/`sendto()` under
       a provider (core fixes of `RFC-CHANGES.md` 3 and 4), so the five tests that wait for them run
       without `--XFAIL--`; when the core slot is free: commits on `io-hooks-fixes` with core tests and
       PR texts for bukka in `notes/`, Edmond opens them; a core update.
       done: `io/039`, `040`, `042`, `043` and `stream/030` pass without `--XFAIL--` (and `030` without its
       watchdog) on debug and ASAN
       tier: T1 · role: Critic
+      handoff: done 2026-10-13. Core `async-core-io-2026-10-13-2` `8568d99bd3e` (`io-hooks-fixes` `cee42c3db37`),
+        two commits on `io-hooks-stream-timeouts`, PR text in `notes/s8-6` (project files). `recvfrom()`/`sendto()` take the
+        timeout only after an explicit `stream_set_timeout()` (the PoC's test keeps `default_socket_timeout` off
+        them; Edmond's card). A pipe read polls up to the timeout first, on Unix; Windows still refuses it (S8.9).
+        `stream/030` is the reference file again, without the watchdog and the `changed:` tag.
 - [x] S8.7 A stream given to `CURLOPT_FILE`, `INFILE`, `WRITEHEADER` or `STDERR` and closed by another
       coroutine while `curl_exec()` waits is not used after it is freed (TrueAsync's curl history, item E1
       of `/mnt/project-files/notes/s8-curl/trueasync-curl-history.md`); a core fix for bukka
@@ -1151,6 +1156,11 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
         prefix (now passed through); `io_provider/073` and `074` named libcurl's socket by the text
         "Connected to" (8.20 logs "Established connection to") and by the only new socket (7.87.0 keeps a
         socketpair too), now by the socket gone before "Issue another request"; ASAN and 20 seeds clean.
+- [ ] S8.9 Windows: `stream_set_timeout()` bounds a read of an overlapped pipe (left from S8.6): a readiness
+      wait up to the deadline, then a read of what is there, as on Unix; cancelling a timed-out READ op can
+      lose its bytes (`RFC-CHANGES.md` 3).
+      done: `io/039`, `040`, `042`, `043` pass on `pocs-win` without `xfail-on`
+      tier: T1 · role: Critic
 
 ## S9 — Higher layers, one at a time  [in progress]
 

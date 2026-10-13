@@ -1,7 +1,5 @@
 --TEST--
 Pipe timeout with concurrent coroutines
---XFAIL--
-Needs a core change: S8.6 of dev/PLAN.md (stream_set_timeout() on a pipe, dev/RFC-CHANGES.md 3)
 --SKIPIF--
 <?php
 if (!function_exists("proc_open")) echo "skip proc_open() is not available";

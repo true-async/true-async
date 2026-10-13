@@ -4,8 +4,6 @@ stream_set_timeout() on pipe read with async IO
 <?php
 if (!function_exists("proc_open")) echo "skip proc_open() is not available";
 ?>
---XFAIL--
-Needs a core change: S8.6 of dev/PLAN.md (stream_set_timeout() on a pipe, dev/RFC-CHANGES.md 3)
 --FILE--
 <?php
 
