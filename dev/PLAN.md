@@ -2276,6 +2276,13 @@ Tests: interleaved
         run and the new ones pass; `tests/iterate` 64 PASS on `pocs-dbg`, the three clean on 100 seeds
       tier: T1 · role: Critic
       handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.10).
+- [x] S14.11 `reactor/009` and `010` wait for the spawned waiter's park instead of `reactor_wait(10)`, `signal/020`
+      and `025` for the sleeper's instead of `delay(1)` (`reactor/009` failed once in S8.13's full local run).
+      done: with gdb stopping the process 50 ms before each timer poll, old 009 and 010 fail on every run, old 020
+        forks before the sleeper parks; the new ones pass; `tests/reactor` and `tests/signal` 93 PASS, 4 SKIP on
+        `pocs-dbg`, the four clean on 100 seeds
+      tier: T1 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.11).
 
 ## S15 — Test layers of S2 not built yet  [ ]
 

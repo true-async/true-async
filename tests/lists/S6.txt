@@ -341,7 +341,7 @@ signal/016-two_futures_one_delivery.phpt  own:e84f0253612152712cb7ea814814548775
 signal/017-poll_queue_delivery.phpt  own:3c79682522d12e8ba151106b460296602a198672e999804b8bac5996623345bf  skip-on:*-win(Unix-only)
 signal/018-cancellation_tokens.phpt  own:024b2e121045761ecc4519fc0ab4d7d776878cbc3ad7c03acb6c4ac37edac332  skip-on:*-win(Unix-only)
 signal/019-refused_signals.phpt  own:d6373a74911fbc22561d2b5a8c41481bbd13714e2f501e5b376ecd72174481e4  skip-on:*-win(Unix-only)
-signal/020-fork_rebuilds_watches.phpt  own:8892fa3fcbd35791b0de051e90017514261e105c5d07418673bf07d1f4d34fd4  skip-on:*-win(Unix-only)
+signal/020-fork_rebuilds_watches.phpt  own:8892fa3fcbd35791b0de051e90017514261e105c5d07418673bf07d1f4d34fd4  skip-on:*-win(Unix-only)  changed:2026-10-13:c2f190eec3e3eb0d28550e0ff404ba13ad7196404c07d0f3625b08b00bdba7ec
 signal/021-cgi_under_zts.phpt  own:5e939f53590d385cffe714a1453fbeef58ed18d3cbefd160e828fe928e18a832  skip-on:*-win(Unix-only)
 signal/022-child_first_call_is_signal.phpt  own:7ece94b53ce805537d015daf8aafcc29bbe8c247afa2854dc6f78a3e7de015d2  skip-on:*-win(Unix-only)
 signal/023-pending_at_last_future_raised_again.phpt  own:97ca1052d45e450410a120a39f77357689e0f55e2c0350ca033d8491df4a39ac  skip-on:*-win(Unix-only)
@@ -398,7 +398,7 @@ io_provider/033-copy_file_into_pipe.phpt  own:3a9abc7179836aebdf19b4fa64632feb9f
 io_provider/034-select_pipe_outside_coroutine.phpt  own:c682d08fb2677a818e9c1dbe0b1189a6149cf3b0ab2e9494fad9ab01517275c3
 io_provider/035-hand_out_of_a_parked_pipe.phpt  own:2a0ccbcdc49bfdf656f7242ee5e312474d3a15807d20a3e86ec71ec27ce59c90  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)
 signal/024-watch_in_static_outlives_shutdown.phpt  own:e2f00202a4a2e224653698dacffb9153d8fbfb9fbbf6a29b27cf70e171c13839  changed:2026-10-09:f34552fdabb30e749eb36067bd3a9c707d056fc8e669a4482151429310c90e2f
-signal/025-fork_rebuilds_two_watches_poll_queue.phpt  own:682436e47cc7a3f41e21bc9635745ba7c06f889ed17ebe344489b8d76df11780  skip-on:*-win(Unix-only)
+signal/025-fork_rebuilds_two_watches_poll_queue.phpt  own:682436e47cc7a3f41e21bc9635745ba7c06f889ed17ebe344489b8d76df11780  skip-on:*-win(Unix-only)  changed:2026-10-13:f8b0d0e7108d09f12e1e6653e65bfc8e39155d59a6909b6063b1c5f276f91b1e
 signal/026-watch_closes_its_source.phpt  own:7f631142c949dc52fbd833c1233a70f14e49076cea8ece1283298596995708a4  skip-on:*-win(Unix-only)
 signal/027-exit_leaves_held_future.phpt  own:97a31e9a58b8b6c3c0d71fdffeb745f1124935b01ed53e384b90a5f1d3b4db95  changed:2026-10-09:2cdc9e830ebf2d6c7a69a86651d047da3f31bffc42da5dd565aadf3b5bda4a1d
 signal/028-uncaught_exception_leaves_held_future.phpt  own:08ec2d88e91dcfaf994cad257cdbf3f89e881f66c45aa6f14c1e870a428a3cb2  changed:2026-10-09:c9e41b5851d0d653f8314881cf82ed06a031f646b51996d7afcdcd52c0657bc6

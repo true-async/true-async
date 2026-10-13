@@ -14,7 +14,10 @@ use function Async\spawn;
 
 $parent = signal(Signal::SIGUSR1);
 $sleeper = spawn(fn() => delay(30));
-delay(1);
+
+while ($sleeper->getAwaitingInfo() === []) {
+    Async\suspend();
+}
 
 $pid = pcntl_fork();
 

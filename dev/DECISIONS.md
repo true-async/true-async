@@ -2970,3 +2970,13 @@ stack options were shown with the code).
   the pid guard and the core's refusal of a foreign queue, no rebuild in `close()`. Not changed: the POLL completion's
   loop on an inline completion, as the wakeup's (the Poll queue answers inline only an edge-registered wait, which
   this one is not), and a cycle collection inside the drain (GC runs in its own coroutine since S9.38).
+- 2026-10-13 S14.11: `reactor/009-fork_child_rebuilds_poll_queue.phpt` and
+  `reactor/010-fork_child_rebuilds_default_queue.phpt` forked after main's `reactor_wait(10)`, meant to let the
+  spawned waiter park first; they now loop `suspend()` until `reactor_state()['waits']` counts it, as `reactor/011`
+  does. `signal/020-fork_rebuilds_watches.phpt` and `signal/025-fork_rebuilds_two_watches_poll_queue.phpt` waited for
+  their sleeper's park with `delay(1)` and now loop until its `getAwaitingInfo()` is not empty. Why: main's park polls
+  due timers before it pops the queue (S14.9); a process stopped longer than main's timeout after the timer was armed
+  wakes main in its own tick (U2), and it forks before the waiter ever ran: 009 and 010 print `waits: 0` and lose the
+  deadlock report. With gdb holding the process 50 ms before each timer poll, old 009 and 010 fail on every run and
+  old 020 forks before the sleeper parks (its output does not change, the case of its title is not reached); the new
+  ones pass.

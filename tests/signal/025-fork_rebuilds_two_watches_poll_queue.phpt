@@ -19,7 +19,10 @@ TrueAsync\Test\reactor_use_poll_queue();
 $first = signal(Signal::SIGUSR1);
 $second = signal(Signal::SIGUSR2);
 $sleeper = spawn(fn() => delay(30));
-delay(1);
+
+while ($sleeper->getAwaitingInfo() === []) {
+    Async\suspend();
+}
 
 $pid = pcntl_fork();
 

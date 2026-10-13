@@ -12,7 +12,11 @@ use TrueAsync\Test;
 Test\reactor_use_poll_queue();
 
 $left = spawn(fn() => Test\reactor_wait(60000));
-Test\reactor_wait(10);
+
+while (Test\reactor_state()['waits'] === 0) {
+    Async\suspend();
+}
+
 $pid = pcntl_fork();
 
 if ($pid === 0) {
