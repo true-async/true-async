@@ -1,5 +1,5 @@
 --TEST--
-A finally handler added to a closed scope runs when its object dies; disposing an empty scope runs its handlers in the next tick
+A finally handler added to a closed scope runs when its object dies
 --FILE--
 <?php
 
@@ -18,20 +18,6 @@ echo "unset\n";
 unset($closed);
 echo "after unset\n";
 
-$disposed = new Scope();
-$disposed->finally(function () {
-    echo "disposed finally\n";
-});
-$disposed->dispose();
-echo "after dispose\n";
-
-$cancelled = new Scope();
-$cancelled->finally(function () {
-    echo "cancelled finally\n";
-});
-$cancelled->cancel();
-echo "after cancel\n";
-
 suspend();
 echo "end\n";
 
@@ -40,9 +26,5 @@ echo "end\n";
 closed: true, cancelled: false
 unset
 after unset
-after dispose
-after cancel
-cancelled finally
-disposed finally
 late finally, scope: NULL
 end

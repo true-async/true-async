@@ -1,5 +1,5 @@
 --TEST--
-Scope: awaitAfterCancellation() ends with OperationCanceledException when its token completes first, returns at once for a scope a cancel closed while idle, and throws in a scope's exception handler, which cannot park
+Scope: awaitAfterCancellation() ends with OperationCanceledException when its token completes first
 --FILE--
 <?php
 use Async\Scope;
@@ -31,39 +31,8 @@ await(spawn(function () use ($scope) {
     }
 }));
 
-$empty = Scope::inherit();
-$empty->spawn(function () {});
-Async\suspend();
-$empty->cancel();
-await(spawn(function () use ($empty) {
-    $empty->awaitAfterCancellation();
-    echo "empty: returned\n";
-}));
-
-$failing = new Scope();
-$failing->setExceptionHandler(function (Scope $failing, Async\Coroutine $coroutine, Throwable $e) use ($scope) {
-    try {
-        $scope->awaitAfterCancellation();
-        echo "handler: returned\n";
-    } catch (Throwable $error) {
-        echo "handler: ", get_class($error), ": ", $error->getMessage(), "\n";
-    }
-});
-$thrower = $failing->spawn(function () {
-    throw new RuntimeException("boom");
-});
-
-// A delay could end before the queued coroutine has run: a timer due when main parks wakes it in place
-while (!$thrower->isCompleted()) {
-    Async\suspend();
-}
-
-echo "end\n";
 $release->complete(null);
 ?>
 --EXPECT--
 Async\OperationCanceledException
-empty: returned
-handler: Error: awaitAfterCancellation() requires a running coroutine
-end
 zombie done

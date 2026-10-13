@@ -1,5 +1,5 @@
 --TEST--
-Scope: a scope object in a cycle with its handlers survives the GC while a coroutine of it or of its child scope runs, and the GC collects it once the last one ends
+Scope: a scope object in a cycle with its handlers survives the GC while a coroutine of it runs, and the GC collects it once that coroutine ends
 --FILE--
 <?php
 
@@ -33,40 +33,24 @@ function start(bool $in_child_scope): array
     return [$member, WeakReference::create($scope), $child_scope];
 }
 
-foreach ([false, true] as $in_child_scope) {
-    $is_released = false;
-    [$member, $scope, $child_scope] = start($in_child_scope);
-    gc_collect_cycles();
-    echo "alive while the member runs: ", var_export($scope->get() !== null, true), "\n";
-
-    $is_released = true;
-    while (!$member->isCompleted()) {
-        suspend();
-    }
-    unset($child_scope);
-    gc_collect_cycles();
-    // The destructor the GC called started the finally run, whose closure holds the object until it ends.
-    suspend();
-    gc_collect_cycles();
-    echo "alive after: ", var_export($scope->get() !== null, true), "\n";
-}
-
-// The GC cannot see that only the parent's handler holds the child scope's object, so the cycle lives
-// until the request ends.
-$scope = new Scope();
-$child_scope = Scope::inherit($scope);
-$scope->setExceptionHandler(function (Scope $s, Async\Coroutine $c, Throwable $e) use ($scope, $child_scope) {});
-$weak_scope = WeakReference::create($scope);
-unset($scope, $child_scope);
+$is_released = false;
+[$member, $scope, $child_scope] = start(false);
 gc_collect_cycles();
-echo "child scope without coroutines, alive: ", var_export($weak_scope->get() !== null, true), "\n";
+echo "alive while the member runs: ", var_export($scope->get() !== null, true), "\n";
+
+$is_released = true;
+while (!$member->isCompleted()) {
+    suspend();
+}
+unset($child_scope);
+gc_collect_cycles();
+// The destructor the GC called started the finally run, whose closure holds the object until it ends.
+suspend();
+gc_collect_cycles();
+echo "alive after: ", var_export($scope->get() !== null, true), "\n";
 
 ?>
 --EXPECT--
 alive while the member runs: true
 member: finished
 alive after: false
-alive while the member runs: true
-member: finished
-alive after: false
-child scope without coroutines, alive: true

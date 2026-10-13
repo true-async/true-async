@@ -3106,3 +3106,30 @@ stack options were shown with the code).
   removed. The receiver of `channel/126-channel_collector_spares_live_receivers.phpt` that the test cancels catches
   the `ChannelException` of its channel's timer: with 15 stalled polls the close came first, and gdb showed the
   unhandled exception reach the global scope (`async_scope_catch`), whose error route closed `$held`.
+- 2026-10-13 S14.21: tests that checked several cases (audit R4, project files `s14/audit-2026-10-13/`) keep
+  one case each; the cases moved out live in 49 new tests (`await/150`-`157`, `channel/157`-`162`, `classes/011`,
+  `012`, `future/128`, `129`, `internal/075`-`077`, `reactor/055`-`060`, `scheduler/113`-`115`, `scope/193`-`203`,
+  `signal/046`-`049`, `spawnWith/019`-`021`) with the same code and expected lines. Changed by design: `await/156`
+  checks the full message of `new Async\Timeout()`; `reactor/059` starts the trigger after its stops, as a stop
+  that wraps `start_count` printed the same 0; `channel/127`, `160` print `end` after the release, as a leaked
+  value is also destroyed last at shutdown; `signal/049` cancels its token before the wait (the same path, the
+  callback is attached in `signal()`). R3 mass loops: `scope/058` 20 members, `scope/125` 10 child scopes,
+  `signal/024` 3 Futures, each still past the inline slot. Left on purpose: the heap fixture of `reactor/039`,
+  `040`, `scope/069`, `collector/064` (memory_limit), `gc/025` (the root buffer): each needs its count.
+  The clock the splits copied (`reactor/028`, `057`, `spawnWith/021`, `scope/200`) goes to S14.16.
+- 2026-10-13 S14.21, the files: `await/108-future_await_token_completed_during_wait.phpt`,
+  `await/120-timeout_not_awaitable.phpt`, `await/137-awaiting_info_coroutine_token_and_iterator.phpt`,
+  `await/138-traversable_keys_and_failures.phpt`, `await/139-timeout_collected_and_not_constructible.phpt`,
+  `channel/097-channel_dropped_value_destructor_uses_channel.phpt`,
+  `channel/115-channel_closed_by_dispose_or_cancel_of_completed_scope.phpt`,
+  `channel/127-channel_rolled_back_value_released_with_channel.phpt`, `classes/003-exceptions_hierarchy.phpt`,
+  `future/108-future_without_state.phpt`, `internal/066-iterator_walk_order.phpt`, `reactor/015-delay_refusals.phpt`,
+  `reactor/028-trigger_fire_without_waiter_dropped.phpt`, `reactor/029-trigger_unstarted_keeps_nothing_alive.phpt`,
+  `scheduler/034-cancelled_waiter_keeps_target_exception.phpt`, `scheduler/037-waker_error_rules.phpt`,
+  `scope/058-scope_many_members_leave_out_of_order.phpt`, `scope/103-awaitAfterCancellation_token_and_refusals.phpt`,
+  `scope/114-finally_on_closed_scope_and_empty_dispose.phpt`.
+- 2026-10-13 S14.21, the files (continued): `scope/119-provider_freed_scope_and_awaitCompletion_returns.phpt`,
+  `scope/120-later_child_scope_and_member_counted.phpt`, `scope/125-child_scopes_leave_in_linear_time.phpt`,
+  `scope/126-handler_cycle_survives_gc_while_members_run.phpt`, `signal/018-cancellation_tokens.phpt`,
+  `signal/024-many_futures_on_one_signal_leave_in_linear_time.phpt`,
+  `spawnWith/013-spawnWith_strategy_scope_without_object.phpt`, `spawnWith/015-spawnWith_strategy_hook_suspends.phpt`.

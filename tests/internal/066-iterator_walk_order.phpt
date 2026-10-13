@@ -1,5 +1,5 @@
 --TEST--
-The iterator core walks an array and a Traversable with joining workers in the order of TrueAsync's iterate()
+The iterator core walks an array with joining workers in the order of TrueAsync's iterate()
 --FILE--
 <?php
 
@@ -60,36 +60,6 @@ run('array, two workers', function (Gates $gates) {
     }, 2);
 }, [['a', 'b'], ['b', 'c'], ['c', 'd'], ['d']]);
 
-run('false stops the walk', function () {
-    iterate([1, 2, 3], function ($value) {
-        echo "value $value\n";
-        return $value < 2;
-    });
-});
-
-function numbers(Gates $gates): Generator
-{
-    for ($i = 0; $i < 3; $i++) {
-        echo "generator moves to $i\n";
-        $gates->wait("move $i");
-        yield "k$i" => $i;
-    }
-}
-
-run('a generator that suspends while it moves', function (Gates $gates) {
-    iterate(numbers($gates), function ($value, $key) use ($gates) {
-        echo "start $key=$value\n";
-        $gates->wait($key);
-        echo "end $key\n";
-    }, 3);
-}, [['move 0'], ['move 1'], ['k0', 'move 2'], ['move 2'], ['k1', 'k2'], ['k2']]);
-
-run('an iterator without keys of its own', function () {
-    iterate(new ArrayIterator([5, 6]), function ($value, $key) {
-        echo "$key=$value\n";
-    });
-});
-
 ?>
 --EXPECT--
 --- array, two workers
@@ -101,19 +71,3 @@ end b
 start d=4
 end c
 end d
---- false stops the walk
-value 1
-value 2
---- a generator that suspends while it moves
-generator moves to 0
-generator moves to 1
-start k0=0
-generator moves to 2
-end k0
-start k1=1
-start k2=2
-end k1
-end k2
---- an iterator without keys of its own
-0=5
-1=6

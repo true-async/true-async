@@ -1,5 +1,5 @@
 --TEST--
-await_all() over a Traversable: null keys take the next index, a null item is skipped, and a throwing key() or getIterator() is rethrown
+await_all() over a Traversable: null keys take the next index and a null item is skipped
 --FILE--
 <?php
 use Async\Future;
@@ -11,56 +11,6 @@ var_dump(await_all((function () {
     yield null;
     yield 'k' => Future::completed('c');
 })())[0]);
-
-$keyThrows = new class implements Iterator {
-    private int $position = 0;
-
-    public function current(): mixed
-    {
-        $future = Future::completed(1);
-        $future->ignore();
-        return $future;
-    }
-
-    public function key(): mixed
-    {
-        throw new Exception("key");
-    }
-
-    public function next(): void
-    {
-        $this->position++;
-    }
-
-    public function rewind(): void
-    {
-        $this->position = 0;
-    }
-
-    public function valid(): bool
-    {
-        return $this->position < 1;
-    }
-};
-
-try {
-    await_all($keyThrows);
-} catch (Throwable $e) {
-    echo get_class($e), ": ", $e->getMessage(), "\n";
-}
-
-$aggregateThrows = new class implements IteratorAggregate {
-    public function getIterator(): Iterator
-    {
-        throw new Exception("getIterator");
-    }
-};
-
-try {
-    await_all($aggregateThrows);
-} catch (Throwable $e) {
-    echo get_class($e), ": ", $e->getMessage(), "\n";
-}
 ?>
 --EXPECT--
 array(3) {
@@ -71,5 +21,3 @@ array(3) {
   ["k"]=>
   string(1) "c"
 }
-Exception: key
-Exception: getIterator

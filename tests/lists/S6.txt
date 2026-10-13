@@ -339,7 +339,7 @@ signal/014-signal_pcntl_registered_before.phpt  ref:a3bea558299ef41684615436e867
 signal/015-signal_pcntl_only_under_reactor.phpt  ref:27ceaa7e0eb97844ee096c2aada60149383718c90d5d5d940c8698b8bca9a0fd  skip-on:*-win(Unix-only)
 signal/016-two_futures_one_delivery.phpt  own:e84f0253612152712cb7ea8148145487759bec9009c11d396ffb9d7139c83bce  skip-on:*-win(Unix-only)
 signal/017-poll_queue_delivery.phpt  own:3c79682522d12e8ba151106b460296602a198672e999804b8bac5996623345bf  skip-on:*-win(Unix-only)
-signal/018-cancellation_tokens.phpt  own:024b2e121045761ecc4519fc0ab4d7d776878cbc3ad7c03acb6c4ac37edac332  skip-on:*-win(Unix-only)
+signal/018-cancellation_tokens.phpt  own:024b2e121045761ecc4519fc0ab4d7d776878cbc3ad7c03acb6c4ac37edac332  skip-on:*-win(Unix-only)  changed:2026-10-13:e1fa987308ccc04ac798add90678efd82d047e51a8ac006a914d7b700f9a6f34
 signal/019-refused_signals.phpt  own:d6373a74911fbc22561d2b5a8c41481bbd13714e2f501e5b376ecd72174481e4  skip-on:*-win(Unix-only)
 signal/020-fork_rebuilds_watches.phpt  own:8892fa3fcbd35791b0de051e90017514261e105c5d07418673bf07d1f4d34fd4  skip-on:*-win(Unix-only)  changed:2026-10-13:77309b1d2f78036c8feca73bc419e8c5a7f803b1aba7faea8f7e71ecfa60b958
 signal/021-cgi_under_zts.phpt  own:5e939f53590d385cffe714a1453fbeef58ed18d3cbefd160e828fe928e18a832  skip-on:*-win(Unix-only)

@@ -193,8 +193,8 @@ Waiting for Edmond's call; nothing here is being worked on.
   suspended coroutines need about 40 GB of commit; `collector/064` skips on Windows, and `scope/058`
   suspends fewer to fit there. Fix proposed upstream as php/php-src#24190 (2026-10-08, branch
   `win-fiber-stack-on-demand`): reserve the stack, commit 32 KiB, let the kernel grow it; 2074 to
-  41 KiB per suspended coroutine on Edmond's PC. Once it is in the pinned core: `scope/058` back to
-  20 000 and `collector/064` unskipped on Windows.
+  41 KiB per suspended coroutine on Edmond's PC. Once it is in the pinned core: `collector/064` unskipped on Windows
+  (`scope/058` checks 20 members since S14.21: the count is a mass loop, not its case).
 - `PHP_BUILD_SYSTEM` on a localized Windows (2026-10-08): php-src `win32/build/confutils.js:134`
   writes `os.Caption` into `main\config.w32.h` in the ANSI code page, and `/utf-8 /WX` stops every
   file on C4828. `tools/windows/build-core.bat` strips the non-ASCII bytes (e28ec4c); the fix itself
@@ -2308,8 +2308,9 @@ Tests: interleaved
       tier: T1 · role: Critic
       handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.15).
 - [ ] S14.16 The rest of the 2026-10-13 test audit (project files `s14/audit-2026-10-13/`): `reactor/017` and
-      `scope/156` pass the stall runs; tests that cannot fail and tests with several cases; the five that need a test clock wait for
-      Edmond's answer.
+      `scope/156` pass the stall runs; the five that need a test clock wait for Edmond's answer; the clock the
+      S14.21 splits copied: `reactor/028` (`hrtime()`), the `delay()` that `reactor/057`, `spawnWith/021` and
+      `scope/200` rely on to make a bug visible.
       tier: T1 · role: Critic
 - [x] S14.17 The test servers (`php -n -S`) start with `opcache.enable=0`: on Windows two starting at once could
       crash in opcache's startup (CI run 38366407824, `cleanup/001`). The four curl tests on the core's
@@ -2332,6 +2333,12 @@ Tests: interleaved
       done: passes the stall runs, a 500 ms stall and 20 seeds
       tier: T1 · role: Critic
       handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.20).
+- [x] S14.21 Tests that checked several cases check one each (audit R4), and the mass loops of R3 check a few
+      members.
+      done: the 75 changed and new tests pass, the three stall runs, a 500 ms stall and 20 seeds; `reactor/059`
+        fails on its guard removed by hand
+      tier: T1 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.21).
 
 ## S15 — Test layers of S2 not built yet  [ ]
 

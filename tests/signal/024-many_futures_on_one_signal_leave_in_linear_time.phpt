@@ -1,5 +1,5 @@
 --TEST--
-Async\signal(): a thousand Futures on one signal, dropped in the order they were made, leave its watch each at its slot, with no search
+Async\signal(): three Futures on one signal, dropped in the order they were made, leave its watch each at its slot, with no search
 --DESCRIPTION--
 A search per Future made the drop quadratic in the Futures (DECISIONS 2026-10-07); the count of searches stands for the time.
 --SKIPIF--
@@ -14,7 +14,7 @@ use function Async\signal;
 
 $futures = [];
 
-for ($i = 0; $i < 1000; $i++) {
+for ($i = 0; $i < 3; $i++) {
     $futures[] = signal(Signal::SIGUSR1)->ignore();
 }
 
