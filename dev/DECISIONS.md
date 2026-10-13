@@ -2852,7 +2852,7 @@ stack options were shown with the code).
 - 2026-10-13 S8.6, `stream_set_timeout()` bounds `stream_socket_recvfrom()` and `sendto()` only once it is called;
   `default_socket_timeout` stays off them, in a coroutine too. TrueAsync applies it in a coroutine (60 s), which
   would end a UDP server's receive loop after a quiet minute; the PoC's `stream_socket_recvfrom_blocking_no_timeout.phpt`
-  keeps it off. Why: my default on Edmond's card of 2026-10-13 (one behaviour in and out of a coroutine).
+  keeps it off. Why: Edmond 2026-10-13 06:02 «если так ведёт себя сам пхп... можно и так».
 - 2026-10-13 S8.6, a pipe's read timeout works on Unix only: Windows refuses `stream_set_timeout()` on a pipe as
   before, and `tests/io/039-pipe_read_timeout.phpt`, `tests/io/040-pipe_read_timeout_then_success.phpt`,
   `tests/io/042-pipe_timeout_concurrent_coroutines.phpt`, `tests/io/043-pipe_fread_timeout.phpt` carry

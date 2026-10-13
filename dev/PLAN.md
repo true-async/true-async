@@ -1129,7 +1129,7 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
       handoff: done 2026-10-13. Core `async-core-io-2026-10-13-2` `8568d99bd3e` (`io-hooks-fixes` `cee42c3db37`),
         two commits on `io-hooks-stream-timeouts`, PR text in `notes/s8-6` (project files). `recvfrom()`/`sendto()` take the
         timeout only after an explicit `stream_set_timeout()` (the PoC's test keeps `default_socket_timeout` off
-        them; Edmond's card). A pipe read polls up to the timeout first, on Unix; Windows still refuses it (S8.9).
+        them; Edmond agreed). A pipe read polls up to the timeout first, on Unix; Windows still refuses it (S8.9).
         `stream/030` is the reference file again, without the watchdog and the `changed:` tag.
 - [x] S8.7 A stream given to `CURLOPT_FILE`, `INFILE`, `WRITEHEADER` or `STDERR` and closed by another
       coroutine while `curl_exec()` waits is not used after it is freed (TrueAsync's curl history, item E1

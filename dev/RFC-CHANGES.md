@@ -85,7 +85,7 @@ ignores the timeout there.
 
 Done only after an explicit `stream_set_timeout()` (`php_netstream_data_t.timeout_set`): the PoC's own
 `stream_socket_recvfrom_blocking_no_timeout.phpt` keeps `default_socket_timeout` off these calls, while
-TrueAsync applies it inside a coroutine (its `sock_async_poll()`); Edmond's card of 2026-10-13. A failed
+TrueAsync applies it inside a coroutine (its `sock_async_poll()`); Edmond agreed 2026-10-13. A failed
 receive no longer reads the unset peer address (its Critic: `sl` stays `sizeof(sa)` and the garbage family
 was formatted, a string leaked).
 
