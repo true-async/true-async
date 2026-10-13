@@ -104,7 +104,7 @@ $server_coroutine = spawn(function() {
     $read = [$server];
     $write = $except = null;
     
-    $result = stream_select($read, $write, $except, 3);
+    $result = stream_select($read, $write, $except, null);
     if ($result === 0) {
         echo "Server: timeout waiting for connection\n";
         cleanup_client_process($client_process, $pipes);
@@ -202,10 +202,10 @@ Server: monitoring client socket with stream_select
 Server: first stream_select result: 1
 Server: received data: 'Hello from external process'
 Server: continuing to monitor for disconnection
-Server: second stream_select result: %d
-Server: ready streams after disconnect: %d
+Server: second stream_select result: 1
+Server: ready streams after disconnect: 1
 Server: detected disconnection %s
-Server: stream EOF: %s
+Server: stream EOF: yes
 Client output:
 Client process: connecting to port %d
 Client process: connected, sending data

@@ -8,7 +8,8 @@ memory_limit=8M
 use Async\Channel;
 use Async\Scope;
 use function Async\spawn;
-use function Async\delay;
+use function Async\suspend;
+use function Async\await;
 
 $scope = new Scope();
 $ch = new Channel(2, 0, 0);
@@ -25,7 +26,7 @@ $scope->spawn(function () use ($ch) {
 // Producer that triggers an OOM bailout while the channel is alive
 // and has a blocked receiver. Engine must unwind without UAF.
 spawn(function () use ($ch) {
-    delay(20);
+    suspend();
     $big = '';
     try {
         while (true) {
@@ -36,13 +37,10 @@ spawn(function () use ($ch) {
     }
 });
 
-try {
-    spawn(function () { delay(200); })->await();
-} catch (\Throwable $e) {
-    // ignore
-}
+// Main waits parked, as the receiver does, until the bailout ends the request.
+await(new Async\Future(new Async\FutureState()));
 
 echo "reached_end\n";
 ?>
 --EXPECTF--
-%A
+Fatal error: Allowed memory size of 8388608 bytes exhausted%s(tried to allocate %d bytes) in %s on line %d

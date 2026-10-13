@@ -40,9 +40,10 @@ $result = await($coroutine);
 echo "Result: $result\n";
 
 ?>
---EXPECTF--
+--EXPECT--
 Testing stream_select write-ready streams
-Write-ready streams: %d
-Write array count: %d
-%a
+Write-ready streams: 2
+Write array count: 2
+Stream 0 is write-ready
+Stream 1 is write-ready
 Result: write ready test completed

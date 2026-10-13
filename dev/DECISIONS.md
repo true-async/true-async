@@ -3078,3 +3078,25 @@ stack options were shown with the code).
   due yet when main parks; with every tick stalled before its poll it is always due and wakes main in place. The
   others are taken to stall the same way, not checked one by one. `collector/031` prints a wrong order only after
   1000 stalled ticks in a row, as its loop is bounded. Project file `s14/audit-2026-10-13/README.md`.
+- 2026-10-13 S14.19: 26 TrueAsync tests that could not fail (audit R5, project files `s14/audit-2026-10-13/`)
+  now check the effect their title names; each fails on its regression put back by hand in `src/` where that
+  is one line (dispose, disposeSafely, disposeAfterTimeout, the handler setters, the GC handlers of scope and
+  pool, graceful_shutdown, the TaskGroup limit, cancel and queue limit, the pool strategy setter, the channel's
+  owner-scope close), and passes the stall runs and 20 seeds. Changed by design: `scope/025` makes its member
+  fail after the waiter parks (the old `catch (\AsyncCancellation)` named no class and never ran);
+  `channel/064` parks main on a Future that never completes (its `->await()` on a Coroutine threw and was
+  swallowed) and expects only the memory fatal; `scope/020` loses only its always-true line. Left: `io/018`,
+  `io/045` (a child's EOF on stdout does not close its stdin, so the write's result is racy); `task_group/017`
+  (its own `getErrors()` marks the errors handled, `task_group/154` covers it); the XFAIL `stream/001`, `002`,
+  `017`, `018` and the crash-only tests, for Edmond.
+- 2026-10-13 S14.19, the files: `channel/056-channel_dies_before_scope.phpt`, `channel/064-channel_bailout_oom.phpt`,
+  `channel/065-channel_deadlock_cancels_coroutines.phpt`, `edge_cases/014-graceful_shutdown_explicit.phpt`,
+  `io/070-fread_large_file.phpt`, `pool/044-pool_circuit_breaker_strategy.phpt`, `pool/053-pool_gc_factory_cycle.phpt`,
+  `scope/009-scope_dispose_basic.phpt`, `scope/010-scope_exception_handlers.phpt`,
+  `scope/012-scope_dispose_after_timeout.phpt`, `scope/019-scope_gc_basic.phpt`, `scope/020-scope_gc_with_finally.phpt`,
+  `scope/025-scope_awaitAfterCancellation_error_handler.phpt`, `scope/043-scope_setExceptionHandler_replace.phpt`,
+  `spawn/014-spawn-1000.phpt`, `spawn/015-spawn-1000-with-delay.phpt`, `stream/019-stream_select_closed_streams.phpt`,
+  `stream/022-stream_select_write_ready.phpt`, `stream/023-stream_select_large_sets.phpt`,
+  `stream/024-stream_select_remote_disconnect.phpt`, `task_group/002-task_group_construct_concurrency.phpt`,
+  `task_group/019-task_group_cancel.phpt`, `task_group/020-task_group_dispose.phpt`,
+  `task_group/041-task_group_queue_limit.phpt`, `task_set/018-task_set_cancel.phpt`, `task_set/019-task_set_dispose.phpt`.

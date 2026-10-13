@@ -16,9 +16,10 @@ $holder = new stdClass();
 $holder->pool = new Pool(factory: function () use ($holder) {
     return $holder->id ?? 1;
 });
+$w = WeakReference::create($holder);
 unset($holder);
 gc_collect_cycles();
-echo "factory cycle collected\n";
+echo $w->get() === null ? "factory cycle collected\n" : "factory cycle LEAKED\n";
 
 // 2. Cycle through beforeRelease as well (same get_gc path).
 $holder2 = new stdClass();
@@ -26,9 +27,10 @@ $holder2->pool = new Pool(
     factory: function () { return 1; },
     beforeRelease: function ($r) use ($holder2) { return true; },
 );
+$w2 = WeakReference::create($holder2);
 unset($holder2);
 gc_collect_cycles();
-echo "beforeRelease cycle collected\n";
+echo $w2->get() === null ? "beforeRelease cycle collected\n" : "beforeRelease cycle LEAKED\n";
 
 echo "done\n";
 ?>

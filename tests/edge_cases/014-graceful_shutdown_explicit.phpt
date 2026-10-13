@@ -13,8 +13,12 @@ use function Async\graceful_shutdown;
 echo "start\n";
 
 spawn(function () {
-    while (true) {
-        suspend();
+    try {
+        while (true) {
+            suspend();
+        }
+    } finally {
+        echo "looping coroutine cancelled\n";
     }
 });
 
@@ -32,7 +36,8 @@ suspend();
 echo "end\n";
 
 ?>
---EXPECTF--
+--EXPECT--
 start
 calling graceful_shutdown
-%A
+after shutdown (should still print)
+looping coroutine cancelled

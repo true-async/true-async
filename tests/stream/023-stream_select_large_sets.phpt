@@ -82,7 +82,7 @@ Testing stream_select with large stream sets
 Creating 10 socket pairs
 Created 10 socket pairs
 Select with 10 streams
-Result: %d in %sms
-Ready streams: %d
-Streams with data: %d
+Result: 2 in %sms
+Ready streams: 2
+Streams with data: 2
 Result: large sets test completed

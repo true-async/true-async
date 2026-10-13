@@ -26,11 +26,12 @@ $coroutine = spawn(function() use ($tmpfile, $expected) {
         $got .= fread($fp, 4096);
     }
 
+    $pos = ftell($fp);
     fclose($fp);
 
     echo "length match: " . (strlen($got) === strlen($expected) ? 'yes' : 'no') . "\n";
     echo "content match: " . ($got === $expected ? 'yes' : 'no') . "\n";
-    echo "ftell after full read: " . strlen($expected) . "\n";
+    echo "ftell after full read: " . $pos . "\n";
 });
 
 await($coroutine);

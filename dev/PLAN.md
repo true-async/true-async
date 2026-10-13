@@ -2328,6 +2328,11 @@ Tests: interleaved
         rest never end under such a stall
       tier: T1 · role: Critic
       handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.18).
+- [x] S14.19 26 TrueAsync tests that could not fail check the effect their title names.
+      done: each passes, fails on its regression put back by hand where that is one line, and passes the stall runs
+        and 20 seeds
+      tier: T1 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.19).
 
 ## S15 — Test layers of S2 not built yet  [ ]
 

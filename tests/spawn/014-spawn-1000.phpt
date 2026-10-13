@@ -19,7 +19,16 @@ for ($i = 1; $i <= 1000; $i++) {
 }
 
 echo "end\n";
+
+[$results, $errors] = await_all($coroutines);
+
+echo count($results), " results, ", count($errors), " errors\n";
+echo $results[0], "\n";
+echo $results[999], "\n";
 ?>
 --EXPECT--
 start
 end
+1000 results, 0 errors
+coroutine 1
+coroutine 1000

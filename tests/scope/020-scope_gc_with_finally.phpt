@@ -31,11 +31,7 @@ var_dump($result);
 // Dispose scope to trigger finally handlers
 $scope->dispose();
 
-// Verify GC was called
-var_dump($collected >= 0);
-
 ?>
 --EXPECT--
 string(18) "scope_finally_test"
-bool(true)
 Scope finally executed

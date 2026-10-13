@@ -40,13 +40,23 @@ $pool = new Pool(
 $pool->setCircuitBreakerStrategy($strategy);
 echo "Strategy set\n";
 
+$pool->release($pool->acquire());
+echo "Success count: {$strategy->successCount}\n";
+
 // Remove strategy
 $pool->setCircuitBreakerStrategy(null);
 echo "Strategy removed\n";
+
+// A removed strategy must not be called any more.
+$pool->release($pool->acquire());
+echo "Success count: {$strategy->successCount}\n";
 
 echo "Done\n";
 ?>
 --EXPECT--
 Strategy set
+Strategy: success reported
+Success count: 1
 Strategy removed
+Success count: 1
 Done

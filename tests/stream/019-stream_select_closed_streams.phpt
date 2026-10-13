@@ -25,7 +25,7 @@ $coroutine = spawn(function() {
     $write = $except = null;
     
     try {
-        $result = stream_select($read, $write, $except, 0);
+        $result = stream_select($read, $write, $except, null);
         echo "Result: $result\n";
         echo "Read array count: " . count($read) . "\n";
     } catch (Exception $e) {
@@ -41,8 +41,8 @@ $result = await($coroutine);
 echo "Result: $result\n";
 
 ?>
---EXPECTF--
+--EXPECT--
 Testing stream_select with closed streams
-Result: %d
-Read array count: %d
+Result: 1
+Read array count: 1
 Result: closed streams test completed

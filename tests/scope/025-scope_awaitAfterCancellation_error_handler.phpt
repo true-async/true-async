@@ -13,16 +13,18 @@ echo "start\n";
 // Test awaitAfterCancellation with error handler
 $scope = Scope::inherit();
 
-$error_coroutine = $scope->spawn(function() {
-    echo "error coroutine started\n";
+$waiting = false;
 
-    try {
-        suspend(); // Suspend to simulate work
-    } catch (\AsyncCancellation $e) {
-        echo "coroutine cancelled\n";
+// The scope is safe: cancel() leaves its members running, and this one fails while the waiter is parked.
+$error_coroutine = $scope->spawn(function() use (&$waiting) {
+    echo "error coroutine started\n";
+    suspend(); // Suspend to simulate work
+
+    while (!$waiting) {
         suspend();
-        throw new \RuntimeException("Coroutine error after cancellation");
     }
+
+    throw new \RuntimeException("Coroutine error after cancellation");
 });
 
 $normal_coroutine = $scope->spawn(function() {
@@ -36,7 +38,7 @@ $normal_coroutine = $scope->spawn(function() {
 echo "spawned coroutines\n";
 
 // Await after cancellation with error handler
-$external = spawn(function() use ($scope) {
+$external = spawn(function() use ($scope, &$waiting) {
     echo "external waiting with error handler\n";
     
     // Cancel the scope
@@ -45,6 +47,7 @@ $external = spawn(function() use ($scope) {
     suspend(); // Let cancellation propagate
 
     echo "awaitAfterCancellation with handler started\n";
+    $waiting = true;
 
     $scope->awaitAfterCancellation(
         function($error) {
@@ -72,6 +75,7 @@ external waiting with error handler
 scope cancel
 awaitAfterCancellation with handler started
 normal coroutine finished
+error handler called: Coroutine error after cancellation
 awaitAfterCancellation with handler completed
 scope finished: true
 end

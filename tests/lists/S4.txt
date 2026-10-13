@@ -4,7 +4,7 @@
 coroutine/039-await_after_finished_with_exception.phpt  ref:4a97644778020a409ef4776854679ce323a1f7848220e37eff93e2578f87be27
 
 # spawn
-spawn/015-spawn-1000-with-delay.phpt  ref:14913cd38ead88bdbac56b500b9f82b1af79a28c948d7498af16e70fe2083fb0
+spawn/015-spawn-1000-with-delay.phpt  ref:14913cd38ead88bdbac56b500b9f82b1af79a28c948d7498af16e70fe2083fb0  changed:2026-10-13:a6c23999d6c7994e9986720b14ade6d8bfc12fdfb71bca6fc57a244b142d6258
 
 # gc
 gc/015-gc_threshold_stable_in_async.phpt  ref:cab272f12da2b6c8fc1dc8acdd4f782cc5982119805d203ef73dad398f59fe60

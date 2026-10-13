@@ -4,6 +4,7 @@ Scope: setExceptionHandler() and setChildScopeExceptionHandler() replace existin
 <?php
 
 use Async\Scope;
+use function Async\suspend;
 
 // Covers scope.c: L486-495 (free old exception handler when replacing),
 //                L515-525 (free old child exception handler when replacing).
@@ -19,6 +20,18 @@ $scope->setChildScopeExceptionHandler(function () { echo "child second\n"; });
 
 echo "ok\n";
 
+// Only the last handler of each kind may run.
+$own = $scope->spawn(function () { throw new RuntimeException("own"); });
+
+$child = Scope::inherit($scope);
+$member = $child->spawn(function () { throw new RuntimeException("child"); });
+
+while (!$own->isCompleted() || !$member->isCompleted()) {
+    suspend();
+}
+
 ?>
 --EXPECT--
 ok
+third
+child second
