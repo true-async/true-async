@@ -696,6 +696,27 @@ finding left open gets an owner step in `PLAN.md`.
   `fs_record_name()` leaks the converted name (libc memory, one name per fatal error); the kernel's notification
   records are trusted within the op's result, which the core checks against the buffer's length (RFC-CHANGES 39).
 
+- 2026-10-13 Security pass of the runtime information layer (S9.51) over `ae6fec8` and `8ab444f`
+  (`src/runtime_info.c`), by the checklist and the items of `dev/plans/S9-runtime-info.md` section 5. Reads: a short
+  read, EINTR, an empty file, a file without a newline, NUL bytes, mountinfo lines of fewer than 10 or more than 16
+  fields, an octal escape at a field's end, numbers past `uint64_t`, a period or quota of 0: no quota or the right
+  one, by fixture scripts; every `snprintf()` truncation is checked; `ceil()` is taken only below the affinity count,
+  so the `uint32_t` cast holds. Fixed with a test (`runtime_info/048`): `cpu.max` or `cpu.cfs_*` filling the 64-byte
+  buffer was parsed cut, a longer number read as another. Fixed, no test: the host's tick counts went through a
+  double, and past 2^64 ns (1024 CPUs, about 208 days) the cast to `uint64_t` is undefined; integer arithmetic now
+  wraps (a test would need such a host). Left as TrueAsync does (`cpu_info.c:207-246`), documented on the
+  `CpuSnapshot` page: `systemIdleNs` and `systemBusyNs` turn negative past `PHP_INT_MAX` (292 CPU-years, a 448-CPU host
+  after about 238 days), and on a 32-bit build every `*Ns` property wraps after seconds; `cpu_usage()` works in
+  unsigned 64 bits. Accepted: the reads ignore `open_basedir`, so a script confined away from `/proc` still gets the
+  host's busy and idle time and its CPU quota as numbers; no contents, paths or cgroup names, the same kind as
+  `sys_getloadavg()` gives unchecked, and `disable_functions` covers them. Cost: `available_parallelism()` 37 us,
+  `cpu_usage()` 75 us, a mountinfo near 1 MiB 5.1 ms (up to nine reads), bounded by the file size limit. Bailout: the
+  buffer is allocated before `open()`, so no descriptor leaks. `runtime_stats()` gives only this request's scheduler
+  counters and `fiber.stack_size`. Lifetimes and refcounts: no object outlives a call, nothing suspends; per-request
+  state is reset at RINIT. INI entries: none. Test-only code: `TrueAsync\Test\cpu_limits()` is absent from a build
+  without `TRUE_ASYNC_TEST_HOOKS` (built and checked), and its root string is freed at RSHUTDOWN and on a second call.
+  CI: no change.
+
 ## Open findings
 
 - 2026-10-12 (S9.33, narrowed by S9.38) A C function that releases something after it has taken a value can lose

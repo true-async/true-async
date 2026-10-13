@@ -1220,7 +1220,7 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
         `io-hooks-connect-ready-unconnected` `905e4ababe3` (bukka's head: 635 PASS, 0 FAIL); core debug suites 807
         PASS, 0 FAIL; `pocs-dbg` 1994 PASS, 1 FAIL (`reactor/009` under the full lane's load, passes 5 of 5 alone).
 
-## S9 — Higher layers, one at a time  [in progress]
+## S9 — Higher layers, one at a time  [x]
 
 Scope, context, channels, task groups, pools, iterators, FileSystemWatcher, runtime information:
 each its own plan, agreed with Edmond. FileSystemWatcher came from S10 (`dev/plans/S10.md` section 9, Edmond
@@ -1919,9 +1919,12 @@ Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, 
         cgroup mount, no quota outside the namespace root, every processor group on Windows 11), tests
         `runtime_info/026`-`047`; coverage 96.8% of `src/runtime_info.c`, Mull 48 of 153 not killed (each named),
         100 seeds 0 failed. Pages in `true-async-doc`: four functions and `CpuSnapshot`.
-- [ ] S9.51 Layer 8 security pass by `dev/SECURITY.md` (note section 5).
+- [x] S9.51 Layer 8 security pass by `dev/SECURITY.md` (note section 5).
       done: a journal entry per checklist item; findings fixed with a test or recorded
       tier: T2 · role: —
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S9.51): two fixes (a cgroup file filling its buffer, tick
+        counts past 2^64 ns), `runtime_info/048`; host counters past `PHP_INT_MAX`, 32-bit `*Ns` properties and
+        reads that ignore `open_basedir` kept as TrueAsync and recorded. Layer 8 and the S9 layers are done.
 
 ## S10 — Beyond the RFCs  [x]
 

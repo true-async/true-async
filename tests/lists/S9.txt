@@ -1086,3 +1086,4 @@ runtime_info/044-cgroup_file_unreadable_is_no_quota.phpt  own:b876fabf41c6b739d5
 runtime_info/045-cgroup_mountinfo_over_limit_is_no_quota.phpt  own:a36cedc79c0d8c5a32968edc3423247d83df7784efb8229d52e87644a59b2598  skip-on:pocs-win(Unix-only)
 runtime_info/046-cgroup_root_path_too_long_is_no_quota.phpt  own:f12e12e474696fd12a91d9a82bb213da2b74b8fbba62d5233370a3dcd11d0c37  skip-on:pocs-win(Unix-only)
 runtime_info/047-cgroup_v2_mount_of_sibling_is_no_quota.phpt  own:0bf7723f39783667bb6403882bf9ca4574eee1a7ab97dc6869e0b8529206a613  skip-on:pocs-win(Unix-only)
+runtime_info/048-cgroup_cpu_max_filling_buffer_is_no_quota.phpt  own:2287db9ae5c922bc53dcba350c581eef4a5e325bb1d4c6aa53a13e4051baaba2  skip-on:pocs-win(Unix-only)

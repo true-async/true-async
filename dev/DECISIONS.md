@@ -3181,3 +3181,9 @@ stack options were shown with the code).
   musl is the affinity count; `fiber_pool_virtual_bytes` uses the current `fiber.stack_size`, as TrueAsync. Mull:
   48 of 153 not killed: equivalent (boundaries, the kernel's escapes), ASAN-only overflows, seconds of CPU, or host
   counters a test cannot force (idle, nice, steal). Coverage 96.8% (303 of 313 lines); 100 seeds, 0 failed.
+- 2026-10-13 S9.51: layer 8 security pass (`dev/SECURITY.md` journal). A cgroup file of a few numbers that fills
+  its 64-byte buffer is unreadable, not parsed cut (`runtime_info/048`); the host's tick counts become nanoseconds
+  in integers, which wrap past 2^64 where a double cast was undefined. Kept as TrueAsync: host counters past
+  `PHP_INT_MAX` and every `*Ns` property on a 32-bit build wrap, now on the `CpuSnapshot` page. The reads ignore
+  `open_basedir`, as `sys_getloadavg()` does. Why: the first two are defects in our parsing; the rest is the
+  reference's behaviour with numbers no worse than PHP already gives.

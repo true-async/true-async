@@ -286,6 +286,15 @@ static bool runtime_info_parse_number(const char *text, uint64_t *number)
 	return true;
 }
 
+/* Reads a cgroup file of a few numbers whole into `buffer`; false when it cannot be read or fills `buffer`, since
+ * a longer file cut there would parse as another number. */
+static bool runtime_info_read_small(const char *path, char *buffer, size_t capacity)
+{
+	const ssize_t filled = runtime_info_read_into(path, buffer, capacity);
+
+	return filled >= 0 && (size_t) filled < capacity - 1;
+}
+
 /* The quota of the cgroup directory `directory` in CPUs; 0 for none or for a file that cannot be read. */
 static double runtime_info_directory_quota(const char *directory, bool is_v1)
 {
@@ -296,19 +305,18 @@ static double runtime_info_directory_quota(const char *directory, bool is_v1)
 
 	if (is_v1) {
 		if (snprintf(path, sizeof(path), "%s/cpu.cfs_quota_us", directory) >= (int) sizeof(path) ||
-			runtime_info_read_into(path, content, sizeof(content)) < 0 || !runtime_info_parse_number(content, &quota)) {
+			!runtime_info_read_small(path, content, sizeof(content)) || !runtime_info_parse_number(content, &quota)) {
 			/* -1 is no quota; it fails the parse as an unreadable file does. */
 			return 0;
 		}
 
 		if (snprintf(path, sizeof(path), "%s/cpu.cfs_period_us", directory) >= (int) sizeof(path) ||
-			runtime_info_read_into(path, content, sizeof(content)) < 0 ||
-			!runtime_info_parse_number(content, &period)) {
+			!runtime_info_read_small(path, content, sizeof(content)) || !runtime_info_parse_number(content, &period)) {
 			return 0;
 		}
 	} else {
 		if (snprintf(path, sizeof(path), "%s/cpu.max", directory) >= (int) sizeof(path) ||
-			runtime_info_read_into(path, content, sizeof(content)) < 0) {
+			!runtime_info_read_small(path, content, sizeof(content))) {
 			return 0;
 		}
 
@@ -599,6 +607,15 @@ static void runtime_info_process_cpu(async_cpu_snapshot_t *snapshot)
 	}
 }
 
+#ifdef __linux__
+/* Exact in integers, so a host's counters past 2^64 ns wrap as unsigned numbers do and deltas stay right; a double
+ * that large cast to uint64_t is undefined. */
+static uint64_t runtime_info_ticks_to_ns(uint64_t ticks, uint64_t ticks_per_second)
+{
+	return ticks / ticks_per_second * 1000000000 + ticks % ticks_per_second * 1000000000 / ticks_per_second;
+}
+#endif
+
 static void runtime_info_system_cpu(async_cpu_snapshot_t *snapshot)
 {
 #ifdef __linux__
@@ -631,10 +648,9 @@ static void runtime_info_system_cpu(async_cpu_snapshot_t *snapshot)
 		ticks_per_second = 100;
 	}
 
-	const double ns_per_tick = 1e9 / (double) ticks_per_second;
-
-	snapshot->system_idle_ns = (uint64_t) ((double) (idle + iowait) * ns_per_tick);
-	snapshot->system_busy_ns = (uint64_t) ((double) (user + nice + system + irq + softirq + steal) * ns_per_tick);
+	snapshot->system_idle_ns = runtime_info_ticks_to_ns(idle + iowait, (uint64_t) ticks_per_second);
+	snapshot->system_busy_ns =
+			runtime_info_ticks_to_ns(user + nice + system + irq + softirq + steal, (uint64_t) ticks_per_second);
 	snapshot->has_system_data = true;
 #else
 	(void) snapshot;
