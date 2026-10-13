@@ -15,30 +15,40 @@ set_error_handler(function (int $type, string $message) {
     echo "warning\n";
 });
 
-spawn(function () {
+$cancelled = 0;
+spawn(function () use (&$cancelled) {
     for ($round = 1; $round <= 3; $round++) {
         try {
             (new Future(new FutureState()))->await();
         } catch (Async\AsyncCancellation $e) {
             echo "cancelled ", $round, "\n";
+            $cancelled = $round;
         }
     }
 });
 
-// Each delay(1) reaches the idle point once; collector_age() stands for the time that passed.
+// collector_age() stands for the time that passed. A step whose run cancels waits for the coroutine's
+// line: a delay can end before the scheduler goes idle, as a timer due when main parks wakes it in place.
+// A step that expects no run cannot tell, and takes one delay(1).
 delay(1);
 echo "the first idle point starts the clock\n";
 Test\collector_age(1000);
-delay(1);
+while ($cancelled < 1) {
+    delay(1);
+}
 echo "after 1000 ms: the run warns and cancels\n";
 Test\collector_age(1000);
-delay(1);
+while ($cancelled < 2) {
+    delay(1);
+}
 echo "after 1000 ms: the run cancels again, nothing new, and the interval doubles\n";
 Test\collector_age(1000);
 delay(1);
 echo "after 1000 ms: no run\n";
 Test\collector_age(1000);
-delay(1);
+while ($cancelled < 3) {
+    delay(1);
+}
 echo "after 2000 ms: the run cancels again\n";
 ?>
 --EXPECT--

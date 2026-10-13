@@ -7,15 +7,20 @@ A departure from TrueAsync, whose handler parks the finished coroutine (dev/plan
 
 use Async\Scope;
 use function Async\delay;
-use function Async\timeout;
 
 $other = Scope::inherit();
-$other->spawn(fn() => delay(50));
+// Runs until main ends: the handler must find the scope not completed.
+$ended = false;
+$other->spawn(function () {
+    while (!$GLOBALS['ended']) {
+        delay(1);
+    }
+});
 
 $scope = Scope::inherit();
 $scope->setExceptionHandler(function (Scope $scope, Async\Coroutine $coroutine, Throwable $e) use ($other) {
     try {
-        $other->awaitCompletion(timeout(1000));
+        $other->awaitCompletion(new Async\Future(new Async\FutureState()));
         echo "handler: returned\n";
     } catch (Throwable $error) {
         echo "handler: ", get_class($error), ": ", $error->getMessage(), "\n";
@@ -32,6 +37,7 @@ while (!$failing->isCompleted()) {
 }
 
 echo "end\n";
+$ended = true;
 
 ?>
 --EXPECT--

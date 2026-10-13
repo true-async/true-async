@@ -6,8 +6,9 @@ use function Async\spawn;
 use function Async\await;
 use function Async\delay;
 
-$process = proc_open([PHP_BINARY, '-r', 'for ($i = 0; $i < 200; $i++) { printf("%05d\n", $i); usleep(2000); }'],
-    [1 => ['pipe', 'w']], $pipes);
+// The child writes until the pipe is closed: the reader meets no EOF, however long the parent was stopped.
+$child = 'for ($i = 0; @fwrite(STDOUT, sprintf("%05d\n", $i)) !== false; $i++) { usleep(2000); }';
+$process = proc_open([PHP_BINARY, '-r', $child], [1 => ['pipe', 'w']], $pipes);
 
 $received = 0;
 
@@ -31,7 +32,7 @@ $reader = spawn(function () use ($pipes, &$received) {
 });
 
 spawn(function () use ($reader, &$received) {
-    while ($received < 60 && !$reader->isCompleted()) {
+    while ($received < 60) {
         delay(1);
     }
 
@@ -39,7 +40,7 @@ spawn(function () use ($reader, &$received) {
 });
 
 [$data, $cancelled] = await($reader);
-$expected = implode('', array_map(fn ($i) => sprintf("%05d\n", $i), range(0, 199)));
+$expected = implode('', array_map(fn ($i) => sprintf("%05d\n", $i), range(0, intdiv(strlen($data), 6))));
 echo "cancelled: ", var_export($cancelled, true), "\n";
 echo "read before the cancel: ", var_export(strlen($data) >= 60, true), "\n";
 echo "prefix: ", var_export(str_starts_with($expected, $data), true), "\n";

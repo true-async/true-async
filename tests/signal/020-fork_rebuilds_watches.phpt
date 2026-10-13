@@ -13,7 +13,14 @@ use function Async\signal;
 use function Async\spawn;
 
 $parent = signal(Signal::SIGUSR1);
-$sleeper = spawn(fn() => delay(30));
+$forked = false;
+// The sleeper waits again until the fork: a process stopped past its delay would end it before main
+// saw it wait, and main would wait for it forever.
+$sleeper = spawn(function () use (&$forked) {
+    do {
+        delay(30);
+    } while (!$forked);
+});
 
 while ($sleeper->getAwaitingInfo() === []) {
     Async\suspend();
@@ -32,6 +39,7 @@ if ($pid === 0) {
     exit(0);
 }
 
+$forked = true;
 pcntl_waitpid($pid, $status);
 echo "child exited with ", pcntl_wexitstatus($status), "\n";
 

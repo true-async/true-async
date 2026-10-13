@@ -15,7 +15,13 @@ function state(): string
     return "waits {$state['waits']}, timers {$state['timers']}, pending {$state['pending']}";
 }
 
-$fired = spawn(fn() => Test\reactor_wait(10));
+// The fired waiter waits again until main has seen both waits: its timer may fire before main looks.
+$seen = false;
+$fired = spawn(function () use (&$seen) {
+    do {
+        Test\reactor_wait(10);
+    } while (!$seen);
+});
 $cancelled = spawn(function () {
     try {
         Test\reactor_wait(60000);
@@ -24,8 +30,12 @@ $cancelled = spawn(function () {
     }
 });
 
-Async\suspend();
+while (Test\reactor_state()['waits'] < 2) {
+    Async\suspend();
+}
+
 echo "while both wait: ", state(), "\n";
+$seen = true;
 await($fired);
 echo "after the fire: ", state(), "\n";
 $cancelled->cancel();

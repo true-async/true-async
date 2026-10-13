@@ -12,13 +12,13 @@ Async\spawn(function () use ($started) {
     $started->complete(null);
 
     try {
-        Async\delay(1000);
+        Async\delay(100000);
         echo "not reached\n";
     } finally {
         echo "finally\n";
 
         try {
-            Async\delay(10);
+            Async\delay(100000);
             echo "not reached\n";
         } catch (Async\AsyncCancellation $cancellation) {
             echo "wait in finally: ", get_class($cancellation), "\n";
@@ -28,16 +28,18 @@ Async\spawn(function () use ($started) {
 
 (new Async\Future($started))->await();
 Test\fail_io('wait_always');
-Async\delay(10);
+// The first failing wait is the idle one, or main's own poll of its park when 100 ms have passed since the
+// last poll; the Error then carries main's frame, so both locations are expected.
+Async\delay(100000);
 echo "not reached\n";
 ?>
 --EXPECTF--
 finally
 wait in finally: %s
 
-Fatal error: Uncaught Error: The IO queue's wait failed: %s in [no active file]:0
+Fatal error: Uncaught Error: The IO queue's wait failed: %s in %s:%d
 Stack trace:
-#0 {main}
+#0 %A{main}
 
 Next Async\DeadlockError: Deadlock detected: no active coroutines, 1 coroutines in waiting in [no active file]:0
 Stack trace:

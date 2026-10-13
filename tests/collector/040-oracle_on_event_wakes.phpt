@@ -14,7 +14,6 @@ use function Async\spawn;
 use function Async\await;
 use function Async\await_all;
 use function Async\suspend;
-use function Async\delay;
 use function Async\timeout;
 use function Async\get_coroutines;
 use TrueAsync\Test;
@@ -45,18 +44,24 @@ if (($mode = getenv('ORACLE_MODE')) !== false) {
             await($target);
         },
     });
+    // Marked before it parks: its Timeout can fire as soon as it has parked.
+    Test\mark_found($waiter);
+
     while ($target->getAwaitingInfo() === [] || $waiter->getAwaitingInfo() === []) {
         suspend();
     }
-
-    Test\mark_found($waiter);
 
     if ($mode === 'handed out') {
         get_coroutines();
     }
 
     $state->complete(1);
-    delay(300);
+
+    // The completion queues the target, which wakes the waiter in the coroutine mode.
+    while (!$waiter->isCompleted()) {
+        suspend();
+    }
+
     echo "no abort\n";
     exit(0);
 }

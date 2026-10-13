@@ -5,14 +5,22 @@ Scope: a zombie left by disposeSafely() keeps the request running after main end
 use Async\Scope;
 use function Async\delay;
 
+$main_ended = false;
 $scope = (new Scope())->allowZombies();
-$scope->spawn(function () {
-    delay(50);
+$zombie = $scope->spawn(function () {
+    while (!$GLOBALS['main_ended']) {
+        delay(1);
+    }
     echo "zombie finished\n";
 });
-Async\suspend();
+
+while (!$zombie->isStarted()) {
+    Async\suspend();
+}
+
 $scope->disposeSafely();
 echo "main end\n";
+$main_ended = true;
 ?>
 --EXPECT--
 main end

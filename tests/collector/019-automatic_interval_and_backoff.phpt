@@ -25,31 +25,42 @@ function start_pair(): void
     });
 }
 
+function wait_for_idle_run(): void
+{
+    $runs = Test\collector_idle_runs();
+
+    while (Test\collector_idle_runs() === $runs) {
+        delay(1);
+    }
+}
+
 set_error_handler(function (int $type, string $message) {
     echo "warning\n";
 });
 
-// Each delay(1) reaches the idle point once; collector_age() stands for the time that passed.
+// collector_age() stands for the time that passed. A step that expects a run waits until it has come: a
+// delay can end before the scheduler goes idle, as a timer due when main parks wakes it in place. A step
+// that expects none cannot tell, and takes one delay(1).
 start_pair();
 delay(1);
 echo "the first idle point starts the clock\n";
 delay(1);
 echo "at once: no run\n";
 Test\collector_age(1000);
-delay(1);
+wait_for_idle_run();
 echo "after 1000 ms: the run warns twice\n";
 Test\collector_age(500);
 delay(1);
 echo "after 500 ms: no run\n";
 Test\collector_age(500);
-delay(1);
+wait_for_idle_run();
 echo "after 1000 ms: the run finds nothing new, and the interval doubles\n";
 start_pair();
 Test\collector_age(1000);
 delay(1);
 echo "after 1000 ms: no run\n";
 Test\collector_age(1000);
-delay(1);
+wait_for_idle_run();
 echo "after 2000 ms: the run warns twice\n";
 
 foreach (get_deadlocked_coroutines() as $coroutine) {

@@ -2994,3 +2994,36 @@ stack options were shown with the code).
   `fs_watcher/041-recursive_does_not_follow_symlinked_directory.phpt` removed a directory symlink with `unlink()`,
   which Windows refuses: `rmdir()` there. Not changed: a kernel refusal at the first wait reaches `foreach`, since ior
   posts a synchronous failure as a completion; a watched file renamed is not followed.
+- 2026-10-13 S14.13: own tests whose output depended on the clock wait for the event instead. Found by a local
+  harness (project file `s14/audit-2026-10-13/stall-harness.diff`, not in the repository) that stops the process
+  120 ms at the top of `async_reactor_poll_due()`, as the OS may at any time: of 466 tests that use a timer, all
+  pass with no stop, 39 fail when the first 3 polls stop and 46 when the first 15 do (31 own, 15 TrueAsync's).
+  After: the 25 below pass with the first 3 and 15 polls stopped, with 500 ms stops, with none, and on 20 seeds.
+  Left for later steps: `await/121`, `126`, `reactor/025`, `scope/153` and the order line of `io_provider/002`
+  check a time span itself and need a test clock; `channel/126` fails through a channel bug (a close replaces a
+  cancelled receiver's pending cancellation); the "no run" lines of `collector/019`, `047`, `074` still read the
+  collector's real clock.
+- 2026-10-13 S14.13, loops on a flag set right before the other coroutine parks or after main's line, instead of a
+  timer the coroutine was meant to sleep through: `scope/064-handler_of_scope_without_object.phpt`,
+  `scope/079-awaitCompletion_refused_in_exception_handler.phpt`,
+  `scope/093-awaitCompletion_main_found_woken_by_cancelled_coroutine.phpt`,
+  `scope/094-zombie_keeps_request_running.phpt`, `scope/112-finally_handler_suspends_next_runs.phpt`,
+  `internal/064-coroutine_count_without_zombies.phpt`, `iterate/057-cancel_pending_lets_cancelled_child_finish_cleanup.phpt`,
+  `iterate/058-cancel_pending_cancels_child_spawned_after_walk_cancel.phpt`,
+  `io_provider/014-registration_before_the_queue.phpt`, `io_provider/025-poll_queue_sockets.phpt`,
+  `reactor/002-waits_list_after_fire_and_cancel.phpt`, `reactor/041-fork_child_cancels_parent_delays.phpt`,
+  `collector/009-timer_waiter_and_its_waiter.phpt`.
+- 2026-10-13 S14.13, `signal/020-fork_rebuilds_watches.phpt` and
+  `signal/025-fork_rebuilds_two_watches_poll_queue.phpt` (S14.11) hung: the sleeper's `delay(30)` ended before main
+  saw it parked, and `getAwaitingInfo()` of a completed coroutine stays `[]`; the sleeper now waits until the fork.
+- 2026-10-13 S14.13, a wait meant to end only by a cancel takes `delay(100000)` or a Future nobody completes:
+  `internal/067-iterator_exception_cancels_workers.phpt`, `reactor/053-queue_wait_failing_again_does_not_spin.phpt`
+  (it also accepts main's frame for the failed wait: main's own park polls once 100 ms have passed);
+  `reactor/005-signal_before_park_runs_handler.phpt` parks a spawned waiter the handler's coroutine cancels.
+  `io_provider/032-cancelled_pipe_read_then_close.phpt`'s child writes until the pipe breaks, not 200 lines.
+- 2026-10-13 S14.13, the collector: `collector/019-automatic_interval_and_backoff.phpt`,
+  `collector/047-cancel_backoff.phpt`, `collector/074-cancel_backoff_reset_for_zombie.phpt` wait for the run or the
+  cancel a step expects; `collector/046-cancel_leaves_main_parked.phpt` waits for the idle run;
+  `collector/040-oracle_on_event_wakes.phpt` marks the waiter before it parks and waits for its end instead of
+  `delay(300)`. `reactor/001-idle_wait_wakes_by_deadline.phpt` drops the order of two wakes, which a stop reverses
+  when the waiters arm on both sides of it; an idle wait beside a timer that never fires must end by the other one.

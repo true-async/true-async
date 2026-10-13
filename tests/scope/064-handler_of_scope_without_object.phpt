@@ -17,8 +17,11 @@ function start(): Async\Coroutine
             $e->getMessage(), "\n";
     });
 
+    // The error must come after start() has returned and released the object.
     $coroutine = $scope->spawn(function () {
-        delay(10);
+        while (!$GLOBALS['released']) {
+            delay(1);
+        }
         throw new RuntimeException("orphan");
     });
     while (!$coroutine->isStarted()) {
@@ -28,7 +31,9 @@ function start(): Async\Coroutine
     return $coroutine;
 }
 
+$released = false;
 $coroutine = start();
+$released = true;
 while (!$coroutine->isCompleted()) {
     delay(10);
 }

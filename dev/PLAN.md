@@ -2292,6 +2292,15 @@ Tests: interleaved
       done: a push run has no seeds job; both files parse; the pin step tried on `ci.yml`
       tier: T1 · role: —
       handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.12).
+- [x] S14.13 Own tests whose output depends on the clock wait for the event (Edmond 2026-10-13: check the tests
+      again; a stop of the process at any point must not change a result).
+      done: a local harness stopping the process 120 ms before a park's timer poll; the 25 changed tests pass with
+        the first 3 and 15 polls stopped, with 500 ms stops, with none, and on 20 seeds on `pocs-dbg`
+      tier: T1 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.13). Next: the stall as a test hook (Edmond 08:39 yes), a
+        test clock for `await/121`, `126`, `reactor/025`, `scope/153`, `io_provider/002` (asked), the channel bug of
+        `channel/126`, TrueAsync's 15 tests, 60 tests that hang only when every poll stops, tests that cannot fail
+        (project files `s14/audit-2026-10-13/`).
 
 ## S15 — Test layers of S2 not built yet  [ ]
 

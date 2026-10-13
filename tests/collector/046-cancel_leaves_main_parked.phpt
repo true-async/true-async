@@ -9,9 +9,17 @@ use Async\Future;
 use Async\FutureState;
 use function Async\spawn;
 use function Async\delay;
+use TrueAsync\Test;
 
+// The worker stays until the run has come: a fixed delay could end before the scheduler goes idle, and
+// the request would end with no run.
 spawn(function () {
-    delay(50);
+    $runs = Test\collector_idle_runs();
+
+    while (Test\collector_idle_runs() === $runs) {
+        delay(1);
+    }
+
     echo "worker ends\n";
 });
 

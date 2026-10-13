@@ -5,18 +5,31 @@ pcntl
 --FILE--
 <?php
 use function Async\spawn;
+use function Async\await;
 use TrueAsync\Test;
 
 $main = Async\current_coroutine();
+$waiter = null;
 pcntl_async_signals(true);
-pcntl_signal(SIGUSR1, function () use ($main) {
+pcntl_signal(SIGUSR1, function () use ($main, &$waiter) {
     $current = Async\current_coroutine();
     echo "handler, in a coroutine other than main: ", var_export($current !== null && $current !== $main, true), "\n";
-    spawn(fn() => print("spawned by the handler\n"));
+    spawn(function () use ($waiter) {
+        echo "spawned by the handler\n";
+        $waiter->cancel();
+    });
 });
 
-Test\reactor_wait(100, SIGUSR1);
-echo "woken\n";
+// The handler's coroutine ends the wait, not a deadline: a timer due first would wake the waiter
+// before the handler runs.
+$waiter = spawn(function () {
+    try {
+        Test\reactor_wait(100000, SIGUSR1);
+    } catch (Async\AsyncCancellation) {
+        echo "woken\n";
+    }
+});
+await($waiter);
 ?>
 --EXPECT--
 handler, in a coroutine other than main: true

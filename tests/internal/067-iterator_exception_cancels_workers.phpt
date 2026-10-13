@@ -16,7 +16,7 @@ function run(string $name, Closure $walk): void
             $error->getPrevious() === null ? 'none' : get_class($error->getPrevious()), "\n";
     });
     $scope->spawn($walk);
-    $scope->awaitCompletion(Async\timeout(2000));
+    $scope->awaitCompletion(new Async\Future(new Async\FutureState()));
 }
 
 /* The walk's cancel of the scope reaches every worker, the throwing one too: the error the last worker
@@ -28,7 +28,7 @@ run('three workers', function () {
             throw new Exception('boom');
         }
         try {
-            delay(10);
+            delay(100000);
             echo "end $value\n";
         } catch (Async\AsyncCancellation $e) {
             echo "cancelled $value: ", $e->getMessage(), "\n";

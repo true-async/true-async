@@ -8,16 +8,28 @@ use function Async\delay;
 use function Async\suspend;
 use TrueAsync\Test;
 
+// The zombies end only after main's checks, the second after the first.
+$released = false;
+$first_finished = false;
 $scope = Scope::inherit();
 $first = $scope->spawn(function () {
-    delay(20);
+    while (!$GLOBALS['released']) {
+        delay(1);
+    }
     echo "first finished\n";
+    $GLOBALS['first_finished'] = true;
 });
 $second = $scope->spawn(function () {
-    delay(20);
+    while (!$GLOBALS['first_finished']) {
+        delay(1);
+    }
     echo "second finished\n";
 });
-suspend();
+
+while (!$first->isStarted() || !$second->isStarted()) {
+    suspend();
+}
+
 $queued = $scope->spawn(fn() => print("queued ran\n"));
 
 echo "before cancel: ", Test\coroutine_count(), "\n";
@@ -28,6 +40,7 @@ var_dump($first->isCancellationRequested(), $scope->isCancelled(), $scope->isFin
 suspend();
 echo "queued cancelled: ", var_export($queued->isCancelled(), true), "\n";
 echo "after the queued one: ", Test\coroutine_count(), "\n";
+$released = true;
 
 await($first);
 await($second);

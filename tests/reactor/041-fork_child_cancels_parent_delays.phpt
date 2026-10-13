@@ -8,10 +8,15 @@ use function Async\{spawn, await, delay};
 use TrueAsync\Test;
 
 $sleepers = [];
+$forked = false;
 
+// Each sleeper waits again until the fork: a process stopped past a delay fires it before the heap
+// holds all three.
 foreach ([300, 400, 500] as $ms) {
-    $sleepers[] = spawn(function () use ($ms) {
-        delay($ms);
+    $sleepers[] = spawn(function () use ($ms, &$forked) {
+        do {
+            delay($ms);
+        } while (!$forked);
 
         return $ms;
     });
@@ -41,6 +46,7 @@ if ($pid === 0) {
     return;
 }
 
+$forked = true;
 pcntl_waitpid($pid, $status);
 echo "parent: child exit status ", pcntl_wexitstatus($status), "\n";
 

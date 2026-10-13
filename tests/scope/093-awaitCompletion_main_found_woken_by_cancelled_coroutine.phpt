@@ -12,9 +12,12 @@ use function Async\await;
 use function Async\spawn;
 use function Async\delay;
 
+$done = false;
+
 function run(): void
 {
-    spawn(fn() => delay(50));
+    // Keeps the deadlock partial until main has its answer.
+    spawn(function () { while (!$GLOBALS['done']) delay(1); });
     $s = new Scope();
     spawn(function () use ($s) {
         try {
@@ -31,15 +34,16 @@ function run(): void
     } catch (Throwable $e) {
         echo "main: ", $e->getMessage(), "\n";
     }
+    $GLOBALS['done'] = true;
 }
 run();
 ?>
 --EXPECTF--
 
-Warning: Partial deadlock: coroutine #%d can never wake (await: scope created at %s:12) in %s on line 23
+Warning: Partial deadlock: coroutine #%d can never wake (await: scope created at %s:15) in %s on line 26
 
-Warning: Partial deadlock: coroutine #%d spawned at %s:13 can never wake (await: future) in %s on line 15
+Warning: Partial deadlock: coroutine #%d spawned at %s:16 can never wake (await: future) in %s on line 18
 
-Warning: Partial deadlock: coroutine #%d spawned at %s:21 can never wake (await: future) in %s on line 21
+Warning: Partial deadlock: coroutine #%d spawned at %s:24 can never wake (await: future) in %s on line 24
 w: finally
 main: Scope was cancelled

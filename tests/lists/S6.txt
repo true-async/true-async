@@ -341,7 +341,7 @@ signal/016-two_futures_one_delivery.phpt  own:e84f0253612152712cb7ea814814548775
 signal/017-poll_queue_delivery.phpt  own:3c79682522d12e8ba151106b460296602a198672e999804b8bac5996623345bf  skip-on:*-win(Unix-only)
 signal/018-cancellation_tokens.phpt  own:024b2e121045761ecc4519fc0ab4d7d776878cbc3ad7c03acb6c4ac37edac332  skip-on:*-win(Unix-only)
 signal/019-refused_signals.phpt  own:d6373a74911fbc22561d2b5a8c41481bbd13714e2f501e5b376ecd72174481e4  skip-on:*-win(Unix-only)
-signal/020-fork_rebuilds_watches.phpt  own:8892fa3fcbd35791b0de051e90017514261e105c5d07418673bf07d1f4d34fd4  skip-on:*-win(Unix-only)  changed:2026-10-13:c2f190eec3e3eb0d28550e0ff404ba13ad7196404c07d0f3625b08b00bdba7ec
+signal/020-fork_rebuilds_watches.phpt  own:8892fa3fcbd35791b0de051e90017514261e105c5d07418673bf07d1f4d34fd4  skip-on:*-win(Unix-only)  changed:2026-10-13:77309b1d2f78036c8feca73bc419e8c5a7f803b1aba7faea8f7e71ecfa60b958
 signal/021-cgi_under_zts.phpt  own:5e939f53590d385cffe714a1453fbeef58ed18d3cbefd160e828fe928e18a832  skip-on:*-win(Unix-only)
 signal/022-child_first_call_is_signal.phpt  own:7ece94b53ce805537d015daf8aafcc29bbe8c247afa2854dc6f78a3e7de015d2  skip-on:*-win(Unix-only)
 signal/023-pending_at_last_future_raised_again.phpt  own:97ca1052d45e450410a120a39f77357689e0f55e2c0350ca033d8491df4a39ac  skip-on:*-win(Unix-only)
@@ -360,7 +360,7 @@ io_provider/010-cancelled_pipe_read_reads_again.phpt  own:293421b6b2f09026d17c72
 io_provider/011-io_after_bailout_in_shutdown_function.phpt  own:31f01d304c7da9462d9829243291e40297072cdd8b5bb796564b58f4ae251471  skip-on:*-win(Unix-only)
 io_provider/012-cancel_parked_stream_select.phpt  own:aae6a829a811826f25a6548b3d76fca0538d694a96e09c4d9ad7ad1f9fd2e7a0  changed:2026-10-12:a63343bbb1a26ea762cacf99e2cdd8302f3868306fee9c43b1a4443571208c1d
 io_provider/013-cancel_parked_socket_select.phpt  own:7a1488fced6b64b2e7eddd69ff11a5a4616e9542e7f75e37e11772f72e70d365 changed:2026-10-12:643d1707f68f64ecbb9f6e5c69221c5a9f1f0c4f468a7e24ce6e3e7ec4179574
-io_provider/014-registration_before_the_queue.phpt  own:7b851a3989d35a366036d602d8702a269d18b54f389a89f652cd5464710c7313  skip-on:*-win(no-registrations-on-IOCP)  changed:2026-10-07:799ae4eae772d8fa605d1a04ee20d95267578e449a4606b19781e44e679a4f26
+io_provider/014-registration_before_the_queue.phpt  own:7b851a3989d35a366036d602d8702a269d18b54f389a89f652cd5464710c7313  skip-on:*-win(no-registrations-on-IOCP)  changed:2026-10-07:799ae4eae772d8fa605d1a04ee20d95267578e449a4606b19781e44e679a4f26  changed:2026-10-13:077ab3b39e7d5c6e8612a587e12c8b3b7453f1e0e7ddc34ee1aa13d92a9fd2de
 io_provider/015-select_sees_pending_connections.phpt  own:5f74c81f2c02d13ffc6e78406c00158d9a09986d104b84419b13401c351b02df  changed:2026-10-12:39690a2fa1632c0c702a02a25a2d6096c11026357cd3fc41b7425e393bee7704
 
 # S6.7: the seven tests that include a php-src test helper, from the core checkout the runner names
@@ -386,19 +386,19 @@ io_provider/021-nanosleep_forever_cancelled.phpt  own:78f58a5dbea123d3a3b95b83a8
 io_provider/022-fiber_installs_the_provider.phpt  own:6d960d8946f17de8ce78ccdd0351222c956bd4a05d5e2963fe779b4665ef9315
 io_provider/023-cancelled_socket_read_reads_again.phpt  own:08754be3a4fea07b9f391db16ed23ec4df0cb38afd0da2cc2f47a22230dd2a6b  skip-on:*-win(Unix-only)
 io_provider/024-stream_select_with_except_set.phpt  own:64562947358bf55facfaad5953849f19e3240835987a17459261528738e517ce  core:13  skip-on:*-win(Unix-only)
-io_provider/025-poll_queue_sockets.phpt  own:a1fa0a915175ddfb4dd7222072cb55434849fb0801b6bd3360fb585b8fc904d6  skip-on:*-win(Unix-only)
+io_provider/025-poll_queue_sockets.phpt  own:a1fa0a915175ddfb4dd7222072cb55434849fb0801b6bd3360fb585b8fc904d6  skip-on:*-win(Unix-only)  changed:2026-10-13:f17ae9eeb641a4be25d1639138ac9e6da16599761b447665af86500a4a07de4b
 io_provider/026-feof_zero_timeout_poll_does_not_park.phpt  own:c1e32b26d23e6df19a3275115035b38fcbf991c73d7fa760e3993580dc556382  changed:2026-10-08:cc5bcfc7d4f96bfac2c7928952808703ad71a484a674a4ba0acdca4ac1b39592
 io_provider/027-feof_tcp_does_not_park.phpt  own:3fa9675ef23789c84254f5de91120eb6a081825045193a1d65afc1f979d6245e
 io_provider/028-pipe_passed_on_after_select.phpt  own:db61c8d9eb82fdf7dbed9c5070defe0d8b606010aec47969e86a25d137e8d4f7
 io_provider/029-select_pipe_and_socket.phpt  own:acda2d382956748c599ce89e97a30972887facc9a07fd2c4140cedbbd0fb21ff
 io_provider/030-select_pipe_write_end.phpt  own:a79486d6b0c8a101a97e4f29402afa130bfc73f025bfe8f476a4668c8a5c7db6  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)
 io_provider/031-twenty_children_read_at_once.phpt  own:e90b018af123cfd7ddf8e3b4cce41240b0aad0cf70e026150143cb1a3ffb438c
-io_provider/032-cancelled_pipe_read_then_close.phpt  own:8f462a3ae743d74de2d6b5d5dd619795d6af364940a7af052d81aa6630b86117  changed:2026-10-09:92585349790b9200076b0cd9ce48a6ec4fec4bc50a083133a2e251a9f86c48c0
+io_provider/032-cancelled_pipe_read_then_close.phpt  own:8f462a3ae743d74de2d6b5d5dd619795d6af364940a7af052d81aa6630b86117  changed:2026-10-09:92585349790b9200076b0cd9ce48a6ec4fec4bc50a083133a2e251a9f86c48c0  changed:2026-10-13:0146fcce2f0c28e152e5146de0e7f1c8c92d0fc3c073882fb41a521a137eb844
 io_provider/033-copy_file_into_pipe.phpt  own:3a9abc7179836aebdf19b4fa64632feb9f6a628662f58ccc09662c751f259a23
 io_provider/034-select_pipe_outside_coroutine.phpt  own:c682d08fb2677a818e9c1dbe0b1189a6149cf3b0ab2e9494fad9ab01517275c3
 io_provider/035-hand_out_of_a_parked_pipe.phpt  own:2a0ccbcdc49bfdf656f7242ee5e312474d3a15807d20a3e86ec71ec27ce59c90  skip-on:*-dbg(Windows-only)  skip-on:*-asan(Windows-only)  skip-on:*-cov(Windows-only)
 signal/024-watch_in_static_outlives_shutdown.phpt  own:e2f00202a4a2e224653698dacffb9153d8fbfb9fbbf6a29b27cf70e171c13839  changed:2026-10-09:f34552fdabb30e749eb36067bd3a9c707d056fc8e669a4482151429310c90e2f
-signal/025-fork_rebuilds_two_watches_poll_queue.phpt  own:682436e47cc7a3f41e21bc9635745ba7c06f889ed17ebe344489b8d76df11780  skip-on:*-win(Unix-only)  changed:2026-10-13:f8b0d0e7108d09f12e1e6653e65bfc8e39155d59a6909b6063b1c5f276f91b1e
+signal/025-fork_rebuilds_two_watches_poll_queue.phpt  own:682436e47cc7a3f41e21bc9635745ba7c06f889ed17ebe344489b8d76df11780  skip-on:*-win(Unix-only)  changed:2026-10-13:3a377ff193df21d128c6769fa4c5be6daa53057706a3497ba48a1de4e66cac83
 signal/026-watch_closes_its_source.phpt  own:7f631142c949dc52fbd833c1233a70f14e49076cea8ece1283298596995708a4  skip-on:*-win(Unix-only)
 signal/027-exit_leaves_held_future.phpt  own:97a31e9a58b8b6c3c0d71fdffeb745f1124935b01ed53e384b90a5f1d3b4db95  changed:2026-10-09:2cdc9e830ebf2d6c7a69a86651d047da3f31bffc42da5dd565aadf3b5bda4a1d
 signal/028-uncaught_exception_leaves_held_future.phpt  own:08ec2d88e91dcfaf994cad257cdbf3f89e881f66c45aa6f14c1e870a428a3cb2  changed:2026-10-09:c9e41b5851d0d653f8314881cf82ed06a031f646b51996d7afcdcd52c0657bc6
