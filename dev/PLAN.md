@@ -1173,7 +1173,6 @@ Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, dev/plans/S9-taskgroup.md,
   dev/plans/S9-pool.md
-Active: S9.37, layer 5's security pass
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -1680,9 +1679,16 @@ Active: S9.37, layer 5's security pass
         over the 144 pool tests, 0 failed. B21 1.067 and B22 1.566 of the reference's instructions
         (`dev/BENCHMARKS.md`). Docs: `true-async-doc` `ru/concepts/pool.md`. On CORE_REF `46369b6a6a5`: debug 1918
         PASS, ASAN 1892 PASS, 0 unexpected; the pool's 144 tests on both after the last change.
-- [ ] S9.37 Layer 5 security pass by `dev/SECURITY.md`.
+- [x] S9.37 Layer 5 security pass by `dev/SECURITY.md`.
       done: a journal entry per item of the note's section 7; findings fixed with a test or recorded
       tier: T2 · role: —
+      handoff: done 2026-10-13 (`SECURITY.md` journal, DECISIONS 2026-10-13 S9.37): scripts by checklist item and the
+        note's six points on the debug and ASAN builds, a second reader with 300 seeds of a random hook driver (140
+        on ASAN). Fixed: the constructor's pre-warm, whose factory reaches the pool through `debug_backtrace()`, went
+        past `max` when the factory acquired (an assertion of the idle buffer, `pool/144`), kept filling a pool
+        the factory closed (`145`) and woke no waiter parked meanwhile (`146`, the Critic); it works as the
+        healthcheck's refill does. Kept: `close()` destroys the other idle resources after an `exit()` in the
+        destructor callable. On CORE_REF `46369b6a6a5`: debug 1921 PASS, ASAN 1895 PASS, 0 unexpected.
 - [x] S9.33 The C walks of `scope.c`, `channel.c`, `future.c`, `await.c` and `context.c` checked against a GC
       run that a release inside them starts, and against the caller's cancellation during its wait
       (`SECURITY.md`, Open findings, S9.31).

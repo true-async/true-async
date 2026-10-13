@@ -586,6 +586,43 @@ finding left open gets an owner step in `PLAN.md`.
   a receiver resumed by its cancel cannot get that far, so the hold released last has no reproducer now. What is
   left is the open finding below, narrowed.
 
+- 2026-10-13 Security pass of the pool layer (S9.37) over `f83c93d`, `bc889c5`, `dafdcdc` (`src/pool.c`, `pool.h`), by
+  checklist item and the six points of `dev/plans/S9-pool.md` section 7. Scripts ran on the debug and ASAN builds;
+  a second reader went over the code with scripts of its own and 300 seeds of a random hook driver (140 on ASAN).
+
+  Lifetimes, three defects with tests, all in the constructor's pre-warm, whose factory reaches the pool through
+  `debug_backtrace()`. A factory that acquired from the pool took a place the pre-warm still filled: count() read
+  3 with `max` 2, and the release that followed failed the idle buffer's assertion; a build without assertions
+  overwrites the buffer's oldest slot, which leaks, and counts past its size, so two pops return one zval and
+  release it twice (by reading) (`pool/144`). A factory that closed the pool left the next resources idle in the
+  closed pool, freed without the destructor callable (`145`). A waiter that parked while the factory suspended
+  was not woken for the resource the pre-warm then made idle, and deadlocked (`146`; the Critic). The pre-warm
+  now stops as the healthcheck's refill does, at `min` resources, at no free place, or at a close, which destroys
+  the resource just made; it wakes a waiter for each resource made, and calls the factory at most `min` times.
+
+  Section 7. `$min` and `$max`: clamped to `UINT32_MAX`; `max` up to `PHP_INT_MAX` sizes nothing up front (the
+  buffer doubles), `min` up to it ends in `memory_limit`'s fatal error and a clean free; the interval and the
+  timeout saturate. The destructors run by `close()` and a free: each resource leaves the buffer first; a
+  destructor that throws, exits, suspends, calls `gc_collect_cycles()`, `close()`, `acquire()` or `release()` gets
+  a closed pool; the free releases the buffer before the weak-key table. A hook that closes the pool: covered by
+  `074` and S9.35's tests; a check that closes its own pool stops at its cancellation. A hook or a destructor
+  that drops the last reference: the method's `$this`, the check's reference and `dtor_obj`'s hold keep the pool.
+  A hook that re-enters `acquire()` or `release()`: a `beforeAcquire` that acquires recurses until PHP's stack
+  limit throws its `Error`, which passes; a second release of the resource in `beforeRelease` throws; a hook
+  acquiring from its own full pool ends in the deadlock report. The check and a free: the check holds the pool,
+  and its last release closes it in the check coroutine; a request end and a fatal error with the check
+  suspended are clean. PHP's GC during `close()`'s loops: a pool in a cycle with its resources, a destructor that
+  suspends and collects again, other coroutines reaching the pool through a `WeakReference` meanwhile: clean.
+
+  Refcounts on exception and bailout paths: balanced (the rejection, the strategy's holds, the failure object,
+  the refill's factory error); a bailout with waiters parked, with and without a promise, is clean. Engine state:
+  `EG(exception)` is cleared before user code and settled after, as S9.36's rule says. Sizes: a check every 1 ms
+  adds no memory; the check's errors are kept until the request ends (Edmond's answer C, S9.35). INI entries:
+  none new. Test-only code: the collector's wake check sits under `TRUE_ASYNC_TEST_HOOKS`. CI: no change.
+  Answered, no change: after `exit()` in a destructor callable `close()` still destroys the other idle
+  resources (DECISIONS 2026-10-13 S9.37); PHP's GC runs the resources' `__destruct` before the pool's destructor
+  callable gets them, PHP's order for a cycle.
+
 ## Open findings
 
 - 2026-10-12 (S9.33, narrowed by S9.38) A C function that releases something after it has taken a value can lose

@@ -1182,25 +1182,38 @@ ZEND_METHOD(Async_Pool, __construct)
 	pool->healthcheck_interval_ms = healthcheck_interval;
 	pool->is_constructed = true;
 
-	/* The factory may suspend: the resource being made counts as active, as in acquire(). */
+	/* The factory may suspend: the resource being made counts as active, as in acquire(). It reaches the pool
+	 * through debug_backtrace(), so it may acquire from it or close it: the loop stops as the healthcheck's refill
+	 * does, and calls the factory at most `min` times, as TrueAsync does. */
 	for (uint32_t i = 0; i < pool->min; i++) {
+		if (UNEXPECTED(pool->is_closed || pool->idle.count + pool->active >= pool->min ||
+					   pool_unreserved_places(pool) == 0)) {
+			break;
+		}
+
 		zval resource;
 
 		pool->active++;
 
-		const bool is_created = pool_create_resource(pool, &resource);
-
-		pool->active--;
-
-		if (UNEXPECTED(!is_created)) {
-			/* TrueAsync stops at the first exception (pool.c:854-864) and leaves the resources made to the
+		if (UNEXPECTED(!pool_create_resource(pool, &resource))) {
+			pool->active--;
+			/* TrueAsync stops at the first exception (pool.c:855-864) and leaves the resources made to the
 			 * free; here they are destroyed now, with the factory's exception kept. */
 			pool_close(pool);
 			break;
 		}
 
+		if (UNEXPECTED(pool->is_closed)) {
+			pool_destroy_resource(pool, &resource);
+			pool->active--;
+			break;
+		}
+
 		zval_circular_buffer_push(&pool->idle, &resource, pool->max);
 		zval_ptr_dtor(&resource);
+		pool->active--;
+		/* A waiter that parked while the factory ran is woken for the resource, as in acquire(). */
+		pool_wake_waiter(pool);
 	}
 
 	pool_healthcheck_arm(pool, true);

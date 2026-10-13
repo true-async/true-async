@@ -2814,3 +2814,12 @@ stack options were shown with the code).
   a release promising the last place and the woken waiter's run; 1105 is equivalent (`UINT32_MAX` either way);
   1210 (`<` to `<=`) reads past the array, which only ASAN sees, and Mull builds debug. The run-tests timeout is
   10 s for such runs (`TEST_TIMEOUT=10`): a mutant that hangs a test cost 60 s. Why: S9.30's practice.
+- 2026-10-13 S9.37, the constructor's pre-warm works as the healthcheck's refill does: it stops at `min` resources
+  counted idle and active, at no free place, or when the pool is closed, which destroys the resource just made with
+  the destructor callable, and wakes a waiter for each resource made; it still calls the factory at most `min`
+  times, as TrueAsync. Why: the factory reaches the pool through `debug_backtrace()`; an `acquire()` there pushed
+  the pool past `max` and the idle buffer past its limit, a `close()` left resources idle in the closed pool, a
+  waiter parked meanwhile was never woken (`pool/144`-`146`, the security pass and its Critic).
+- 2026-10-13 S9.37, not changed: after `exit()` in the destructor callable, `close()` still destroys the other
+  idle resources, and the exit wins at the end. Why: the destructor is cleanup, as a `finally` is, and TrueAsync's
+  close destroys every idle resource (pool.c:1121-1181); a resource left undestroyed keeps its connection open.
