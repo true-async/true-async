@@ -2944,3 +2944,8 @@ stack options were shown with the code).
   wakes the worker ahead of the queued child, the walk's error cancels the child unstarted and its `finally` never
   runs. With gdb holding the process 150 ms before each such poll, the old tests lose that line (061, 063) and the
   previous (062) on every run; the new ones pass. `pool/147` waits on nothing.
+- 2026-10-13 S8.3c, a cancelled socket data op gives no guarantee: a `socket_write()` or `socket_read()` whose op
+  completed before the cancelled coroutine resumed throws the plain cancellation, as a cancelled stream op does
+  (2026-10-09); the socket should be closed. Why: Edmond 07:21 «если целостность данных доказать нельзя ... делаем
+  как в тру асинк»; one call is several ops, and on Windows a cancelled overlapped send leaves the socket's state
+  undefined, so the count cannot be proven. `Async\CancellationWithResult` dropped.

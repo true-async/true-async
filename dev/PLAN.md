@@ -226,22 +226,6 @@ Waiting for Edmond's call; nothing here is being worked on.
   `/mnt/project-files/s9/probes/s9.taskgroup/s930_closing_after_exit.php`, debug build). S9.25 accepted that tick
   release after an exit for a run's handlers and target only; the group makes its whole closing such a target.
   Move the closing out of the tick, or accept it? Edmond's call.
-- A data op the Ring completed before its cancelled coroutine resumed (review M1): a socket
-  `fwrite()` throws the cancellation while the peer has the bytes, so a retry sends them twice
-  (`io_provider/063`); a `socket_read()` throws and its bytes are lost (`069`); inferred, not run: a
-  `pcntl_waitpid()` loses the child's status, a `pcntl_sigwaitinfo()` the signal. A stream `fread()`
-  is safe: its bytes stay in the stream buffer (`009`). TrueAsync waits for writability and sends
-  after the resume, and `socket_read()` waits and reads after it, so its cancellation sends and reads
-  nothing (its `main/streams/xp_socket.c:94-106`, `ext/sockets/sockets.c:517-524`); a stream read
-  runs `recv()` after a cancelled wait and drops the bytes (`xp_socket.c:218-227`); read, not run.
-  Options: submit every Send and every Recv without a stream buffer (`socket_read()`, `socket_recv()`)
-  as a readiness POLL, as the provider already submits an Accept; a stream-buffered Recv stays a data
-  op. That is TrueAsync's order, but it changes `dev/plans/S6.md` section 4 (the Ring answers Done
-  with the bytes) and leaves WAITPID and SIGWAIT. Or let a completed op return its result and hold
-  the cancellation for the coroutine's next suspension, in our own scheduler
-  (`async_scheduler_enqueue()`): it covers every op, but departs from TrueAsync, which throws at that
-  resume. Recommended: the POLL for Send and unbuffered Recv, then measure WAITPID and SIGWAIT
-  (S8.3c). Edmond's call.
 
 ## Parallel tracks
 
@@ -936,7 +920,7 @@ not expressible with why); `RFC-CHANGES.md` complete; the review updated.
 Tier: T1. Roles: Critic after every step.
 Tests: interleaved
 Base: d783cea
-Active: S8.3c
+Active: none
 
 Each item is run against our provider on the pinned core, on `pocs-dbg` and `pocs-asan`, over the
 Ring and over the Poll queue (`TrueAsync\Test\` hook) where the item depends on the queue. Its
@@ -1064,11 +1048,19 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
         connect's further addresses; its Critic found a cancelled TLS handshake spinning at full CPU to the
         deadline (37, `io_provider/083`). Both are two commits on `io-hooks-cancelled-accept-connect`, PR text in
         `notes/s8-3b` (project files). `065`, `066`, `071` without `core:27`.
-- [ ] S8.3c M1 on the Ring after Edmond's answer to the Open question: a data op that completed
+- [x] S8.3c M1 on the Ring after Edmond's answer to the Open question: a data op that completed
       before its cancelled coroutine resumed.
       done: `io_provider/063`, `069` expect the chosen behaviour (`changed:` tags) and `009` still
         passes; WAITPID and SIGWAIT under the same race measured
       tier: T1 · role: Critic
+      result 2026-10-13: no change. Edmond first chose an exception carrying the result (named
+        `Async\CancellationWithResult`), with the rule «if data integrity cannot really be proven, drop it and
+        do as TrueAsync: no guarantee whether the data arrived». The Critic showed one PHP call is several ops
+        (`php_socket_send_all()`), so only the PHP function knows the count; on Windows a cancelled overlapped
+        send leaves the socket's state undefined (Microsoft: close it), so the count cannot be proven there.
+        Dropped: a cancelled `socket_write()`/`socket_read()` follows the 10-09 stream rule. `063`, `069`
+        keep expecting a plain cancellation; `pcntl_waitpid()`/`pcntl_sigwaitinfo()` already fill `$status`/
+        `$info` by reference.
 - [x] S8.4 M4 and M10: a connect whose first address refuses and whose second accepts, on both
       queues; curl's `remove()` after libcurl closed the socket; a contended `flock()` with the lock
       holder parked on a timer.
