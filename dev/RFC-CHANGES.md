@@ -43,8 +43,9 @@ Waits for it: nothing; the pinned core carries the branch (`async-core-io-2026-1
 
 ## 3. IO hooks: stream_set_timeout() on a pipe
 
-State: on `io-hooks-stream-timeouts` `2791d414caf` (on bukka's `8e470c219fc`, after entry 4's commit) and
-`io-hooks-fixes` `cee42c3db37`, 2026-10-13 (S8.6), in the core since `async-core-io-2026-10-13-2` `8568d99bd3e`. PR text
+State: on `io-hooks-stream-timeouts` `2791d414caf` and, for Windows, `5e6ded8b09c` (on bukka's `8e470c219fc`, after
+entry 4's commit) and `io-hooks-fixes` `cee42c3db37`, `f2d5fd05710`, 2026-10-13 (S8.6, S8.9), in the core since
+`async-core-io-2026-10-13-2` `8568d99bd3e` (Unix) and `async-core-io-2026-10-13-3` `57fed0673c0` (Windows). PR text
 with entry 4: `/mnt/project-files/notes/s8-6/io-hooks-stream-timeouts-pr.md`. PR: none yet.
 
 Need: TrueAsync honours `stream_set_timeout()` on a `proc_open()` pipe for a read in a coroutine
@@ -58,11 +59,12 @@ read, so the core's synchronous queue honours it too; `timed_out` in the metadat
 fix: vanilla PHP has no such option.
 
 Done on Unix as requested, with what its Critic found: with data already buffered, or a zero timeout, the
-read only looks, as a socket read does; a write end and a regular file still refuse the option. Windows
-refuses it too: a pipe read there cannot stop at a deadline yet (cancelling a timed-out overlapped READ can
-lose its bytes; a readiness wait first, as on Unix, is the way), S8.9.
+read only looks, as a socket read does; a write end and a regular file still refuse the option. On Windows
+(S8.9) an overlapped pipe takes it: the read waits for data first, as `stream_select()` waits for a pipe (an
+Any of the pipe's Poll and a Timer), then reads only what is there, since cancelling a timed-out overlapped READ
+can lose its bytes; an anonymous pipe still refuses the option.
 
-Waits for it: nothing on Linux; `io/039`, `040`, `042`, `043` on Windows (`xfail-on:pocs-win(S8.9)`).
+Waits for it: nothing.
 
 ## 4. IO hooks: stream_set_timeout() on stream_socket_recvfrom() and stream_socket_sendto()
 

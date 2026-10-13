@@ -691,6 +691,8 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
 - S8.6 closed 2026-10-13 (PLAN handoff line): core `async-core-io-2026-10-13-2` `8568d99bd3e`, RFC 3 and 4 on
   `io-hooks-stream-timeouts` (PR text `notes/s8-6`). Open in S8: S8.9 (Windows pipe timeout), S8.3c (Edmond's
   exception name).
+- S8.9 closed 2026-10-13 (PLAN handoff line): core `async-core-io-2026-10-13-3` `57fed0673c0`, RFC 3's Windows half
+  as the third commit of `io-hooks-stream-timeouts` (PR text `notes/s8-6`). Open in S8: S8.3c (Edmond's exception name).
 
 ## S14
 

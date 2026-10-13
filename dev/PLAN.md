@@ -928,7 +928,7 @@ not expressible with why); `RFC-CHANGES.md` complete; the review updated.
 Tier: T1. Roles: Critic after every step.
 Tests: interleaved
 Base: d783cea
-Active: S8.9
+Active: S8.3c
 
 Each item is run against our provider on the pinned core, on `pocs-dbg` and `pocs-asan`, over the
 Ring and over the Poll queue (`TrueAsync\Test\` hook) where the item depends on the queue. Its
@@ -1156,11 +1156,26 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
         prefix (now passed through); `io_provider/073` and `074` named libcurl's socket by the text
         "Connected to" (8.20 logs "Established connection to") and by the only new socket (7.87.0 keeps a
         socketpair too), now by the socket gone before "Issue another request"; ASAN and 20 seeds clean.
-- [ ] S8.9 Windows: `stream_set_timeout()` bounds a read of an overlapped pipe (left from S8.6): a readiness
+- [x] S8.9 Windows: `stream_set_timeout()` bounds a read of an overlapped pipe (left from S8.6): a readiness
       wait up to the deadline, then a read of what is there, as on Unix; cancelling a timed-out READ op can
       lose its bytes (`RFC-CHANGES.md` 3).
       done: `io/039`, `040`, `042`, `043` pass on `pocs-win` without `xfail-on`
       tier: T1 · role: Critic
+      handoff: done 2026-10-13. Core `async-core-io-2026-10-13-3` `57fed0673c0` (`io-hooks-fixes` `f2d5fd05710`), the
+        third commit of `io-hooks-stream-timeouts` (`5e6ded8b09c`, PR text `notes/s8-6`). `php_io_pipe_poll()` waits as
+        `stream_select()` does, an Any of the pipe's Poll and a Timer, so the Ring keeps and the provider drains the
+        cancelled zero-byte read; without a provider, or on Unsupported, the thread peeks with `Sleep(1)` until the
+        deadline. The read after it is non-blocking, and EAGAIN polls again with the same deadline.
+      Critic 2026-10-13: a single Poll with a deadline left the zero-byte read in the kernel unkept (a handed-out pipe
+        could see a false read); a readiness with no bytes made the read wait without limit; a failed Any read as a
+        timeout. Fixed. Open: `php_io_pipe_read()` peeks, then reads synchronously, so a handed-out pipe whose bytes
+        another process takes between the two still parks the thread (bukka's code, as before); the peek loop
+        blocks other coroutines for the timeout when the pipe was handed out or the provider answers Unsupported.
+      result 2026-10-13: run 38347590325 (branch `s8-9-test`, dispatched) green in every job, `windows` included. On
+        Edmond's PC, Debug_TS of the new core, /WX clean: `io/039`-`043`, `io_provider/028`, `stream/033` pass; core
+        streams, `hooks/`, `stream_select`, `proc_open` tests 59 PASS, 34 SKIP, 3 FAIL. The three are S8.3b's
+        `hooks/connect-throws.phpt`, `connect-throws-one-attempt.phpt`, `fsockopen-throws.phpt`: on Windows the
+        throwing op is a Poll, not the Connect they expect (not looked into, outside S8.9).
 
 ## S9 — Higher layers, one at a time  [in progress]
 

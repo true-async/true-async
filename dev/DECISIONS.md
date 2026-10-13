@@ -2874,3 +2874,8 @@ stack options were shown with the code).
   goes to the unobserved exceptions. S9.36's merge moved from `src/pool.c` to `src/exceptions.c`
   (`async_exception_settle()`, `async_exception_merge()`). Why: one rule for both users; a second cancellation printed
   as "Uncaught" otherwise (`tests/iterate/043-second_caller_cancel_leaves_at_once.phpt`).
+- 2026-10-13 S8.9, a read of an overlapped pipe on Windows under `stream_set_timeout()` waits first in an Any of
+  the pipe's Poll and a Timer, as `stream_select()` does, then reads only what is there; `tests/io/039-pipe_read_timeout.phpt`,
+  `tests/io/040-pipe_read_timeout_then_success.phpt`, `tests/io/042-pipe_timeout_concurrent_coroutines.phpt`,
+  `tests/io/043-pipe_fread_timeout.phpt` lose `xfail-on:pocs-win(S8.9)`. Why: the Critic: a single Poll with a
+  deadline left its cancelled zero-byte read unkept by the Ring, which the Any path keeps and drains.
