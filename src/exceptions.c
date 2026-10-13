@@ -121,6 +121,24 @@ void async_register_exceptions_ce(void)
 	async_ce_composite_exception = register_class_Async_CompositeException(zend_ce_exception);
 }
 
+bool async_exception_in_chain(zend_object *outcome, const zend_object *exception)
+{
+	for (zend_object *link = outcome; link != NULL;) {
+		if (link == exception) {
+			return true;
+		}
+
+		zval previous_storage;
+		const zval *previous = zend_read_property_ex(
+				zend_get_exception_base(link), link, ZSTR_KNOWN(ZEND_STR_PREVIOUS), true, &previous_storage);
+
+		ZVAL_DEREF(previous);
+		link = Z_TYPE_P(previous) == IS_OBJECT ? Z_OBJ_P(previous) : NULL;
+	}
+
+	return false;
+}
+
 void async_exception_merge(zend_object *under)
 {
 	zend_object *const pending = EG(exception);
@@ -142,6 +160,13 @@ void async_exception_merge(zend_object *under)
 	if (UNEXPECTED(async_is_exit_object(under))) {
 		EG(exception) = under;
 		OBJ_RELEASE(pending);
+		return;
+	}
+
+	/* Thrown twice, or the previous of one thrown later: the caller reaches it, and the shared branch below would
+	 * report it as uncaught. */
+	if (UNEXPECTED(async_exception_in_chain(pending, under))) {
+		OBJ_RELEASE(under);
 		return;
 	}
 

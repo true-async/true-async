@@ -2909,3 +2909,15 @@ stack options were shown with the code).
   `UNEXPECTED(EG(exception))`. `io_hooks_handshake_cancelled_client.phpt` completes a Poll as it does a Connect, so
   it reaches the handshake with either version of the connect-started fix. Why: the core's Poll made the provider
   throw before the handshake, so the test checked nothing since `-4`.
+- 2026-10-13 S9.42, an exception set aside that is already in the pending one's chain (the pending one, or one of its
+  previous) is released by `async_exception_merge()`, for `iterate()` and `Pool` alike; `iterate()`'s route
+  subscriber ignores a second route error already in the chain of the walk's exception or of the first route error.
+  Known limit: a second route error that a later exception of the walk takes as its previous still prints. Why:
+  rethrown by a coroutine a callback spawned, or by a pool hook and the destructor, it was thrown, caught and still
+  printed as "Uncaught" with exit code 255 (`tests/iterate/061-callback_exception_rethrown_by_child_not_uncaught.phpt`,
+  `062-exception_rethrown_by_two_children_not_uncaught.phpt`, `063-previous_of_callback_exception_rethrown_not_uncaught.phpt`,
+  `tests/pool/147-same_error_from_hook_and_destructor_not_uncaught.phpt`; the second reader, both Critics).
+- 2026-10-13 S9.42, not changed: a callback's exception held elsewhere (a variable the callback captured) takes no
+  previous, so a spawned coroutine's later error that is not in its chain prints at request end, by S9.36's rule for
+  any shared exception; a walk's later exception still chains the earlier one under it, as TrueAsync and PHP's
+  `finally` do. Why: that error reached no `catch`; the merge leaves shared objects unchanged (S9.36).

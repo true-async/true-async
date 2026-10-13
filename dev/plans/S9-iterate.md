@@ -140,8 +140,10 @@ waiter and only does `$cancelPending`. Three points differ from the design above
   (D16's unwinding) leaves at once, and the same sweep cancels the walk.
 - The `$cancelPending` cancel comes whatever the last worker ends with, its own cancellation included (`051`), as
   TrueAsync's; an exit leaves the coroutines to the shutdown's cancel.
-- A cancellation that another coroutine still holds gets nothing chained under it (S9.36's rule): the walk's
-  exception and the route errors then go to the unobserved exceptions.
+- An exception that something else still holds (a cancellation another coroutine holds, a callback's exception a
+  variable keeps) gets nothing chained under it (S9.36's rule): the walk's exception and the route errors then go to
+  the unobserved exceptions; one rethrown by another coroutine that is already in the chain of the walk's exception or of
+  the first route error is not (S9.42).
 S9.41 (the layer Critic):
 - A route error and the caller's first cancel also stop the walk (`ITERATOR_FINISH`), so a callback that catches
   its cancellation does not take the next element (`tests/iterate/055`, `056`).

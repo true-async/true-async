@@ -631,6 +631,13 @@ iterate_scope_error(async_awaitable_t *target, async_event_callback_t *callback,
 	iterate_walk_t *const walk = (iterate_walk_t *) ((char *) callback - offsetof(iterate_walk_t, scope_callback));
 
 	ITERATOR_FINISH(&walk->iterator);
+
+	/* Rethrown by another coroutine, or the previous of one thrown: the caller reaches it through the outcome. */
+	if (UNEXPECTED(async_exception_in_chain(walk->route_error, exception) ||
+				   async_exception_in_chain(walk->iterator.exception, exception))) {
+		return;
+	}
+
 	GC_ADDREF(exception);
 
 	if (EXPECTED(walk->route_error == NULL)) {

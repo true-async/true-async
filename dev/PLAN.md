@@ -1832,9 +1832,16 @@ Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, 
         Follow-up (Edmond 2026-10-13 06:00, B): a cancellation a callback throws itself, its worker not cancelled,
         is the walk's exception (`iterate/059`, `060`); debug 1991 PASS, ASAN 1965 PASS before the Critic's merge
         fix, iterate, pool, internal, scope and task_group 642 PASS on debug and 377 on ASAN after it.
-- [ ] S9.42 Layer 6 security pass by `dev/SECURITY.md` (note section 5).
+- [x] S9.42 Layer 6 security pass by `dev/SECURITY.md` (note section 5).
       done: a journal entry per checklist item; findings fixed with a test or recorded
       tier: T2 · role: —
+      handoff: done 2026-10-13 (`SECURITY.md` journal, DECISIONS 2026-10-13 S9.42): about 40 scripts by checklist item
+        and the note's section 5 on the debug and ASAN builds, a second reader with 32 scripts and 720 seeds of a
+        random driver on ASAN, 20 fuzz seeds over the layer's tests on ASAN; no memory defect. Fixed: an exception
+        the caller reaches through the one it caught (rethrown by a coroutine a callback spawned, or by a pool hook and
+        the destructor) also printed "Uncaught" with exit code 255 (`iterate/061`-`063`, `pool/147`). Known limit: a
+        second route error a later walk exception wraps still prints. On CORE_REF `dcb1ea7d64d`: debug 1995 PASS,
+        ASAN 1969 PASS, 0 unexpected; iterate and pool 212 PASS on debug after the second Critic's fixes.
 
 ## S10 — Beyond the RFCs  [x]
 

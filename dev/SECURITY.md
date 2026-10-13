@@ -623,6 +623,52 @@ finding left open gets an owner step in `PLAN.md`.
   resources (DECISIONS 2026-10-13 S9.37); PHP's GC runs the resources' `__destruct` before the pool's destructor
   callable gets them, PHP's order for a cycle.
 
+- 2026-10-13 Security pass of the iterate() layer (S9.42) over `b3751b0`, `d272317`, `32af4ab` (`src/iterator.c` from
+  "iterate()", `Async_iterate` in `true_async.c`, `async_exception_merge()`), by checklist item and the points of
+  `dev/plans/S9-iterate.md` section 5. About 40 scripts ran on the debug and ASAN builds; a second reader went over the
+  code with 32 scripts of its own and 720 seeds of a random driver on ASAN (callbacks and iterators that throw, suspend,
+  cancel their worker or the caller, drop scopes, re-enter the source, nest `iterate()`, exit); the layer's tests ran
+  under 20 fuzz seeds on ASAN.
+
+  One defect, of reporting, with tests; no memory defect. An exception the caller reaches through the one it caught was
+  also added to the unobserved exceptions, printed "Uncaught" at the request's end and set exit code 255: a callback's
+  exception that a coroutine it spawned rethrew from a `finally` run by the walk's cancel, arriving as the walk's
+  exception and as the route error (`iterate/061`, the second reader); one rethrown by two such coroutines, a second
+  route error (`062`, the Critic); the previous of the callback's exception rethrown so (`063`, the Critic); the same
+  `Error` from a pool's `beforeRelease` hook and its destructor (`pool/147`). The merge saw the object held elsewhere
+  and set it aside. `async_exception_merge()` now releases an exception set aside that is already in the pending one's
+  chain, and the route subscriber ignores a second route error already in the chain of the walk's exception or of the
+  first route error (`async_exception_in_chain()`). Left: a second route error that a callback later wraps into the
+  walk's exception (it awaited the failed coroutine) still prints; a `previous` chain made cyclic through
+  `Closure::bind()` hangs the walk, as php-src's `zend_exception_set_previous()` does.
+
+  Section 5. The iterator's scope disposed from a callback: it has no object, and `getChildScopes()` lists only scopes
+  that have one; a `Scope::inherit()` child disposed or disposed safely, the caller's `Scope` disposed, cancelled or
+  dropped from a callback: clean. `iterate()`, `foreach`, `next()` or `send()` over the walked generator from its own
+  callback, also while another worker is suspended in the generator's body: the core throws "already run", "already
+  running" or "already closed"; the walk's move guard holds. A GC run that a release in the walk starts: the core's wait
+  was reached in the release of a callback's result (`iterator.c`, `zval_ptr_dtor(&retval)`, seen with gdb) with the
+  caller cancelled during it, one and three workers: clean; elements, keys, results and the walked object whose
+  destructors suspend, throw or collect cycles, at the walk's end and at the caller's release: clean. The caller leaving
+  while it waits: a second cancel, `exit()`, a fatal error, a deadlock report and the request's end with workers parked
+  or inside a generator's move: clean; ASAN reports leaks only after a bailout, as a script without `iterate()` does.
+
+  Lifetimes: the walk's references (the creator's, the caller's, one per worker, one per queued microtask) and the scope
+  subscriber's removal against `iterate_scope_freed()` traced; the last worker always sets FINISHED, so a microtask
+  queued later spawns nothing into a freed scope. Refcounts on exception and bailout paths: balanced; every caller of
+  the merge passes references it owns. Engine state: `EG(exception)` is saved around the `$cancelPending` cancel; each
+  worker calls with its own copy of the arguments. Sizes: `$concurrency` 0 over an endless generator with callbacks that
+  suspend adds a worker per element until a fatal error, `memory_limit`'s or the fiber stack's `mprotect` at
+  `vm.max_map_count` (32 631 workers here), as `spawn()` in a loop does; the limit is the caller's, as in TrueAsync. The
+  array copy is bounded by `memory_limit`. INI entries: none new. Test-only code: `TrueAsync\Test\iterate()` stays under
+  `TRUE_ASYNC_TEST_HOOKS`. CI: no change. Answered, no change (DECISIONS 2026-10-13 S9.42): a callback's exception held
+  elsewhere takes no previous, so a spawned coroutine's later error outside its chain prints at the request's end
+  (S9.36's rule); a later exception of the walk still gets the earlier one as its previous, a user's object included, as
+  in TrueAsync. Seen, not a defect: with the core's GC wait in a worker, the next callback started before the queued
+  caller ran its cancel, which reached that callback at its first suspension. A result whose destructor throws is seen
+  at the next step: an array walk consumes one element of its private copy, a `Traversable` walk stops at the `valid()`
+  check, and a user iterator's methods are not called with the exception pending (by reading and a script).
+
 ## Open findings
 
 - 2026-10-12 (S9.33, narrowed by S9.38) A C function that releases something after it has taken a value can lose
