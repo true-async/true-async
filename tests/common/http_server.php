@@ -26,7 +26,9 @@ function async_test_server_start(?string $router = null): AsyncTestServerInfo {
     $doc_root = __DIR__ . DIRECTORY_SEPARATOR . 'server_' . uniqid();
     @mkdir($doc_root);
 
-    $cmd = [$php_executable, '-t', $doc_root, '-n', '-S', 'localhost:0', $router];
+    // opcache.enable=0: the built-in opcache starts under cli-server, and on Windows a server that attaches while
+    // another creates the shared memory can read it unset and crash (ZendAccelerator.c accel_post_startup()).
+    $cmd = [$php_executable, '-t', $doc_root, '-n', '-d', 'opcache.enable=0', '-S', 'localhost:0', $router];
 
     // Use unique temp file with PID and microtime for parallel workers
     $unique_id = getmypid() . '_' . microtime(true);

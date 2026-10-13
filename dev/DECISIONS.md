@@ -3058,3 +3058,14 @@ stack options were shown with the code).
   `signal/014-signal_pcntl_registered_before.phpt`, `sleep/006-all_sleep_functions_comparison.phpt`,
   `socket_ext/005-socket_accept_multiple.phpt`, `stream/012-concurrent_socket_operations.phpt`,
   `stream/032-stream_select_null_timeout.phpt`.
+- 2026-10-13 S14.17: the test servers of our helper and two core-helper tests start with `-d opcache.enable=0`: `common/http_server.php`,
+  `io/082-http_negative_timeout_poll_leak.phpt`, `stream/003-file_get_contents_http.phpt`. Why: CI run 38366407824
+  crashed one `php -n -S` of `cleanup/001` on Windows (0xC0000005, about 1 in 5,000 starts). A dump from Edmond's
+  machine (Release_TS, core f9c2ef86) shows `accel_post_startup()` reading `accel_shared_globals` NULL. Opcache
+  is built in and starts under the cli-server SAPI whatever `opcache.enable_cli` says; the servers share one
+  mapping, and the creator unlocks it (`shared_alloc_win32.c` `create_segments()`) before `zend_accel_init_shm()`
+  sets `app_shared_globals`, so a server attaching in between takes NULL (a reading of the code, not traced).
+  The code is php-src's, unchanged by the async core. With opcache off, `accel_startup()` returns before the
+  shared memory. No dump came from CI because `proc_open`'s `suppress_errors` turns off the crash dialog and WER.
+  Left: `curl/063`, `064`, `070`, `071` start theirs through the core's `ext/curl/tests/server.inc`, which takes no
+  arguments; php-src's own tests share the race. "1 in 5,000": 1 crash in the 78 kept pocs-win CI artifacts.

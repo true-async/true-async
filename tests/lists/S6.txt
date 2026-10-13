@@ -1,6 +1,6 @@
 # S6: the IO hooks provider (dev/PLAN.md, S6). Reference: true-async/php-async at tests/lists/REFERENCE.
 # S6.1: the fixtures and their smoke tests, frozen with this list; S6.2 adds the rest of the stage.
-common/http_server.php  ref:4041d62a62c095c78b7d8c608e10eaa51c73639cfc8da5e31bd982408c21ca72
+common/http_server.php  ref:4041d62a62c095c78b7d8c608e10eaa51c73639cfc8da5e31bd982408c21ca72  changed:2026-10-13:e4e9880b928201ed8dc3c68f570f257613fac005c78daef4dfeeeea2843691c4
 common/test_router.php  ref:f085c793508ba56b95dd2669a39546c850f802f402ab99aeb4f00690311fc3bd
 common/barrier_router.php  own:de2079a6a2c3b118d2e292c2c027b84254000a541533172779581797d7e477db
 common/http_server_fixture.phpt  own:1b02929f4c6e59473558a55464612a5a23d85ad9cd2d53847c881a16b255d8ee
@@ -365,8 +365,8 @@ io_provider/015-select_sees_pending_connections.phpt  own:5f74c81f2c02d13ffc6e78
 
 # S6.7: the seven tests that include a php-src test helper, from the core checkout the runner names
 # ($TRUE_ASYNC_CORE_SRC, dev/DECISIONS.md 2026-10-07), and the shutdown windows (dev/plans/S6.md section 10).
-io/082-http_negative_timeout_poll_leak.phpt  ref:c2e6c65f51c804e137b4c969dcd60140ca02e05dd0c68d6c52e5cf7115b5d4de  changed:2026-10-07:ed09254c80951dc03768be1277fdb727b2ce0817a9fe2af4dcbbeafb13bb71ea
-stream/003-file_get_contents_http.phpt  ref:a4f6939bc208b1e1a6732c9cc43095b77bf01f416b6cd2599dc71351d7466e45  changed:2026-10-07:e3962358beedc06f56b506e91777c1ae164947742c5277459c8441be5ae4a6ed
+io/082-http_negative_timeout_poll_leak.phpt  ref:c2e6c65f51c804e137b4c969dcd60140ca02e05dd0c68d6c52e5cf7115b5d4de  changed:2026-10-07:ed09254c80951dc03768be1277fdb727b2ce0817a9fe2af4dcbbeafb13bb71ea  changed:2026-10-13:fd14c5c457e47b47e65899f8b37a956c6f651a00aaf59363fb0e39ae754edf75
+stream/003-file_get_contents_http.phpt  ref:a4f6939bc208b1e1a6732c9cc43095b77bf01f416b6cd2599dc71351d7466e45  changed:2026-10-07:e3962358beedc06f56b506e91777c1ae164947742c5277459c8441be5ae4a6ed  changed:2026-10-13:19f90486bcfaf79092371612e08cac994964261507ca6260f84f10fd5efaedcd
 curl/063-readdata_no_callback.phpt  ref:8a689d5b17a5e13c6516445a35ea61f0fe8b45be200ec4de13896f3318b9cf21  changed:2026-10-07:6c39263361c5a878bb6be3fe93c24ce85dee7432e71f1ba9530559e262e0da1b
 curl/064-stderr_file_reuse.phpt  ref:af668fe01c50245c12c2f9293917f71319516c42e4cf28a135ea66c0a10ed3a4  changed:2026-10-07:b1f8faf2ad335d67ca84b246048e5779c40d627a5e5f458692a4f3de4c66e3c7  changed:2026-10-08:82877b6b98bb6392535046c0cf9712419c3af4ec6b368ef47be30b9ceba068e7
 curl/070-read_takes_only_its_completion.phpt  ref:15d803801effb470d78a392e16ff9f5ff198fcfdf2d9d337f70a4ff3e27a39c1  changed:2026-10-07:22f495aa679a4c58602472a16ba7cdc5aef2c4e1ab16cecc1e30909fcc129406

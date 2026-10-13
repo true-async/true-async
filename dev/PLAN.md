@@ -2317,6 +2317,13 @@ Tests: interleaved
       bug it shows; tests that cannot fail and tests with several cases; the five that need a test clock wait for
       Edmond's answer.
       tier: T1 · role: Critic
+- [x] S14.17 The test servers (`php -n -S`) start with `opcache.enable=0`: on Windows two starting at once could
+      crash in opcache's startup (CI run 38366407824, `cleanup/001`). The four curl tests on the core's
+      `server.inc` keep the race: its helper takes no arguments.
+      done: a dump of the crash (Release_TS, core f9c2ef86) shows `accel_post_startup()` reading a NULL
+        `accel_shared_globals`; the 69 tests that start a server pass
+      tier: T1 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.17).
 
 ## S15 — Test layers of S2 not built yet  [ ]
 

@@ -11,7 +11,7 @@ echo 1;
 CODE;
 
 include getenv('TRUE_ASYNC_CORE_SRC') . "/sapi/cli/tests/php_cli_server.inc";
-php_cli_server_start($serverCode, null, []);
+php_cli_server_start($serverCode, null, ['-d', 'opcache.enable=0']); // as tests/common/http_server.php
 
 $uri = "http://" . PHP_CLI_SERVER_ADDRESS . '/test';
 $config = [

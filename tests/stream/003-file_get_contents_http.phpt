@@ -10,7 +10,7 @@ use function Async\await_all;
 
 // Start CLI server
 include getenv('TRUE_ASYNC_CORE_SRC') . "/sapi/cli/tests/php_cli_server.inc";
-php_cli_server_start();
+php_cli_server_start(cmd_args: ['-d', 'opcache.enable=0']); // as tests/common/http_server.php
 
 echo "Start\n";
 
