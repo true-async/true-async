@@ -2313,8 +2313,7 @@ Tests: interleaved
       tier: T1 · role: Critic
       handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.15).
 - [ ] S14.16 The rest of the 2026-10-13 test audit (project files `s14/audit-2026-10-13/`): `reactor/017` and
-      `scope/156` pass the stall runs; the 60 that hang only when every tick stalls; `channel/126` with the channel
-      bug it shows; tests that cannot fail and tests with several cases; the five that need a test clock wait for
+      `scope/156` pass the stall runs; `channel/126` with the channel bug it shows; tests that cannot fail and tests with several cases; the five that need a test clock wait for
       Edmond's answer.
       tier: T1 · role: Critic
 - [x] S14.17 The test servers (`php -n -S`) start with `opcache.enable=0`: on Windows two starting at once could
@@ -2324,6 +2323,11 @@ Tests: interleaved
         `accel_shared_globals`; the 69 tests that start a server pass
       tier: T1 · role: Critic
       handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.17).
+- [x] S14.18 The 61 tests that fail only when every tick stalls: two depended on the clock and hold no timer now.
+      done: `iterate/016` and `pool/024` pass and fail on the bugs put back by hand; `collector/018` shows why the
+        rest never end under such a stall
+      tier: T1 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.18).
 
 ## S15 — Test layers of S2 not built yet  [ ]
 

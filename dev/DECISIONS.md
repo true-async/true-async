@@ -3069,3 +3069,12 @@ stack options were shown with the code).
   shared memory. No dump came from CI because `proc_open`'s `suppress_errors` turns off the crash dialog and WER.
   Left: `curl/063`, `064`, `070`, `071` start theirs through the core's `ext/curl/tests/server.inc`, which takes no
   arguments; php-src's own tests share the race. "1 in 5,000": 1 crash in the 78 kept pocs-win CI artifacts.
+- 2026-10-13 S14.18: of the 61 tests that failed only with every tick stalled (S14.13's run), two depended on
+  the clock and now hold no timer: in `iterate/016-iterate_concurrency_exact.phpt` each callback suspends 20
+  times instead of `delay(20)`; in `pool/024-pool_max_size_concurrent_factory.phpt` the factory waits until three
+  have started instead of `delay(50)`. Checked against the bugs: `iterate/016` fails with one worker too many and
+  with one in all, `pool/024` with the active count raised after the factory. The other 59 are left: with a 25 min
+  limit they still never end. Shown on `collector/018`: a `delay(1)` loop reaches idle only when its timer is not
+  due yet when main parks; with every tick stalled before its poll it is always due and wakes main in place. The
+  others are taken to stall the same way, not checked one by one. `collector/031` prints a wrong order only after
+  1000 stalled ticks in a row, as its loop is bounded. Project file `s14/audit-2026-10-13/README.md`.

@@ -5,7 +5,6 @@ Pool: max_size enforced when factory yields during creation
 
 use function Async\spawn;
 use function Async\await;
-use function Async\delay;
 
 /*
  * Bug: pool_create_resource() (factory) can yield (e.g. TCP connect).
@@ -20,10 +19,12 @@ $created = 0;
 $started = 0;
 $pool = new Async\Pool(
     function() use (&$created, &$started) {
-        $created++;
+        $id = ++$created;
         $started++;
-        delay(50);  // simulate slow factory (TCP connect)
-        return "conn-$created";
+        // A slow factory (TCP connect) that is still running when the others start: a timer could
+        // end it before the next acquire() came in.
+        while ($started < 3) Async\suspend();
+        return "conn-$id";
     },
     null, null, null, null,
     0,  // min
@@ -34,7 +35,7 @@ $coros = [];
 for ($i = 0; $i < 10; $i++) {
     $coros[] = spawn(function() use ($pool, $i) {
         $conn = $pool->acquire();
-        delay(100);  // hold connection
+        Async\suspend();  // hold connection
         $pool->release($conn);
     });
 }

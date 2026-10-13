@@ -1,17 +1,18 @@
 --TEST--
-iterate() - concurrency limit is exact when callbacks park on a timer
+iterate() - concurrency limit is exact when callbacks suspend
 --FILE--
 <?php
 
 use function Async\spawn;
-use function Async\delay;
+use function Async\suspend;
 use function Async\iterate;
 
 echo "start\n";
 
 // suspend() reschedules the coroutine immediately, so the iteration loop drops back out of the
 // callback before the freshly spawned workers ever enter it and the real peak stays invisible.
-// delay() keeps every worker parked inside the callback at the same time.
+// Each callback suspends a fixed number of times, so every worker spawned is inside at once, too
+// few or too many alike; a timer could end one callback before the next worker has entered.
 spawn(function () {
     foreach ([1, 2, 3] as $concurrency) {
         $active = 0;
@@ -24,7 +25,10 @@ spawn(function () {
                 $peak = $active;
             }
 
-            delay(20);
+            for ($i = 0; $i < 20; $i++) {
+                suspend();
+            }
+
             $active--;
         }, concurrency: $concurrency);
 
