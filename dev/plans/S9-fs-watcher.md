@@ -142,8 +142,9 @@ event is needed, since the records wait on the watcher's own event.
 **`close()` and the destructor**: the watcher leaves the registry (its watch descriptors removed when no other watcher
 shares them), the timer stops, the records wake. The buffer stays until the object is freed.
 
-**Teardown.** After a fatal error no destructor runs and `free_obj` comes in `zend_deactivate()`, after the request's
-shutdown. The reactor's shutdown therefore withdraws the registry's op and timer before it asserts that `own` is
+**Teardown.** After a fatal error no destructor runs; `free_obj` comes either in `zend_call_destructors()`, before
+RSHUTDOWN, for a global holding the only reference (it closes the watcher then, S9.44, `fs_watcher/049`), or in
+`zend_deactivate()`, after the request's shutdown. The reactor's shutdown therefore withdraws the registry's op and timer before it asserts that `own` is
 empty (`src/reactor.c:682`), closes the descriptor, zeroes the counter and marks the registry gone; a watcher freed
 later, or a record unlinked later, only drops its own state and leaves the counter alone, as triggers that outlive the request do (`src/reactor.c:663-672`). The drain runs no user code, but an
 allocation in it can bail out on `memory_limit`; the op is marked not submitted before the drain starts, so the
@@ -177,6 +178,13 @@ current directory (`expand_filepath()`), as a plain file stream does; `$event->p
 `$debounceMs` and `$maxHoldMs` outside 0-4294967295 are a `ValueError`; an extension that is not a string is a
 `TypeError`, an empty one a `ValueError`, and an extension of any length is kept (lowercased `zend_string`s in a
 hash). A second `__construct()` is an `Error` "Cannot call constructor twice", as `Channel` (`src/channel.c:1484`).
+
+**As built (S9.44).** The reactor now takes every completed event off its list before a custom completion runs, so
+the registry's POLL completion and the wakeup's resubmit the same way (`async_reactor_resubmit_own()`). A forked child
+rebuilds before the constructor adds a watch and before an iterator waits (`async_reactor_check_fork()`); changes
+made between the fork and that rebuild are lost, and until it the child removes no watch, since it shares the parent's
+inotify instance (`fs_watcher/044`, `048`). An overflow is tested through the test hook
+`TrueAsync\Test\fail_io('inotify_overflow')` (`040`): a real one needs 16384 unread events.
 
 ## 4. Garbage collection and the collector
 
@@ -223,7 +231,7 @@ S9.44 builds them.
 4. **Arguments are checked**: `Z_PARAM_PATH`, `open_basedir`, `ValueError` for negative or too large timings,
    `TypeError` and `ValueError` for bad extensions, no length limit on an extension. TrueAsync reads them silently
    (section 2).
-5. **`$extensions` in every mode or only with `$debounceMs`**: question 1. TrueAsync documents it for debounce mode
+5. **`$extensions` in every mode**, Edmond's answer B to question 1. TrueAsync documents it for debounce mode
    only (the stub's comment), so `extensions: ['php']` without a debounce delivers every file (`f15`).
 6. **The buffers are on the request allocator**, so `memory_limit` bounds a raw watcher nobody reads.
 7. **A monitoring error is thrown** from `foreach` as `AsyncException` "Filesystem monitoring error: ...", once, and
@@ -257,6 +265,7 @@ S9.44 (`dev/PLAN.md` S9).
    `b.php` written: (A) as TrueAsync, both come out, the filter works only with a debounce (its stub says so); (B) only
    `b.php` comes out, in every mode. Under B a directory created in a recursive watch has no extension and is not
    delivered either. Recommended: B, since a programmer who passes a filter expects it to filter.
+   **Answered B** (Edmond, 2026-10-13: "согласен делай" to the recommendation); test `fs_watcher/038`.
 
 ## 8. Tests and measurements
 

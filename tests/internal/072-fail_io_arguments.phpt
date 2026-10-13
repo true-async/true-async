@@ -11,4 +11,4 @@ try {
 }
 ?>
 --EXPECT--
-TrueAsync\Test\fail_io(): Argument #1 ($site) must be "queue_create", "submit", "wait", "wake_pair", "complete", "answer_in_flight" or "wait_always"
+TrueAsync\Test\fail_io(): Argument #1 ($site) must be "queue_create", "submit", "wait", "wake_pair", "complete", "answer_in_flight", "wait_always" or "inotify_overflow"

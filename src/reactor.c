@@ -20,6 +20,7 @@
 #include "scheduler.h"
 #include "exceptions.h"
 #include "io_provider.h"
+#include "fs_watcher.h"
 #include "test_hooks.h"
 
 #ifdef HAVE_IOR
@@ -577,6 +578,10 @@ static void reactor_rebuild(async_reactor_t *reactor)
 		wakeup_rebuild(reactor);
 	}
 
+	if (ASYNC_G(fs_watchers) != NULL) {
+		async_fs_watcher_rebuild();
+	}
+
 	uint32_t own_count = 0;
 
 	for (const async_reactor_link_t *link = reactor->own.next; link != &reactor->own; link = link->next) {
@@ -641,6 +646,7 @@ void async_reactor_request_startup(void)
 	list_init(&reactor->triggers);
 	list_init(&reactor->triggers_to_walk);
 	reactor->started_triggers = 0;
+	reactor->parked_watchers = 0;
 	reactor->wakeup = NULL;
 	reactor->timers = NULL;
 	reactor->timers_count = 0;
@@ -736,13 +742,14 @@ void async_io_event_release(async_io_event_t *event)
  * waiter releases the record's. */
 static void event_complete(async_io_event_t *event)
 {
+	list_remove(&event->reactor_link);
+
 	if (event->complete != NULL) {
 		event->complete(event);
 		return;
 	}
 
 	event->base.flags |= ASYNC_EVENT_F_CLOSED;
-	list_remove(&event->reactor_link);
 
 	event->base.ref_count++;
 	async_callbacks_notify((async_awaitable_t *) event, &event->base.callbacks, &event->result, NULL);
@@ -958,6 +965,24 @@ int async_reactor_try_submit_own(async_io_event_t *event)
 	return reactor_try_submit(reactor, event, &reactor->own);
 }
 
+int async_reactor_resubmit_own(async_io_event_t *event, bool *completed)
+{
+	async_reactor_t *const reactor = &ASYNC_G(reactor);
+	php_io_queue_completion completion;
+	const int error = queue_push(reactor, event, &reactor->own, &completion, completed);
+
+	if (UNEXPECTED(error != 0)) {
+		return error;
+	}
+
+	if (UNEXPECTED(*completed)) {
+		event->result = completion.result;
+		list_remove(&event->reactor_link);
+	}
+
+	return 0;
+}
+
 void async_io_event_orphan(async_io_event_t *event)
 {
 	php_io_queue *queue = event->op.queue;
@@ -1170,8 +1195,6 @@ static void wakeup_complete(async_io_event_t *event)
 	const async_wake_pair_t *pair = &ASYNC_G(wake_pair);
 	php_io_queue_completion completion;
 	bool completed;
-
-	list_remove(&event->reactor_link);
 
 	do {
 		if (UNEXPECTED(!wakeup_result_is_ready(&event->result))) {

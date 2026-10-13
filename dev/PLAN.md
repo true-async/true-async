@@ -1255,8 +1255,9 @@ Layer 6, iterators: `Async\iterate()` on S9.6's iterator core, the ITERATE wait 
 (`dev/plans/S9-iterate.md`).
 Layer 6 done when: S9.txt's layer 6 block passes on debug and ASAN; the S3-S7 lists and layers 1-5 pass as before.
 Layer 7, FileSystemWatcher: `Async\FileSystemWatcher` over a per-request inotify descriptor on the POLL op, the
-WATCHER wait kind, Windows on a directory-change op requested from bukka and ior (`dev/plans/S9-fs-watcher.md`); its
-steps come when Edmond agrees the note.
+WATCHER wait kind, Windows on a directory-change op requested from bukka and ior (`dev/plans/S9-fs-watcher.md`).
+Layer 7 done when: S9.txt's layer 7 block passes on debug and ASAN, and on `pocs-win` after S9.45; the S3-S7 lists
+and layers 1-6 pass as before.
 Runtime information has no plan yet: it gets its steps when Edmond agrees its plan, and S9 is not closed before it
 has them (S14.4).
 Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
@@ -1868,6 +1869,24 @@ Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, 
         subdirectories' own events dropped, the overflow event's rules); `$extensions` without a debounce became
         question 1. Second Critic: the counter of its own (the fork zeroes the triggers'), the fork
         re-arms the same op as the wakeup. The note waits for Edmond's agreement and his answer.
+- [x] S9.44 The layer 7 block of `tests/lists/S9.txt` and `Async\FileSystemWatcher` on Linux (note sections 3, 6).
+      done: the 13 reference tests and an own test per row of note sections 2 and 6 pass on debug and ASAN
+      tier: T2 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S9.44): Edmond agreed the note and answered question 1 with B
+        (`$extensions` in every mode). The reactor takes a completed event off its list before a custom completion;
+        a forked child rebuilds before a watch is added or an iterator waits, and removes no watch before that. Own
+        tests `fs_watcher/015`-`052`. Critics: a watcher freed after a fatal error left the registry pointing at it
+        (`049`, ASAN), a debounced burst was lost on close (`050`), a shared iterator leaked an event (`051`), the
+        coalesce pop scanned from index 0. Other platforms throw; the tests carry `skip-on:pocs-win` until S9.45.
+- [ ] S9.45 Windows: the directory-change op in bukka's API and ior, the watcher on it (note section 3, "Windows").
+      done: the layer's tests run on `pocs-win`; bukka PRs opened by Edmond; told to Edmond before the core slot
+      tier: T2 · role: Critic
+- [ ] S9.46 Layer 7 review and its documentation in `true-async-doc` (note section 5).
+      done: Critic over S9.44 and S9.45, coverage, Mull, 100 fuzz seeds, B24, a doc page with note section 6
+      tier: T2 · role: Critic
+- [ ] S9.47 Layer 7 security pass by `dev/SECURITY.md` (note section 5).
+      done: a journal entry per checklist item; findings fixed with a test or recorded
+      tier: T2 · role: —
 
 ## S10 — Beyond the RFCs  [x]
 

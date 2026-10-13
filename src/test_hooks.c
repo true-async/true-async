@@ -1445,7 +1445,7 @@ static ZEND_FUNCTION(fail_at)
 
 /* Indexed by the bit of each async_test_io_fault_t. */
 static const char *const io_fault_site_names[] = {
-	"queue_create", "submit", "wait", "wake_pair", "complete", "answer_in_flight", "wait_always",
+	"queue_create", "submit", "wait", "wake_pair", "complete", "answer_in_flight", "wait_always", "inotify_overflow",
 };
 
 bool async_test_io_fault_take(const async_test_io_fault_t site)
@@ -1495,7 +1495,7 @@ static ZEND_FUNCTION(fail_io)
 
 	zend_argument_value_error(1,
 							  "must be \"queue_create\", \"submit\", \"wait\", \"wake_pair\", \"complete\", "
-							  "\"answer_in_flight\" or \"wait_always\"");
+							  "\"answer_in_flight\", \"wait_always\" or \"inotify_overflow\"");
 }
 
 ///////////////////////////////////////////////////////////////////

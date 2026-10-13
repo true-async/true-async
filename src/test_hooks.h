@@ -50,6 +50,8 @@ typedef enum
 													* Ring's early Timeout does */
 	ASYNC_TEST_IO_FAULT_WAIT_ALWAYS = 1 << 6,      /* reactor_poll: every wait fails, as a broken queue's: never
 													* disarmed */
+	ASYNC_TEST_IO_FAULT_INOTIFY_OVERFLOW = 1 << 7, /* fs_registry_drain: the kernel's queue overflowed, as
+													* after 16384 unread events */
 } async_test_io_fault_t;
 
 #ifdef TRUE_ASYNC_TEST_HOOKS

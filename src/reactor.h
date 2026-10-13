@@ -39,8 +39,8 @@ struct _async_io_event_s
 	async_event_t base;      /* ref_count: the records and the event's other holders */
 	php_io_op op;            /* built by the submitter; the queue owns it while it is submitted */
 	php_io_op_result result; /* the completion's, written before the notify */
-	/* Runs instead of the default completion (CLOSED, off the list, notify) with `result` written;
-	 * NULL for the default. */
+	/* Runs instead of the default completion (CLOSED, notify) with `result` written and the event off
+	 * its list; NULL for the default. */
 	void (*complete)(async_io_event_t *event);
 	uint32_t timer_index;              /* a TIMER's slot in the reactor's heap + 1; 0 outside it */
 	async_reactor_link_t reactor_link; /* on one of the reactor's lists while the op is submitted */
@@ -88,7 +88,10 @@ typedef struct
 	 * bailout in a notify may unmap before RSHUTDOWN takes them back. */
 	async_reactor_link_t triggers_to_walk;
 	uint32_t started_triggers; /* the triggers started: each may wake a coroutine (S4.md 3.4) */
-	async_io_event_t *wakeup;  /* the POLL op on the wake pair, armed from the first trigger on */
+	/* The coroutines parked in a FileSystemWatcher's foreach: its inotify POLL stays on `own`, so
+	 * only this keeps them from a deadlock. Not zeroed by a fork: the child's watchers are rebuilt. */
+	uint32_t parked_watchers;
+	async_io_event_t *wakeup; /* the POLL op on the wake pair, armed from the first trigger on */
 	/* The submitted TIMER events, a min-heap on their deadline: the queue never sees them (S4.md 3.5). */
 	async_io_event_t **timers;
 	uint32_t timers_count;
@@ -137,6 +140,11 @@ int async_io_event_try_submit(async_io_event_t *event);
 
 /* The same for one of the reactor's own ops. */
 int async_reactor_try_submit_own(async_io_event_t *event);
+
+/* An own op's completion submits it again to the queue that completed it: 0 or the errno. An inline
+ * completion leaves the event off the list with its result written (`completed`) for the caller's
+ * loop, as the wakeup's completion does. */
+int async_reactor_resubmit_own(async_io_event_t *event, bool *completed);
 
 /* The Error a throwing submit raises for a try-submit's `error` (ENOSYS: no queue), not thrown. */
 zend_object *async_reactor_submit_error(int error);
@@ -198,7 +206,7 @@ bool async_reactor_timeout_link(async_coroutine_event_callback_t *record,
 /* Whether a submitted op or another thread may still wake a coroutine (S4.md 3.4). */
 static zend_always_inline bool async_reactor_has_waits(const async_reactor_t *reactor)
 {
-	return reactor->waits.next != &reactor->waits || reactor->started_triggers != 0;
+	return reactor->waits.next != &reactor->waits || reactor->started_triggers != 0 || reactor->parked_watchers != 0;
 }
 
 /* The idle wait (S4.md 3.3), for a reactor that has waits: blocks until the queue completes

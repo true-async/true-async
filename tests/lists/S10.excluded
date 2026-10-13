@@ -323,17 +323,3 @@ remote_future/012-is_completed_from_thread.phpt  rfc-rule:2026-10-08 S10 outcome
 remote_future/013-multiple_awaiters.phpt  rfc-rule:2026-10-08 S10 outcomes (threads, not in the first version)
 remote_future/014-error_various_exceptions.phpt  rfc-rule:2026-10-08 S10 outcomes (threads, not in the first version)
 
-# fs_watcher
-fs_watcher/001-fs_watcher_basic.phpt  component:S9 (FileSystemWatcher, a new S9 layer: DECISIONS 2026-10-08 S10 outcomes)
-fs_watcher/002-fs_watcher_close_terminates.phpt  component:S9 (FileSystemWatcher, a new S9 layer: DECISIONS 2026-10-08 S10 outcomes)
-fs_watcher/003-fs_watcher_coalesce.phpt  component:S9 (FileSystemWatcher, a new S9 layer: DECISIONS 2026-10-08 S10 outcomes)
-fs_watcher/004-fs_watcher_raw_mode.phpt  component:S9 (FileSystemWatcher, a new S9 layer: DECISIONS 2026-10-08 S10 outcomes)
-fs_watcher/005-fs_watcher_invalid_path.phpt  component:S9 (FileSystemWatcher, a new S9 layer: DECISIONS 2026-10-08 S10 outcomes)
-fs_watcher/007-fs_watcher_multiple_events.phpt  component:S9 (FileSystemWatcher, a new S9 layer: DECISIONS 2026-10-08 S10 outcomes)
-fs_watcher/008-fs_watcher_buffered_events.phpt  component:S9 (FileSystemWatcher, a new S9 layer: DECISIONS 2026-10-08 S10 outcomes)
-fs_watcher/009-fs_watcher_rename.phpt  component:S9 (FileSystemWatcher, a new S9 layer: DECISIONS 2026-10-08 S10 outcomes)
-fs_watcher/010-fs_watcher_scope_cancellation.phpt  component:S9 (FileSystemWatcher, a new S9 layer: DECISIONS 2026-10-08 S10 outcomes)
-fs_watcher/011-fs_watcher_recursive.phpt  component:S9 (FileSystemWatcher, a new S9 layer: DECISIONS 2026-10-08 S10 outcomes)
-fs_watcher/012-fs_watcher_recursive_removal.phpt  component:S9 (FileSystemWatcher, a new S9 layer: DECISIONS 2026-10-08 S10 outcomes)
-fs_watcher/013-fs_watcher_debounce.phpt  component:S9 (FileSystemWatcher, a new S9 layer: DECISIONS 2026-10-08 S10 outcomes)
-fs_watcher/014-fs_watcher_debounce_filter.phpt  component:S9 (FileSystemWatcher, a new S9 layer: DECISIONS 2026-10-08 S10 outcomes)

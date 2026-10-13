@@ -26,6 +26,7 @@ extern zend_module_entry true_async_module_entry;
 #include "src/reactor.h"
 #include "src/io_provider.h"
 #include "src/os_signal.h"
+#include "src/fs_watcher.h"
 #ifdef TRUE_ASYNC_FUZZ
 #include "src/internal/fuzz.h"
 #endif
@@ -41,6 +42,7 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	async_wake_pair_t wake_pair;            /* the reactor's wake descriptors: the thread's, not a request's */
 	async_io_provider_t io_provider;        /* registered from the first trigger to RSHUTDOWN */
 	async_signal_registry_t *signals;       /* Async\signal()'s watches; NULL while there is none */
+	async_fs_registry_t *fs_watchers;       /* the FileSystemWatchers' inotify descriptor; NULL while none is open */
 	HashTable deadlock_channels;            /* the channels with an armed soft timer, by object handle; borrowed */
 	HashTable healthcheck_pools;            /* the pools with an armed healthcheck timer, by object handle; borrowed */
 	async_coroutine_t *interrupt_coroutine; /* runs the VM interrupt for an idle scheduler; NULL when none is alive */

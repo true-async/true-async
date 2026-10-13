@@ -2949,3 +2949,24 @@ stack options were shown with the code).
   (2026-10-09); the socket should be closed. Why: Edmond 07:21 «если целостность данных доказать нельзя ... делаем
   как в тру асинк»; one call is several ops, and on Windows a cancelled overlapped send leaves the socket's state
   undefined, so the count cannot be proven. `Async\CancellationWithResult` dropped.
+- 2026-10-13 S9.44, Edmond's answer to question 1 of `dev/plans/S9-fs-watcher.md` is B: `$extensions` filters in every
+  mode, not only with `$debounceMs` as TrueAsync does; a name-less event (an overflow, a collapsed debounce event)
+  passes. Why: a programmer who passes a filter expects it to filter
+  (`tests/fs_watcher/038-extensions_filter_without_debounce.phpt`).
+- 2026-10-13 S9.44, the reactor takes a completed event off its list before a custom completion runs, for the wakeup
+  and the watcher's POLL alike; the POLL is resubmitted by `async_reactor_resubmit_own()`. A forked child rebuilds
+  before a watch is added and before an iterator waits; until then it removes no watch, sharing the parent's inotify
+  instance; changes between the fork and the rebuild are lost. Why: a child's `close()` removed the parent's watches
+  (`tests/fs_watcher/044-forked_child_watches_again.phpt`, `048-forked_child_close_keeps_parent_watch.phpt`). An
+  overflow is raised by the test hook `fail_io('inotify_overflow')` (`040-overflow_event_without_filename.phpt`): a
+  real one needs 16384 unread events, a mass test; `tests/internal/072-fail_io_arguments.phpt` expects the new site
+  in the refusal's message.
+- 2026-10-13 S9.44, Critic: a watcher freed without its destructor after a fatal error closes itself in `free_obj`
+  (the shutdown read the freed watcher, `tests/fs_watcher/049-fatal_error_frees_open_watcher.phpt`, ASAN); a debounced
+  burst read before the close is buffered (`050-debounced_burst_kept_on_close.phpt`); a shared iterator's step keeps
+  its event in a local until it stores it (`051-shared_iterator_keeps_last_event.phpt`); a coalesce pop moves the
+  internal pointer past its key, so the next one scans no holes; a refused re-add after a fork names its errno. A
+  child's `close()` before its rebuild leaves the parent's watch and its Poll wait (`052-forked_child_close_keeps_parent_poll.phpt`):
+  the pid guard and the core's refusal of a foreign queue, no rebuild in `close()`. Not changed: the POLL completion's
+  loop on an inline completion, as the wakeup's (the Poll queue answers inline only an edge-registered wait, which
+  this one is not), and a cycle collection inside the drain (GC runs in its own coroutine since S9.38).
