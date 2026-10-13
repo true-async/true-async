@@ -74,10 +74,9 @@ active while a hook runs on it (`beforeAcquire`, the factory, `beforeRelease`, t
 **Constructor.** As TrueAsync (`pool.c:1365-1442`): `$min < 0`, `$max < 1`, `$min > $max`, `$healthcheckInterval < 0`
 throw `ValueError` with its messages (`010`); a second `__construct()` throws `PoolException("Pool is already
 initialized")` and changes nothing (`069`); the pre-warm calls the factory `$min` times in the constructor and stops at
-the first exception, which the constructor throws (`025`, `050`). An object made without its constructor (Reflection's
-`newInstanceWithoutConstructor()`; `unserialize()` is refused, section 8 item 3) answers as TrueAsync's
-`068-pool_without_a_pool_throws`: `close()` and `isClosed()` return, `count()`, `idleCount()`, `activeCount()` return 0,
-`tryAcquire()` returns `null`, the others throw `PoolException("Pool is not initialized")`.
+the first exception, which the constructor throws (`025`, `050`). No object exists without its constructor:
+`unserialize()` and Reflection's `newInstanceWithoutConstructor()` are refused and the class has no clone (`068`
+checks the refusals), so TrueAsync's "Pool is not initialized" answers to such an object have no counterpart here.
 
 **`acquire()`**, TrueAsync's `zend_async_pool_acquire()` (`pool.c:928-1022`), in this order:
 

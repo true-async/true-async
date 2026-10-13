@@ -1173,7 +1173,7 @@ Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, dev/plans/S9-taskgroup.md,
   dev/plans/S9-pool.md
-Active: S9.36, layer 5's review and its documentation
+Active: S9.37, layer 5's security pass
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -1667,10 +1667,19 @@ Active: S9.36, layer 5's review and its documentation
         all fixed with tests; the second Critic: a swallowed graceful shutdown (`123`). On CORE_REF `46369b6a6a5`:
         debug 1897 PASS, 0 unexpected, and pool, collector and channel on ASAN 353 PASS before that last fix; the
         pool's 124 tests after it, debug and ASAN, 0 unexpected.
-- [ ] S9.36 Layer 5 review and its documentation in `true-async-doc`.
+- [x] S9.36 Layer 5 review and its documentation in `true-async-doc`.
       done: Critic over S9.34-S9.35, coverage, Mull, 100 fuzz seeds, B21 and B22, the doc pages corrected (note
         section 9)
       tier: T2 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-12 S9.36). Critics: an exception in flight went beneath the
+        destructors' (a pre-warm factory's exception, a cancellation, a strategy's exception in `release()`), and a
+        pool closed while `shouldRecover()` suspended still called the factory; fixed by one rule,
+        `pool_exception_settle()` (`pool/129`-`135`). Coverage on `bc889c5`: src 95.6 %, the layer's lines 633 of
+        668; `124`-`128` cover five misses. Mull on `pool.c`: 83 mutants, 12 survivors, 7 killed by `136`-`143`,
+        the mutants at lines 205, 741, 779, 1105 and 1210 explained in DECISIONS' S9.36 Mull entry. Fuzz: 100 seeds
+        over the 144 pool tests, 0 failed. B21 1.067 and B22 1.566 of the reference's instructions
+        (`dev/BENCHMARKS.md`). Docs: `true-async-doc` `ru/concepts/pool.md`. On CORE_REF `46369b6a6a5`: debug 1918
+        PASS, ASAN 1892 PASS, 0 unexpected; the pool's 144 tests on both after the last change.
 - [ ] S9.37 Layer 5 security pass by `dev/SECURITY.md`.
       done: a journal entry per item of the note's section 7; findings fixed with a test or recorded
       tier: T2 · role: —

@@ -2797,3 +2797,20 @@ stack options were shown with the code).
   leaves the pool without a healthcheck. Not tested, by design or because only time would show them: a tick
   while a check runs (the timer is re-armed only at the check's end), a check after `graceful_shutdown()`, a tick
   over a place promised to a woken waiter, a timeout after a wake. Why: the Critic of S9.35.
+- 2026-10-12 S9.36, the pool's exception order: one rule at every site of `pool.c` where a destructor runs after
+  another exception (`pool_exception_settle()`): the earlier exception stays on top with the destructor's beneath,
+  unless only the destructor's is a cancellation, which goes on top. By that rule `close()` puts its destructors'
+  chain under an exception in flight (a pre-warm factory's exception, a cancellation of the unwind) and keeps a
+  cancellation in the chain on top of later destructors' exceptions; `release()` merges the strategy's exception
+  with the destructor's. A shared exception in flight takes no previous; the destructor's prints at request end.
+  A pool closed while `shouldRecover()` suspends throws "Pool is closed" and calls no factory. Why: the layer
+  Critic of S9.36 (`pool/129`-`135`); a cancelled coroutine must not run on behind a `catch (Exception)`.
+- 2026-10-12 S9.36, not changed: a `beforeAcquire` hook that catches the caller's cancellation and returns a
+  verdict goes on as any code that swallows a cancellation does; the coroutine is not cancelled again, so
+  `acquire()` may still hand it a resource. Why: a swallowed cancellation lets the coroutine run on everywhere in
+  this extension (a second `delay()` after a caught cancel sleeps), and the hook is the user's own code.
+- 2026-10-12 S9.36, Mull survivors on `pool.c` kept: line 205 (`==` to `!=`) survives while the new hash slot's
+  value happens to be zero; 741 and 779 (`> 0` to `>= 0` on the free places) need a check that resumes between
+  a release promising the last place and the woken waiter's run; 1105 is equivalent (`UINT32_MAX` either way);
+  1210 (`<` to `<=`) reads past the array, which only ASAN sees, and Mull builds debug. The run-tests timeout is
+  10 s for such runs (`TEST_TIMEOUT=10`): a mutant that hangs a test cost 60 s. Why: S9.30's practice.

@@ -3,6 +3,34 @@
 The results journal: every measurement with its date, builds and outcome. The method and the
 benchmarks are `dev/plans/S3.md`, section 12; the scripts are `bench/`, the runner `tools/bench.py`.
 
+## 2026-10-12, S9.36: Pool acquire() and release() with and without waits, counted
+
+**Builds.** Release, ZTS, `-O2`, gcc 13.3, run with `-n`, no opcache; one count per side, the child pinned to one
+CPU (cachegrind counts). Both cores configured with `tools/ci/build-core.sh`'s flags without `--enable-debug`.
+
+- `ours`: the pinned core `46369b6a6a5` (`async-core-io-2026-10-12-5`), ior `d46649f6425`, and our extension as a
+  `phpize` module of `bc889c5` (S9.35) with S9.36's changes, the test hooks off.
+- `ref`: the fork core `863f6dd90cf` with `ext/async` `1fdacf8` built in, libuv 1.48.
+
+`B21` runs 10 coroutines that each take a resource, yield once with it and give it back, over a `Pool(max: 2)`, so
+eight of them wait in `acquire()` at any time (`bench/b21.php`); `B22` is the same over `max: 10`, where nobody
+waits. One operation is one `acquire()`/`release()` pair with its yield.
+
+| Bench | ours | ref | ours / ref |
+|---|---|---|---|
+| B1 | 2,966.0 / 1.020 | 3,128.9 / 2.030 | 0.948 |
+| B21 | 2,647.0 / 0.000 | 2,480.0 / 1.000 | 1.067 |
+| B22 | 1,927.7 / 0.000 | 1,231.0 / 0.000 | 1.566 |
+
+Instructions / allocations per operation; page faults and system calls 0.000 per operation on every row. Known
+answer: the `known` variants add a `new stdClass` per pair and count +313.0 / +1 on both sides and both benches.
+The same loop with no pool, only the yield, counts 689 (`ours`) and 660 (`ref`) instructions per operation, so a
+pair alone costs about 1,239 against 571 without waits and 1,958 against 1,820 with them. Most of the difference
+is the release check (`dev/plans/S9-pool.md`, question 2): in a 200,000-pair run of `B22` on `ours`, cachegrind
+puts 16.3 % of the instructions in `zend_hash.c` (the table of handed-out objects: add, find, delete and the
+rehash that clears the deleted slots) and 5.0 % in `zend_weakrefs.c`. A wait costs `ours` no allocation: the
+POOL record lives in the coroutine's waker; `ref` allocates one per wait.
+
 ## 2026-10-12, S14.8: the scope walks of scope/124 and 125, counted
 
 **Builds.** Debug, ZTS, gcc 13.3, run with `-n`, no opcache; the core `c53c17cfd47` built by

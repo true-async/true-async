@@ -119,8 +119,24 @@ static void pool_exception_merge(zend_object *under)
 	zend_exception_set_previous(pending, under);
 }
 
-/* Destroys `resource` after a FAILED verdict: the hook's error stays on top for the caller, the destructor's
- * exception beneath it, unless the destructor was cancelled, as the caller's cancellation goes on top. */
+/* Makes `first` pending with `second` under it, unless only `second` is a cancellation, which goes on top: a
+ * cancelled caller must not run on behind a catch of another exception. Either may be NULL. */
+static void pool_exception_settle(zend_object *first, zend_object *second)
+{
+	ZEND_ASSERT(EG(exception) == NULL);
+
+	if (UNEXPECTED(first != NULL && second != NULL && instanceof_function(second->ce, async_ce_cancellation) &&
+				   !instanceof_function(first->ce, async_ce_cancellation))) {
+		EG(exception) = second;
+		pool_exception_merge(first);
+		return;
+	}
+
+	EG(exception) = first;
+	pool_exception_merge(second);
+}
+
+/* Destroys `resource` after a FAILED verdict, the hook's error kept for the caller. */
 static void pool_destroy_after_failure(async_pool_t *pool, zval *resource)
 {
 	zend_object *const hook_error = EG(exception);
@@ -130,14 +146,8 @@ static void pool_destroy_after_failure(async_pool_t *pool, zval *resource)
 
 	zend_object *const destructor_error = EG(exception);
 
-	if (UNEXPECTED(destructor_error != NULL && instanceof_function(destructor_error->ce, async_ce_cancellation) &&
-				   !instanceof_function(hook_error->ce, async_ce_cancellation))) {
-		pool_exception_merge(hook_error);
-		return;
-	}
-
-	EG(exception) = hook_error;
-	pool_exception_merge(destructor_error);
+	EG(exception) = NULL;
+	pool_exception_settle(hook_error, destructor_error);
 }
 
 /* Asks `hook` about `resource`; a hook not given accepts. A rejecting Exception goes to `*rejection`, owned
@@ -313,7 +323,7 @@ static void pool_wake_waiter(async_pool_t *pool)
 /* A caller leaving with a promised place it did not take hands the place to the next waiter (pool.c:1015-1019). */
 static void pool_reservation_drop(async_pool_t *pool, bool *has_reservation)
 {
-	if (EXPECTED(!*has_reservation)) {
+	if (!*has_reservation) {
 		return;
 	}
 
@@ -534,8 +544,15 @@ static pool_take_result_t pool_take(async_pool_t *pool, zval *result, bool *has_
 			return POOL_TAKE_CLOSED;
 		}
 
-		/* The promise stays counted across shouldRecover(), which may suspend. */
-		if (UNEXPECTED(!pool_circuit_allows(pool))) {
+		/* The promise stays counted across shouldRecover(), which may suspend while the pool closes. */
+		const bool is_allowed = pool_circuit_allows(pool);
+
+		if (UNEXPECTED(pool->is_closed && EG(exception) == NULL)) {
+			pool_reservation_drop(pool, has_reservation);
+			return POOL_TAKE_CLOSED;
+		}
+
+		if (UNEXPECTED(!is_allowed)) {
 			pool_reservation_drop(pool, has_reservation);
 			/* A place a rejected resource freed on the round before, which this caller meant to take. */
 			pool_wake_waiter(pool);
@@ -619,7 +636,7 @@ static pool_take_result_t pool_take(async_pool_t *pool, zval *result, bool *has_
 
 /* TrueAsync's pool.c:1085-1118 with the order of S9-pool.md section 2: `active` drops once the resource is
  * idle or destroyed, after the strategy's call, which may suspend. The strategy's exception reaches the
- * caller after the release's own work, with a destructor's exception over it. */
+ * caller after the release's own work, merged with a destructor's by pool_exception_settle(). */
 static void pool_release(async_pool_t *pool, const zval *resource)
 {
 	zend_object *rejection;
@@ -659,9 +676,12 @@ static void pool_release(async_pool_t *pool, const zval *resource)
 		pool_destroy_resource(pool, &owned);
 	}
 
+	zend_object *const destructor_error = EG(exception);
+
+	EG(exception) = NULL;
 	pool->active--;
 	pool_wake_waiter(pool);
-	pool_exception_merge(strategy_error);
+	pool_exception_settle(strategy_error, destructor_error);
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -684,7 +704,7 @@ static void pool_healthcheck_timer_drop(async_pool_t *pool)
 
 static void pool_healthcheck_timer_withdraw(async_pool_t *pool)
 {
-	if (EXPECTED(pool->healthcheck_timer == NULL)) {
+	if (pool->healthcheck_timer == NULL) {
 		return;
 	}
 
@@ -950,9 +970,9 @@ void async_pool_request_shutdown(void)
 }
 
 /* TrueAsync's pool.c:1121-1181: stops the healthcheck, rejects the waiters, then destroys every idle resource even
- * when a destructor throws; the exceptions chain through `previous`, the last one on top, over an exception in
- * flight when close() started (a pool freed during an unwind). Each resource leaves the buffer before its
- * destructor runs. */
+ * when a destructor throws; the exceptions chain through `previous`, the last one on top, and go under an
+ * exception in flight when close() started (a pool freed during an unwind), both by pool_exception_settle(). Each
+ * resource leaves the buffer before its destructor runs. */
 static void pool_close(async_pool_t *pool)
 {
 	if (pool->is_closed) {
@@ -975,13 +995,16 @@ static void pool_close(async_pool_t *pool)
 		pool->active++;
 		pool_destroy_resource(pool, &resource);
 		pool->active--;
-		pool_exception_merge(destructor_errors);
+
+		zend_object *const destructor_error = EG(exception);
+
+		EG(exception) = NULL;
+		pool_exception_settle(destructor_error, destructor_errors);
 		destructor_errors = EG(exception);
 		EG(exception) = NULL;
 	}
 
-	EG(exception) = destructor_errors;
-	pool_exception_merge(in_flight);
+	pool_exception_settle(in_flight, destructor_errors);
 }
 
 ///////////////////////////////////////////////////////////////////

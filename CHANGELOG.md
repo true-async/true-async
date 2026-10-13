@@ -115,6 +115,7 @@ can see goes here; tests, tools and CI are in the git history.
   ([S9](dev/plans/S9-taskgroup.md)).
 - `Async\Pool`, `Async\PoolException`, `Async\ServiceUnavailableException` and the circuit breaker types (`CircuitBreaker`, `CircuitBreakerState`, `CircuitBreakerStrategy`): `acquire()` and `tryAcquire()` without waiting yet, `release()` that refuses a value the pool did not hand out or got back already, `beforeAcquire` and `beforeRelease` hooks whose `Error` passes to the caller, a strategy asked `shouldRecover()` while INACTIVE ([S9](dev/plans/S9-pool.md), S9.34).
 - `Async\Pool::acquire()` waits for a release in arrival order, with `$timeout` throwing `TimeoutException`, and `close()` wakes the waiters with `PoolException`; the healthcheck runs every `healthcheckInterval` ms in a coroutine of its own, so it may suspend ([S9](dev/plans/S9-pool.md), S9.35).
+- `Async\Pool` keeps a cancellation, and the exception that started `close()` or a call, on top of a destructor's exception, and `acquire()` on a pool closed while `shouldRecover()` ran throws `PoolException` without calling the factory ([S9](dev/plans/S9-pool.md), S9.36).
 - `map()`, `catch()` and `finally()` on a `recvAsync()`, signal or group Future nobody else holds complete
   when that Future does; before, the Future went with its object and the chain never completed. A dropped
   `recvAsync()->map()` chain stays queued and takes a channel value; its channel, group or signal wait holds
