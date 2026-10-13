@@ -858,3 +858,21 @@ streams) is reported only without a pending exception. Tests
 the accept's runs into the test timeout.
 
 Waits for it: nothing in our lists (no TLS test cancels a handshake); the core carries it.
+
+## 38. IO hooks: a started connect that a provider answers Ready without a wait
+
+State: on `io-hooks-connect-ready-unconnected` `905e4ababe3` (on bukka's `8e470c219fc`) and `io-hooks-fixes`
+`03ee93a8ce4`, 2026-10-13 (S8.13, found by S8.12's Critic), in the core since `async-core-io-2026-10-13-7`
+`f9c2ef8661d`. PR text: `/mnt/project-files/notes/s8-13/io-hooks-connect-ready-unconnected-pr.md`. PR: none yet.
+
+Need: after its own `connect()` the core submits a Connect op flagged `PHP_IO_OP_F_CONNECT_STARTED` (our
+bukka/php-src#4) and takes Ready as the connect's end. A userland provider cannot see the flag; one that answers
+a Connect Ready at once (`hooks/connect-direct-ready.phpt` does) made a connect still under way look established,
+since `SO_ERROR` is 0 until it ends: `stream_socket_client()` returned a stream before the peer accepted and
+ignored its timeout.
+
+Request: a Ready counts only once the socket has a peer (`getpeername()`); otherwise the core waits with a Poll
+op, as for a provider that connected again. Test `ext/standard/tests/streams/hooks/connect-ready-without-wait.phpt`
+(Linux, a full accept queue); fails before the fix.
+
+Waits for it: nothing in our lists (our provider waits); the core carries it.

@@ -1225,6 +1225,13 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
       result 2026-10-13: core debug `ext/standard/tests/{streams,poll,network}`, `ext/openssl/tests`,
         `ext/sockets/tests`: 806 PASS, 0 FAIL; `pocs-dbg` 1994 PASS, 1 FAIL (`iterate/061`, S9.42's, passes 5 of 5
         alone).
+- [x] S8.13 A started connect that a userland provider answers Ready without a wait (S8.12's Critic):
+      `RFC-CHANGES.md` 38.
+      done: `hooks/connect-ready-without-wait.phpt` fails before and passes after; a bukka branch and PR text
+      tier: T1 · role: Critic (S8.12's)
+      result 2026-10-13: core `async-core-io-2026-10-13-7` `f9c2ef8661d` (`io-hooks-fixes` `03ee93a8ce4`), branch
+        `io-hooks-connect-ready-unconnected` `905e4ababe3` (bukka's head: 635 PASS, 0 FAIL); core debug suites 807
+        PASS, 0 FAIL; `pocs-dbg` 1994 PASS, 1 FAIL (`reactor/009` under the full lane's load, passes 5 of 5 alone).
 
 ## S9 — Higher layers, one at a time  [in progress]
 

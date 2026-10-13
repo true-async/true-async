@@ -700,6 +700,7 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   `dcb1ea7d64d`. Open question: the core's connect-started fix is the Poll version, the PR branch the flagged Connect.
 - S8.12 closed 2026-10-13: core `async-core-io-2026-10-13-6` `910cbcab817` with bukka's merged connect-started fix.
   Next S8.13: a flagged Connect answered Ready without a wait (Critic); then S8.3c, `Async\CancellationWithResult`.
+- S8.13 closed 2026-10-13: core `async-core-io-2026-10-13-7` `f9c2ef8661d`, RFC-CHANGES 38, PR text notes/s8-13.
 
 ## S14
 
