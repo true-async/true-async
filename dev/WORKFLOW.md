@@ -69,12 +69,12 @@ The other branches there belong to the TrueAsync fork's earlier work and are not
 
 ## Pinned core
 
-| Part | Revision | In `async-core-io-2026-10-13-3` `57fed0673c0` |
+| Part | Revision | In `async-core-io-2026-10-13-4` `77ddd91c4b6` |
 |---|---|---|
 | php-src master | `e17e2970bc0` | merged through bukka's head |
 | Scheduler PoC (`async-core`, php/php-src#22561) | `b318dcd834c` | merged onto `634cbbf94be` (`async-core-io-2026-10-12-3`) |
 | IO hooks PoC (php/php-src#23997) | `566a6833eb5` | merged |
-| Our fixes to the IO hooks PoC (`io-hooks-fixes`) | `f2d5fd05710` | merged onto `8568d99bd3e` (`async-core-io-2026-10-13-2`); `dev/RFC-CHANGES.md` 2, 3, 4, 18, 19, 26, 27, 28, 34, 36, 37 |
+| Our fixes to the IO hooks PoC (`io-hooks-fixes`) | `5f15ea1e701` | merged onto `57fed0673c0` (`async-core-io-2026-10-13-3`); `dev/RFC-CHANGES.md` 2, 3, 4, 18, 19, 26, 27, 28, 34, 36, 37 |
 | The connect fix (`io-hooks-connect-started`, bukka/php-src#4, on bukka's `2bf149c2f50`) | `dca62e39da4` | picked onto `8159f7baa5c` (`async-core-io-2026-10-07-4`) |
 | Our fixes to php-src (`php-src-fixes`) | `68f790cb2d4` | merged |
 | ior (`release-handle` in true-async/ior, on libior/ior `2bfd2319896`) | `d46649f6425` | built per tree, "Building the core" |

@@ -693,6 +693,9 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
   exception name).
 - S8.9 closed 2026-10-13 (PLAN handoff line): core `async-core-io-2026-10-13-3` `57fed0673c0`, RFC 3's Windows half
   as the third commit of `io-hooks-stream-timeouts` (PR text `notes/s8-6`). Open in S8: S8.3c (Edmond's exception name).
+- S8.10 closed 2026-10-13 (PLAN handoff line): core `async-core-io-2026-10-13-4` `77ddd91c4b6`, a test-only merge; the
+  connect-throws tests accept the Poll of the connect-started fix, the one-attempt test now fails when a further address
+  is tried. Open in S8: S8.3c (Edmond's exception name).
 
 ## S14
 

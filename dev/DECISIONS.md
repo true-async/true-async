@@ -2894,3 +2894,6 @@ stack options were shown with the code).
   `tests/io/040-pipe_read_timeout_then_success.phpt`, `tests/io/042-pipe_timeout_concurrent_coroutines.phpt`,
   `tests/io/043-pipe_fread_timeout.phpt` lose `xfail-on:pocs-win(S8.9)`. Why: the Critic: a single Poll with a
   deadline left its cancelled zero-byte read unkept by the Ring, which the Any path keeps and drains.
+- 2026-10-13 S8.10, the core tests `hooks/connect-throws.phpt`, `connect-throws-one-attempt.phpt`, `fsockopen-throws.phpt`
+  expect a Connect or a Poll op; the one-attempt test counts connections at its listener, not provider ops. Why: the
+  connect-started fix waits with a Poll, and after the exception no op reaches the provider, so the count could not fail.

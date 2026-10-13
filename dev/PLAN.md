@@ -1185,6 +1185,24 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
         streams, `hooks/`, `stream_select`, `proc_open` tests 59 PASS, 34 SKIP, 3 FAIL. The three are S8.3b's
         `hooks/connect-throws.phpt`, `connect-throws-one-attempt.phpt`, `fsockopen-throws.phpt`: on Windows the
         throwing op is a Poll, not the Connect they expect (not looked into, outside S8.9).
+- [x] S8.10 The three core tests of S8.3b that fail on Windows (S8.9): `hooks/connect-throws`,
+      `connect-throws-one-attempt`, `fsockopen-throws`.
+      done: the three pass on the core on Linux and Windows; the one-attempt test fails when a connect goes on
+        to the next address after the exception
+      tier: T1 · role: Critic
+      handoff: done 2026-10-13. Not a Windows matter: they fail on Linux too (`-3`: 85 hooks tests, these 3 red).
+        Our connect-started fix in the core (`a6fbd0776e9`, bukka/php-src#4) waits for a connect the core started
+        with a Poll op, so the throwing provider names a Poll; on `io-hooks-fixes` alone it is a Connect.
+        The tests accept either (`io-hooks-fixes` `5f15ea1e701`, also the third commit of
+        `io-hooks-cancelled-accept-connect` `1da1a2c173f`); core `async-core-io-2026-10-13-4` `77ddd91c4b6`, a
+        test-only merge. The Critic found the one-attempt test could not fail: after the exception the core runs no op through
+        the provider, so its count of ops stayed 1. It now resolves the name to its listener twice and expects at
+        most one connection there; with the guard in `main/network.c` removed it fails. Open: no test pins the Poll
+        that a provider without DirectData gets after the core's own connect (the alternation lets a Connect pass):
+        a core test with that provider expecting exactly `Io\Operation\Poll`, on `io-hooks-connect-started`.
+      result 2026-10-13: core hooks tests 83 PASS, 2 SKIP on Linux debug (`57fed0673c0` binary, test-only change);
+        Windows probe run 38351449003 (branch `s8-10-test`): the same Poll. Run 38353296164 on `-4`, Windows Release_TS:
+        hooks 48 PASS, 36 SKIP, 0 FAIL; `registrations-edge-select.phpt` passed on retry (not looked into).
 
 ## S9 — Higher layers, one at a time  [in progress]
 

@@ -603,7 +603,8 @@ Waits for it: nothing: `io_provider/067`, `068` pass on the core that carries it
 ## 27. IO hooks: an accept or a connect cancelled by an exception reports nothing else
 
 State: on `io-hooks-cancelled-accept-connect` `8965b4821d0` (on bukka's `8e470c219fc`) and `io-hooks-fixes`
-`f151259dda5`, 2026-10-13 (S8.3b), in the core since `async-core-io-2026-10-13-1` `5d6194ec8ac`. PR text for
+`f151259dda5`, 2026-10-13 (S8.3b), in the core since `async-core-io-2026-10-13-1` `5d6194ec8ac`. Its connect tests
+accept the Poll that the connect-started fix gives a provider (`1da1a2c173f`, `5f15ea1e701`; S8.10). PR text for
 bukka with entry 37: `/mnt/project-files/notes/s8-3b/io-hooks-cancelled-accept-connect-pr.md`. PR: none yet.
 
 Need: a coroutine cancelled in `stream_socket_accept()` gets the cancellation and also "Warning:
