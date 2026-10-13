@@ -20,6 +20,7 @@ php-src plus the async RFCs, with no php-src patches of its own.
 - [Architecture](#architecture)
 - [Roadmap](#roadmap)
 - [The core](#the-core)
+- [Known limitations](#known-limitations)
 - [Build](#build)
 - [Tests](#tests)
 - [Repository layout](#repository-layout)
@@ -97,7 +98,7 @@ flowchart TB
 | ✓ S5 · Futures, timeouts and combinators | `██████████` | 100 % |
 | ✓ S6 · IO hooks provider | `██████████` | 100 % |
 | ✓ S7 · Async object collector | `██████████` | 100 % |
-| ▶ **S8 · Review checks and RFC change list** | `████████░░` | 75 % |
+| ▶ **S8 · Review checks and RFC change list** | `████████░░` | 81 % |
 | ✓ S9 · Higher layers, one at a time | `██████████` | 100 % |
 | ✓ S10 · Beyond the RFCs | `██████████` | 100 % |
 | S11 · Namespace `Async` renamed to `TrueAsync` | `░░░░░░░░░░` | 0 % |
@@ -116,6 +117,19 @@ Until the RFCs are merged, the core is the php-src branch
 [`async-core-io`](https://github.com/true-async/php-src/tree/async-core-io): php-src master with the
 two proofs of concept merged, nothing else. [`dev/WORKFLOW.md`](dev/WORKFLOW.md) pins its revision
 and gives its configure line.
+
+---
+
+## Known limitations
+
+**Regular files are read and written on the thread.** A `fread()` or `fwrite()` on a file holds
+every coroutine until it returns; a socket read does not. The core's Ring can run file
+IO in the background, but while a coroutine waits on a stream the core refuses that stream to every
+other coroutine with `Error: Concurrent access to a stream`. With files in the background, two
+coroutines writing one log file, or including from one phar, would fail; TrueAsync queues them on
+the handle instead. Files go to the background once the core queues such waits
+([`dev/RFC-CHANGES.md`](dev/RFC-CHANGES.md) 12). The same Error already meets two coroutines using
+one socket or pipe at once.
 
 ---
 

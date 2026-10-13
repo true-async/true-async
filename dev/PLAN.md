@@ -928,7 +928,7 @@ not expressible with why); `RFC-CHANGES.md` complete; the review updated.
 Tier: T1. Roles: Critic after every step.
 Tests: interleaved
 Base: d783cea
-Active: S8.3a
+Active: S8.3b
 
 Each item is run against our provider on the pinned core, on `pocs-dbg` and `pocs-asan`, over the
 Ring and over the Poll queue (`TrueAsync\Test\` hook) where the item depends on the queue. Its
@@ -1023,7 +1023,7 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
         frees its `Socket` twice (bukka's code, `RFC-CHANGES.md` 26, fix branch
         `io-hooks-socket-accept-exception`); a cancelled accept or connect warns, and in the stream
         exception mode replaces the cancellation (27); `065`-`068`, `071` wait for them.
-- [ ] S8.3a `F_FILES` on: what a regular-file read costs through the Ring against the thread, for a
+- [x] S8.3a `F_FILES` on: what a regular-file read costs through the Ring against the thread, for a
       page-cache read and for a cold one (the core keeps file ops opt-in because the page-cache read
       loses, `main/io/php_io_ring.c:279-289`), and what a read cancelled in flight gives (the thread
       backend, or a cold read on ext4). The flag also moves pipe, FIFO and tty reads and writes from
@@ -1038,6 +1038,13 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
         buffer may now hold them), or the reason it stays off in section 11; `io/100` without its
         `--XFAIL--`, or the XFAIL names where it goes
       tier: T2 · role: Critic
+      handoff: done 2026-10-13. `F_FILES` stays off (Edmond 02:55): with it on, the core's whole-stream freeze (B1)
+        makes a second coroutine on one file handle throw "Concurrent access to a stream" (eight `io/` tests with a
+        shared handle, two coroutines including from one phar), where TrueAsync queues them per handle. Until the
+        core queues such a wait (`RFC-CHANGES.md` 12), files run on the thread: README "Known limitations",
+        `dev/plans/S6.md` sections 11 and 14; `io/100`'s XFAIL names entry 12. Not measured on a release core,
+        so no `BENCHMARKS.md` entry. The draft (provider flags, tests) and a core fix it needed (a descriptor
+        cast seeking a frozen stream) are patches in `notes/s8-3a/ffiles-draft` (project files).
 - [ ] S8.3b The core fixes of S8.3, when the core slot is free: `RFC-CHANGES.md` 26 merged from
       `io-hooks-fixes` (done by S8.4a's core update: `067`, `068` pass), 27 as one commit on
       `io-hooks-fixes` with its tests and a PR text for bukka; a core update that carries it.

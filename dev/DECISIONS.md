@@ -2823,3 +2823,10 @@ stack options were shown with the code).
 - 2026-10-13 S9.37, not changed: after `exit()` in the destructor callable, `close()` still destroys the other
   idle resources, and the exit wins at the end. Why: the destructor is cleanup, as a `finally` is, and TrueAsync's
   close destroys every idle resource (pool.c:1121-1181); a resource left undestroyed keeps its connection open.
+- 2026-10-13 S8.3a, `PHP_IO_HOOKS_F_FILES` stays off: regular files run on the thread, a limitation in the README.
+  With it on, the core freezes a stream while one op waits (B1) and a second coroutine on the same file handle
+  throws "Concurrent access to a stream": eight `io/` tests with a shared handle, two coroutines including from one
+  phar. TrueAsync queues a handle's reads and writes in libuv (`libuv_reactor.c:6385-6396`, `6610-6625`); a queue
+  here needs the core to hand the second user to the provider as a wait (`RFC-CHANGES.md` 12). The core fix the
+  draft needed (a descriptor cast seeking a frozen stream, `main/streams/cast.c`) is not sent: with files on the
+  thread no seekable stream is frozen. Why: Edmond 2026-10-13 02:55, «не делать async для files».

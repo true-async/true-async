@@ -682,6 +682,9 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
 - S8.3a in progress 2026-10-12: the pid cache is in (main `6f44561`, core `async-core-io-2026-10-12-5`
   `46369b6a6a5`, RFC 36). Edmond's 19:48 «ок»: `F_FILES` goes on, a coroutine suspends on every Ring op. S8.3c:
   Edmond's design, a cancellation subclass carrying the result of an op that completed; its name is his.
+- S8.3a closed 2026-10-13 (PLAN handoff line): `F_FILES` stays off (Edmond), README "Known limitations"; the
+  draft and its core cast fix are patches in `notes/s8-3a/ffiles-draft`. Open in S8: S8.3b and S8.6 (core slot),
+  S8.3c (Edmond's exception name).
 
 ## S14
 

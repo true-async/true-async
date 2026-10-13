@@ -1,7 +1,7 @@
 --TEST--
 A cancelled read leaves the bytes it took to the next reader
 --XFAIL--
-Needs a core change: S8.3a of dev/PLAN.md (files run on the thread until F_FILES, dev/plans/S6.md section 14)
+Needs a core change: files run on the thread until the core queues a second user of a busy stream (dev/RFC-CHANGES.md 12, S8.3a of dev/PLAN.md)
 --FILE--
 <?php
 
