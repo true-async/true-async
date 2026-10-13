@@ -1178,8 +1178,11 @@ Layer 2 done when: S9.txt's layer 2 block passes on debug and ASAN; the S3-S7 li
 Layer 3 done when: S9.txt's layer 3 block passes on debug and ASAN; the S3-S7 lists and layers 1 and 2 pass as before.
 Layer 4 done when: S9.txt's layer 4 block passes on debug and ASAN; the S3-S7 lists and layers 1-3 pass as before.
 Layer 5 done when: S9.txt's layer 5 block passes on debug and ASAN; the S3-S7 lists and layers 1-4 pass as before.
-Iterators, FileSystemWatcher and runtime information have no plan yet: each gets its steps when Edmond
-agrees its plan, and S9 is not closed before they have them (S14.4).
+Layer 6, iterators: `Async\iterate()` on S9.6's iterator core, the ITERATE wait kind, the caller's cancellation
+(`dev/plans/S9-iterate.md`).
+Layer 6 done when: S9.txt's layer 6 block passes on debug and ASAN; the S3-S7 lists and layers 1-5 pass as before.
+FileSystemWatcher and runtime information have no plan yet: each gets its steps when Edmond agrees its plan, and S9
+is not closed before they have them (S14.4).
 Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
@@ -1728,6 +1731,25 @@ Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, 
         debug, 311 ASAN pass (`ext/test_scheduler`, `Zend/tests/gc*`, fibers). Debug 1774 PASS, ASAN 1748 PASS, 0
         unexpected; 100 fuzz seeds over the 20 changed tests, 0 failed, 0 new diagnostics after `task_set/036`'s
         fix; ten of them fail on ASAN with S9.33's fixes reverted. RFC text in php-async-core-rfc. Two Critics, Sage.
+- [x] S9.39 Design note `dev/plans/S9-iterate.md` (layer 6, iterators).
+      done: the note pushed; every Critic finding fixed or answered in the note; its question answered by Edmond
+      tier: T2 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S9.39): the layer is TrueAsync's `iterate()` alone, on S9.6's
+        core, no core change. Probes on the reference build (`/mnt/project-files/s9/probes/s9.iterate/`, i1-i22):
+        a caller's cancel waits for the whole walk with `cancelPending: false`, `exit()` in a callback is swallowed,
+        a spawned coroutine's error during the walk ends the request, two leaks. Critic: 7 findings fixed in the note
+        (DISPOSE_SAFELY cleared as `async.c:1016`, the record's target and owner, a bailout during the wait, the
+        exception merge). Edmond answered question 1 at 03:38: B, a cancel of the caller stops the walk.
+- [ ] S9.40 The layer 6 block of `tests/lists/S9.txt` and `iterate()` (note sections 3, 5).
+      done: the 20 reference tests pass on debug and ASAN; own tests for each row of note sections 2 and 6 and
+        for question 1's answer
+      tier: T2 · role: Critic
+- [ ] S9.41 Layer 6 review and its documentation in `true-async-doc`.
+      done: Critic over S9.40, coverage, Mull, 100 fuzz seeds, B23, a doc page with note section 6's errors corrected
+      tier: T2 · role: Critic
+- [ ] S9.42 Layer 6 security pass by `dev/SECURITY.md` (note section 5).
+      done: a journal entry per checklist item; findings fixed with a test or recorded
+      tier: T2 · role: —
 
 ## S10 — Beyond the RFCs  [x]
 

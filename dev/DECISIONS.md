@@ -2837,3 +2837,15 @@ stack options were shown with the code).
   of the call itself silences a report; the core's `session_resumption_invalid_data.phpt` (a TypeError from
   `session_data`) loses its two warnings, the TypeError being the report. Why: RFC-CHANGES 27 and 37, the
   S8.3b Critic; TrueAsync warns on a cancelled accept (`network_async.c:1264-1272`), a departure we prefer.
+- 2026-10-13 S9.39: S9 layer 6, iterators, is TrueAsync's `Async\iterate()` alone, on S9.6's iterator core with
+  a hook for the walk's end and an ITERATE wait kind; no core change (`dev/plans/S9-iterate.md`). Why: it is
+  TrueAsync's only public iterator; FileSystemWatcher's iterator is its own layer.
+- 2026-10-13 S9.39, Edmond's answer: a cancel of `iterate()`'s caller cancels the iterator's scope (callbacks and
+  the coroutines they spawned, whatever `$cancelPending`), waits until they end and throws the cancellation; a
+  second cancel during that wait ends it at once. Why: Edmond 03:38 «поведение TrueAsync похоже на баг... в
+  случае отмены обход тоже должен прерваться»; TrueAsync runs the walk to its end (probe i1).
+- 2026-10-13 S9.39, departures decided here (note section 6): `$concurrency` outside 0-4294967295 is a
+  `ValueError` (TrueAsync: -1 is no limit), by Edmond's rule of 2026-10-12 that a programmer's error is caught
+  where the check is small; `exit()` in a callback ends the request (TrueAsync returns from `iterate()`, i11); a
+  spawned coroutine's error during the walk is `iterate()`'s exception, as after the walk (TrueAsync ends the
+  request with "Uncaught", i22).
