@@ -3031,3 +3031,11 @@ stack options were shown with the code).
   `--INI-- open_basedir={TMP}`. Why: on the Windows runner `{TMP}` is `C:\Users\RUNNER~1\...`, the `-d` line fails
   to parse ("syntax error, unexpected '~'", run 257's `.diff`), the extension is not loaded and the class is missing.
   The other 50 watcher tests passed on `pocs-win` in that run.
+- 2026-10-13 S14.14: the test hooks build has `true_async.test_stall_ms`, `test_stall_polls` and `test_stall_every`:
+  every scheduler tick of a request with a reactor queue blocks its thread that long in `async_reactor_poll_due()`,
+  before the throttle, so a stall over 100 ms also makes it poll; every `every`-th tick, up to `polls` stalls. Why: S14.13's harness kept as a
+  hook (Edmond 08:39: «если такой тест является нестабильным - то видимо стоит»), run through run-tests'
+  `TEST_PHP_ARGS` (dev/WORKFLOW.md), `tools/test.py` unchanged; `every` reaches the ticks after the first ones:
+  with `every=4`, `polls=30` it also fails `internal/069`, `reactor/017`, `scope/156`, `socket_ext/005`.
+  `internal/074-test_stall_wakes_due_timer_ahead_of_queue.phpt` checks the hook; `module/001-registration.phpt`
+  and `module/002-info.phpt` list the three entries, as every lane builds the hooks. TrueAsync has no such hook.

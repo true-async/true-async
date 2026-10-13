@@ -11,7 +11,7 @@ var_dump(array_keys((new ReflectionExtension('true_async'))->getINIEntries()));
 bool(true)
 int(1)
 string(1) "1"
-array(4) {
+array(7) {
   [0]=>
   string(17) "true_async.enable"
   [1]=>
@@ -20,4 +20,10 @@ array(4) {
   string(27) "true_async.partial_deadlock"
   [3]=>
   string(36) "true_async.partial_deadlock_interval"
+  [4]=>
+  string(24) "true_async.test_stall_ms"
+  [5]=>
+  string(27) "true_async.test_stall_polls"
+  [6]=>
+  string(27) "true_async.test_stall_every"
 }

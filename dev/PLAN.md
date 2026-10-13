@@ -2301,6 +2301,17 @@ Tests: interleaved
         test clock for `await/121`, `126`, `reactor/025`, `scope/153`, `io_provider/002` (asked), the channel bug of
         `channel/126`, TrueAsync's 15 tests, 60 tests that hang only when every poll stops, tests that cannot fail
         (project files `s14/audit-2026-10-13/`).
+- [x] S14.14 The stall of S14.13's harness as a test hook: `true_async.test_stall_ms`, `test_stall_polls` and
+      `test_stall_every`, run by hand through `TEST_PHP_ARGS` (dev/WORKFLOW.md).
+      done: `internal/074` passes with the hook and prints the other order without it; old `scope/079` fails
+        with `polls=3`, the new one passes; `tests/module` passes with and without the stall
+      tier: T1 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.14).
+- [ ] S14.15 The tests left by S14.13 and S14.14 pass the stall runs of dev/WORKFLOW.md: TrueAsync's 15 of S14.13,
+      `internal/069`, `reactor/017`, `scope/156`, `socket_ext/005`, and the 60 that hang only when every tick stalls
+      (project file `s14/audit-2026-10-13/README.md`); `channel/126` with the channel bug it shows; the five that
+      need a test clock wait for Edmond's answer.
+      tier: T1 · role: Critic
 
 ## S15 — Test layers of S2 not built yet  [ ]
 

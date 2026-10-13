@@ -103,6 +103,29 @@ PHP_INI_BEGIN()
 						true_async_globals)
 	PHP_INI_ENTRY("true_async.partial_deadlock", "report", PHP_INI_ALL, OnUpdatePartialDeadlock)
 	PHP_INI_ENTRY("true_async.partial_deadlock_interval", "5000", PHP_INI_ALL, OnUpdatePartialDeadlockInterval)
+#ifdef TRUE_ASYNC_TEST_HOOKS
+	STD_PHP_INI_ENTRY("true_async.test_stall_ms",
+					  "0",
+					  PHP_INI_SYSTEM | PHP_INI_PERDIR,
+					  OnUpdateLong,
+					  test_stall_ms,
+					  zend_true_async_globals,
+					  true_async_globals)
+	STD_PHP_INI_ENTRY("true_async.test_stall_polls",
+					  "0",
+					  PHP_INI_SYSTEM | PHP_INI_PERDIR,
+					  OnUpdateLong,
+					  test_stall_polls,
+					  zend_true_async_globals,
+					  true_async_globals)
+	STD_PHP_INI_ENTRY("true_async.test_stall_every",
+					  "1",
+					  PHP_INI_SYSTEM | PHP_INI_PERDIR,
+					  OnUpdateLong,
+					  test_stall_every,
+					  zend_true_async_globals,
+					  true_async_globals)
+#endif
 PHP_INI_END()
 
 zend_class_entry *async_ce_awaitable = NULL;
@@ -248,6 +271,8 @@ static PHP_RINIT_FUNCTION(true_async)
 	ASYNC_G(test_trigger) = NULL;
 	ASYNC_G(test_firer) = NULL;
 	ASYNC_G(test_print_at_teardown) = false;
+	ASYNC_G(test_polls) = 0;
+	ASYNC_G(test_stalls) = 0;
 #endif
 
 	return SUCCESS;

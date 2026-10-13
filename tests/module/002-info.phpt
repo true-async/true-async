@@ -15,3 +15,6 @@ true_async.enable => 1 => 1
 true_async.debug_deadlock => On => On
 true_async.partial_deadlock => report => report
 true_async.partial_deadlock_interval => 5000 => 5000
+true_async.test_stall_ms => %d => %d
+true_async.test_stall_polls => %d => %d
+true_async.test_stall_every => %d => %d

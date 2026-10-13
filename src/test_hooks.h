@@ -61,9 +61,16 @@ void async_test_fault_hit(async_test_fault_site_t site);
 /* True when `site` is armed: disarms it (except ASYNC_TEST_IO_FAULT_WAIT_ALWAYS) and sets errno. */
 bool async_test_io_fault_take(async_test_io_fault_t site);
 #define ASYNC_TEST_IO_FAULT(site) async_test_io_fault_take(site)
+/* Blocks this thread for true_async.test_stall_ms in async_reactor_poll_due(), which every scheduler tick of a
+ * request with a reactor queue calls, park or not, before the throttle: a stall over its 100 ms makes the tick poll,
+ * as after an OS stop. Every test_stall_every-th call stalls, up to test_stall_polls of them. A test whose output
+ * changes under it depends on the clock (DECISIONS 2026-10-13 S14.14). */
+void async_test_stall(void);
+#define ASYNC_TEST_STALL() async_test_stall()
 #else
 #define ASYNC_TEST_FAULT(site) ((void) 0)
 #define ASYNC_TEST_IO_FAULT(site) false
+#define ASYNC_TEST_STALL() ((void) 0)
 #endif
 
 #endif /* TRUE_ASYNC_TEST_HOOKS_H */

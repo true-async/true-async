@@ -71,6 +71,11 @@ ZEND_BEGIN_MODULE_GLOBALS(true_async)
 	uint32_t test_idle_runs;         /* automatic collector runs started, stopped ones included */
 	void *test_firer;                /* the thread trigger_fire() started; NULL when joined */
 	bool test_print_at_teardown;     /* RSHUTDOWN prints "teardown: done" (print_at_teardown()) */
+	zend_long test_stall_ms;         /* true_async.test_stall_ms */
+	zend_long test_stall_polls;      /* true_async.test_stall_polls; 0 or less for no limit */
+	zend_long test_stall_every;      /* true_async.test_stall_every; 1 or less for every poll */
+	uint32_t test_polls;             /* async_reactor_poll_due() calls in this request */
+	uint32_t test_stalls;            /* the calls that stalled */
 #endif
 #ifdef TRUE_ASYNC_FUZZ
 	async_fuzz_state_t fuzz; /* TRUE_ASYNC_SCHED of this request */

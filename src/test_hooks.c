@@ -2184,6 +2184,45 @@ static ZEND_FUNCTION(zend_sigaction_reinstall)
 #endif
 
 ///////////////////////////////////////////////////////////////////
+/// Stall (DECISIONS 2026-10-13 S14.14)
+///////////////////////////////////////////////////////////////////
+
+/* Blocks the thread for `ms`, on through a signal that interrupts the sleep. */
+static void test_sleep_ms(const zend_long ms)
+{
+#ifdef PHP_WIN32
+	Sleep((DWORD) ms);
+#else
+	struct timespec delay = {
+		.tv_sec = (time_t) (ms / 1000),
+		.tv_nsec = (long) (ms % 1000) * 1000000,
+	};
+
+	while (nanosleep(&delay, &delay) != 0 && errno == EINTR) {
+	}
+#endif
+}
+
+void async_test_stall(void)
+{
+	if (EXPECTED(ASYNC_G(test_stall_ms) <= 0)) {
+		return;
+	}
+
+	const zend_long every = ASYNC_G(test_stall_every);
+	const zend_long polls = ASYNC_G(test_stall_polls);
+
+	ASYNC_G(test_polls)++;
+
+	if ((every > 1 && ASYNC_G(test_polls) % every != 0) || (polls > 0 && ASYNC_G(test_stalls) >= polls)) {
+		return;
+	}
+
+	ASYNC_G(test_stalls)++;
+	test_sleep_ms(ASYNC_G(test_stall_ms));
+}
+
+///////////////////////////////////////////////////////////////////
 /// Triggers (dev/plans/S4.md 3.6, point 6)
 ///////////////////////////////////////////////////////////////////
 
@@ -2208,18 +2247,7 @@ static void *test_firer_run(void *arg)
 {
 	const test_firer_t *firer = arg;
 
-#ifdef PHP_WIN32
-	Sleep((DWORD) firer->delay_ms);
-#else
-	struct timespec delay = {
-		.tv_sec = (time_t) (firer->delay_ms / 1000),
-		.tv_nsec = (long) (firer->delay_ms % 1000) * 1000000,
-	};
-
-	while (nanosleep(&delay, &delay) != 0 && errno == EINTR) {
-	}
-#endif
-
+	test_sleep_ms(firer->delay_ms);
 	async_trigger_fire(firer->trigger);
 
 #ifdef PHP_WIN32

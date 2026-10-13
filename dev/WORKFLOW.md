@@ -152,6 +152,20 @@ the section is removed in that step's commit. `check-lists.py` hashes a test wit
   whose result is all five. Whoever dispatches one looks at it after it ends; each failing test that
   no open plan step names goes into a plan step, with the job's link. Before (S14.2), the nightly run
   was the coordinator's. Held by discipline, no gate.
+- A test that waits on a timer passes three runs with the scheduler ticks blocked before their timer
+  poll, as the OS may stop the process at any point (Edmond, 2026-10-13: such a test is unstable), before
+  its push. The INI settings exist only with the test hooks:
+
+  ```
+  TEST_PHP_ARGS="-d true_async.test_stall_ms=120 -d true_async.test_stall_polls=3" tools/test.py --lane pocs-dbg <tests>
+  TEST_PHP_ARGS="-d true_async.test_stall_ms=120 -d true_async.test_stall_polls=15" tools/test.py --lane pocs-dbg <tests>
+  TEST_PHP_ARGS="-d true_async.test_stall_ms=120 -d true_async.test_stall_every=4 -d true_async.test_stall_polls=30" \
+      tools/test.py --lane pocs-dbg <tests>
+  ```
+
+  A stall must exceed the 100 ms between timer polls to make the tick poll.
+
+  Held by discipline, no gate.
 - `CHANGELOG.md` at the root, Keep a Changelog 1.1.0: every user-visible change gets a line under
   `[Unreleased]` in the commit that makes it; tests, tools and CI do not. Held by discipline, no gate.
 - `dev/DECISIONS.md`: as short as possible, a line for the decision and a line for the reason.

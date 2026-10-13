@@ -1443,6 +1443,8 @@ static zend_always_inline uint64_t coarse_now(void)
 
 void async_reactor_poll_due(async_reactor_t *reactor, const uint64_t interval)
 {
+	ASYNC_TEST_STALL();
+
 	const uint64_t now = coarse_now();
 
 	if (EXPECTED(now - reactor->last_poll <= interval)) {
