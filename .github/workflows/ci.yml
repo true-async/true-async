@@ -15,7 +15,7 @@ permissions:
 
 env:
   # async-core-io in true-async/php-src and ior, as pinned in dev/WORKFLOW.md ("Pinned core").
-  CORE_REF: 57fed0673c02db7df7cfe68661b6807e1df73007
+  CORE_REF: 77ddd91c4b64b7f7d6c3f9103f200b0d2014e463
   IOR_REF: d46649f642506c46e649d7470f756be31fce99f8
 
 jobs:
@@ -75,5 +75,5 @@ jobs:
           for /d %%d in (C:\build-cache\deps-*) do copy /y %%d\bin\*.dll C:\obj\Release_TS\ > nul
           C:\obj\Release_TS\php.exe -n diag\ops.php
           cd ..\php-src
-          C:\obj\Release_TS\php.exe -n run-tests.php -p C:\obj\Release_TS\php.exe -n -q --show-diff ext\standard\tests\streams\hooks\connect-throws.phpt ext\standard\tests\streams\hooks\connect-throws-one-attempt.phpt ext\standard\tests\streams\hooks\fsockopen-throws.phpt
+          C:\obj\Release_TS\php.exe -n run-tests.php -p C:\obj\Release_TS\php.exe -n -q --show-diff ext\standard\tests\streams\hooks
           exit 0
