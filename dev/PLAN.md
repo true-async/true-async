@@ -87,12 +87,6 @@ true-async/
 
 Waiting for Edmond's call; nothing here is being worked on.
 
-- The core carries the first version of the connect-started fix (`dca62e39da4`): after its own `connect()` it
-  waits with a Poll op. The PR branch `io-hooks-connect-started` (bukka/php-src#4) has the later version, a Connect
-  op flagged `PHP_IO_OP_F_CONNECT_STARTED`, which `notes/io-hooks-connect-started-pr.md` describes. So bukka's
-  `ext/openssl/tests/stream_io_hooks.phpt` ("Connect: yes") is red in our core since `async-core-io-2026-10-07-4`;
-  our CI does not run the core's openssl tests. Options: pick the flagged version into the core, or keep the
-  Poll and change the PR. Found in S8.11; Edmond's call.
 - A channel `recv()` whose coroutine was cancelled, and whose owner scope is cancelled before it runs, throws
   `ChannelException` ("Channel closed: owner scope disposed") with the cancellation as its previous, so a
   `catch (Exception)` swallows the cancellation (found in S9.41, not fixed there). By S9.36's rule the
@@ -1218,6 +1212,19 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
         as it does a Connect. Bukka's `stream_io_hooks.phpt` is red in the core since `-07-4` (Open questions).
       result 2026-10-13: core debug, `ext/standard/tests/streams`, `poll`, `network`, `ext/openssl/tests`: 699 PASS,
         46 SKIP, 1 FAIL (`stream_io_hooks.phpt`, the same on `-4`).
+- [x] S8.12 The core takes bukka's merged connect-started fix (bukka/php-src#4, his `7022e9af819`): after its own
+      `connect()` the core submits a Connect op flagged `PHP_IO_OP_F_CONNECT_STARTED` instead of a Poll op, so
+      bukka's `ext/openssl/tests/stream_io_hooks.phpt` passes again.
+      done: `io-hooks-fixes` `a470c7ddddc` (the pick), core `async-core-io-2026-10-13-6` `910cbcab817`
+      tier: T1 · role: Critic
+      handoff: done 2026-10-13. Our core had kept the first version (`dca62e39da4`, a Poll op) since `-07-4`, while
+        the PR was changed and bukka merged the flagged one. The Critic found, in that merged code: a userland
+        provider cannot see the flag, so one that answers a Connect Ready without waiting makes a connect still
+        under way look connected (SO_ERROR is 0), where the Poll version waited for it; and the provider's early
+        answer for an expired deadline covers Poll ops only (Windows IOCP, speculative). Next: S8.13.
+      result 2026-10-13: core debug `ext/standard/tests/{streams,poll,network}`, `ext/openssl/tests`,
+        `ext/sockets/tests`: 806 PASS, 0 FAIL; `pocs-dbg` 1994 PASS, 1 FAIL (`iterate/061`, S9.42's, passes 5 of 5
+        alone).
 
 ## S9 — Higher layers, one at a time  [in progress]
 

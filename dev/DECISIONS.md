@@ -2932,3 +2932,6 @@ stack options were shown with the code).
   subdirectories added with `IN_DONT_FOLLOW`, their name-less events dropped. `$extensions` without a debounce is
   question 1 of the note. Why: Edmond's rules of 2026-10-12 (catch a programmer's error when the check is small) and
   2026-10-13 (a TrueAsync bug is not copied).
+- 2026-10-13 S8.12, the core takes bukka's merged connect-started fix (`7022e9af819`) as a pick on `io-hooks-fixes`,
+  not bukka's whole head (that is S13.2). Why: the core's first version sent a Poll op, bukka's test expects the
+  flagged Connect op, and the core should carry what bukka merged.
