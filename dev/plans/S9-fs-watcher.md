@@ -165,8 +165,8 @@ queue answers Unsupported) and an `IOR_OP_DIR_CHANGES` in ior. Both go as PRs to
 (`dev/WORKFLOW.md` "Branches"), and as a one-topic commit on our core branch with an `RFC-CHANGES.md` entry. Native
 recursion and single-file watches (libuv watches the parent directory and filters by name) are checked against the
 reference on Edmond's Windows machine in that step. Until then the constructor throws `AsyncException`
-"FileSystemWatcher is not supported on this platform yet" on Windows, and the layer's tests are skipped on
-`pocs-win` with that reason (`dev/PRINCIPLES.md` P3.2's flip).
+"FileSystemWatcher is not supported on this platform yet" on Windows, and the layer's tests that construct a watcher
+are expected to fail on `pocs-win` until S9.45 (`xfail-on:pocs-win(S9.45)`).
 
 **macOS and the BSDs** are not in the first version: no CI line builds the extension there, so no code of this layer
 would run before a user ran it. The constructor throws the same exception there; the Fog of `dev/PLAN.md` records the
@@ -271,7 +271,7 @@ S9.44 (`dev/PLAN.md` S9).
 
 **List** `tests/lists/S9.txt`, a block for layer 7, frozen in S9.44: the 13 reference tests of `tests/fs_watcher`
 (`001`-`005`, `007`-`014`; the reference has no `006`), each passing on the reference build above (2026-10-13); they
-leave `tests/lists/S10.excluded`. On `pocs-win` they carry `skip-on:pocs-win(...)` until S9.45. Most of them wait for
+leave `tests/lists/S10.excluded`. On `pocs-win` they carry `xfail-on:pocs-win(S9.45)`. Most of them wait for
 the kernel with `delay()` (`003`, `008`, `011`-`014`) and compare counts, not elapsed time; S9.44 lists any change
 before it freezes the block.
 

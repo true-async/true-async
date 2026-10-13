@@ -1877,7 +1877,8 @@ Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, 
         a forked child rebuilds before a watch is added or an iterator waits, and removes no watch before that. Own
         tests `fs_watcher/015`-`052`. Critics: a watcher freed after a fatal error left the registry pointing at it
         (`049`, ASAN), a debounced burst was lost on close (`050`), a shared iterator leaked an event (`051`), the
-        coalesce pop scanned from index 0. Other platforms throw; the tests carry `skip-on:pocs-win` until S9.45.
+        coalesce pop scanned from index 0. Other platforms throw; the tests that construct a watcher carry
+        `xfail-on:pocs-win(S9.45)` (the first push gave them `skip-on`, which only allows a SKIPIF: Windows red).
 - [ ] S9.45 Windows: the directory-change op in bukka's API and ior, the watcher on it (note section 3, "Windows").
       done: the layer's tests run on `pocs-win`; bukka PRs opened by Edmond; told to Edmond before the core slot
       tier: T2 · role: Critic
