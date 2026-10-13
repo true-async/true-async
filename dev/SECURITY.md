@@ -669,6 +669,33 @@ finding left open gets an owner step in `PLAN.md`.
   at the next step: an array walk consumes one element of its private copy, a `Traversable` walk stops at the `valid()`
   check, and a user iterator's methods are not called with the exception pending (by reading and a script).
 
+- 2026-10-13 Security pass of the FileSystemWatcher layer (S9.47) over `95924f0`, `57bc535`, `a04ece7`, `770d95e`
+  (`src/fs_watcher.c`), by the checklist and the items of `dev/plans/S9-fs-watcher.md` section 5. `open_basedir` and
+  paths: `$path` by `Z_PARAM_PATH` (a NUL is a `ValueError`), checked and expanded against the virtual current
+  directory; the recursive walk skips symlinks (`DT_LNK`, `lstat()` for `DT_UNKNOWN`) and adds a subdirectory with
+  `IN_ONLYDIR | IN_DONT_FOLLOW`; a directory created or moved in is added by its path under the checked root. Only
+  another process can swap a middle component for a link, PHP's `symlink()` and `rename()` check `open_basedir`; the
+  root's check-then-watch window is the one every PHP file function has. Names reported are the kernel's names under
+  the root or the root's basename. The raw buffer nobody reads: on the request allocator, so bounded by `memory_limit`
+  only (section 6 item 6). The 8192-directory cap: the root counts, the rest stays unwatched without an error; a full
+  walk compares paths O(n^2) at the cap, bounded by it. Fixed: the walk recursed in C with one open `DIR` per level,
+  so a tree 1000 levels deep crashed a coroutine with `fiber.stack_size=128K` (SIGSEGV on the debug and the release
+  build, `fs_watcher/071`); it now reads breadth first over the watcher's own nodes, one directory open at a time.
+  Fixed, no test: a bailout (`memory_limit`) out of an allocation leaked a descriptor past the request, the walk's
+  open `DIR`s, an `inotify` instance made before the registry's allocation, and on Windows the directory handle and
+  the wide path made before the node's; the registry now holds the walk's directory and closes it when freed or at the
+  next walk, and the allocations come before the descriptors. A test would need the fatal error inside the walk and a
+  look at the descriptors after the request, which a `.phpt` cannot take. `close()` or the destructor from inside the
+  drain: the drain runs no PHP code (the wake only queues), dispatch re-checks each node against the live users,
+  `draining` keeps the registry; a `FileSystemEvent` is not a GC root (500 raw events added none), so the drain cannot
+  reach a GC run. A shared watch descriptor: one node per user, `inotify_rm_watch()` with the last one only
+  (`fs_watcher/043`). The fork rebuild: a refused root or subdirectory closes or drops its node; a child that closes
+  before it rebuilds makes no system call on the parent's queue (strace, io_uring and the Poll queue;
+  `fs_watcher/048`, `052`). Refcounts on exception and bailout paths: balanced. INI entries: none. Test-only code:
+  `ASYNC_TEST_IO_FAULT` is `false` without `TRUE_ASYNC_TEST_HOOKS`. CI: no change. Left as is: on Windows a bailout in
+  `fs_record_name()` leaks the converted name (libc memory, one name per fatal error); the kernel's notification
+  records are trusted within the op's result, which the core checks against the buffer's length (RFC-CHANGES 39).
+
 ## Open findings
 
 - 2026-10-12 (S9.33, narrowed by S9.38) A C function that releases something after it has taken a value can lose

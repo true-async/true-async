@@ -3145,3 +3145,10 @@ stack options were shown with the code).
 - 2026-10-13 S9.46 follow-up: `fs_watcher/063-monitoring_error_closes_every_watcher.phpt` skips off Linux. Why: only
   Linux's watchers share one descriptor; on Windows a failed op closes its own watcher, and the other one waited until
   the runner's timeout (CI run 38401552268).
+- 2026-10-13 S9.47, layer 7 security pass (`dev/SECURITY.md`): a recursive walk reads breadth first over the watcher's
+  nodes, one directory open at a time. Why: the C recursion crashed a coroutine with `fiber.stack_size=128K` on a tree
+  1000 levels deep (`fs_watcher/071`, skipped on ASAN, whose reserve exceeds 128K, and on Windows, past MAX_PATH).
+  The registry keeps the walk's `DIR` and closes it when freed, and descriptors and handles are made after the
+  allocations around them. Why: a bailout out of an allocation leaked them past the request. Checked, no change: a
+  close in a forked child before its rebuild (no system call on the parent's queue), the GC from the drain (a
+  `FileSystemEvent` is no GC root).

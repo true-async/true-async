@@ -378,7 +378,8 @@ struct _async_fs_registry_s
 	HashTable watches;      /* fs_watch_users_t by watch descriptor */
 	HashTable watchers;     /* the open watchers by object handle; borrowed */
 	async_io_event_t *poll; /* the POLL op on `fd`, on the reactor's own list while submitted; one reference */
-	bool draining;          /* a completion reads `fd`: the last watcher's close leaves the registry to it */
+	DIR *walked;   /* the directory a walk reads; after a bailout, the next walk or the registry's free closes it */
+	bool draining; /* a completion reads `fd`: the last watcher's close leaves the registry to it */
 };
 
 static void fs_watch_users_free(zval *users_zval)
@@ -446,22 +447,25 @@ static async_fs_registry_t *fs_registry_get(void)
 		return registry;
 	}
 
+	/* Allocated before the descriptor, which a bailout out of an allocation would leak past the request. */
+	registry = emalloc(sizeof(async_fs_registry_t));
+
+	async_io_event_t *const poll = async_io_event_new();
 	const int fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
 
 	if (UNEXPECTED(fd < 0)) {
 		zend_throw_exception_ex(async_ce_async_exception, 0, "Failed to start filesystem handle: %s", strerror(errno));
+		async_io_event_release(poll);
+		efree(registry);
 		return NULL;
 	}
 
-	registry = emalloc(sizeof(async_fs_registry_t));
 	registry->fd = fd;
 	registry->pid = getpid();
 	zend_hash_init(&registry->watches, 8, NULL, fs_watch_users_free, false);
 	zend_hash_init(&registry->watchers, 8, NULL, NULL, false);
+	registry->walked = NULL;
 	registry->draining = false;
-
-	async_io_event_t *const poll = async_io_event_new();
-
 	poll->complete = fs_registry_poll_complete;
 	php_io_op_poll(&poll->op, NULL, fd, PHP_POLL_READ, php_io_deadline_infinite());
 	registry->poll = poll;
@@ -493,6 +497,10 @@ static void fs_registry_release_if_empty(async_fs_registry_t *registry)
 	if (registry->poll != NULL) {
 		async_io_event_orphan(registry->poll);
 		async_io_event_release(registry->poll);
+	}
+
+	if (UNEXPECTED(registry->walked != NULL)) {
+		closedir(registry->walked);
 	}
 
 	zend_hash_destroy(&registry->watchers);
@@ -563,21 +571,37 @@ fs_watch_node_remove_at(async_fs_registry_t *registry, async_fs_watcher_t *watch
 	fs_watch_node_free(node);
 }
 
-static void
-fs_watch_tree_add(async_fs_registry_t *registry, async_fs_watcher_t *watcher, zend_string *path, zend_string *prefix);
-
-/* Watches every subdirectory under `path`, symlinks skipped (libuv_reactor.c:3204-3253). A directory the
- * kernel refuses, or one past the cap, stays unwatched without an error, as in TrueAsync. */
-static void fs_watch_tree_walk(async_fs_registry_t *registry,
-							   async_fs_watcher_t *watcher,
-							   const zend_string *path,
-							   const zend_string *prefix)
+/* The watcher has a node on `path` already. */
+static bool fs_watcher_has_path(const async_fs_watcher_t *watcher, const zend_string *path)
 {
-	DIR *const directory = opendir(ZSTR_VAL(path));
+	for (uint32_t i = 0; i < watcher->node_count; i++) {
+		if (zend_string_equals(watcher->nodes[i]->path, path)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/* Adds a node for every subdirectory of the node `index`, symlinks skipped (libuv_reactor.c:3204-3253). A
+ * directory the kernel refuses, or one past the cap, stays unwatched without an error, as in TrueAsync. */
+static void fs_watch_tree_read(async_fs_registry_t *registry, async_fs_watcher_t *watcher, const uint32_t index)
+{
+	const fs_watch_node_t *const parent = watcher->nodes[index];
+
+	/* Left by a bailout out of an earlier walk, when a shutdown function watches again before the registry is freed. */
+	if (UNEXPECTED(registry->walked != NULL)) {
+		closedir(registry->walked);
+		registry->walked = NULL;
+	}
+
+	DIR *const directory = opendir(ZSTR_VAL(parent->path));
 
 	if (directory == NULL) {
 		return;
 	}
+
+	registry->walked = directory;
 
 	const struct dirent *entry;
 
@@ -587,7 +611,7 @@ static void fs_watch_tree_walk(async_fs_registry_t *registry,
 			continue;
 		}
 
-		zend_string *const child_path = zend_strpprintf(0, "%s/%s", ZSTR_VAL(path), entry->d_name);
+		zend_string *const child_path = zend_strpprintf(0, "%s/%s", ZSTR_VAL(parent->path), entry->d_name);
 		bool is_directory = entry->d_type == DT_DIR;
 
 		if (entry->d_type == DT_UNKNOWN) {
@@ -596,33 +620,43 @@ static void fs_watch_tree_walk(async_fs_registry_t *registry,
 			is_directory = lstat(ZSTR_VAL(child_path), &status) == 0 && S_ISDIR(status.st_mode);
 		}
 
-		if (is_directory) {
-			zend_string *const child_prefix = ZSTR_LEN(prefix) != 0
-					? zend_strpprintf(0, "%s/%s", ZSTR_VAL(prefix), entry->d_name)
+		if (is_directory && !fs_watcher_has_path(watcher, child_path)) {
+			zend_string *const child_prefix = ZSTR_LEN(parent->prefix) != 0
+					? zend_strpprintf(0, "%s/%s", ZSTR_VAL(parent->prefix), entry->d_name)
 					: zend_string_init(entry->d_name, strlen(entry->d_name), false);
 
-			fs_watch_tree_add(registry, watcher, child_path, child_prefix);
+			fs_watch_node_add(registry, watcher, child_path, child_prefix);
 			zend_string_release(child_prefix);
 		}
 
 		zend_string_release(child_path);
 	}
 
+	registry->walked = NULL;
 	closedir(directory);
+}
+
+/* Reads the directories of the nodes from `first` on, the nodes the walk adds included: breadth first, so a deep tree
+ * takes no stack and one directory is open at a time. */
+static void fs_watch_tree_walk(async_fs_registry_t *registry, async_fs_watcher_t *watcher, uint32_t first)
+{
+	for (uint32_t index = first; index < watcher->node_count && watcher->node_count < FS_WATCHER_MAX_NODES; index++) {
+		fs_watch_tree_read(registry, watcher, index);
+	}
 }
 
 /* A subdirectory created in or moved into a recursive watch, with its subtree. */
 static void
 fs_watch_tree_add(async_fs_registry_t *registry, async_fs_watcher_t *watcher, zend_string *path, zend_string *prefix)
 {
-	for (uint32_t i = 0; i < watcher->node_count; i++) {
-		if (zend_string_equals(watcher->nodes[i]->path, path)) {
-			return;
-		}
+	if (fs_watcher_has_path(watcher, path)) {
+		return;
 	}
 
+	const uint32_t first = watcher->node_count;
+
 	if (fs_watch_node_add(registry, watcher, path, prefix) != NULL) {
-		fs_watch_tree_walk(registry, watcher, path, prefix);
+		fs_watch_tree_walk(registry, watcher, first);
 	}
 }
 
@@ -1256,22 +1290,44 @@ static void fs_watch_op_complete(async_io_event_t *event)
 	} while (UNEXPECTED(completed));
 }
 
+/* A node fs_watch_node_open() could not open: NULL with errno from `error`. */
+static fs_watch_node_t *fs_watch_node_discard(fs_watch_node_t *node, wchar_t *wide_path, DWORD error)
+{
+	free(wide_path);
+	async_io_event_release(&node->op->io);
+	zend_string_release(node->name);
+	efree(node);
+	SET_ERRNO_FROM_WIN32_CODE(error);
+
+	return NULL;
+}
+
 /* Opens the watch on `path` for the watcher, its op built; NULL with errno. */
 static fs_watch_node_t *fs_watch_node_open(async_fs_watcher_t *watcher, const zend_string *path)
 {
+	const char *basename = ZSTR_VAL(path) + ZSTR_LEN(path);
+
+	while (basename > ZSTR_VAL(path) && !IS_SLASH(basename[-1])) {
+		basename--;
+	}
+
+	/* Allocated before the wide path and the handle, which a bailout out of an allocation would leak past the
+	 * request. */
+	fs_watch_node_t *const node = emalloc(sizeof(fs_watch_node_t));
+
+	node->name = zend_string_init(basename, strlen(basename), false);
+	node->op = (fs_watch_op_t *) async_io_event_new_ex(sizeof(fs_watch_op_t));
+
 	wchar_t *const wide_path = php_win32_ioutil_any_to_w(ZSTR_VAL(path));
 
 	if (UNEXPECTED(wide_path == NULL)) {
-		SET_ERRNO_FROM_WIN32_CODE(ERROR_INVALID_PARAMETER);
-		return NULL;
+		return fs_watch_node_discard(node, NULL, ERROR_INVALID_PARAMETER);
 	}
 
 	const DWORD attributes = GetFileAttributesW(wide_path);
 
 	if (UNEXPECTED(attributes == INVALID_FILE_ATTRIBUTES)) {
-		SET_ERRNO_FROM_WIN32_CODE(GetLastError());
-		free(wide_path);
-		return NULL;
+		return fs_watch_node_discard(node, wide_path, GetLastError());
 	}
 
 	const bool is_directory = (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
@@ -1285,9 +1341,7 @@ static fs_watch_node_t *fs_watch_node_open(async_fs_watcher_t *watcher, const ze
 		separator = wcsrchr(wide_path, L'\\');
 
 		if (UNEXPECTED(separator == NULL)) {
-			SET_ERRNO_FROM_WIN32_CODE(ERROR_INVALID_PARAMETER);
-			free(wide_path);
-			return NULL;
+			return fs_watch_node_discard(node, wide_path, ERROR_INVALID_PARAMETER);
 		}
 
 		cut = separator + 1;
@@ -1308,26 +1362,15 @@ static fs_watch_node_t *fs_watch_node_open(async_fs_watcher_t *watcher, const ze
 	}
 
 	if (UNEXPECTED(directory == INVALID_HANDLE_VALUE)) {
-		SET_ERRNO_FROM_WIN32_CODE(GetLastError());
-		free(wide_path);
-		return NULL;
-	}
-
-	fs_watch_node_t *const node = emalloc(sizeof(fs_watch_node_t));
-	const char *basename = ZSTR_VAL(path) + ZSTR_LEN(path);
-
-	while (basename > ZSTR_VAL(path) && !IS_SLASH(basename[-1])) {
-		basename--;
+		return fs_watch_node_discard(node, wide_path, GetLastError());
 	}
 
 	node->watcher = watcher;
 	node->directory = directory;
 	node->path = wide_path;
 	node->file = separator != NULL ? separator + 1 : NULL;
-	node->name = zend_string_init(basename, strlen(basename), false);
 	node->starting = false;
 	node->completed_inline = false;
-	node->op = (fs_watch_op_t *) async_io_event_new_ex(sizeof(fs_watch_op_t));
 	node->op->node = node;
 	node->op->io.complete = fs_watch_op_complete;
 	php_io_op_dir_changes(&node->op->io.op,
@@ -1813,28 +1856,34 @@ ZEND_METHOD(Async_FileSystemWatcher, __construct)
 	zend_hash_index_add_new_ptr(&registry->watchers, watcher->std.handle, watcher);
 
 	if (recursive) {
-		fs_watch_tree_walk(registry, watcher, root_path, ZSTR_EMPTY_ALLOC());
+		fs_watch_tree_walk(registry, watcher, 0);
 	}
 
 	zend_string_release(root_path);
 #elif defined(PHP_WIN32)
+	async_fs_registry_t *const registry = fs_registry_get();
+
+	/* In the registry before the handle exists: nothing allocates from CreateFileW() to `nodes[0]`. */
+	watcher->nodes = emalloc(sizeof(fs_watch_node_t *));
+	watcher->node_capacity = 1;
+	watcher->base.flags &= ~ASYNC_EVENT_F_CLOSED;
+	zend_hash_index_add_new_ptr(&registry->watchers, watcher->std.handle, watcher);
+
 	fs_watch_node_t *const node = fs_watch_node_open(watcher, root_path);
 
 	zend_string_release(root_path);
 
 	if (UNEXPECTED(node == NULL)) {
-		zend_throw_exception_ex(async_ce_async_exception, 0, "Failed to start filesystem handle: %s", strerror(errno));
+		const int open_error = errno;
+
+		fs_watcher_close(watcher, false);
+		zend_throw_exception_ex(
+				async_ce_async_exception, 0, "Failed to start filesystem handle: %s", strerror(open_error));
 		RETURN_THROWS();
 	}
 
-	async_fs_registry_t *const registry = fs_registry_get();
-
-	watcher->nodes = emalloc(sizeof(fs_watch_node_t *));
 	watcher->nodes[0] = node;
 	watcher->node_count = 1;
-	watcher->node_capacity = 1;
-	watcher->base.flags &= ~ASYNC_EVENT_F_CLOSED;
-	zend_hash_index_add_new_ptr(&registry->watchers, watcher->std.handle, watcher);
 
 	const int error = fs_watch_node_start(node);
 

@@ -124,6 +124,7 @@ can see goes here; tests, tools and CI are in the git history.
 - `Async\FileSystemWatcher` and `Async\FileSystemEvent` on Linux: a `foreach` over the changes of a file or directory, recursive, coalesced or raw, debounced, filtered by extension in every mode; an open watcher nobody iterates keeps nothing waiting; other platforms throw for now ([S9](dev/plans/S9-fs-watcher.md), S9.44).
 - `Async\FileSystemWatcher` on Windows, on a directory-change op of the core and ior (core `async-core-io-2026-10-13-8`, [S9](dev/plans/S9-fs-watcher.md), S9.45).
 - `Async\FileSystemWatcher`: every iterator made before a monitoring error throws it once; an extension with `.` or `/` inside is a `ValueError` (S9.46).
+- `Async\FileSystemWatcher` with `recursive: true` no longer crashes a coroutine with a small stack on a deep tree, and a fatal error during the watch no longer leaks a descriptor past the request (S9.47).
 - `map()`, `catch()` and `finally()` on a `recvAsync()`, signal or group Future nobody else holds complete
   when that Future does; before, the Future went with its object and the chain never completed. A dropped
   `recvAsync()->map()` chain stays queued and takes a channel value; its channel, group or signal wait holds

@@ -1024,3 +1024,4 @@ fs_watcher/067-forked_child_removed_root_throws.phpt  own:125e6a4b9e25592e9c3aca
 fs_watcher/068-forked_child_watches_every_watcher_again.phpt  own:9736fe4f14af21cb53d3aad6863d7f539ca192d2d869e34a7edf544c37add35d  skip-on:pocs-win(Unix-only)
 fs_watcher/069-forked_child_watches_file_again.phpt  own:3cc22a54c1d2025a127ec5f6c6f08892e7d5fdf27b6aeedf41da598a99a957d4  skip-on:pocs-win(Unix-only)
 fs_watcher/070-name_ending_in_dot_filtered_out.phpt  own:552c0919e96474e4e835dfeeb35aea3a495197b99aa32b16bb4952ee02fa494c  skip-on:pocs-win(trailing-dot-dropped-on-Windows)
+fs_watcher/071-recursive_deep_tree_on_small_stack.phpt  own:56ea8ae36a332af88e28caa0ffbf7572e7fc6cb09fac02902206f9068a4bed85  skip-on:pocs-win(longer-than-MAX_PATH)  skip-on:*-asan(stack-reserve-over-128K)

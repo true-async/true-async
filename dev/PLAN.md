@@ -1888,9 +1888,12 @@ Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, 
         error throws its own exception, a dot or slash inside an extension is a `ValueError`; own tests
         `fs_watcher/054`-`070`; coverage 92.9 % of `src/fs_watcher.c` on Linux, Mull's survivors triaged (note
         section 8), 100 seeds clean, B24 in `dev/BENCHMARKS.md`; page `ru/concepts/filesystem-watcher.md`.
-- [ ] S9.47 Layer 7 security pass by `dev/SECURITY.md` (note section 5).
+- [x] S9.47 Layer 7 security pass by `dev/SECURITY.md` (note section 5).
       done: a journal entry per checklist item; findings fixed with a test or recorded
       tier: T2 · role: —
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S9.47, SECURITY.md journal): the recursive walk is breadth first
+        (`fs_watcher/071`); descriptors after allocations, the walk's `DIR` closed with the registry; a forked child's
+        close and the GC from the drain checked, no change. Two Critics.
 
 ## S10 — Beyond the RFCs  [x]
 
