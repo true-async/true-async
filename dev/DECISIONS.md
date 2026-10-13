@@ -2830,3 +2830,10 @@ stack options were shown with the code).
   here needs the core to hand the second user to the provider as a wait (`RFC-CHANGES.md` 12). The core fix the
   draft needed (a descriptor cast seeking a frozen stream, `main/streams/cast.c`) is not sent: with files on the
   thread no seekable stream is frozen. Why: Edmond 2026-10-13 02:55, «не делать async для files».
+- 2026-10-13 S8.3b, a socket call that fails for a pending exception reports only it, at every report site the
+  failed call reaches (accept, connect, lookup, `sendto()`'s address, the TLS handshake): the check is
+  `EG(exception)`, not `ECANCELED`, because an accept has no error code, a cancelled lookup gives `EAI_SYSTEM`
+  and a lookup failure leaves `$errno` 0. A PHP function starts with no exception pending, so only an exception
+  of the call itself silences a report; the core's `session_resumption_invalid_data.phpt` (a TypeError from
+  `session_data`) loses its two warnings, the TypeError being the report. Why: RFC-CHANGES 27 and 37, the
+  S8.3b Critic; TrueAsync warns on a cancelled accept (`network_async.c:1264-1272`), a departure we prefer.

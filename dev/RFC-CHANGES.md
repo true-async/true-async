@@ -586,7 +586,9 @@ Waits for it: nothing: `io_provider/067`, `068` pass on the core that carries it
 
 ## 27. IO hooks: an accept or a connect cancelled by an exception reports nothing else
 
-State: requested 2026-10-12 (S8.3), no branch yet. PR: none.
+State: on `io-hooks-cancelled-accept-connect` `8965b4821d0` (on bukka's `8e470c219fc`) and `io-hooks-fixes`
+`f151259dda5`, 2026-10-13 (S8.3b), in the core since `async-core-io-2026-10-13-1` `5d6194ec8ac`. PR text for
+bukka with entry 37: `/mnt/project-files/notes/s8-3b/io-hooks-cancelled-accept-connect-pr.md`. PR: none yet.
 
 Need: a coroutine cancelled in `stream_socket_accept()` gets the cancellation and also "Warning:
 stream_socket_accept(): Accept failed: Operation canceled" (`ext/standard/streamsfuncs.c:332`); one
@@ -601,9 +603,16 @@ Request: as entry 2 for reads and writes: `stream_socket_accept()`, `stream_sock
 `fsockopen()` (`ext/standard/fsock.c:121`) report nothing when an exception is pending after the
 failed call, whatever errno says; without an exception the report stays.
 
-Waits for it: `io_provider/065`, `066`, `071` (`core:27` in `tests/lists/S8.txt`). The connect half has
-no test here (a pending connect needs a network that drops the SYN); the fix's own tests throw from a
-userland provider's `run()` on the Connect, as `socket_io_hooks_accept_throws.phpt` does (S8.3b).
+The fix goes further, by the same rule: a name lookup whose op throws no longer warns from
+`php_network_getaddresses()` (`main/network.c`), `stream_socket_server()` nor `stream_socket_sendto()`
+(its "Failed to parse"), and a connect to a name with several addresses tries no further one after the
+exception. The core's own `session_resumption_invalid_data.phpt` (a TypeError from the `session_data` option
+during the connect) loses its "Unable to connect" warning.
+
+Waits for it: nothing; `io_provider/065`, `066`, `071` run since the core above. The connect half has no
+test here (a pending connect needs a network that drops the SYN); the fix's own tests throw from a userland
+provider's `run()` (`ext/standard/tests/streams/hooks/*-throws*.phpt`), and two check that a Cancelled
+completion without an exception, or a lookup with no address, still warns.
 
 ## 28. IO hooks: a late remove() of a closed descriptor clears the number's next registrations
 
@@ -811,3 +820,23 @@ a `pthread_atfork()` handler; `getpid()` stays when the registration fails and o
 half: Ring 14.3 → 10.8 ms, the thread 6.1 (medians of 11).
 
 Waits for it: nothing; the pinned core carries it.
+
+## 37. IO hooks: a TLS handshake whose wait is cancelled spins to the deadline
+
+State: on `io-hooks-cancelled-accept-connect` `3beb801a6ab` (after entry 27's commit) and `io-hooks-fixes`
+`2455331acb1`, 2026-10-13 (S8.3b, found by its Critic), in the core since `async-core-io-2026-10-13-1`
+`5d6194ec8ac`. PR: with entry 27.
+
+Need: the TLS stream BIO turns a cancelled Recv or Send into a retry and sets `io_cancelled`
+(`ext/openssl/xp_ssl.c:441-480`), which the read and write loops check (`:3314`); the handshake loop of
+`php_openssl_enable_crypto()` did not. A handshake wait that throws retried at once, the next wait was refused
+for the pending exception, and the loop spun at full CPU until the connect timeout, forever without one
+(`default_socket_timeout=-1`), then warned "SSL: Handshake timed out" and "Failed to enable crypto". Measured
+on a debug build: a 3 s timeout, 3.03 s wall, 2.98 s of CPU; with the fix 0.03 s.
+
+Request: the handshake ends at the first cancelled wait, and "Failed to enable crypto" (client and accepted
+streams) is reported only without a pending exception. Tests
+`ext/openssl/tests/io_hooks_handshake_cancelled_{client,accept}.phpt`; without the fix the client's warns and
+the accept's runs into the test timeout.
+
+Waits for it: nothing in our lists (no TLS test cancels a handshake); the core carries it.

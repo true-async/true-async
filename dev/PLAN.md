@@ -1045,12 +1045,17 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
         `dev/plans/S6.md` sections 11 and 14; `io/100`'s XFAIL names entry 12. Not measured on a release core,
         so no `BENCHMARKS.md` entry. The draft (provider flags, tests) and a core fix it needed (a descriptor
         cast seeking a frozen stream) are patches in `notes/s8-3a/ffiles-draft` (project files).
-- [ ] S8.3b The core fixes of S8.3, when the core slot is free: `RFC-CHANGES.md` 26 merged from
+- [x] S8.3b The core fixes of S8.3, when the core slot is free: `RFC-CHANGES.md` 26 merged from
       `io-hooks-fixes` (done by S8.4a's core update: `067`, `068` pass), 27 as one commit on
       `io-hooks-fixes` with its tests and a PR text for bukka; a core update that carries it.
       done: `io_provider/065`-`068`, `071` pass without their `core:` tags on debug and ASAN; the
         connect half of 27 has core tests with a userland provider whose `run()` throws on the Connect
       tier: T1 · role: Critic
+      handoff: done 2026-10-13. Core `async-core-io-2026-10-13-1` `5d6194ec8ac` (`io-hooks-fixes` `2455331acb1`):
+        27 also covers a cancelled name lookup (`stream_socket_server()`, `stream_socket_sendto()`) and stops a
+        connect's further addresses; its Critic found a cancelled TLS handshake spinning at full CPU to the
+        deadline (37, `io_provider/083`). Both are two commits on `io-hooks-cancelled-accept-connect`, PR text in
+        `notes/s8-3b` (project files). `065`, `066`, `071` without `core:27`.
 - [ ] S8.3c M1 on the Ring after Edmond's answer to the Open question: a data op that completed
       before its cancelled coroutine resumed.
       done: `io_provider/063`, `069` expect the chosen behaviour (`changed:` tags) and `009` still

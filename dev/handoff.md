@@ -685,6 +685,9 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
 - S8.3a closed 2026-10-13 (PLAN handoff line): `F_FILES` stays off (Edmond), README "Known limitations"; the
   draft and its core cast fix are patches in `notes/s8-3a/ffiles-draft`. Open in S8: S8.3b and S8.6 (core slot),
   S8.3c (Edmond's exception name).
+- S8.3b closed 2026-10-13 (PLAN handoff line): core `async-core-io-2026-10-13-1` `5d6194ec8ac`, RFC 27 and 37
+  on `io-hooks-cancelled-accept-connect` (PR text `notes/s8-3b`, for Edmond to open). Open in S8: S8.6 (core
+  slot), S8.3c (Edmond's exception name).
 
 ## S14
 
