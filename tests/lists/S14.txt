@@ -62,10 +62,10 @@ signal/042-forked_child_rearm_refused_rejects_future.phpt  own:41dbd495a6bf8fead
 signal/043-forked_child_exit_rearm_refused_runs_finally.phpt  own:1eeb6ee7d7259014aee75bfc35098f7b08dbb574868012fcd8afa5ac1adf5b43  skip-on:*-win(Unix-only)
 signal/044-chain_on_dropped_signal_future_runs_on_delivery.phpt  own:c07ffecca1434a5edb0d0ffe4e550ccc87d7e8fb99d1c30540dfeed19e6fcc64  skip-on:*-win(Unix-only)
 signal/045-exit_releases_chain_of_waiting_signal_future.phpt  own:b2d560aa2d4f84ba737850f08cacdcca943bd75e14ad772a17e27fe8549e6916  skip-on:*-win(Unix-only)
-signal/046-cancellation_token_completed_with_value.phpt  own:624d68c1cb0a32ef83d3b9df3c4635e23dac9c6eea4b364d6918e920c6ab7ba4
-signal/047-cancellation_token_coroutine.phpt  own:72da70b676addfe842615283bc76fff05e12d7cc0ec5e18912f8908e93a5e1cc
-signal/048-cancellation_token_timeout.phpt  own:b9c6079e1a18e5860ed8504828033b79cc1ea283479068068d8e7ca42ae481b2
-signal/049-cancellation_token_timeout_cancelled_by_hand.phpt  own:c1c92858ed1bb003e0057a1f9332ab9b2533e9130f65570534165e1853baf8df
+signal/046-cancellation_token_completed_with_value.phpt  own:624d68c1cb0a32ef83d3b9df3c4635e23dac9c6eea4b364d6918e920c6ab7ba4  skip-on:*-win(Unix-only)
+signal/047-cancellation_token_coroutine.phpt  own:72da70b676addfe842615283bc76fff05e12d7cc0ec5e18912f8908e93a5e1cc  skip-on:*-win(Unix-only)
+signal/048-cancellation_token_timeout.phpt  own:b9c6079e1a18e5860ed8504828033b79cc1ea283479068068d8e7ca42ae481b2  skip-on:*-win(Unix-only)
+signal/049-cancellation_token_timeout_cancelled_by_hand.phpt  own:c1c92858ed1bb003e0057a1f9332ab9b2533e9130f65570534165e1853baf8df  skip-on:*-win(Unix-only)
 
 # spawnWith
 spawnWith/018-hook_exception_refused_cancel_discards_coroutine.phpt  own:486746501e7e40e544ee16acd34e2ef0a6547cdfec761124bda597433a2cfef7
