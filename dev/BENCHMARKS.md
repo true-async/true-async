@@ -3,6 +3,35 @@
 The results journal: every measurement with its date, builds and outcome. The method and the
 benchmarks are `dev/plans/S3.md`, section 12; the scripts are `bench/`, the runner `tools/bench.py`.
 
+## 2026-10-13, S9.46: a watched file's change and its event, counted (B24)
+
+**Builds.** Release, ZTS, `-O2`, gcc 13.3, run with `-n`, no opcache; one count per side, the child pinned to one
+CPU (cachegrind counts). Both cores configured with `tools/ci/build-core.sh`'s flags without `--enable-debug`.
+
+- `ours`: the pinned core `244b1a2ecf3` (`async-core-io-2026-10-13-8`), ior `59b918ef189`, and our extension as a
+  `phpize` module of `5ebc222` with S9.46's changes, the test hooks off.
+- `ref`: the fork core `863f6dd90cf` with `ext/async` `1fdacf8` built in, libuv 1.48.
+
+`B24` touches a file in a watched directory and takes its event with one step of the watcher's iterator, in one
+coroutine (TrueAsync refuses the iterator outside one), `coalesce: true` (`bench/b24.php`); `B24-raw` is the same
+with `coalesce: false`. One operation is one `touch()` with its event.
+
+| Bench | ours | ref | ours / ref |
+|---|---|---|---|
+| B1 | 2,966.1 / 1.020 | 3,129.0 / 2.030 | 0.948 |
+| B24 | 7,741.4 / 7.000 | 6,053.6 / 6.000 | 1.279 |
+| B24-raw | 6,868.1 / 6.000 | 5,178.8 / 5.000 | 1.326 |
+
+Instructions / allocations per operation; one system call per operation on both sides (the `touch()`), page faults
+none. Known answer: the `known` variants add a `new stdClass` per touch and count +312.0 / +1 (`ours`) and
++317.3 / +1 (`ref`) on `B24`, +314.3 / +1 and +315.4 / +1 on `B24-raw`.
+
+Where the difference is (cachegrind by function, 10 000 operations more): the core's ring and our reactor, from the
+poll's resubmit to its completion (`php_io_ring_*`, `ior_*`, `io_uring_*`, `reactor_*`), count 1,823 per operation
+against libuv's 216, so 1,607 of the 1,688.  The extra allocation is the core's, a `calloc` in
+`php_io_ring_submit_op()` per resubmit. The watcher's own was a copy of the descriptor's users per kernel event,
+now on the stack for up to four users (first count: 7,848.6 / 8.000 on `B24`).
+
 ## 2026-10-13, S9.41: iterate() with and without a concurrency limit, counted
 
 **Builds.** Release, ZTS, `-O2`, gcc 13.3, run with `-n`, no opcache; one count per side, the child pinned to one

@@ -879,9 +879,9 @@ Waits for it: nothing in our lists (our provider waits); the core carries it.
 
 ## 39. IO hooks and ior: wait for directory changes as an op
 
-State: php-src on `io-hooks-dir-changes` `2a63d178d36` (on bukka's `8e470c219fc`) and `io-hooks-fixes`
-`dc16df52032`; ior on true-async/ior `dir-changes-pr` `dae1c974915` (on libior/ior `ea70530`) and `dir-changes`
-`59b918ef189`, 2026-10-13 (S9.45), in the core since `async-core-io-2026-10-13-8` `244b1a2ecf3`. PR texts:
+State: php-src on `io-hooks-dir-changes` `e06ed0973` (on bukka's `8e470c219fc`) and `io-hooks-fixes`
+`36a9fd644bf`; ior on true-async/ior `dir-changes-pr` `fdcfadf2496` (on libior/ior `ea70530`), 2026-10-13 (S9.45,
+reviewed in S9.46), in the core since `async-core-io-2026-10-13-9` `0cea21ffd45`. PR texts:
 `/mnt/project-files/notes/s9-45/`. PRs: none yet.
 
 Need: Windows has no descriptor for a FileSystemWatcher to poll (`dev/plans/S9-fs-watcher.md` 3, "Windows"):

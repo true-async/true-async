@@ -89,8 +89,8 @@ typedef struct
 	uint32_t debounce_ms; /* 0: every change delivered as it comes */
 	uint32_t max_hold_ms; /* 0: a burst waits for its quiet as long as it lasts */
 	zend_hrtime_t burst_start;
-	HashTable *extensions;                    /* NULL: every entry; else lower-case extensions without the dot */
-	zend_object *error;                       /* a monitoring error the next step of an empty walk throws, once */
+	HashTable *extensions; /* NULL: every entry; else lower-case extensions without the dot */
+	zend_string *error;    /* a monitoring error's message; each iterator made before the close throws it once */
 	async_io_event_t *debounce_timer;         /* while a burst waits: a Timer op on the reactor's own list */
 	async_event_callback_t debounce_callback; /* in `debounce_timer`'s vector while armed */
 	zend_object std;
@@ -334,6 +334,18 @@ static void fs_watcher_deliver(async_fs_watcher_t *watcher, zend_string *filenam
 	fs_watcher_buffer(watcher, filename, renamed, changed);
 	fs_watcher_wake(watcher);
 }
+
+#ifdef FS_WATCHER_SUPPORTED
+static void fs_watcher_close(async_fs_watcher_t *watcher, bool dropped);
+
+/* Closes the watcher with a monitoring error of `reason`, which each iterator made before the close throws once. */
+static void fs_watcher_fail(async_fs_watcher_t *watcher, const char *reason)
+{
+	ZEND_ASSERT(watcher->error == NULL);
+	watcher->error = zend_strpprintf(0, "Filesystem monitoring error: %s", reason);
+	fs_watcher_close(watcher, false);
+}
+#endif
 
 #ifdef __linux__
 
@@ -667,10 +679,10 @@ static void fs_watcher_close(async_fs_watcher_t *watcher, bool dropped)
 	fs_registry_release_if_empty(registry);
 }
 
-/* Closes every open watcher with `error`, which each iterator throws once. */
+/* Closes every open watcher with a monitoring error of `reason`. */
 static void fs_registry_fail(async_fs_registry_t *registry, const char *reason)
 {
-	uint32_t count = zend_hash_num_elements(&registry->watchers);
+	const uint32_t count = zend_hash_num_elements(&registry->watchers);
 	async_fs_watcher_t **const watchers = safe_emalloc(count, sizeof(async_fs_watcher_t *), 0);
 	uint32_t index = 0;
 	async_fs_watcher_t *watcher;
@@ -682,12 +694,7 @@ static void fs_registry_fail(async_fs_registry_t *registry, const char *reason)
 	ZEND_HASH_FOREACH_END();
 
 	for (uint32_t i = 0; i < count; i++) {
-		if (watchers[i]->error == NULL) {
-			watchers[i]->error =
-					async_new_exception(async_ce_async_exception, "Filesystem monitoring error: %s", reason);
-		}
-
-		fs_watcher_close(watchers[i], false);
+		fs_watcher_fail(watchers[i], reason);
 	}
 
 	efree(watchers);
@@ -697,7 +704,7 @@ static void fs_registry_fail(async_fs_registry_t *registry, const char *reason)
 /// Events
 ///////////////////////////////////////////////////////////////////
 
-/* One kernel event for one node (libuv's mapping, src/unix/linux.c:2431-2444). */
+/* One kernel event for one node (libuv's mapping, src/unix/linux.c:2431-2444, except that IN_ISDIR renames nothing). */
 static void
 fs_watch_node_handle(async_fs_registry_t *registry, fs_watch_node_t *node, const struct inotify_event *kernel_event)
 {
@@ -752,8 +759,8 @@ fs_watch_node_handle(async_fs_registry_t *registry, fs_watch_node_t *node, const
 	}
 
 	const bool changed = (mask & (IN_ATTRIB | IN_MODIFY)) != 0;
-	const bool renamed =
-			(mask & (IN_CREATE | IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF | IN_MOVED_FROM | IN_MOVED_TO)) != 0;
+	/* Any other bit, IN_UNMOUNT too, is a rename; IN_ISDIR only gives the entry's type. */
+	const bool renamed = (mask & ~(IN_ATTRIB | IN_MODIFY | IN_ISDIR)) != 0;
 
 	fs_watcher_deliver(watcher, filename, renamed, changed);
 	zend_string_release(filename);
@@ -788,7 +795,11 @@ static void fs_registry_dispatch(async_fs_registry_t *registry, const struct ino
 	}
 
 	const uint32_t count = users->count;
-	fs_watch_node_t **const nodes = safe_emalloc(count, sizeof(fs_watch_node_t *), 0);
+	/* A watch descriptor usually has one user; overlapping watchers share one. */
+	fs_watch_node_t *stack_nodes[4];
+	fs_watch_node_t **const nodes = count <= sizeof(stack_nodes) / sizeof(stack_nodes[0])
+			? stack_nodes
+			: safe_emalloc(count, sizeof(fs_watch_node_t *), 0);
 
 	memcpy(nodes, users->nodes, count * sizeof(fs_watch_node_t *));
 
@@ -806,7 +817,9 @@ static void fs_registry_dispatch(async_fs_registry_t *registry, const struct ino
 		}
 	}
 
-	efree(nodes);
+	if (nodes != stack_nodes) {
+		efree(nodes);
+	}
 }
 
 /* Reads the descriptor until EAGAIN; false with errno on another error. */
@@ -949,16 +962,11 @@ void async_fs_watcher_rebuild(void)
 			continue;
 		}
 
-		if (watcher->error == NULL) {
-			watcher->error = async_new_exception(
-					async_ce_async_exception, "Filesystem monitoring error: %s", strerror(root_errors[i]));
-		}
-
 		/* The root's descriptor is gone: nothing to remove from the kernel or the registry. */
 		fs_watch_node_free(watcher->nodes[0]);
 		watcher->nodes[0] = watcher->nodes[--watcher->node_count];
 
-		fs_watcher_close(watcher, false);
+		fs_watcher_fail(watcher, strerror(root_errors[i]));
 	}
 
 	registry->draining = false;
@@ -1114,17 +1122,6 @@ static void fs_watcher_close(async_fs_watcher_t *watcher, bool dropped)
 	fs_registry_release_if_empty(registry);
 }
 
-/* Closes the watcher with `error`, which its iterators throw once. */
-static void fs_watcher_fail(async_fs_watcher_t *watcher, int error)
-{
-	if (watcher->error == NULL) {
-		watcher->error =
-				async_new_exception(async_ce_async_exception, "Filesystem monitoring error: %s", strerror(error));
-	}
-
-	fs_watcher_close(watcher, false);
-}
-
 /* The record names the watched file. */
 static bool fs_watch_node_names_file(const fs_watch_node_t *node, const FILE_NOTIFY_INFORMATION *record)
 {
@@ -1236,7 +1233,7 @@ static void fs_watch_op_complete(async_io_event_t *event)
 				return;
 			}
 
-			fs_watcher_fail(watcher, error);
+			fs_watcher_fail(watcher, strerror(error));
 			return;
 		}
 
@@ -1253,7 +1250,7 @@ static void fs_watch_op_complete(async_io_event_t *event)
 		const int error = async_reactor_resubmit_own(event, &completed);
 
 		if (UNEXPECTED(error != 0)) {
-			fs_watcher_fail(watcher, error);
+			fs_watcher_fail(watcher, strerror(error));
 			return;
 		}
 	} while (UNEXPECTED(completed));
@@ -1488,6 +1485,7 @@ typedef struct
 	zend_object_iterator iterator;
 	zval current; /* UNDEF before the first event and after the last */
 	bool started;
+	bool may_throw; /* made before the watcher closed and has not thrown its error yet */
 } fs_watcher_iterator_t;
 
 static void fs_watcher_iterator_dtor(zend_object_iterator *zend_iterator)
@@ -1536,9 +1534,11 @@ static void fs_watcher_iterator_move_forward(zend_object_iterator *zend_iterator
 
 	while (!fs_watcher_pop(watcher, &event)) {
 		if (fs_watcher_is_closed(watcher)) {
-			if (UNEXPECTED(watcher->error != NULL)) {
-				zend_throw_exception_internal(watcher->error);
-				watcher->error = NULL;
+			if (UNEXPECTED(watcher->error != NULL && iterator->may_throw)) {
+				iterator->may_throw = false;
+				/* A new exception per throw: a stored one reaches the watcher through an InternalIterator in its
+				 * trace, which has no get_gc, so the cycle would leak. */
+				zend_throw_exception(async_ce_async_exception, ZSTR_VAL(watcher->error), 0);
 			}
 
 			return;
@@ -1590,6 +1590,7 @@ static zend_object_iterator *fs_watcher_get_iterator(zend_class_entry *class_ent
 	ZVAL_OBJ_COPY(&iterator->iterator.data, Z_OBJ_P(object));
 	ZVAL_UNDEF(&iterator->current);
 	iterator->started = false;
+	iterator->may_throw = !fs_watcher_is_closed(fs_watcher_from_object(Z_OBJ_P(object)));
 
 	return &iterator->iterator;
 }
@@ -1659,7 +1660,7 @@ static void fs_watcher_object_free(zend_object *object)
 	}
 
 	if (watcher->error != NULL) {
-		OBJ_RELEASE(watcher->error);
+		zend_string_release(watcher->error);
 	}
 
 	if (watcher->path != NULL) {
@@ -1699,6 +1700,14 @@ static bool fs_watcher_extensions_init(async_fs_watcher_t *watcher, HashTable *e
 		if (UNEXPECTED(length == 0)) {
 			zend_argument_value_error(6, "must not contain an empty extension");
 			return false;
+		}
+
+		/* A name's extension is taken after its last slash and last dot, so one containing either never matches. */
+		for (size_t i = 0; i < length; i++) {
+			if (UNEXPECTED(name[i] == '.' || IS_SLASH(name[i]))) {
+				zend_argument_value_error(6, "must not contain an extension with a dot or a slash inside");
+				return false;
+			}
 		}
 
 		zend_string *const extension = zend_string_init(name, length, false);

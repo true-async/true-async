@@ -3133,3 +3133,12 @@ stack options were shown with the code).
   `scope/126-handler_cycle_survives_gc_while_members_run.phpt`, `signal/018-cancellation_tokens.phpt`,
   `signal/024-many_futures_on_one_signal_leave_in_linear_time.phpt`,
   `spawnWith/013-spawnWith_strategy_scope_without_object.phpt`, `spawnWith/015-spawnWith_strategy_hook_suspends.phpt`.
+- 2026-10-13 S9.46, layer 7 review: a monitoring error is kept as its message, and each iterator made before the close
+  throws its own `AsyncException` once (`059`, `063`): one kept exception and the watcher held each other through an
+  iterator in its trace's arguments, and `InternalIterator` has no `get_gc` (a leak). `IN_UNMOUNT` and any bit but
+  `IN_ATTRIB`, `IN_MODIFY`, `IN_ISDIR` count as renamed. An extension with a dot or a slash inside is a `ValueError`
+  (`060`, `061`): it never matched. One `fs_watcher_fail()` sets the error on both platforms. Up to four users of a
+  watch descriptor are dispatched from a stack array. New tests `fs_watcher/054`-`070`; Mull's 37 survivors triaged in
+  `dev/plans/S9-fs-watcher.md` section 8. The two PR branches reviewed twice: ior keeps the subtree flag in
+  `sock_flags`, waits for a queued `STATUS_NOTIFY_ENUM_DIR` packet and refuses an unknown flag; the IO hooks API checks
+  the op's result length. Core `async-core-io-2026-10-13-9` `0cea21ffd45`, ior `dir-changes-pr` `fdcfadf2496`.

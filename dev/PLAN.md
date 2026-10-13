@@ -1879,10 +1879,15 @@ Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, 
       tier: T2 · role: Critic
       handoff: 2026-10-13 core `async-core-io-2026-10-13-8` `244b1a2ecf3`, ior `dir-changes` `59b918ef189`
         (RFC-CHANGES 39, PR texts `/mnt/project-files/notes/s9-45/`); the watcher's Windows branch, the xfail-on tags
-        removed; told to Edmond 08:30. Open: the PRs, opened by Edmond.
-- [ ] S9.46 Layer 7 review and its documentation in `true-async-doc` (note section 5).
+        removed; told to Edmond 08:30. Open: the PRs, opened by Edmond. S9.46 reviewed both branches: core
+        `async-core-io-2026-10-13-9` `0cea21ffd45`, ior `dir-changes-pr` `fdcfadf2496`.
+- [x] S9.46 Layer 7 review and its documentation in `true-async-doc` (note section 5).
       done: Critic over S9.44 and S9.45, coverage, Mull, 100 fuzz seeds, B24, a doc page with note section 6
       tier: T2 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S9.46): two Critics; each iterator made before a monitoring
+        error throws its own exception, a dot or slash inside an extension is a `ValueError`; own tests
+        `fs_watcher/054`-`070`; coverage 92.9 % of `src/fs_watcher.c` on Linux, Mull's survivors triaged (note
+        section 8), 100 seeds clean, B24 in `dev/BENCHMARKS.md`; page `ru/concepts/filesystem-watcher.md`.
 - [ ] S9.47 Layer 7 security pass by `dev/SECURITY.md` (note section 5).
       done: a journal entry per checklist item; findings fixed with a test or recorded
       tier: T2 · role: —

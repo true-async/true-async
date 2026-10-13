@@ -87,6 +87,10 @@ BENCHMARKS = {
     'B23-known': ('b23.php', ['10000', '0', 'known'], ['20000', '0', 'known'], 10_000),
     'B23-10': ('b23.php', ['10000', '10'], ['20000', '10'], 10_000),
     'B23-10-known': ('b23.php', ['10000', '10', 'known'], ['20000', '10', 'known'], 10_000),
+    'B24': ('b24.php', ['10000', 'coalesce'], ['20000', 'coalesce'], 10_000),
+    'B24-known': ('b24.php', ['10000', 'coalesce', 'known'], ['20000', 'coalesce', 'known'], 10_000),
+    'B24-raw': ('b24.php', ['10000', 'raw'], ['20000', 'raw'], 10_000),
+    'B24-raw-known': ('b24.php', ['10000', 'raw', 'known'], ['20000', 'raw', 'known'], 10_000),
     # D2's control: the same B2 and B4 on ext/test_scheduler, with -d test_scheduler.enable=1.
     'B2-control': ('control/b2.php', ['400000'], ['800000'], 400_000),
     'B4-100-control': ('control/b4.php', ['100', '1000'], ['100', '2000'], 100_000),

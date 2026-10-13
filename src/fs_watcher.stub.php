@@ -31,7 +31,7 @@ final readonly class FileSystemEvent
 
 /**
  * Watches a file or a directory from its construction until close() or its destruction, buffers the
- * changes and hands them out to foreach. Supported on Linux.
+ * changes and hands them out to foreach. Supported on Linux and Windows.
  *
  * @strict-properties
  * @not-serializable
@@ -40,15 +40,16 @@ final class FileSystemWatcher implements Awaitable, \IteratorAggregate
 {
     /**
      * @param string $path The file or directory to watch.
-     * @param bool $recursive Watch the subdirectories too: one watch per directory, new ones added and
-     *   removed ones dropped as they come and go, symlinks not followed, at most 8192 directories.
+     * @param bool $recursive Watch the subdirectories too, symlinks not followed. Linux: one watch per
+     *   directory, new ones added and removed ones dropped as they come and go, at most 8192 directories.
+     *   Windows: the system's own recursive watch; names use backslashes ("sub\deep\config.php").
      * @param bool $coalesce true: one buffered event per changed entry, its flags merged; false: every
      *   change separately.
      * @param int $debounceMs 0, or the milliseconds of quiet after which a burst of changes is delivered
      *   as one event with $filename = null.
      * @param int $maxHoldMs 0, or the longest a debounced burst waits after its first change.
      * @param array $extensions Case-insensitive extensions of the entries to report, "php" or ".php";
-     *   empty: every entry.
+     *   empty: every entry. One with a dot or a slash inside ("tar.gz") is a ValueError.
      */
     public function __construct(
         string $path,
@@ -64,6 +65,9 @@ final class FileSystemWatcher implements Awaitable, \IteratorAggregate
 
     public function isClosed(): bool {}
 
-    /** Yields FileSystemEvent objects; suspends while none is buffered and the watcher is open. */
+    /**
+     * Yields FileSystemEvent objects; suspends while none is buffered and the watcher is open. An iterator made
+     * before a monitoring error closed the watcher throws it once as AsyncException after the buffered events.
+     */
     public function getIterator(): \Iterator {}
 }

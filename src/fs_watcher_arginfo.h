@@ -1,5 +1,5 @@
 /* This is a generated file, edit fs_watcher.stub.php instead.
- * Stub hash: 9bb727773111aa82e45a82742731a4d4a049d1ca */
+ * Stub hash: df973a28ba040a436996b5a2d33a1c6a804b97d4 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_Async_FileSystemWatcher___construct, 0, 0, 1)
 	ZEND_ARG_TYPE_INFO(0, path, IS_STRING, 0)

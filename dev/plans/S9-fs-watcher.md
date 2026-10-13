@@ -176,8 +176,9 @@ entry, as `libuv_reactor.c:3030-3128` does for the BSDs.
 **Arguments**: `$path` by `Z_PARAM_PATH`, checked by `php_check_open_basedir()` and expanded against the virtual
 current directory (`expand_filepath()`), as a plain file stream does; `$event->path` keeps the value passed.
 `$debounceMs` and `$maxHoldMs` outside 0-4294967295 are a `ValueError`; an extension that is not a string is a
-`TypeError`, an empty one a `ValueError`, and an extension of any length is kept (lowercased `zend_string`s in a
-hash). A second `__construct()` is an `Error` "Cannot call constructor twice", as `Channel` (`src/channel.c:1484`).
+`TypeError`, an empty one or one with `.` or `/` inside a `ValueError` (S9.46: it could never match), and an
+extension of any length is kept (lowercased `zend_string`s in a hash). A second `__construct()` is an `Error`
+"Cannot call constructor twice", as `Channel` (`src/channel.c:1484`).
 
 **As built (S9.44).** The reactor now takes every completed event off its list before a custom completion runs, so
 the registry's POLL completion and the wakeup's resubmit the same way (`async_reactor_resubmit_own()`). A forked child
@@ -234,8 +235,9 @@ S9.44 builds them.
 5. **`$extensions` in every mode**, Edmond's answer B to question 1. TrueAsync documents it for debounce mode
    only (the stub's comment), so `extensions: ['php']` without a debounce delivers every file (`f15`).
 6. **The buffers are on the request allocator**, so `memory_limit` bounds a raw watcher nobody reads.
-7. **A monitoring error is thrown** from `foreach` as `AsyncException` "Filesystem monitoring error: ...", once, and
-   the watcher closes. TrueAsync closes silently (`fs_watcher.c:282-285`).
+7. **A monitoring error is thrown** from `foreach` as `AsyncException` "Filesystem monitoring error: ...", once by
+   each iterator made before the failure, each its own exception (S9.46), and the watcher closes; one made after
+   it ends quietly. TrueAsync closes silently (`fs_watcher.c:282-285`).
 8. **An inotify queue overflow** (`IN_Q_OVERFLOW`, events lost) gives every watcher of the descriptor one event with
    `filename = null` and both flags set, the shape of a debounce event, meaning "something changed, rescan". It
    passes the extension filter (the lost events may have matched); in debounce mode it arms the timer as a matching
@@ -252,7 +254,9 @@ S9.44 builds them.
    inode), and an overflow caused by its siblings gives it the name-less event. A renamed root directory is reported
    only to its parent's watchers, so its watcher keeps watching with no event. A refusal the kernel gives only at the
    first wait (a share or driver without change notification) is thrown from `foreach` as a monitoring error, not
-   from the constructor. Names keep Windows' backslashes, as TrueAsync's (libuv's), and come in PHP's code page,
+   from the constructor. A directory's own write and access times are reported as `changed` (libuv's filter, as
+   TrueAsync), so a change inside `sub` also gives `sub` with `changed`; Linux reports neither. Names keep Windows'
+   backslashes, as TrueAsync's (libuv's), and come in PHP's code page,
    as the path goes in (libuv gives UTF-8).
 
 Items 2, 4, 6 and 7 follow Edmond's rule of 2026-10-12 (pools): a programmer's error is caught even where TrueAsync
@@ -287,3 +291,26 @@ with one watcher closed; the fork rebuild (`skip-on:pocs-win`).
 
 **Measurement**: B24, 10 000 file writes into a watched directory, coalesce and raw, instructions and allocations of
 the extension per delivered event against the reference, as B21-B23 (`dev/BENCHMARKS.md`).
+
+**The layer review** (S9.46, 2026-10-13). Coverage of `src/fs_watcher.c` by the layer's 68 tests on Linux: 598 of
+644 lines (92.9 %), 52 of 52 functions (the Windows branch is not compiled there); 100 fuzz seeds over the 69 tests on
+`pocs-dbg`, 0 failed, no new diagnostic. Mull (`tools/mull.py --diff-ref 95924f0^ --source src/fs_watcher.c`, the
+watcher's tests, a list run cut at 40 s instead of 100): before S9.46's tests 149 mutants, 51 not killed; with
+`054`-`069` 152 mutants, 37 not killed, line numbers as in that run. `069` kills line 925 (checked by hand after the
+run). The other 36, by what answers them:
+
+- Seen only by ASAN, as Mull builds the debug module: lines 391 and 533, two mutants each (the arrays' growth); 407,
+  three (a removed user stays linked, freed); 713 `<=`, 795, 800 (a read past an array); 791 `>` (more than four
+  users on the stack array).
+- Equivalent: 301 `>=` (no time left either way); 791 `<` (four users on the heap); 827 (a read of an inotify
+  descriptor never returns 0); 939, three (a skipped re-arm in the fork rebuild keeps polling the same number:
+  `inotify_init1()` right after `close()` takes the lowest free descriptor, the one closed); 1697 (an empty
+  string's first byte is NUL); 581, 584 (`lstat()` runs only for `DT_UNKNOWN`, which tmpfs and ext4 never give);
+  713 `>=` and `++` (the parent's `IN_DELETE` has removed the node before its `IN_IGNORED`); 1625 (the free
+  handler closes what the destructor left).
+- Only the clock tells: 300, two, and 301 `<=` (when a held burst comes out).
+- Not reached by a test: 572 (the 8193rd directory); 606, two, and 633 (a directory added twice or a removal walk
+  with an unmatched node first, which needs another process racing the walk); 655 (the kernel's watches of a
+  dropped root's subdirectories, invisible to PHP); 866 (the fault hook gives only `EIO`); 947 (two refused roots
+  in one child); 967 (`inotify_init1()` failing in a child); 993, two (a watcher still open at RSHUTDOWN: its
+  destructor, or after a fatal error its free handler, closes it before).
