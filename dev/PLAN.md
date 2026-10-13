@@ -84,6 +84,12 @@ true-async/
 
 Waiting for Edmond's call; nothing here is being worked on.
 
+- The core carries the first version of the connect-started fix (`dca62e39da4`): after its own `connect()` it
+  waits with a Poll op. The PR branch `io-hooks-connect-started` (bukka/php-src#4) has the later version, a Connect
+  op flagged `PHP_IO_OP_F_CONNECT_STARTED`, which `notes/io-hooks-connect-started-pr.md` describes. So bukka's
+  `ext/openssl/tests/stream_io_hooks.phpt` ("Connect: yes") is red in our core since `async-core-io-2026-10-07-4`;
+  our CI does not run the core's openssl tests. Options: pick the flagged version into the core, or keep the
+  Poll and change the PR. Found in S8.11; Edmond's call.
 - A channel `recv()` whose coroutine was cancelled, and whose owner scope is cancelled before it runs, throws
   `ChannelException` ("Channel closed: owner scope disposed") with the cancellation as its previous, so a
   `catch (Exception)` swallows the cancellation (found in S9.41, not fixed there). By S9.36's rule the
@@ -1199,6 +1205,16 @@ reproduced defect gets a test of the behaviour TrueAsync gives, tagged `core:<n>
       result 2026-10-13: core hooks tests 83 PASS, 2 SKIP on Linux debug (`57fed0673c0` binary, test-only change);
         Windows probe run 38351449003 (branch `s8-10-test`): the same Poll. Run 38353296164 on `-4`, Windows Release_TS:
         hooks 48 PASS, 36 SKIP, 0 FAIL; `registrations-edge-select.phpt` passed on retry (not looked into).
+- [x] S8.11 Edmond's review of our code on the two bukka branches: no repeated comments, `EXPECTED()`/`UNEXPECTED()`
+      on the new checks, every comment we wrote plain and short.
+      done: `io-hooks-cancelled-accept-connect` `e0e3cce2444`, `io-hooks-stream-timeouts` `b3742eb44e3`,
+        `io-hooks-fixes` `17f52a66b46`, core `async-core-io-2026-10-13-5` `dcb1ea7d64d`; PR texts in `notes/`
+      tier: T0 · role: none (comments and branch hints; one test fix)
+      handoff: done 2026-10-13. The run of the core's openssl tests found `io_hooks_handshake_cancelled_client.phpt`
+        red since `-4`: its provider threw on the Poll that waits for the core's own connect; it now completes a Poll
+        as it does a Connect. Bukka's `stream_io_hooks.phpt` is red in the core since `-07-4` (Open questions).
+      result 2026-10-13: core debug, `ext/standard/tests/streams`, `poll`, `network`, `ext/openssl/tests`: 699 PASS,
+        46 SKIP, 1 FAIL (`stream_io_hooks.phpt`, the same on `-4`).
 
 ## S9 — Higher layers, one at a time  [in progress]
 

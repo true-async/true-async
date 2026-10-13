@@ -45,8 +45,8 @@ Waits for it: nothing; the pinned core carries the branch (`async-core-io-2026-1
 
 State: on `io-hooks-stream-timeouts` `2791d414caf` and, for Windows, `5e6ded8b09c` (on bukka's `8e470c219fc`, after
 entry 4's commit) and `io-hooks-fixes` `cee42c3db37`, `f2d5fd05710`, 2026-10-13 (S8.6, S8.9), in the core since
-`async-core-io-2026-10-13-2` `8568d99bd3e` (Unix) and `async-core-io-2026-10-13-3` `57fed0673c0` (Windows). PR text
-with entry 4: `/mnt/project-files/notes/s8-6/io-hooks-stream-timeouts-pr.md`. PR: none yet.
+`async-core-io-2026-10-13-2` `8568d99bd3e` (Unix) and `async-core-io-2026-10-13-3` `57fed0673c0` (Windows). Comments
+and branch hints after Edmond's review: `b3742eb44e3` (S8.11). PR text with entry 4: `/mnt/project-files/notes/s8-6/io-hooks-stream-timeouts-pr.md`. PR: none yet.
 
 Need: TrueAsync honours `stream_set_timeout()` on a `proc_open()` pipe for a read in a coroutine
 (`io/039`, `040`, `042`, `043`). The plain wrapper has no `PHP_STREAM_OPTION_READ_TIMEOUT` case, so the call
@@ -604,7 +604,8 @@ Waits for it: nothing: `io_provider/067`, `068` pass on the core that carries it
 
 State: on `io-hooks-cancelled-accept-connect` `8965b4821d0` (on bukka's `8e470c219fc`) and `io-hooks-fixes`
 `f151259dda5`, 2026-10-13 (S8.3b), in the core since `async-core-io-2026-10-13-1` `5d6194ec8ac`. Its connect tests
-accept the Poll that the connect-started fix gives a provider (`1da1a2c173f`, `5f15ea1e701`; S8.10). PR text for
+accept the Poll that the connect-started fix gives a provider (`1da1a2c173f`, `5f15ea1e701`; S8.10). Comments, branch
+hints and the TLS client test after Edmond's review: `ac2680b4a64`, `d735cab2136`, `e0e3cce2444` (S8.11). PR text for
 bukka with entry 37: `/mnt/project-files/notes/s8-3b/io-hooks-cancelled-accept-connect-pr.md`. PR: none yet.
 
 Need: a coroutine cancelled in `stream_socket_accept()` gets the cancellation and also "Warning:

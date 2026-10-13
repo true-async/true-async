@@ -696,6 +696,8 @@ The research reports behind the note: `/mnt/project-files/notes/s10/` (project f
 - S8.10 closed 2026-10-13 (PLAN handoff line): core `async-core-io-2026-10-13-4` `77ddd91c4b6`, a test-only merge; the
   connect-throws tests accept the Poll of the connect-started fix, the one-attempt test now fails when a further address
   is tried. Open in S8: S8.3c (Edmond's exception name).
+- S8.11 closed 2026-10-13: Edmond's review of our comments on the bukka branches; core `async-core-io-2026-10-13-5`
+  `dcb1ea7d64d`. Open question: the core's connect-started fix is the Poll version, the PR branch the flagged Connect.
 
 ## S14
 

@@ -2904,3 +2904,8 @@ stack options were shown with the code).
 - 2026-10-13 S8.10, the core tests `hooks/connect-throws.phpt`, `connect-throws-one-attempt.phpt`, `fsockopen-throws.phpt`
   expect a Connect or a Poll op; the one-attempt test counts connections at its listener, not provider ops. Why: the
   connect-started fix waits with a Poll, and after the exception no op reaches the provider, so the count could not fail.
+- 2026-10-13 S8.11, Edmond's review of the bukka branches: the comment repeated over each `!EG(exception)` guard is
+  gone (the commits say why); the guards read `EXPECTED(!EG(exception))`, the end of the address loop
+  `UNEXPECTED(EG(exception))`. `io_hooks_handshake_cancelled_client.phpt` completes a Poll as it does a Connect, so
+  it reaches the handshake with either version of the connect-started fix. Why: the core's Poll made the provider
+  throw before the handshake, so the test checked nothing since `-4`.
