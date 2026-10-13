@@ -912,7 +912,7 @@ Active: none; the channel case came with S9.19 (`channel/125`, `126`), the fuzz 
       each caught by a mutation. Critic three rounds. Lanes on S9.4 `7f3068f`: `pocs-dbg` 1080
       PASS, 9 SKIP, 48 XFAIL; `pocs-asan` 1061 PASS, 32 SKIP, 44 XFAIL, nothing unexpected.
 
-## S8 — Review checks and RFC change list  [ ]
+## S8 — Review checks and RFC change list  [x]
 
 Goal: the review's findings measured on a real provider; requests to both RFCs written.
 Done when: B1, B2, B3, M1, M4, M10, M12, M13 each have an outcome (reproduced, not reproduced,
