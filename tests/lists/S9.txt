@@ -1038,13 +1038,13 @@ common/runtime_stats.phpt  ref:e9d605ea4d5c9b9c67503e1f1c1e647b27246a3f0975aa67f
 
 # runtime_info
 runtime_info/inc/cgroup_fixture.inc  own:10fc8d764f49dd644ffa7076441c8c761dc16c793a7f86fb94b56be3081b9b5c
-runtime_info/001-affinity_of_one_cpu.phpt  own:5309726b153698fbfa76b3810ab1f99967a1b1dc493caf058c3565f123572ec7  skip-on:pocs-win(Unix-only)
+runtime_info/001-affinity_of_one_cpu.phpt  own:5309726b153698fbfa76b3810ab1f99967a1b1dc493caf058c3565f123572ec7  changed:2026-10-13:6126bfff683f39dfa0ec690ed99c9eaf898547282e75c22342a7b4f8fbe58912  skip-on:pocs-win(Unix-only)
 runtime_info/002-cgroup_v2_quota_of_middle_level.phpt  own:9469b60a9ebc02e0b33d3b7e8f6ff17c2201b6c1e60f6b2d2ea984027f35318a  skip-on:pocs-win(Unix-only)
 runtime_info/003-cgroup_v2_half_cpu_quota.phpt  own:efa1b71b0b34bb8e2bd037c723a069916e69df184a0efa71e12258bf9966419c  skip-on:pocs-win(Unix-only)
 runtime_info/004-cgroup_v2_max_is_no_quota.phpt  own:dab06d895852d2ba46c41dab348908b58577a0a8d7b69a6d19a4d209b9a3b80d  skip-on:pocs-win(Unix-only)
 runtime_info/005-cgroup_v2_smallest_quota_on_path.phpt  own:eae4333980ad399c4b35562dd60f20055355c9f2d998fbce3460acba4372e9b8  skip-on:pocs-win(Unix-only)
 runtime_info/006-cgroup_v2_mount_root_stripped.phpt  own:bce76f64eed05ae1d2bb37a5f4922e15bc74e3475f49685fc2f17d507df60d46  skip-on:pocs-win(Unix-only)
-runtime_info/007-cgroup_v2_path_outside_mount_root.phpt  own:102327a6388d3a5b89e57c6cfd4a64e08ffae73497a76c60527d04395c83144c  skip-on:pocs-win(Unix-only)
+runtime_info/007-cgroup_v2_path_outside_mount_root.phpt  own:102327a6388d3a5b89e57c6cfd4a64e08ffae73497a76c60527d04395c83144c  changed:2026-10-13:fc13453f479cf7babde65c88b8fd9a65dd0c337cba16ae37550b344bcaabdd0e  skip-on:pocs-win(Unix-only)
 runtime_info/008-cgroup_v1_quota.phpt  own:c0beabed09704f1b6aaec16c7c145a8cd32b1c90047d9a5416083860be525e17  skip-on:pocs-win(Unix-only)
 runtime_info/009-cgroup_hybrid_reads_v1_cpu.phpt  own:0cddbe014ee381aa7756a4c866cdc2bd791823d59f194a1413a8eb51106d4bc7  skip-on:pocs-win(Unix-only)
 runtime_info/010-cgroup_missing_file_is_no_quota.phpt  own:2a157cab366cdfea8f3dd6b00d3e8957c479b62c89fecaa5bbf9752117bbaa27  skip-on:pocs-win(Unix-only)
@@ -1064,3 +1064,25 @@ runtime_info/022-cpu_snapshot_serialize_throws.phpt  own:c55cb73c1b30f759ab3b2e4
 runtime_info/023-cpu_snapshot_unserialize_throws.phpt  own:56dfb28af8acd1c39a522eb5b3798e5df252d37d5af40553499fc649b690e30c
 runtime_info/024-cpu_snapshot_without_constructor.phpt  own:b0d785fd4170220949d7419069f1fdc337d47234066be1ceb3ebb4b2ae214b48
 runtime_info/025-cpu_limits_rejects_zero_affinity.phpt  own:7e868cc84090be586c241c8943ce32380201a25e6334c6404806266d4ac3794b
+runtime_info/026-cgroup_long_mountinfo.phpt  own:4e61aecde138d1ff8e531348d98f3fee6a30ba4e33b77b54d1e4faa2cb67f589  skip-on:pocs-win(Unix-only)
+runtime_info/027-cgroup_quota_overflow_is_no_quota.phpt  own:13a7a32a1dfa6645666fa04a378d1bf2e92e0d2f7dcdb9f6b9700830a7540f44  skip-on:pocs-win(Unix-only)
+runtime_info/028-cgroup_v1_without_period_is_no_quota.phpt  own:0293ba709348a839b85eab703e8f6264a5a5d23d101deafc5bcff6a3e845b9ba  skip-on:pocs-win(Unix-only)
+runtime_info/029-cgroup_zero_period_is_no_quota.phpt  own:e96a110d0f6f2c436e8898bc7b306f4f34917a12c107d19b5d8b93b5acda8268  skip-on:pocs-win(Unix-only)
+runtime_info/030-cgroup_mountinfo_missing.phpt  own:205f8c7ee4ac2c3021174c535d6e027834c5120effde4f2d3db83d73375ccf64  skip-on:pocs-win(Unix-only)
+runtime_info/031-cgroup_mountinfo_larger_than_half_mib.phpt  own:45c2ad8284948a8981dd9bfae982160125bdea193203a4c4fe5f7a7b75f983e5  skip-on:pocs-win(Unix-only)
+runtime_info/032-cgroup_v1_cpu_after_cpuacct.phpt  own:f8b4d602b3bf20498b79b6726e02b6c6b5f12bfa9e0a5657c838eb64164e9400  skip-on:pocs-win(Unix-only)
+runtime_info/033-cgroup_v2_quota_below_mount_root.phpt  own:81430ac212df63790937538fc60045f450ce68198f4abba70ad6bd25c7f2576a  skip-on:pocs-win(Unix-only)
+runtime_info/034-cgroup_v2_shortest_covering_root_wins.phpt  own:55ea78d2c5c9fb47aecfc38fbf91e97858dc887cac8a07e3aa5c5acc3d78d858  skip-on:pocs-win(Unix-only)
+runtime_info/035-cgroup_quota_starting_with_nine.phpt  own:fed55d8a2043f3b4361412ec59ab4b8b5f388defcd06c9fb6d4f6509ba9f5b7d  skip-on:pocs-win(Unix-only)
+runtime_info/036-available_parallelism_is_affinity_count.phpt  own:840e4cfe7903152cb8e608394c7ead9410b4681f32c4574b1f1decb079bcb90a  skip-on:pocs-win(Unix-only)
+runtime_info/037-cpu_snapshot_cpu_count_is_online.phpt  own:839852b27681dda89d2a7459e14ad890d3e1d01244207844b62d31f6edb364b1  skip-on:pocs-win(Unix-only)
+runtime_info/038-cpu_snapshot_process_time_between_getrusage.phpt  own:1946881b51dfcf141ca524c54a4e20f4a408048bba43794606469384583e9047  skip-on:pocs-win(Unix-only)
+runtime_info/039-cpu_snapshot_system_busy_between_proc_stat.phpt  own:f4688010ec107faa836ba53dabab218608b2d819cdc44979048259214008e515  skip-on:pocs-win(Unix-only)
+runtime_info/040-cpu_usage_interval_between_hrtime.phpt  own:1700810ea0fd756f9ce0cee2a974ccf49e5a9f344c5cd3c178558cc95533ed70
+runtime_info/041-cpu_usage_process_cores_between_getrusage.phpt  own:d74f1ecc83abb2eb8b61e5cc1edb9fa6aa41701466c21e2bc726cf6aad944085  skip-on:pocs-win(Unix-only)
+runtime_info/042-cpu_usage_system_percent_with_busy_ticks.phpt  own:886b04dac00f312b6b84966888a0caf951dbac70a00202898df12287f4560545  skip-on:pocs-win(Unix-only)
+runtime_info/043-runtime_stats_pool_capacity_is_usable_slots.phpt  own:7c9db6367f97723bed893d33635243d7657113558284480ac9f39a24dadf5668
+runtime_info/044-cgroup_file_unreadable_is_no_quota.phpt  own:b876fabf41c6b739d51c587bbaf9c32f99121afe988bd5e9190a10b85ee6bf77  skip-on:pocs-win(Unix-only)
+runtime_info/045-cgroup_mountinfo_over_limit_is_no_quota.phpt  own:a36cedc79c0d8c5a32968edc3423247d83df7784efb8229d52e87644a59b2598  skip-on:pocs-win(Unix-only)
+runtime_info/046-cgroup_root_path_too_long_is_no_quota.phpt  own:f12e12e474696fd12a91d9a82bb213da2b74b8fbba62d5233370a3dcd11d0c37  skip-on:pocs-win(Unix-only)
+runtime_info/047-cgroup_v2_mount_of_sibling_is_no_quota.phpt  own:0bf7723f39783667bb6403882bf9ca4574eee1a7ab97dc6869e0b8529206a613  skip-on:pocs-win(Unix-only)

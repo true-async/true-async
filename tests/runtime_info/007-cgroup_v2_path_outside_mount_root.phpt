@@ -1,5 +1,5 @@
 --TEST--
-available_parallelism(): a cgroup path that climbs out of the mount's root (a cgroup namespace) starts at the mount point
+available_parallelism(): a cgroup path that climbs out of the cgroup namespace's root gives no quota: the mount point is not one of its levels
 --SKIPIF--
 <?php if (PHP_OS_FAMILY !== 'Linux') die('skip the cgroup files are read on Linux only'); ?>
 --FILE--
@@ -19,4 +19,4 @@ var_dump(Async\available_parallelism());
 cgroup_fixture_remove($root);
 ?>
 --EXPECT--
-int(3)
+int(8)

@@ -114,7 +114,11 @@ Behaviour that looks like a defect, each a departure in section 6:
    mask of 0 (a process whose threads span groups), the sum of `GetActiveProcessorCount(group)` over the groups
    `GetProcessGroupAffinity()` returns (it gives group numbers, not masks; Windows keeps no per-group process
    mask), and when that fails
-   `GetActiveProcessorCount(ALL_PROCESSOR_GROUPS)`. A restriction through CPU sets
+   `GetActiveProcessorCount(ALL_PROCESSOR_GROUPS)`. From Windows 11 and Server 2022 (build 20348) a process spans
+   every group unless its affinity is set, while the call still gives its primary group's masks; there, on a host
+   with several groups, a mask equal to the group's whole mask counts every CPU of the host (S9.50; no call tells
+   that default from an affinity set to the whole group, which is over-counted). A restriction
+   through CPU sets
    (`GetProcessDefaultCpuSetMasks()`, Windows 11 and Server 2022) is not read (S9.49: the call needs a run-time
    lookup, and affinity masks, `start /affinity` included, cover the common case). libuv's Windows code
    (`uv: win/util.c`) reads the one mask and so sees at most 64 CPUs, or 1 when the mask is 0.
@@ -122,18 +126,21 @@ Behaviour that looks like a defect, each a departure in section 6:
    - Linux. The controller is v1's `cpu` when `/proc/self/cgroup` has a line whose comma-separated controller list
      holds `cpu` (a hybrid host keeps the CPU controller in v1), otherwise v2's `0::` line. The line's path is made
      relative to the controller's mount: `/proc/self/mountinfo` names the mount of `cgroup` (v1, with `cpu` in its
-     super options) or `cgroup2` (v2), and the mount's root field is stripped from the path, as the JDK and Go do; a
-     path outside the mount's root (`/..` inside a cgroup namespace) starts at the mount point. With several
-     mounts of the controller, the one whose root field is a prefix of the path is used. From that directory up
-     to the mount point, every level's `cpu.max` (v2, "quota period", "max" for none) or `cpu.cfs_quota_us` and
-     `cpu.cfs_period_us` (v1, -1 for none) is read, and the smallest `quota / period` is the quota.
+     super options) or `cgroup2` (v2), and the mount's root field is stripped from the path, as the JDK and Go do.
+     Of the controller's mounts, the one whose root field is the path or a directory above it, the shortest such,
+     is used: a mount shows the hierarchy below its root, so that one shows the most levels (S9.50). No such mount,
+     or a path that climbs with `/..` (a cgroup outside the cgroup namespace's root), is no quota: no mount shows
+     its levels (S9.50; S9.49 read the mount point, a sibling of the path). From the cgroup's
+     directory up to the mount point, every level's `cpu.max` (v2, "quota period", "max" for none) or
+     `cpu.cfs_quota_us` and `cpu.cfs_period_us` (v1, -1 for none) is read, and the smallest `quota / period` is
+     the quota.
    - Windows. The job object the process runs in (`QueryInformationJobObject(NULL,
      JobObjectCpuRateControlInformation)`), when its control is enabled with a hard cap: `CpuRate / 10000` of the
      host's CPUs, as a container started with `--cpus` gets, and with the min-max mode `MaxRate / 10000` of them. A
      weight-based or absent control is no quota. Only the innermost job is read: the API gives no handle to the
      job around it (S9.49).
-   - Elsewhere no quota. A missing or unreadable file, a malformed line, or a path longer than the buffer is no
-     quota at that level.
+   - Elsewhere no quota. A missing or unreadable file or a malformed line is no quota at that level; a path
+     longer than the buffer is no quota at all (S9.50).
 3. `available_parallelism()` is the smaller of the affinity count and the quota rounded up, at least 1: a quota of
    1.5 CPUs gives 2, one of 0.5 gives 1.
 

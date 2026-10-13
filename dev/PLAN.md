@@ -1912,9 +1912,13 @@ Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, 
         hook `TrueAsync\Test\cpu_limits()`; tests `common/` (6, `runtime_stats` changed: main counted) and
         `runtime_info/001`-`025`, which pass on debug and ASAN. Critic: Windows reads the affinity mask on every host,
         only the innermost job object, no CPU sets (note section 3). The Windows job object has no test.
-- [ ] S9.50 Layer 8 review and its documentation in `true-async-doc` (note section 5).
+- [x] S9.50 Layer 8 review and its documentation in `true-async-doc` (note section 5).
       done: Critic over S9.49, coverage, Mull, 100 fuzz seeds, doc pages with note section 6
       tier: T2 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S9.50): two Critics, 3 behaviour fixes (shortest covering
+        cgroup mount, no quota outside the namespace root, every processor group on Windows 11), tests
+        `runtime_info/026`-`047`; coverage 96.8% of `src/runtime_info.c`, Mull 48 of 153 not killed (each named),
+        100 seeds 0 failed. Pages in `true-async-doc`: four functions and `CpuSnapshot`.
 - [ ] S9.51 Layer 8 security pass by `dev/SECURITY.md` (note section 5).
       done: a journal entry per checklist item; findings fixed with a test or recorded
       tier: T2 · role: —

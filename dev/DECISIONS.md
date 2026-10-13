@@ -3171,3 +3171,13 @@ stack options were shown with the code).
   the innermost job object (the API gives no handle to the outer one); CPU sets are not read. A proc or cgroup file
   is read whole, again into a twice larger buffer when it fills one, so no allocation happens with the descriptor
   open (S9.47). Why: TrueAsync's code for each, less what our core already gives; the Windows limits are the API's.
+- 2026-10-13 S9.50: layer 8 review, two Critics. Of several mounts of the cgroup controller the one with the
+  shortest root covering the process's cgroup is walked; none, or a path climbing with `/..`, is no quota, so
+  `runtime_info/007-cgroup_v2_path_outside_mount_root.phpt` is changed (`changed:` tag) from 3 to 8: the mount point
+  it read is a sibling. `runtime_info/001-affinity_of_one_cpu.phpt` is changed to pin the first allowed CPU, not 0.
+  On Windows 11 and Server 2022 (build 20348) a whole-group mask on a host with several groups counts every CPU
+  (`GetProcessAffinityMask()` remarks); an affinity set to the whole group is over-counted, no call tells it apart;
+  untested, no host here has two groups. Why: the Critics' layouts are real. Recorded, no change: `cpuCount` on
+  musl is the affinity count; `fiber_pool_virtual_bytes` uses the current `fiber.stack_size`, as TrueAsync. Mull:
+  48 of 153 not killed: equivalent (boundaries, the kernel's escapes), ASAN-only overflows, seconds of CPU, or host
+  counters a test cannot force (idle, nice, steal). Coverage 96.8% (303 of 313 lines); 100 seeds, 0 failed.

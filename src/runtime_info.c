@@ -44,7 +44,7 @@ zend_class_entry *async_ce_cpu_snapshot = NULL;
 
 #ifdef __linux__
 
-/* A cgroup or proc file larger than this is treated as unreadable. */
+/* /proc/self/cgroup or /proc/self/mountinfo of RUNTIME_INFO_FILE_MAX - 1 bytes or more is treated as unreadable. */
 #define RUNTIME_INFO_FILE_MAX (1024 * 1024)
 
 /* Reads up to `capacity - 1` bytes of `path` into `buffer` and terminates them; -1 when the file cannot be
@@ -78,8 +78,8 @@ static ssize_t runtime_info_read_into(const char *path, char *buffer, size_t cap
 	return (ssize_t) filled;
 }
 
-/* The whole of `path`, NUL-terminated, in an emalloc'd buffer; NULL when it cannot be read or is larger than
- * RUNTIME_INFO_FILE_MAX. A file that fills the buffer is read again into a larger one. */
+/* The whole of `path`, NUL-terminated, in an emalloc'd buffer; NULL when it cannot be read or is longer than
+ * RUNTIME_INFO_FILE_MAX - 2 bytes. A file that fills the buffer is read again into a larger one. */
 static char *runtime_info_read_file(const char *path)
 {
 	for (size_t capacity = 4096; capacity <= RUNTIME_INFO_FILE_MAX; capacity *= 2) {
@@ -206,9 +206,10 @@ static char *runtime_info_cpu_cgroup(char *content, bool *is_v1)
 	return v2_path;
 }
 
-/* The mount of the CPU controller in /proc/self/mountinfo (`content`, changed in place): the one whose root
- * is `cgroup_path` or above it, the longest such root, else the first mount of the controller. Sets `root`
- * and `mount_point`; false when the controller is not mounted. */
+/* The mount of the CPU controller in /proc/self/mountinfo (`content`, changed in place) whose root is
+ * `cgroup_path` or a directory above it, the shortest such root: a mount shows the hierarchy below its root, so
+ * that one shows the most levels above `cgroup_path`. Sets `root` and `mount_point`; false when no mount's root
+ * is `cgroup_path` or above it. */
 static bool runtime_info_cpu_mount(char *content, bool is_v1, const char *cgroup_path, char **root, char **mount_point)
 {
 	bool found = false;
@@ -248,12 +249,11 @@ static bool runtime_info_cpu_mount(char *content, bool is_v1, const char *cgroup
 				runtime_info_unescape(fields[4]);
 
 				const size_t root_length = strlen(fields[3]);
-				const bool covers_path = runtime_info_path_under(cgroup_path, fields[3]);
 
-				if (!found || (covers_path && root_length > best_root_length)) {
+				if (runtime_info_path_under(cgroup_path, fields[3]) && (!found || root_length < best_root_length)) {
 					*root = fields[3];
 					*mount_point = fields[4];
-					best_root_length = covers_path ? root_length : 0;
+					best_root_length = root_length;
 					found = true;
 				}
 			}
@@ -362,23 +362,21 @@ static double runtime_info_cpu_quota(void)
 	char *mount_root = NULL;
 	char *mount_point = NULL;
 
-	if (cgroup_path != NULL && runtime_info_cpu_mount(mounts, is_v1, cgroup_path, &mount_root, &mount_point)) {
-		/* The cgroup's directory below the mount point: the path without the mount's root. A path outside
-		 * the root (one that climbs with "..", seen from a cgroup namespace) starts at the mount point. */
-		const char *relative = "";
-
-		if (runtime_info_path_under(cgroup_path, mount_root) && !runtime_info_path_under(cgroup_path, "/..")) {
-			relative = strcmp(mount_root, "/") == 0 ? cgroup_path : cgroup_path + strlen(mount_root);
-		}
+	/* A path that climbs with ".." is a cgroup outside this cgroup namespace's root. runtime_info_path_under()
+	 * puts it under mount root "/", but that mount shows the namespace's root, a sibling of it; a mount from
+	 * above the namespace, whose root also climbs with "..", is rare and not read. */
+	if (cgroup_path != NULL && !runtime_info_path_under(cgroup_path, "/..") &&
+		runtime_info_cpu_mount(mounts, is_v1, cgroup_path, &mount_root, &mount_point)) {
+		/* The cgroup's directory below the mount point: the path without the mount's root. */
+		const char *relative = strcmp(mount_root, "/") == 0 ? cgroup_path : cgroup_path + strlen(mount_root);
 
 		const int base_length = snprintf(path, sizeof(path), "%s%s", root_directory, mount_point);
 		const int full_length = snprintf(path, sizeof(path), "%s%s%s", root_directory, mount_point, relative);
 
 		if (EXPECTED(full_length < (int) sizeof(path))) {
-			size_t length = (size_t) full_length;
-
-			while (length > (size_t) base_length && path[length - 1] == '/') {
-				path[--length] = '\0';
+			/* The root cgroup "/" ends the path with a slash; dropped so the mount point is not read twice. */
+			if (full_length > base_length && path[full_length - 1] == '/') {
+				path[full_length - 1] = '\0';
 			}
 
 			while (true) {
@@ -390,12 +388,11 @@ static double runtime_info_cpu_quota(void)
 
 				char *slash = strrchr(path + base_length, '/');
 
-				if (length <= (size_t) base_length || slash == NULL) {
+				if (slash == NULL) {
 					break;
 				}
 
 				*slash = '\0';
-				length = (size_t) (slash - path);
 			}
 		}
 	}
@@ -442,15 +439,23 @@ static uint32_t runtime_info_mask_count(ULONG_PTR mask)
 	return count;
 }
 
-/* The CPUs the process may run on. GetProcessAffinityMask() gives the mask of the process's processor group, and
- * 0 for a process whose threads span groups; then each group the process runs in counts with all its CPUs,
- * since Windows keeps no per-group process mask. */
+/* The CPUs the process may run on. GetProcessAffinityMask() gives the mask of the calling thread's processor
+ * group; before Windows 11 it gives 0 for a process whose threads were placed in several groups, and then each
+ * group the process runs in counts with all its CPUs, since Windows keeps no per-group process mask. */
 static uint32_t runtime_info_affinity_count(void)
 {
 	DWORD_PTR process_mask = 0;
 	DWORD_PTR system_mask = 0;
 
 	if (EXPECTED(GetProcessAffinityMask(GetCurrentProcess(), &process_mask, &system_mask) && process_mask != 0)) {
+		/* From Windows 11 and Server 2022 (build 20348) a process spans every group unless its affinity was set,
+		 * while the masks still cover one group. No call tells that default from an affinity set to the whole
+		 * group, so a whole-group mask counts every group: such an affinity is over-counted. */
+		if (process_mask == system_mask && EG(windows_version_info).dwBuildNumber >= 20348 &&
+			GetActiveProcessorGroupCount() > 1) {
+			return GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+		}
+
 		return runtime_info_mask_count(process_mask);
 	}
 
