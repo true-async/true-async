@@ -146,7 +146,13 @@ void async_exception_merge(zend_object *under)
 	}
 
 	if (UNEXPECTED(GC_REFCOUNT(pending) > 1)) {
-		async_unobserved_exception_add(under);
+		/* A cancellation is never reported as uncaught, so one set aside is dropped. */
+		if (instanceof_function(under->ce, async_ce_cancellation)) {
+			OBJ_RELEASE(under);
+		} else {
+			async_unobserved_exception_add(under);
+		}
+
 		return;
 	}
 

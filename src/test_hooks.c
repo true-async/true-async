@@ -1031,7 +1031,8 @@ ZEND_END_ARG_INFO()
 
 /* Walks `items` on the iterator core (iterator.c) in workers of a new child scope of the current scope,
  * at most `concurrency` at a time (0: no limit), calling fn($value, $key); false from it stops the walk.
- * What the walk throws is the last worker's outcome. */
+ * What the walk throws is the last worker's outcome; a cancellation the callable throws gives way to the outcome the
+ * scope's cancel already left there. */
 static ZEND_FUNCTION(iterate)
 {
 	zval *items;

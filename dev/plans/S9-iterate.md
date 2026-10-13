@@ -196,6 +196,11 @@ Decided here by the project's rules, each to go into `DECISIONS.md` with S9.40.
    throws it (`i8`); during the walk it cancels the caller and its siblings and ends the request with "Uncaught"
    (`i22`), because nothing waits on the scope's event then (`scope.c:977-985` here).
 
+7. **A cancellation a callback throws itself is `iterate()`'s exception**, when the callback's coroutine was not
+   cancelled (an expired `timeout()`): it stops the walk like any exception. TrueAsync drops it as the worker's own
+   cancellation: `iterate()` returns normally, and with a limit the elements left are skipped (Edmond, 2026-10-13,
+   after S9.41).
+
 Item 1 follows Edmond's rule of 2026-10-12 (pools): a programmer's error is caught even where TrueAsync does not, when
 the check is small.
 

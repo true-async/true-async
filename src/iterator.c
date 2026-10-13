@@ -498,14 +498,17 @@ static void iterator_walk(async_iterator_t *iterator)
 }
 
 /* The walk's exception becomes the iterator's, chained over an earlier one, and cancels the scope of
- * its workers (TrueAsync's async_iterator_apply_exception). A cancellation and an exit stay where
- * they are: they end the worker, not the walk's result. */
+ * its workers (TrueAsync's async_iterator_apply_exception). An exit, and a cancellation of the worker
+ * itself, stay where they are: they end the worker, not the walk's result. A cancellation the handler
+ * threw with its worker not cancelled (an expired timeout()) is the walk's, where TrueAsync drops it
+ * (Edmond, 2026-10-13). */
 static void iterator_take_exception(async_iterator_t *iterator)
 {
 	zend_object *exception = EG(exception);
 
-	if (EXPECTED(exception == NULL) || instanceof_function(exception->ce, async_ce_cancellation) ||
-		async_is_exit_object(exception)) {
+	if (EXPECTED(exception == NULL) || async_is_exit_object(exception) ||
+		(instanceof_function(exception->ce, async_ce_cancellation) &&
+		 ZEND_COROUTINE_IS_CANCELLED(ZEND_ASYNC_CURRENT_COROUTINE))) {
 		return;
 	}
 

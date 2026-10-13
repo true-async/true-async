@@ -84,10 +84,6 @@ true-async/
 
 Waiting for Edmond's call; nothing here is being worked on.
 
-- A cancellation that an `iterate()` callback throws itself, its coroutine not cancelled (an expired
-  `timeout()`), ends that worker as a cancel of the worker does: `iterate()` returns normally, and with
-  `concurrency: 1` the elements left are skipped silently. TrueAsync does the same (probed on its build). Asked
-  Edmond 2026-10-13 05:07 (S9.41): A as TrueAsync, B (recommended) as a callback's exception.
 - A channel `recv()` whose coroutine was cancelled, and whose owner scope is cancelled before it runs, throws
   `ChannelException` ("Channel closed: owner scope disposed") with the cancellation as its previous, so a
   `catch (Exception)` swallows the cancellation (found in S9.41, not fixed there). By S9.36's rule the
@@ -1817,7 +1813,9 @@ Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, 
         (`dev/BENCHMARKS.md`). Docs: `true-async-doc` `ru/reference/functions/iterate.md`. On CORE_REF
         `57fed0673c0`: debug 1988 PASS, ASAN 1962 PASS, 0 unexpected, before the second Critic's fix; iterate,
         scope, channel and task_group 573 PASS on debug and iterate with task_group 228 PASS on ASAN after it.
-        Open: a cancellation a callback throws itself (Open questions).
+        Follow-up (Edmond 2026-10-13 06:00, B): a cancellation a callback throws itself, its worker not cancelled,
+        is the walk's exception (`iterate/059`, `060`); debug 1991 PASS, ASAN 1965 PASS before the Critic's merge
+        fix, iterate, pool, internal, scope and task_group 642 PASS on debug and 377 on ASAN after it.
 - [ ] S9.42 Layer 6 security pass by `dev/SECURITY.md` (note section 5).
       done: a journal entry per checklist item; findings fixed with a test or recorded
       tier: T2 · role: —

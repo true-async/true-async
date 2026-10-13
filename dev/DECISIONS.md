@@ -2886,6 +2886,13 @@ stack options were shown with the code).
   `tests/iterate/058-cancel_pending_cancels_child_spawned_after_walk_cancel.phpt`, both Critics).
 - 2026-10-13 S9.41, a destructor's error when `iterate()` releases the walk goes under the outcome by S9.36's rule.
   Why: it hit `async_exception_settle()`'s assertion (`tests/iterate/054-destructor_error_at_release_goes_under_outcome.phpt`).
+- 2026-10-13 S9.41, a cancellation that the iterator's handler throws while its worker is not cancelled (an expired
+  `timeout()` in an `iterate()` callback, a `throw new AsyncCancellation`) is the walk's exception: it stops the walk,
+  cancels the scope and is thrown by `iterate()`; a cancel of the worker itself still only ends it. Why: Edmond
+  2026-10-13 06:00, «B»; TrueAsync drops it, `iterate()` returned normally and with `concurrency: 1` skipped the
+  elements left (`tests/iterate/059-callback_own_cancellation_stops_walk.phpt`,
+  `tests/iterate/060-callback_own_cancellation_cancels_other_callbacks.phpt`). `async_exception_merge()` now drops a
+  cancellation it would set aside under a shared exception, as a cancellation is never printed as uncaught (Critic).
 - 2026-10-13 S9.41, Mull survivors on `iterator.c` kept: line 586 (`record->event != NULL` to `==`) only adds wakes,
   and the caller's loop waits again while the scope has coroutines; line 827 is the refused worker start, which no
   PHP code reaches (coverage). Why: S9.36's practice.
