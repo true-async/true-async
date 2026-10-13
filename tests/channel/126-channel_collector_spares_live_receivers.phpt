@@ -84,7 +84,12 @@ spawn_reporting("a recvAsync() Future on a timed channel", function () {
     $parking = false;
     $receiver = spawn(function () use ($channel, &$parking) {
         $parking = true;
-        $channel->recv();
+
+        // A cancel guarantees no state: the timer's close can reach the receiver before its cancellation does.
+        try {
+            $channel->recv();
+        } catch (ChannelException) {
+        }
     });
 
     // A coroutine runs on to its park, so the flag set means the receiver has parked.

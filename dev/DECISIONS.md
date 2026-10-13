@@ -3100,3 +3100,9 @@ stack options were shown with the code).
   `stream/024-stream_select_remote_disconnect.phpt`, `task_group/002-task_group_construct_concurrency.phpt`,
   `task_group/019-task_group_cancel.phpt`, `task_group/020-task_group_dispose.phpt`,
   `task_group/041-task_group_queue_limit.phpt`, `task_set/018-task_set_cancel.phpt`, `task_set/019-task_set_dispose.phpt`.
+- 2026-10-13 S14.20: a cancel guarantees no state (Edmond, 11:43: «отмена не гарантирует состояние»): a coroutine
+  cancelled while it waits may see the cancellation or an error that raced it. So the waker's order stays (an error
+  on top, the cancellation as its previous, as TrueAsync), and PLAN's open question on it (found in S9.41) is
+  removed. The receiver of `channel/126-channel_collector_spares_live_receivers.phpt` that the test cancels catches
+  the `ChannelException` of its channel's timer: with 15 stalled polls the close came first, and gdb showed the
+  unhandled exception reach the global scope (`async_scope_catch`), whose error route closed `$held`.

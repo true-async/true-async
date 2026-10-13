@@ -87,11 +87,6 @@ true-async/
 
 Waiting for Edmond's call; nothing here is being worked on.
 
-- A channel `recv()` whose coroutine was cancelled, and whose owner scope is cancelled before it runs, throws
-  `ChannelException` ("Channel closed: owner scope disposed") with the cancellation as its previous, so a
-  `catch (Exception)` swallows the cancellation (found in S9.41, not fixed there). By S9.36's rule the
-  cancellation would go on top. Edmond's call.
-
 - `gc_collect_cycles()` called while a GC run is in progress (its coroutine parked waiting for destructor
   iterators) returns 0 at once, from any coroutine: the `gc_active` check meant for a call from inside the run
   (S14.6, Sage). A programmer forcing a collection gets none and no sign of why. Option: await the active run
@@ -2313,7 +2308,7 @@ Tests: interleaved
       tier: T1 · role: Critic
       handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.15).
 - [ ] S14.16 The rest of the 2026-10-13 test audit (project files `s14/audit-2026-10-13/`): `reactor/017` and
-      `scope/156` pass the stall runs; `channel/126` with the channel bug it shows; tests that cannot fail and tests with several cases; the five that need a test clock wait for
+      `scope/156` pass the stall runs; tests that cannot fail and tests with several cases; the five that need a test clock wait for
       Edmond's answer.
       tier: T1 · role: Critic
 - [x] S14.17 The test servers (`php -n -S`) start with `opcache.enable=0`: on Windows two starting at once could
@@ -2333,6 +2328,10 @@ Tests: interleaved
         and 20 seeds
       tier: T1 · role: Critic
       handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.19).
+- [x] S14.20 `channel/126` accepts either error at a receiver whose cancel raced its channel's close.
+      done: passes the stall runs, a 500 ms stall and 20 seeds
+      tier: T1 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.20).
 
 ## S15 — Test layers of S2 not built yet  [ ]
 
