@@ -34,6 +34,15 @@
 #include <unistd.h>
 #endif
 
+#ifdef PHP_WIN32
+#include "win32/ioutil.h"
+#include "win32/winutil.h"
+#endif
+
+#if defined(__linux__) || defined(PHP_WIN32)
+#define FS_WATCHER_SUPPORTED
+#endif
+
 /* TrueAsync's FileSystemWatcher (fs_watcher.c of ext/async, cited below by line) without libuv: on Linux
  * the request's watchers share one inotify descriptor, as libuv's loop does (src/unix/linux.c:2298), and
  * the reactor polls it with one POLL op on its own list. A completion reads every event and hands each to
@@ -204,9 +213,13 @@ static bool fs_watcher_extension_matches(const async_fs_watcher_t *watcher, cons
 		return true;
 	}
 
-	const char *const name = ZSTR_VAL(filename);
-	const char *const slash = strrchr(name, '/');
-	const char *const basename = slash != NULL ? slash + 1 : name;
+	/* Windows names the entries of a recursive watch with backslashes. */
+	const char *basename = ZSTR_VAL(filename) + ZSTR_LEN(filename);
+
+	while (basename > ZSTR_VAL(filename) && !IS_SLASH(basename[-1])) {
+		basename--;
+	}
+
 	const char *const dot = strrchr(basename, '.');
 
 	if (dot == NULL || dot[1] == '\0') {
@@ -988,7 +1001,408 @@ void async_fs_watcher_request_shutdown(void)
 	fs_registry_release_if_empty(registry);
 }
 
-#else /* !__linux__ */
+#elif defined(PHP_WIN32)
+
+///////////////////////////////////////////////////////////////////
+/// Windows: one directory-change op per watcher
+///////////////////////////////////////////////////////////////////
+
+/* Windows has no descriptor to poll: each watcher keeps one PHP_IO_OP_DIR_CHANGES op on its directory, which
+ * ior completes with ReadDirectoryChangesW() records, recursion native, as libuv does (src/win/fs-event.c). A
+ * watched file is watched through its directory and its records filtered by name. The kernel buffer holds what
+ * changes between two ops, an overflow loses them (0 bytes); 16 KiB, four times libuv's, and the same again in
+ * the queue's bounce buffer. */
+#define FS_WATCH_BUFFER_SIZE 16384
+
+typedef struct
+{
+	async_io_event_t io;
+	fs_watch_node_t *node;
+} fs_watch_op_t;
+
+/* The watcher's only node: nodes[0] while watching. */
+struct _fs_watch_node_s
+{
+	async_fs_watcher_t *watcher;
+	HANDLE directory;    /* the root, or a watched file's directory */
+	wchar_t *path;       /* the root's path in UTF-16, malloc'd */
+	const wchar_t *file; /* a watched file: its name inside `path`, which the records compare with; else NULL */
+	zend_string *name;   /* the root's basename: a watched file's every event, the root's removal */
+	fs_watch_op_t *op;   /* while watching; on the reactor's own list while submitted */
+	bool starting;       /* the first submit runs: an inline completion leaves its result to the constructor */
+	bool completed_inline;
+	DWORD buffer[FS_WATCH_BUFFER_SIZE / sizeof(DWORD)];
+};
+
+struct _async_fs_registry_s
+{
+	HashTable watchers; /* the open watchers by object handle; borrowed */
+};
+
+static async_fs_registry_t *fs_registry_get(void)
+{
+	async_fs_registry_t *registry = ASYNC_G(fs_watchers);
+
+	if (EXPECTED(registry != NULL)) {
+		return registry;
+	}
+
+	registry = emalloc(sizeof(async_fs_registry_t));
+	zend_hash_init(&registry->watchers, 8, NULL, NULL, false);
+	ASYNC_G(fs_watchers) = registry;
+
+	return registry;
+}
+
+static void fs_registry_release_if_empty(async_fs_registry_t *registry)
+{
+	if (zend_hash_num_elements(&registry->watchers) != 0) {
+		return;
+	}
+
+	ZEND_ASSERT(ASYNC_G(reactor).parked_watchers == 0 && "a parked iterator's watcher is open");
+
+	zend_hash_destroy(&registry->watchers);
+	efree(registry);
+	ASYNC_G(fs_watchers) = NULL;
+}
+
+/* Withdraws the op unless it completed, then closes the handle: a cancelled ReadDirectoryChangesW() writes
+ * into the queue's buffer, not the node's. */
+static void fs_watch_node_free(fs_watch_node_t *node)
+{
+	if (node->op != NULL) {
+		if (node->op->io.reactor_link.prev != NULL) {
+			async_io_event_orphan(&node->op->io);
+		}
+
+		async_io_event_release(&node->op->io);
+	}
+
+	CloseHandle(node->directory);
+	free(node->path);
+	zend_string_release(node->name);
+	efree(node);
+}
+
+/* Stops watching and wakes the iterators; the buffered events stay for them. */
+static void fs_watcher_close(async_fs_watcher_t *watcher, bool dropped)
+{
+	(void) dropped;
+
+	if (fs_watcher_is_closed(watcher)) {
+		return;
+	}
+
+	async_fs_registry_t *const registry = ASYNC_G(fs_watchers);
+
+	watcher->base.flags |= ASYNC_EVENT_F_CLOSED;
+	fs_watcher_debounce_disarm(watcher);
+
+	if (watcher->node_count != 0) {
+		watcher->node_count = 0;
+		fs_watch_node_free(watcher->nodes[0]);
+	}
+
+	zend_hash_index_del(&registry->watchers, watcher->std.handle);
+
+	if (watcher->base.flags & FS_WATCHER_F_BURST) {
+		fs_watcher_burst_buffer(watcher);
+	}
+
+	fs_watcher_wake(watcher);
+	fs_registry_release_if_empty(registry);
+}
+
+/* Closes the watcher with `error`, which its iterators throw once. */
+static void fs_watcher_fail(async_fs_watcher_t *watcher, int error)
+{
+	if (watcher->error == NULL) {
+		watcher->error =
+				async_new_exception(async_ce_async_exception, "Filesystem monitoring error: %s", strerror(error));
+	}
+
+	fs_watcher_close(watcher, false);
+}
+
+/* The record names the watched file. */
+static bool fs_watch_node_names_file(const fs_watch_node_t *node, const FILE_NOTIFY_INFORMATION *record)
+{
+	return CompareStringOrdinal(
+				   record->FileName, (int) (record->FileNameLength / sizeof(WCHAR)), node->file, -1, TRUE) ==
+			CSTR_EQUAL;
+}
+
+/* A record's name in PHP's code page, as the path came in: relative to the root, with Windows' backslashes, as
+ * TrueAsync's (libuv's) names; NULL when it does not convert. The record's name has no terminator, which the
+ * conversion reads. */
+static zend_string *fs_record_name(const FILE_NOTIFY_INFORMATION *record)
+{
+	const size_t wide_length = record->FileNameLength / sizeof(WCHAR);
+	wchar_t *const wide_name = safe_emalloc(wide_length + 1, sizeof(wchar_t), 0);
+
+	memcpy(wide_name, record->FileName, wide_length * sizeof(wchar_t));
+	wide_name[wide_length] = L'\0';
+
+	size_t length = 0;
+	char *const converted = php_win32_cp_conv_w_to_any(wide_name, wide_length, &length);
+
+	efree(wide_name);
+
+	if (UNEXPECTED(converted == NULL)) {
+		return NULL;
+	}
+
+	zend_string *const name = zend_string_init(converted, length, false);
+
+	free(converted);
+
+	return name;
+}
+
+/* Delivers the op's `length` bytes of records (libuv's mapping, src/win/fs-event.c:510-540). A watched file
+ * that is removed or replaced closes its watcher, as the inotify watch on its inode does (`047`); one renamed
+ * closes it too, since its new name is not known, where inotify keeps following the inode. */
+static void fs_watch_node_dispatch(fs_watch_node_t *node, size_t length)
+{
+	async_fs_watcher_t *const watcher = node->watcher;
+	const char *position = (const char *) node->buffer;
+	const char *const end = position + length;
+
+	while (position < end) {
+		const FILE_NOTIFY_INFORMATION *const record = (const FILE_NOTIFY_INFORMATION *) position;
+		const bool changed = record->Action == FILE_ACTION_MODIFIED;
+
+		if (node->file == NULL) {
+			zend_string *const filename = fs_record_name(record);
+
+			if (EXPECTED(filename != NULL)) {
+				fs_watcher_deliver(watcher, filename, !changed, changed);
+				zend_string_release(filename);
+			}
+		} else if (fs_watch_node_names_file(node, record)) {
+			fs_watcher_deliver(watcher, node->name, !changed, changed);
+
+			if (!changed) {
+				fs_watcher_close(watcher, false);
+				return;
+			}
+		}
+
+		if (record->NextEntryOffset == 0) {
+			break;
+		}
+
+		position += record->NextEntryOffset;
+	}
+}
+
+/* The root was removed while open: Windows completes its op with ERROR_ACCESS_DENIED (EACCES) once it is
+ * pending deletion. */
+static bool fs_watch_node_root_removed(const fs_watch_node_t *node, int error)
+{
+	FILE_STANDARD_INFO info;
+
+	return error == EACCES && GetFileInformationByHandleEx(node->directory, FileStandardInfo, &info, sizeof(info)) &&
+			info.DeletePending;
+}
+
+/* The op's completion: delivers the records and submits the op again; an inline completion of the resubmit
+ * loops here, as the inotify registry's does. A failure closes the watcher with the error, the root's
+ * removal without one (`030`). */
+static void fs_watch_op_complete(async_io_event_t *event)
+{
+	fs_watch_node_t *const node = ((fs_watch_op_t *) event)->node;
+
+	if (node->starting) {
+		node->completed_inline = true;
+		return;
+	}
+
+	async_fs_watcher_t *const watcher = node->watcher;
+	bool completed;
+
+	do {
+		const php_io_op_result result = event->result;
+
+		completed = false;
+
+		if (UNEXPECTED(result.status != PHP_IO_DONE || result.error != 0 || result.res < 0)) {
+			const int error = result.error != 0 ? result.error : result.status == PHP_IO_UNSUPPORTED ? ENOTSUP : EIO;
+
+			if (fs_watch_node_root_removed(node, error)) {
+				fs_watcher_deliver(watcher, node->name, true, false);
+				fs_watcher_close(watcher, true);
+				return;
+			}
+
+			fs_watcher_fail(watcher, error);
+			return;
+		}
+
+		if (UNEXPECTED(result.res == 0 || ASYNC_TEST_IO_FAULT(ASYNC_TEST_IO_FAULT_INOTIFY_OVERFLOW))) {
+			fs_watcher_deliver(watcher, NULL, true, true);
+		}
+
+		fs_watch_node_dispatch(node, (size_t) result.res);
+
+		if (fs_watcher_is_closed(watcher)) {
+			return;
+		}
+
+		const int error = async_reactor_resubmit_own(event, &completed);
+
+		if (UNEXPECTED(error != 0)) {
+			fs_watcher_fail(watcher, error);
+			return;
+		}
+	} while (UNEXPECTED(completed));
+}
+
+/* Opens the watch on `path` for the watcher, its op built; NULL with errno. */
+static fs_watch_node_t *fs_watch_node_open(async_fs_watcher_t *watcher, const zend_string *path)
+{
+	wchar_t *const wide_path = php_win32_ioutil_any_to_w(ZSTR_VAL(path));
+
+	if (UNEXPECTED(wide_path == NULL)) {
+		SET_ERRNO_FROM_WIN32_CODE(ERROR_INVALID_PARAMETER);
+		return NULL;
+	}
+
+	const DWORD attributes = GetFileAttributesW(wide_path);
+
+	if (UNEXPECTED(attributes == INVALID_FILE_ATTRIBUTES)) {
+		SET_ERRNO_FROM_WIN32_CODE(GetLastError());
+		free(wide_path);
+		return NULL;
+	}
+
+	const bool is_directory = (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+	wchar_t *separator = NULL;
+	wchar_t *cut = NULL;
+	wchar_t cut_char = L'\0';
+
+	/* A file's directory: the path up to and with its last separator, cut in place for the open ("C:" alone
+	 * names the drive's current directory). */
+	if (!is_directory) {
+		separator = wcsrchr(wide_path, L'\\');
+
+		if (UNEXPECTED(separator == NULL)) {
+			SET_ERRNO_FROM_WIN32_CODE(ERROR_INVALID_PARAMETER);
+			free(wide_path);
+			return NULL;
+		}
+
+		cut = separator + 1;
+		cut_char = *cut;
+		*cut = L'\0';
+	}
+
+	const HANDLE directory = CreateFileW(wide_path,
+										 FILE_LIST_DIRECTORY,
+										 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+										 NULL,
+										 OPEN_EXISTING,
+										 FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED,
+										 NULL);
+
+	if (cut != NULL) {
+		*cut = cut_char;
+	}
+
+	if (UNEXPECTED(directory == INVALID_HANDLE_VALUE)) {
+		SET_ERRNO_FROM_WIN32_CODE(GetLastError());
+		free(wide_path);
+		return NULL;
+	}
+
+	fs_watch_node_t *const node = emalloc(sizeof(fs_watch_node_t));
+	const char *basename = ZSTR_VAL(path) + ZSTR_LEN(path);
+
+	while (basename > ZSTR_VAL(path) && !IS_SLASH(basename[-1])) {
+		basename--;
+	}
+
+	node->watcher = watcher;
+	node->directory = directory;
+	node->path = wide_path;
+	node->file = separator != NULL ? separator + 1 : NULL;
+	node->name = zend_string_init(basename, strlen(basename), false);
+	node->starting = false;
+	node->completed_inline = false;
+	node->op = (fs_watch_op_t *) async_io_event_new_ex(sizeof(fs_watch_op_t));
+	node->op->node = node;
+	node->op->io.complete = fs_watch_op_complete;
+	php_io_op_dir_changes(&node->op->io.op,
+						  (php_socket_t) directory,
+						  node->buffer,
+						  sizeof(node->buffer),
+						  is_directory && (watcher->base.flags & FS_WATCHER_F_RECURSIVE));
+
+	return node;
+}
+
+/* The first submit of the watcher's op: 0 or the errno, which the constructor throws; the queue's refusal
+ * (the Poll queue's Unsupported) is ENOTSUP. */
+static int fs_watch_node_start(fs_watch_node_t *node)
+{
+	node->starting = true;
+
+	int error = async_reactor_try_submit_own(&node->op->io);
+
+	node->starting = false;
+
+	if (UNEXPECTED(error != 0) || EXPECTED(!node->completed_inline)) {
+		return error;
+	}
+
+	const php_io_op_result result = node->op->io.result;
+
+	if (result.status == PHP_IO_UNSUPPORTED) {
+		return ENOTSUP;
+	}
+
+	if (result.status != PHP_IO_DONE || result.error != 0 || result.res < 0) {
+		return result.error != 0 ? result.error : EIO;
+	}
+
+	fs_watch_op_complete(&node->op->io);
+
+	return 0;
+}
+
+void async_fs_watcher_rebuild(void)
+{
+}
+
+void async_fs_watcher_request_shutdown(void)
+{
+	async_fs_registry_t *const registry = ASYNC_G(fs_watchers);
+
+	if (registry == NULL) {
+		return;
+	}
+
+	async_fs_watcher_t *watcher;
+
+	ZEND_HASH_FOREACH_PTR(&registry->watchers, watcher)
+	{
+		watcher->base.flags |= ASYNC_EVENT_F_CLOSED;
+		fs_watcher_debounce_disarm(watcher);
+
+		if (watcher->node_count != 0) {
+			watcher->node_count = 0;
+			fs_watch_node_free(watcher->nodes[0]);
+		}
+	}
+	ZEND_HASH_FOREACH_END();
+
+	zend_hash_clean(&registry->watchers);
+	ASYNC_G(reactor).parked_watchers = 0;
+	fs_registry_release_if_empty(registry);
+}
+
+#else
 
 void async_fs_watcher_request_shutdown(void)
 {
@@ -998,7 +1412,7 @@ void async_fs_watcher_rebuild(void)
 {
 }
 
-#endif /* __linux__ */
+#endif
 
 ///////////////////////////////////////////////////////////////////
 /// The WATCHER wait
@@ -1202,7 +1616,7 @@ static zend_object *fs_watcher_object_create(zend_class_entry *class_entry)
  * end, which calls every destructor. */
 static void fs_watcher_object_destroy(zend_object *object)
 {
-#ifdef __linux__
+#ifdef FS_WATCHER_SUPPORTED
 	async_fs_watcher_t *const watcher = fs_watcher_from_object(object);
 
 	if (ASYNC_G(fs_watchers) != NULL) {
@@ -1217,7 +1631,7 @@ static void fs_watcher_object_free(zend_object *object)
 {
 	async_fs_watcher_t *const watcher = fs_watcher_from_object(object);
 
-#ifdef __linux__
+#ifdef FS_WATCHER_SUPPORTED
 	/* After a fatal error the shutdown frees objects without their destructor, before RSHUTDOWN. */
 	if (UNEXPECTED(ASYNC_G(fs_watchers) != NULL)) {
 		watcher->base.flags &= ~FS_WATCHER_F_BURST;
@@ -1349,7 +1763,7 @@ ZEND_METHOD(Async_FileSystemWatcher, __construct)
 		RETURN_THROWS();
 	}
 
-#ifdef __linux__
+#ifdef FS_WATCHER_SUPPORTED
 	if (UNEXPECTED(php_check_open_basedir(path))) {
 		zend_throw_exception(
 				async_ce_async_exception, "Failed to start filesystem handle: open_basedir restriction in effect", 0);
@@ -1366,6 +1780,9 @@ ZEND_METHOD(Async_FileSystemWatcher, __construct)
 	zend_string *const root_path = zend_string_init(absolute_path, strlen(absolute_path), false);
 
 	efree(absolute_path);
+#endif
+
+#ifdef __linux__
 	/* A forked child's watch goes on its own descriptor, not on the one it shares with the parent. */
 	async_reactor_check_fork();
 
@@ -1391,6 +1808,32 @@ ZEND_METHOD(Async_FileSystemWatcher, __construct)
 	}
 
 	zend_string_release(root_path);
+#elif defined(PHP_WIN32)
+	fs_watch_node_t *const node = fs_watch_node_open(watcher, root_path);
+
+	zend_string_release(root_path);
+
+	if (UNEXPECTED(node == NULL)) {
+		zend_throw_exception_ex(async_ce_async_exception, 0, "Failed to start filesystem handle: %s", strerror(errno));
+		RETURN_THROWS();
+	}
+
+	async_fs_registry_t *const registry = fs_registry_get();
+
+	watcher->nodes = emalloc(sizeof(fs_watch_node_t *));
+	watcher->nodes[0] = node;
+	watcher->node_count = 1;
+	watcher->node_capacity = 1;
+	watcher->base.flags &= ~ASYNC_EVENT_F_CLOSED;
+	zend_hash_index_add_new_ptr(&registry->watchers, watcher->std.handle, watcher);
+
+	const int error = fs_watch_node_start(node);
+
+	if (UNEXPECTED(error != 0)) {
+		fs_watcher_close(watcher, false);
+		zend_throw_exception_ex(async_ce_async_exception, 0, "Failed to start filesystem handle: %s", strerror(error));
+		RETURN_THROWS();
+	}
 #else
 	zend_throw_exception(async_ce_async_exception, "FileSystemWatcher is not supported on this platform yet", 0);
 	RETURN_THROWS();
@@ -1401,7 +1844,7 @@ ZEND_METHOD(Async_FileSystemWatcher, close)
 {
 	ZEND_PARSE_PARAMETERS_NONE();
 
-#ifdef __linux__
+#ifdef FS_WATCHER_SUPPORTED
 	if (ASYNC_G(fs_watchers) != NULL) {
 		fs_watcher_close(THIS_WATCHER, false);
 	}

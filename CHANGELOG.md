@@ -122,6 +122,7 @@ can see goes here; tests, tools and CI are in the git history.
 - `Async\iterate()` throws a cancellation a callback throws itself, such as an expired `timeout()`, and stops the walk; before, it ended that callback silently ([S9](dev/plans/S9-iterate.md), S9.41).
 - `Async\iterate()` and `Async\Pool::release()` no longer also print as "Uncaught" an exception thrown again by a coroutine a callback spawned, or by a hook and the destructor, when the thrown exception is it or holds it as a previous; before, the request ended with exit code 255 ([S9](dev/plans/S9-iterate.md), S9.42).
 - `Async\FileSystemWatcher` and `Async\FileSystemEvent` on Linux: a `foreach` over the changes of a file or directory, recursive, coalesced or raw, debounced, filtered by extension in every mode; an open watcher nobody iterates keeps nothing waiting; other platforms throw for now ([S9](dev/plans/S9-fs-watcher.md), S9.44).
+- `Async\FileSystemWatcher` on Windows, on a directory-change op of the core and ior (core `async-core-io-2026-10-13-8`, [S9](dev/plans/S9-fs-watcher.md), S9.45).
 - `map()`, `catch()` and `finally()` on a `recvAsync()`, signal or group Future nobody else holds complete
   when that Future does; before, the Future went with its object and the chain never completed. A dropped
   `recvAsync()->map()` chain stays queued and takes a channel value; its channel, group or signal wait holds

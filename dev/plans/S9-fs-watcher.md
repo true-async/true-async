@@ -247,6 +247,13 @@ S9.44 builds them.
 11. **No name-less events of subdirectories** in a recursive watch. TrueAsync prefixes them with the node's own path
    (`libuv_reactor.c:3165-3168`), so `rmdir sub/deep` gives `sub/deep` from the parent and then `sub/deep/deep` twice
    (`IN_DELETE_SELF`, `IN_IGNORED`); test `012` passes either way, it matches with `str_contains()`.
+12. **Windows (S9.45) differs from Linux where its records name entries, not objects.** A watched file is watched
+   through its directory: renaming it closes the watcher like a removal (its new name is unknown; inotify follows the
+   inode), and an overflow caused by its siblings gives it the name-less event. A renamed root directory is reported
+   only to its parent's watchers, so its watcher keeps watching with no event. A refusal the kernel gives only at the
+   first wait (a share or driver without change notification) is thrown from `foreach` as a monitoring error, not
+   from the constructor. Names keep Windows' backslashes, as TrueAsync's (libuv's), and come in PHP's code page,
+   as the path goes in (libuv gives UTF-8).
 
 Items 2, 4, 6 and 7 follow Edmond's rule of 2026-10-12 (pools): a programmer's error is caught even where TrueAsync
 does not, when the check is small. Items 1, 3, 8 and 11 follow his rule of 2026-10-13 (iterate): TrueAsync behaviour

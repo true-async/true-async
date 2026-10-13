@@ -21,7 +21,8 @@ foreach ($watcher as $event) {
 $watcher->close();
 unlink("$base/target/hidden");
 unlink("$base/watched/seen");
-unlink("$base/watched/link");
+// A symlink to a directory is removed with rmdir() on Windows.
+PHP_OS_FAMILY === 'Windows' ? rmdir("$base/watched/link") : unlink("$base/watched/link");
 rmdir("$base/target");
 rmdir("$base/watched");
 rmdir($base);

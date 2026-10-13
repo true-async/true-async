@@ -2983,3 +2983,14 @@ stack options were shown with the code).
 - 2026-10-13 S14.12, the seed jobs live in `.github/workflows/seeds.yml`, run only by hand; it takes `CORE_REF` and
   `IOR_REF` from `ci.yml`, so a core update still changes one workflow. Why: GitHub shows a skipped matrix job under
   its unexpanded name template, and every push run listed the skipped seeds job that way (Edmond, 07:48).
+- 2026-10-13 S9.45, Windows watcher: one `PHP_IO_OP_DIR_CHANGES` op per watcher on its directory (RFC-CHANGES 39),
+  native recursion, a watched file through its parent filtered by name; any record but MODIFIED for it closes the
+  watcher, a rename too (note section 6, item 12). A removed root is ERROR_ACCESS_DENIED with `DeletePending`: its
+  basename `renamed`, then a close without error (`030`). Buffer 16 KiB, four times libuv's: 64 KiB per watcher
+  twice (ours, the queue's bounce) was the Critic's cost finding. Names in PHP's code page, as the path goes in,
+  from a terminated copy (the records have none; second Critic); a name that does not convert is skipped. The
+  core is -7 plus `io-hooks-fixes` only, not moved to bukka's head (S13.2 owns that). Critic: a file at a drive root
+  opened "C:" (the drive's current directory): the directory keeps its separator, as libuv's;
+  `fs_watcher/041-recursive_does_not_follow_symlinked_directory.phpt` removed a directory symlink with `unlink()`,
+  which Windows refuses: `rmdir()` there. Not changed: a kernel refusal at the first wait reaches `foreach`, since ior
+  posts a synchronous failure as a completion; a watched file renamed is not followed.

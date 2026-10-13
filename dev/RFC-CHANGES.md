@@ -876,3 +876,21 @@ op, as for a provider that connected again. Test `ext/standard/tests/streams/hoo
 (Linux, a full accept queue); fails before the fix.
 
 Waits for it: nothing in our lists (our provider waits); the core carries it.
+
+## 39. IO hooks and ior: wait for directory changes as an op
+
+State: php-src on `io-hooks-dir-changes` `2a63d178d36` (on bukka's `8e470c219fc`) and `io-hooks-fixes`
+`dc16df52032`; ior on true-async/ior `dir-changes-pr` `dae1c974915` (on libior/ior `ea70530`) and `dir-changes`
+`59b918ef189`, 2026-10-13 (S9.45), in the core since `async-core-io-2026-10-13-8` `244b1a2ecf3`. PR texts:
+`/mnt/project-files/notes/s9-45/`. PRs: none yet.
+
+Need: Windows has no descriptor for a FileSystemWatcher to poll (`dev/plans/S9-fs-watcher.md` 3, "Windows"):
+`ReadDirectoryChangesW()` on an overlapped directory handle completes on the completion port, which only the
+queue owns.
+
+Request: `PHP_IO_OP_DIR_CHANGES` (`php_io_op_dir_changes()`: a directory handle, a buffer, the subtree flag;
+Done with the bytes of `FILE_NOTIFY_INFORMATION` records, 0 when changes were lost), submitted by the ring as
+`IOR_OP_DIR_CHANGES`; a ring without `IOR_FEAT_DIR_CHANGES` and the Poll queue answer Unsupported. Tests: ior's
+`tests/test_dir_changes.c`; the core's op has no test of its own, the watcher's tests run it on Windows.
+
+Waits for it: `src/fs_watcher.c` on Windows; `tests/fs_watcher/` on `pocs-win`.
