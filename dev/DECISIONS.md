@@ -3027,3 +3027,7 @@ stack options were shown with the code).
   `collector/040-oracle_on_event_wakes.phpt` marks the waiter before it parks and waits for its end instead of
   `delay(300)`. `reactor/001-idle_wait_wakes_by_deadline.phpt` drops the order of two wakes, which a stop reverses
   when the waiters arm on both sides of it; an idle wait beside a timer that never fires must end by the other one.
+- 2026-10-13 S9.45 follow-up: `fs_watcher/032-open_basedir_refused.phpt` sets `open_basedir` with `ini_set()` instead of
+  `--INI-- open_basedir={TMP}`. Why: on the Windows runner `{TMP}` is `C:\Users\RUNNER~1\...`, the `-d` line fails
+  to parse ("syntax error, unexpected '~'", run 257's `.diff`), the extension is not loaded and the class is missing.
+  The other 50 watcher tests passed on `pocs-win` in that run.

@@ -1,11 +1,12 @@
 --TEST--
 FileSystemWatcher: a path outside open_basedir is refused
---INI--
-open_basedir={TMP}
 --FILE--
 <?php
 
 use Async\FileSystemWatcher;
+// At run time: an --INI-- line with Windows' short temp path (RUNNER~1) does not parse.
+ini_set('open_basedir', sys_get_temp_dir());
+
 try {
     new FileSystemWatcher('/');
 } catch (Async\AsyncException $exception) {
