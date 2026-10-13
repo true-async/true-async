@@ -1896,10 +1896,15 @@ Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, 
       handoff: done 2026-10-13 (DECISIONS 2026-10-13 S9.47, SECURITY.md journal): the recursive walk is breadth first
         (`fs_watcher/071`); descriptors after allocations, the walk's `DIR` closed with the registry; a forked child's
         close and the GC from the drain checked, no change. Two Critics.
-- [ ] S9.48 Design note `dev/plans/S9-runtime-info.md` (layer 8, runtime information), agreed with Edmond.
+- [x] S9.48 Design note `dev/plans/S9-runtime-info.md` (layer 8, runtime information), agreed with Edmond.
       done: the note pushed; every Critic finding fixed or answered in the note; Edmond agreed the note and answered
         its section 7
       tier: T2 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S9.48): the layer reads the operating system itself; two Critics,
+        9 findings fixed (Windows processor groups and job objects, cgroup mount roots and hybrid hosts, a test hook
+        that also replaces the affinity count). Edmond agreed the note 14:15 and chose B for question 1:
+        `process_percent` is a share of the CPUs the process may use, capped at 100. Probes r1-r7 in
+        `/mnt/project-files/s9/probes/s9.runtime/`.
 - [ ] S9.49 The layer 8 block of `tests/lists/S9.txt` and the five probes on Linux and Windows (note sections 3, 6).
       done: the 6 reference tests and an own test per row of note sections 2 and 6 pass on debug, ASAN and `pocs-win`
       tier: T2 · role: Critic

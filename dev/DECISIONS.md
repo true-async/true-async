@@ -3162,4 +3162,4 @@ stack options were shown with the code).
   group); `runtime_stats()` keeps the ten keys, `resumed_queue` always 0. Why: TrueAsync behaviour that looks like a
   bug is not copied; its keys are kept for code written for it. Cgroup parsing is tested through a test hook that
   replaces `/proc/self`, `/sys/fs/cgroup` and the affinity count, since no CI machine runs under a CPU quota.
-  `process_percent`'s base waits for Edmond (note question 1).
+  Edmond, 14:15, question 1 B: `process_percent` is a share of the CPUs the process may use (unrounded), capped at 100.

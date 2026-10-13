@@ -220,8 +220,8 @@ libuv 1.49 or later (item 2).
 
 ## 7. Questions for Edmond
 
-Asked one at a time, each with the PHP code and what the programmer sees. The plan itself needs his agreement before
-S9.49 (`dev/PLAN.md` S9).
+Asked one at a time, each with the PHP code and what the programmer sees. Edmond agreed the note on 2026-10-13 14:15
+and answered question 1 with B.
 
 1. **What `process_percent` is a share of.** A process confined to 1 CPU of a 4-CPU host keeps it busy (`r6`, run
    under `taskset -c 0`):
