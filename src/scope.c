@@ -747,7 +747,7 @@ static void scope_cancel(async_scope_t *scope, zend_object *error, bool transfer
 	}
 }
 
-static void scope_cancel_remaining(async_scope_t *scope, zend_object *error)
+static void scope_cancel_remaining(async_scope_t *scope, zend_object *error, const bool spare_cancelled)
 {
 	if (UNEXPECTED(scope_is_finally_run(scope))) {
 		return;
@@ -759,13 +759,15 @@ static void scope_cancel_remaining(async_scope_t *scope, zend_object *error)
 
 	/* A cancel only queues, so no PHP code changes either vector under the loops. */
 	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
-		scope_cancel_remaining(scope->child_scopes.data[i], error);
+		scope_cancel_remaining(scope->child_scopes.data[i], error, spare_cancelled);
 	}
 
 	for (uint32_t i = 0; i < scope->coroutines.length; i++) {
-		zend_coroutine_t *coroutine = &scope->coroutines.data[i]->coroutine;
+		const zend_coroutine_t *coroutine = &scope->coroutines.data[i]->coroutine;
 
-		if (!ZEND_COROUTINE_IS_FINISHED(coroutine)) {
+		if (!ZEND_COROUTINE_IS_FINISHED(coroutine) &&
+			(!spare_cancelled || !ZEND_COROUTINE_IS_CANCELLED(coroutine) ||
+			 (coroutine->flags & ASYNC_COROUTINE_F_ZOMBIE) != 0)) {
 			async_coroutine_cancel(scope->coroutines.data[i], error, false, false);
 		}
 	}
@@ -782,11 +784,11 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
 	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = was_in_scheduler_context;
 }
 
-void async_scope_cancel_remaining(async_scope_t *scope, zend_object *error)
+void async_scope_cancel_remaining(async_scope_t *scope, zend_object *error, const bool spare_cancelled)
 {
 	const bool was_in_scheduler_context = ZEND_ASYNC_IN_SCHEDULER_CONTEXT;
 	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = true;
-	scope_cancel_remaining(scope, error);
+	scope_cancel_remaining(scope, error, spare_cancelled);
 	ZEND_ASYNC_IN_SCHEDULER_CONTEXT = was_in_scheduler_context;
 }
 

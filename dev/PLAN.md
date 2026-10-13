@@ -84,6 +84,15 @@ true-async/
 
 Waiting for Edmond's call; nothing here is being worked on.
 
+- A cancellation that an `iterate()` callback throws itself, its coroutine not cancelled (an expired
+  `timeout()`), ends that worker as a cancel of the worker does: `iterate()` returns normally, and with
+  `concurrency: 1` the elements left are skipped silently. TrueAsync does the same (probed on its build). Asked
+  Edmond 2026-10-13 05:07 (S9.41): A as TrueAsync, B (recommended) as a callback's exception.
+- A channel `recv()` whose coroutine was cancelled, and whose owner scope is cancelled before it runs, throws
+  `ChannelException` ("Channel closed: owner scope disposed") with the cancellation as its previous, so a
+  `catch (Exception)` swallows the cancellation (found in S9.41, not fixed there). By S9.36's rule the
+  cancellation would go on top. Edmond's call.
+
 - `gc_collect_cycles()` called while a GC run is in progress (its coroutine parked waiting for destructor
   iterators) returns 0 at once, from any coroutine: the `gc_active` check meant for a call from inside the run
   (S14.6, Sage). A programmer forcing a collection gets none and no sign of why. Option: await the active run
@@ -1775,9 +1784,22 @@ Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, 
         (fixed by a scope subscriber with the new `ASYNC_CALLBACK_F_TAKES_ERROR`, `049`), `$cancelPending` after a
         safe cancel from above could hang (`050`); two findings did not reproduce. Second Critic: a freed scope
         read on a refused spawn, `$cancelPending` skipped when the last worker ended cancelled (`051`), note text.
-- [ ] S9.41 Layer 6 review and its documentation in `true-async-doc`.
+- [x] S9.41 Layer 6 review and its documentation in `true-async-doc`.
       done: Critic over S9.40, coverage, Mull, 100 fuzz seeds, B23, a doc page with note section 6's errors corrected
       tier: T2 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S9.41, note section 3 "As built"). Critics: a destructor's error
+        at the walk's release hit the settle assertion (`iterate/054`); a caller's cancel or a child's error left the
+        walk taking elements when a callback caught its cancellation (`055`, `056`); `$cancelPending` re-cancelled a
+        child cleaning up after the walk's cancel (`057`) and, once spared, a child spawned after it (`058`).
+        Coverage (iterate tests): the layer's lines 118 of 132 in `iterator.c`; `052`, `053` cover two misses; the
+        rest need a refused worker start, a bailout holding a route error, a scope without a file name, an
+        exception pending at entry or an iterator refused without one. Mull on `iterator.c` and `true_async.c`:
+        12 mutants on the changed lines, 2 survivors explained in DECISIONS. Fuzz: 100 seeds over 54 tests, 0
+        failed (`049` made null-safe for a fuzzed order). B23 1.058, B23-10 1.060 of the reference's instructions
+        (`dev/BENCHMARKS.md`). Docs: `true-async-doc` `ru/reference/functions/iterate.md`. On CORE_REF
+        `57fed0673c0`: debug 1988 PASS, ASAN 1962 PASS, 0 unexpected, before the second Critic's fix; iterate,
+        scope, channel and task_group 573 PASS on debug and iterate with task_group 228 PASS on ASAN after it.
+        Open: a cancellation a callback throws itself (Open questions).
 - [ ] S9.42 Layer 6 security pass by `dev/SECURITY.md` (note section 5).
       done: a journal entry per checklist item; findings fixed with a test or recorded
       tier: T2 · role: —

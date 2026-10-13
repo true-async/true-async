@@ -264,8 +264,10 @@ static void iterator_dtor(zend_async_microtask_t *microtask)
 	}
 
 #define ITERATOR_FINISH(iterator) \
-	(iterator)->state = ASYNC_ITERATOR_FINISHED; \
-	(iterator)->microtask.is_cancelled = true;
+	do { \
+		(iterator)->state = ASYNC_ITERATOR_FINISHED; \
+		(iterator)->microtask.is_cancelled = true; \
+	} while (0)
 
 async_iterator_t *async_iterator_new(zval *array,
 									 zend_object_iterator *zend_iterator,
@@ -580,7 +582,7 @@ iterate_record_wake(async_awaitable_t *target, async_event_callback_t *callback,
 
 	const async_coroutine_event_callback_t *record = (async_coroutine_event_callback_t *) callback;
 
-	if (exception != NULL ||
+	if (UNEXPECTED(exception != NULL) ||
 		(record->event != NULL && async_scope_has_coroutines((const async_scope_t *) target, NULL))) {
 		return;
 	}
@@ -611,7 +613,8 @@ static const async_wait_kind_t iterate_wait_kind = {
 	.collector_target = iterate_record_collector_target,
 };
 
-/* As awaitCompletion() takes it; a later one goes unobserved. A cancel's notify is left to the caller's waker. */
+/* As awaitCompletion() takes it, and stops the walk as a callback's exception does. A cancel's notify is left to the
+ * caller's waker. */
 static void
 iterate_scope_error(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
 {
@@ -622,8 +625,9 @@ iterate_scope_error(async_awaitable_t *target, async_event_callback_t *callback,
 		return;
 	}
 
-	iterate_walk_t *walk = (iterate_walk_t *) ((char *) callback - offsetof(iterate_walk_t, scope_callback));
+	iterate_walk_t *const walk = (iterate_walk_t *) ((char *) callback - offsetof(iterate_walk_t, scope_callback));
 
+	ITERATOR_FINISH(&walk->iterator);
 	GC_ADDREF(exception);
 
 	if (EXPECTED(walk->route_error == NULL)) {
@@ -637,7 +641,7 @@ static void iterate_scope_freed(async_event_callback_t *callback, async_awaitabl
 {
 	(void) target;
 
-	iterate_walk_t *walk = (iterate_walk_t *) ((char *) callback - offsetof(iterate_walk_t, scope_callback));
+	iterate_walk_t *const walk = (iterate_walk_t *) ((char *) callback - offsetof(iterate_walk_t, scope_callback));
 
 	walk->iterator.scope = NULL;
 }
@@ -647,8 +651,9 @@ static void iterate_scope_freed(async_event_callback_t *callback, async_awaitabl
  * caller runs after the coroutines queued before its completion event (reference test 012); the caller stays
  * parked meanwhile, and the scope's subscriber stops an error they end with. As TrueAsync's, the cancel comes
  * whatever the walk ended with, a cancellation of the worker included; only an exit leaves them to the shutdown's
- * cancel. A scope cancelled before, safely from above or by the walk's error, keeps what a cancel left running:
- * those are cancelled again, never safely. */
+ * cancel. In a scope cancelled before, a coroutine handling that cancel finishes its cleanup, as TrueAsync cancels
+ * nothing there (async.c:1084); the rest, zombies a safe cancel left and coroutines spawned since, are cancelled, or
+ * the caller would hang. */
 static void iterate_walk_end(async_iterator_t *iterator, async_coroutine_t *worker, const bool has_run)
 {
 	const iterate_walk_t *walk = (iterate_walk_t *) iterator;
@@ -675,7 +680,7 @@ static void iterate_walk_end(async_iterator_t *iterator, async_coroutine_t *work
 			async_new_exception(async_ce_cancellation, "Cancellation of pending coroutines after iterator completion");
 
 	if (UNEXPECTED(scope->event.flags & ASYNC_SCOPE_F_CANCELLED)) {
-		async_scope_cancel_remaining(scope, cancellation);
+		async_scope_cancel_remaining(scope, cancellation, true);
 		OBJ_RELEASE(cancellation);
 	} else {
 		async_scope_cancel(scope, cancellation, true, false);
@@ -814,14 +819,19 @@ void async_iterate(async_coroutine_t *waiter,
 
 	if (UNEXPECTED(!async_iterator_run_in_coroutine(&walk->iterator))) {
 		/* A refused worker's discard may have freed the scope, which its subscriber records. */
-		async_scope_t *const scope_left = walk->iterator.scope;
+		async_scope_t *const remaining_scope = walk->iterator.scope;
 
 		/* The creator's reference, then the caller's. */
 		ZEND_ASYNC_MICROTASK_RELEASE(&walk->iterator.microtask);
 		iterate_walk_release(walk);
 
-		if (scope_left != NULL) {
-			async_scope_release_owner(scope_left);
+		if (remaining_scope != NULL) {
+			/* The release's destructor error waits: the scope's disposal may run PHP code. */
+			zend_object *const release_error = EG(exception);
+
+			EG(exception) = NULL;
+			async_scope_release_owner(remaining_scope);
+			async_exception_merge(release_error);
 		}
 
 		return;
@@ -851,9 +861,10 @@ void async_iterate(async_coroutine_t *waiter,
 		}
 
 		caller_error = error;
+		ITERATOR_FINISH(&walk->iterator);
 
 		if (walk->iterator.scope != NULL) {
-			async_scope_cancel_remaining(walk->iterator.scope, caller_error);
+			async_scope_cancel_remaining(walk->iterator.scope, caller_error, false);
 		}
 	}
 
@@ -865,6 +876,11 @@ void async_iterate(async_coroutine_t *waiter,
 
 	walk->route_error = NULL;
 	iterate_walk_release(walk);
+
+	/* The release may dispose the walk, whose destructors can throw: their error goes under the outcome. */
+	zend_object *const release_error = EG(exception);
+
+	EG(exception) = NULL;
 
 	/* As pool_take()'s: the walk's exception over the route's errors, a cancellation of the caller on top,
 	 * an exit over all (async.c:1137-1153). */
@@ -878,9 +894,16 @@ void async_iterate(async_coroutine_t *waiter,
 	}
 
 	/* A second cancel only ends the wait; an exit stays the outcome. */
-	if (UNEXPECTED(second_error != NULL && caller_error != NULL && !async_is_exit_object(second_error))) {
+	if (UNEXPECTED(second_error != NULL && !async_is_exit_object(second_error))) {
 		OBJ_RELEASE(second_error);
 	} else {
 		async_exception_merge(second_error);
+	}
+
+	if (UNEXPECTED(release_error != NULL)) {
+		zend_object *const outcome = EG(exception);
+
+		EG(exception) = NULL;
+		async_exception_settle(outcome, release_error);
 	}
 }

@@ -94,13 +94,13 @@ because the scope's event brings three things that look alike: a member's end, a
 ignores a member's end until the walk has ended and the scope has no coroutine left; ignores a cancel's notify; and
 stores a route error as handled and keeps waiting, so a spawned coroutine's error during the walk stops the walk
 (section 6, item 6) by the walk's own path: the route's error cancels the scope as a callback's exception does. The
-caller wakes only by the hook (the walk's end), by the scope's completion, or by its own waker (a cancel). The kind has
-`unlink` and `abort`, which clear the hook's waiter; the hook still stores the exception, so after a bailout or a
-caller that left nothing is lost and nothing is woken.
+caller wakes only by the hook (the walk's end), by the scope's completion, or by its own waker (a cancel). As built,
+the hook knows no waiter and the block's `unlink` and `release` stand for the kind's `unlink` and `abort` (below).
 
 **After the walk.** As `async.c:1083-1122`: if the iterator's scope still has coroutines, `$cancelPending` cancels it
 with TrueAsync's message, and the caller waits on the same record until the scope completes; a cancelled scope is
-expected here (no check as `src/scope.c:1841`). Then the scope is disposed, and the walk's exception, the collected
+expected here (no check as `src/scope.c:1841`). Then the scope, which has no object, goes with its last coroutine, and
+the walk's exception, the collected
 route errors and the caller's cancellation are merged by `pool_exception_settle()`'s rule (S9.36): an exit stays the
 outcome, a cancellation goes on top, otherwise the walk's exception on top and the others as its previous, as
 `async.c:1137-1153`. A route error is a callback's exception from the walk's side, so with no caller's cancel the walk's
@@ -142,6 +142,15 @@ waiter and only does `$cancelPending`. Three points differ from the design above
   TrueAsync's; an exit leaves the coroutines to the shutdown's cancel.
 - A cancellation that another coroutine still holds gets nothing chained under it (S9.36's rule): the walk's
   exception and the route errors then go to the unobserved exceptions.
+S9.41 (the layer Critic):
+- A route error and the caller's first cancel also stop the walk (`ITERATOR_FINISH`), so a callback that catches
+  its cancellation does not take the next element (`tests/iterate/055`, `056`).
+- In a scope cancelled before, `$cancelPending` spares a coroutine that cancel reached, a zombie aside
+  (`async_scope_cancel_remaining()`'s `spare_cancelled`): a child handling the walk's cancel finishes its cleanup, as
+  TrueAsync cancels nothing in a cancelled scope (`async.c:1084`, `tests/iterate/057`); one spawned after the cancel
+  is cancelled (`058`).
+- The caller's release of the walk may dispose it, and a destructor's error then goes under the outcome
+  (`tests/iterate/054`).
 The merge of S9.36 moved from `src/pool.c` to `src/exceptions.c` as `async_exception_settle()` and
 `async_exception_merge()`, for both users.
 

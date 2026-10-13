@@ -1596,7 +1596,7 @@ static void task_group_closing_end(async_task_group_t *group, const bool caller_
 			zend_object *cancellation =
 					async_new_exception(async_ce_cancellation, "Scope is being disposed due to TaskGroup destruction");
 
-			async_scope_cancel_remaining(scope, cancellation);
+			async_scope_cancel_remaining(scope, cancellation, false);
 			OBJ_RELEASE(cancellation);
 		}
 

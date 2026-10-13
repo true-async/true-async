@@ -160,8 +160,9 @@ void async_scope_cancel(async_scope_t *scope, zend_object *error, bool transfer_
  * cancel reached too: async_scope_cancel() counts a cancelled scope as completed and cancels nothing more in it,
  * so a coroutine spawned into it after its cancel, a zombie, or one that caught its cancellation and waits again
  * would run on. A finally run's scope is left alone. For a TaskGroup's closing (S9-taskgroup.md 5, step 6).
- * `error` stays the caller's. */
-void async_scope_cancel_remaining(async_scope_t *scope, zend_object *error);
+ * `spare_cancelled` leaves a coroutine that an earlier cancel reached, a zombie aside, to finish its cleanup.
+ * `error` is not consumed. */
+void async_scope_cancel_remaining(async_scope_t *scope, zend_object *error, bool spare_cancelled);
 
 /* Clears the owner pin of `scope` and disposes the scope when nothing else keeps it: a disposal may run PHP
  * code, as async_scope_remove_coroutine()'s. */

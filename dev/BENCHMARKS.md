@@ -3,6 +3,29 @@
 The results journal: every measurement with its date, builds and outcome. The method and the
 benchmarks are `dev/plans/S3.md`, section 12; the scripts are `bench/`, the runner `tools/bench.py`.
 
+## 2026-10-13, S9.41: iterate() with and without a concurrency limit, counted
+
+**Builds.** Release, ZTS, `-O2`, gcc 13.3, run with `-n`, no opcache; one count per side, the child pinned to one
+CPU (cachegrind counts). Both cores configured with `tools/ci/build-core.sh`'s flags without `--enable-debug`.
+
+- `ours`: the core `8568d99bd3e` (`async-core-io-2026-10-13-2`), ior `d46649f6425`, and our extension as a `phpize`
+  module of `b3751b0` (S9.40) with S9.41's changes, the test hooks off.
+- `ref`: the fork core `863f6dd90cf` with `ext/async` `1fdacf8` built in, libuv 1.48.
+
+`B23` runs `iterate()` over `range(1, N)` with no limit, callbacks that suspend once (`bench/b23.php`); `B23-10`
+is the same with `concurrency: 10`. One operation is one element with its callback's yield.
+
+| Bench | ours | ref | ours / ref |
+|---|---|---|---|
+| B1 | 2,966.0 / 1.020 | 3,128.9 / 2.030 | 0.948 |
+| B23 | 1,396.2 / 0.029 | 1,320.1 / 0.024 | 1.058 |
+| B23-10 | 1,373.0 / 0.000 | 1,295.0 / 0.000 | 1.060 |
+
+Instructions / allocations per operation; page faults at most 0.039 and system calls at most 0.006 per operation,
+the same on both sides. Known answer: the `known` variants add a `new stdClass` per element and count +306.3 / +1
+(`ours`) and +310.2 / +1 (`ref`) on `B23`, +306.0 / +1 and +310.2 / +1 on `B23-10`. B1 counts what S9.36 counted,
+so the builds compare as they did then.
+
 ## 2026-10-12, S9.36: Pool acquire() and release() with and without waits, counted
 
 **Builds.** Release, ZTS, `-O2`, gcc 13.3, run with `-n`, no opcache; one count per side, the child pinned to one

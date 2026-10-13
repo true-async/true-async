@@ -24,7 +24,7 @@ $caller = spawn(function () {
         });
     } catch (Throwable $e) {
         echo get_class($e), ": ", $e->getMessage(), "\n";
-        echo "previous: ", get_class($e->getPrevious()), ": ", $e->getPrevious()->getMessage(), "\n";
+        echo "previous: ", get_debug_type($e->getPrevious()), ": ", $e->getPrevious()?->getMessage(), "\n";
     }
 });
 

@@ -2874,6 +2874,21 @@ stack options were shown with the code).
   goes to the unobserved exceptions. S9.36's merge moved from `src/pool.c` to `src/exceptions.c`
   (`async_exception_settle()`, `async_exception_merge()`). Why: one rule for both users; a second cancellation printed
   as "Uncaught" otherwise (`tests/iterate/043-second_caller_cancel_leaves_at_once.phpt`).
+- 2026-10-13 S9.41, a route error and the first cancel of `iterate()`'s caller stop the walk as a callback's exception
+  does; before, a callback that caught its cancellation let its worker take the next element. Why: Edmond's answer B
+  of S9.39 (a cancel stops the walk) and note section 6 item 6 (`tests/iterate/055-caller_cancel_caught_by_callback_stops_walk.phpt`,
+  `tests/iterate/056-child_error_stops_walk_when_callback_catches.phpt`, the S9.41 Critic).
+- 2026-10-13 S9.41, `$cancelPending` in a scope cancelled before spares a coroutine that cancel reached, unless it is a
+  zombie: it finishes its cleanup; a coroutine spawned after the cancel and the zombies are cancelled
+  (`async_scope_cancel_remaining()`'s `spare_cancelled`). The caller's cancel still reaches every coroutine. Why:
+  TrueAsync cancels nothing in a cancelled scope (`async.c:1084`); a zombie or a new coroutine would hang the call
+  (`tests/iterate/057-cancel_pending_lets_cancelled_child_finish_cleanup.phpt`,
+  `tests/iterate/058-cancel_pending_cancels_child_spawned_after_walk_cancel.phpt`, both Critics).
+- 2026-10-13 S9.41, a destructor's error when `iterate()` releases the walk goes under the outcome by S9.36's rule.
+  Why: it hit `async_exception_settle()`'s assertion (`tests/iterate/054-destructor_error_at_release_goes_under_outcome.phpt`).
+- 2026-10-13 S9.41, Mull survivors on `iterator.c` kept: line 586 (`record->event != NULL` to `==`) only adds wakes,
+  and the caller's loop waits again while the scope has coroutines; line 827 is the refused worker start, which no
+  PHP code reaches (coverage). Why: S9.36's practice.
 - 2026-10-13 S8.9, a read of an overlapped pipe on Windows under `stream_set_timeout()` waits first in an Any of
   the pipe's Poll and a Timer, as `stream_select()` does, then reads only what is there; `tests/io/039-pipe_read_timeout.phpt`,
   `tests/io/040-pipe_read_timeout_then_success.phpt`, `tests/io/042-pipe_timeout_concurrent_coroutines.phpt`,
