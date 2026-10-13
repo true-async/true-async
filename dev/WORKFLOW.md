@@ -148,7 +148,7 @@ the section is removed in that step's commit. `check-lists.py` hashes a test wit
   stayed red unnoticed from S9.24 (8432655) to 8b9ba78; it replaces the habit "threads do not wait
   for CI" (`dev/HEALTH.md`, 2026-10-05). Held by discipline, no gate.
 - CI has no scheduled run (Edmond, 2026-10-12 16:22: no nightly checks for now); the `seeds` jobs run
-  only in a run dispatched by hand (`workflow_dispatch`), each line as five jobs of consecutive seeds
+  only in a run of `.github/workflows/seeds.yml` dispatched by hand, each line as five jobs of consecutive seeds
   whose result is all five. Whoever dispatches one looks at it after it ends; each failing test that
   no open plan step names goes into a plan step, with the job's link. Before (S14.2), the nightly run
   was the coordinator's. Held by discipline, no gate.

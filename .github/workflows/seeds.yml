@@ -1,0 +1,100 @@
+name: Seeds
+
+# The scheduler fuzz of dev/plans/S2.md section 4, by hand only (Edmond, 2026-10-12 16:22: no nightly checks).
+# Apart from ci.yml, so a push shows no skipped seed job; it tests ci.yml's CORE_REF and IOR_REF, with the core
+# its linux job cached.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  seeds:
+    # A full asan list takes minutes per seed, so it runs fewer seeds. The io_chaos entry also arms the IO
+    # provider's fault points (dev/plans/S6.md section 16). Each line's seeds are spread over five parallel
+    # jobs, about 13 minutes each at most; the list `shard` and the 5 of `--shard` and `name` change
+    # together, or a line loses its last seeds.
+    name: seeds (${{ matrix.line.tree }}${{ matrix.line.io_chaos && ', io-chaos' || '' }}, ${{ matrix.shard }}/5)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # The MySQL fixture (dev/WORKFLOW.md, "Test fixtures"), as TrueAsync's CI runs it.
+    env:
+      MYSQL_TEST_HOST: 127.0.0.1
+      MYSQL_TEST_PORT: 3306
+      MYSQL_TEST_USER: root
+      MYSQL_TEST_PASSWD: root
+      MYSQL_TEST_DB: test
+    services:
+      mysql:
+        image: mysql:8.3@sha256:9de9d54fecee6253130e65154b930978b1fcc336bcc86dfd06e89b72a2588ebe
+        ports:
+          - 3306:3306
+        env:
+          MYSQL_DATABASE: test
+          MYSQL_ROOT_PASSWORD: root
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+    strategy:
+      fail-fast: false
+      matrix:
+        line:
+          - tree: dbg
+            seeds: 100
+          - tree: asan
+            seeds: 20
+          - tree: dbg
+            seeds: 50
+            io_chaos: true
+        shard: [1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends autoconf bison re2c pkg-config cmake \
+            libxml2-dev libsqlite3-dev libcurl4-openssl-dev libssl-dev liburing-dev
+
+      - name: The pinned core
+        run: |
+          grep -E '^  (CORE|IOR)_REF: ' .github/workflows/ci.yml | sed 's/^  \(.*\): \(.*\)$/\1=\2/' >> "$GITHUB_ENV"
+
+      - name: Restore the core
+        id: core
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/ta-prefix/pocs-${{ matrix.line.tree }}
+          key: core-${{ matrix.line.tree }}-${{ env.CORE_REF }}-${{ env.IOR_REF }}-${{ hashFiles('tools/ci/build-core.sh') }}
+
+      - name: Build the core
+        if: steps.core.outputs.cache-hit != 'true'
+        run: tools/ci/build-core.sh ${{ matrix.line.tree }} "$CORE_REF" "$IOR_REF"
+
+      - name: Core sources for the tests
+        run: |
+          git init -q "$RUNNER_TEMP/core-src"
+          cd "$RUNNER_TEMP/core-src"
+          git sparse-checkout set --no-cone /.github/ /ext/curl/tests/ /ext/ftp/tests/ /sapi/cli/tests/
+          git fetch -q --depth 1 --filter=blob:none https://github.com/true-async/php-src.git "$CORE_REF"
+          git checkout -q FETCH_HEAD
+
+      - name: Seeds
+        # A step that runs out of time fails, and the job keeps its results; a job that does is cancelled.
+        timeout-minutes: 25
+        env:
+          TRUE_ASYNC_CORE_SRC: ${{ runner.temp }}/core-src
+          # The runner's SIGINT at the step limit reaches test.py (exec), and its lines are in the log.
+          PYTHONUNBUFFERED: '1'
+        run: >-
+          exec python3 tools/test.py --lane pocs-${{ matrix.line.tree }} --seeds ${{ matrix.line.seeds }}
+          --shard ${{ matrix.shard }}/5 ${{ matrix.line.io_chaos && '--io-chaos' || '' }}
+
+      - name: Keep the results
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v7
+        with:
+          name: results-seeds-pocs-${{ matrix.line.tree }}${{ matrix.line.io_chaos && '-io-chaos' || '' }}-${{ matrix.shard }}
+          path: results/

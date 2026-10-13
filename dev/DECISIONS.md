@@ -2980,3 +2980,6 @@ stack options were shown with the code).
   deadlock report. With gdb holding the process 50 ms before each timer poll, old 009 and 010 fail on every run and
   old 020 forks before the sleeper parks (its output does not change, the case of its title is not reached); the new
   ones pass.
+- 2026-10-13 S14.12, the seed jobs live in `.github/workflows/seeds.yml`, run only by hand; it takes `CORE_REF` and
+  `IOR_REF` from `ci.yml`, so a core update still changes one workflow. Why: GitHub shows a skipped matrix job under
+  its unexpanded name template, and every push run listed the skipped seeds job that way (Edmond, 07:48).

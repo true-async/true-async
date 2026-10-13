@@ -2284,6 +2284,11 @@ Tests: interleaved
         `pocs-dbg`, the four clean on 100 seeds
       tier: T1 · role: Critic
       handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.11).
+- [x] S14.12 The seed jobs move to `.github/workflows/seeds.yml`, dispatched by hand, which reads `CORE_REF` and
+      `IOR_REF` from `ci.yml` (Edmond 2026-10-13 07:48: a push run showed the skipped job's unexpanded name).
+      done: a push run has no seeds job; both files parse; the pin step tried on `ci.yml`
+      tier: T1 · role: —
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.12).
 
 ## S15 — Test layers of S2 not built yet  [ ]
 
