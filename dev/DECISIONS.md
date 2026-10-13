@@ -3152,3 +3152,14 @@ stack options were shown with the code).
   allocations around them. Why: a bailout out of an allocation leaked them past the request. Checked, no change: a
   close in a forked child before its rebuild (no system call on the parent's queue), the GC from the drain (a
   `FileSystemEvent` is no GC root).
+- 2026-10-13 S9.48: S9 layer 8 is TrueAsync's runtime information (`dev/plans/S9-runtime-info.md`), read in
+  `src/runtime_info.c` from the operating system (affinity, cgroups with their mount roots, `getrusage()`,
+  `/proc/stat`, `getloadavg()`; Windows processor groups, job objects, `GetSystemTimes()`) and from the scheduler.
+  Why: our core has no parallelism slot as TrueAsync's (`async.c:703-713`) and the extension has no libuv (P1.2).
+  Departures decided here (note section 6): `cpu_usage()` keeps its snapshot per request (TrueAsync: one per process,
+  cleared by any request's end); `available_parallelism()` honours CPU quotas on every build, the smallest along the
+  path, rounded up (TrueAsync: libuv 1.49+ only, floored, 1.51 keeps the root side's v2 quota, one Windows processor
+  group); `runtime_stats()` keeps the ten keys, `resumed_queue` always 0. Why: TrueAsync behaviour that looks like a
+  bug is not copied; its keys are kept for code written for it. Cgroup parsing is tested through a test hook that
+  replaces `/proc/self`, `/sys/fs/cgroup` and the affinity count, since no CI machine runs under a CPU quota.
+  `process_percent`'s base waits for Edmond (note question 1).

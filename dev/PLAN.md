@@ -1253,13 +1253,15 @@ Layer 7, FileSystemWatcher: `Async\FileSystemWatcher` over a per-request inotify
 WATCHER wait kind, Windows on a directory-change op requested from bukka and ior (`dev/plans/S9-fs-watcher.md`).
 Layer 7 done when: S9.txt's layer 7 block passes on debug and ASAN, and on `pocs-win` after S9.45; the S3-S7 lists
 and layers 1-6 pass as before.
-Runtime information has no plan yet: it gets its steps when Edmond agrees its plan, and S9 is not closed before it
-has them (S14.4).
+Layer 8, runtime information: `available_parallelism()`, `loadavg()`, `CpuSnapshot`, `cpu_usage()` and
+`runtime_stats()` read from the operating system and the scheduler, no core change (`dev/plans/S9-runtime-info.md`).
+Layer 8 done when: S9.txt's layer 8 block passes on debug and ASAN and on `pocs-win`; the S3-S7 lists and layers 1-7
+pass as before.
 Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, dev/plans/S9-taskgroup.md,
-  dev/plans/S9-pool.md, dev/plans/S9-iterate.md, dev/plans/S9-fs-watcher.md
+  dev/plans/S9-pool.md, dev/plans/S9-iterate.md, dev/plans/S9-fs-watcher.md, dev/plans/S9-runtime-info.md
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -1894,6 +1896,19 @@ Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, 
       handoff: done 2026-10-13 (DECISIONS 2026-10-13 S9.47, SECURITY.md journal): the recursive walk is breadth first
         (`fs_watcher/071`); descriptors after allocations, the walk's `DIR` closed with the registry; a forked child's
         close and the GC from the drain checked, no change. Two Critics.
+- [ ] S9.48 Design note `dev/plans/S9-runtime-info.md` (layer 8, runtime information), agreed with Edmond.
+      done: the note pushed; every Critic finding fixed or answered in the note; Edmond agreed the note and answered
+        its section 7
+      tier: T2 · role: Critic
+- [ ] S9.49 The layer 8 block of `tests/lists/S9.txt` and the five probes on Linux and Windows (note sections 3, 6).
+      done: the 6 reference tests and an own test per row of note sections 2 and 6 pass on debug, ASAN and `pocs-win`
+      tier: T2 · role: Critic
+- [ ] S9.50 Layer 8 review and its documentation in `true-async-doc` (note section 5).
+      done: Critic over S9.49, coverage, Mull, 100 fuzz seeds, doc pages with note section 6
+      tier: T2 · role: Critic
+- [ ] S9.51 Layer 8 security pass by `dev/SECURITY.md` (note section 5).
+      done: a journal entry per checklist item; findings fixed with a test or recorded
+      tier: T2 · role: —
 
 ## S10 — Beyond the RFCs  [x]
 
