@@ -1,5 +1,9 @@
 --TEST--
 FileSystemWatcher: a failed poll closes every open watcher with the monitoring error
+--SKIPIF--
+<?php
+if (PHP_OS_FAMILY !== 'Linux') echo "skip Linux only: every watcher reads one inotify descriptor";
+?>
 --FILE--
 <?php
 

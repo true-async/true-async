@@ -3142,3 +3142,6 @@ stack options were shown with the code).
   `dev/plans/S9-fs-watcher.md` section 8. The two PR branches reviewed twice: ior keeps the subtree flag in
   `sock_flags`, waits for a queued `STATUS_NOTIFY_ENUM_DIR` packet and refuses an unknown flag; the IO hooks API checks
   the op's result length. Core `async-core-io-2026-10-13-9` `0cea21ffd45`, ior `dir-changes-pr` `fdcfadf2496`.
+- 2026-10-13 S9.46 follow-up: `fs_watcher/063-monitoring_error_closes_every_watcher.phpt` skips off Linux. Why: only
+  Linux's watchers share one descriptor; on Windows a failed op closes its own watcher, and the other one waited until
+  the runner's timeout (CI run 38401552268).

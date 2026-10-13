@@ -882,7 +882,7 @@ Waits for it: nothing in our lists (our provider waits); the core carries it.
 State: php-src on `io-hooks-dir-changes` `e06ed0973` (on bukka's `8e470c219fc`) and `io-hooks-fixes`
 `36a9fd644bf`; ior on true-async/ior `dir-changes-pr` `fdcfadf2496` (on libior/ior `ea70530`), 2026-10-13 (S9.45,
 reviewed in S9.46), in the core since `async-core-io-2026-10-13-9` `0cea21ffd45`. PR texts:
-`/mnt/project-files/notes/s9-45/`. PRs: none yet.
+`/mnt/project-files/notes/s9-45/`. PRs: bukka/php-src#12, libior/ior#42 (opened by Edmond 2026-10-13).
 
 Need: Windows has no descriptor for a FileSystemWatcher to poll (`dev/plans/S9-fs-watcher.md` 3, "Windows"):
 `ReadDirectoryChangesW()` on an overlapped directory handle completes on the completion port, which only the

@@ -1874,12 +1874,12 @@ Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, 
         (`049`, ASAN), a debounced burst was lost on close (`050`), a shared iterator leaked an event (`051`), the
         coalesce pop scanned from index 0. Other platforms throw; the tests that construct a watcher carry
         `xfail-on:pocs-win(S9.45)` (the first push gave them `skip-on`, which only allows a SKIPIF: Windows red).
-- [ ] S9.45 Windows: the directory-change op in bukka's API and ior, the watcher on it (note section 3, "Windows").
+- [x] S9.45 Windows: the directory-change op in bukka's API and ior, the watcher on it (note section 3, "Windows").
       done: the layer's tests run on `pocs-win`; bukka PRs opened by Edmond; told to Edmond before the core slot
       tier: T2 · role: Critic
       handoff: 2026-10-13 core `async-core-io-2026-10-13-8` `244b1a2ecf3`, ior `dir-changes` `59b918ef189`
         (RFC-CHANGES 39, PR texts `/mnt/project-files/notes/s9-45/`); the watcher's Windows branch, the xfail-on tags
-        removed; told to Edmond 08:30. Open: the PRs, opened by Edmond. S9.46 reviewed both branches: core
+        removed; told to Edmond 08:30. PRs bukka/php-src#12 and libior/ior#42 opened by Edmond 13:10. S9.46 reviewed both branches: core
         `async-core-io-2026-10-13-9` `0cea21ffd45`, ior `dir-changes-pr` `fdcfadf2496`.
 - [x] S9.46 Layer 7 review and its documentation in `true-async-doc` (note section 5).
       done: Critic over S9.44 and S9.45, coverage, Mull, 100 fuzz seeds, B24, a doc page with note section 6
