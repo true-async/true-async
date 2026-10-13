@@ -5,7 +5,6 @@ Scope: awaitAfterCancellation() - with error handler
 
 use function Async\spawn;
 use function Async\suspend;
-use function Async\timeout;
 use function Async\await;
 use Async\Scope;
 
@@ -51,7 +50,7 @@ $external = spawn(function() use ($scope) {
         function($error) {
             echo "error handler called: {$error->getMessage()}\n";
         },
-        timeout(10)
+        new \Async\Future(new \Async\FutureState())
     );
     
     echo "awaitAfterCancellation with handler completed\n";

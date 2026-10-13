@@ -35,14 +35,21 @@ try {
 }
 
 // Test 2: Timeout cancellation
-$timeout_coroutine = spawn(function() {
+$timeout_started = false;
+$timeout_coroutine = spawn(function() use (&$timeout_started) {
     echo "timeout coroutine started\n";
-    delay(50); // Will be cancelled by timeout
+    $timeout_started = true;
+    delay(100000); // Will be cancelled by timeout
     echo "timeout coroutine should not complete\n";
     return "timeout_result";
 });
 
 echo "timeout coroutine spawned\n";
+
+// Let it start before the timeout exists, or a stop past 20 ms cancels it unstarted
+while (!$timeout_started) {
+    suspend();
+}
 
 try {
     $result = await($timeout_coroutine, timeout(20));
@@ -69,7 +76,7 @@ suspend();
 $race_coroutine->cancel(new \Async\AsyncCancellation("Manual wins"));
 
 try {
-    $result = await($race_coroutine, timeout(1000)); // Should get manual cancel, not timeout
+    $result = await($race_coroutine, timeout(100000)); // Should get manual cancel, not timeout
     echo "race await should not succeed\n";
 } catch (\Async\AsyncCancellation $e) {
     echo "race cancellation caught: " . get_class($e) . ": " . $e->getMessage() . "\n";

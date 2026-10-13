@@ -2307,10 +2307,15 @@ Tests: interleaved
         with `polls=3`, the new one passes; `tests/module` passes with and without the stall
       tier: T1 · role: Critic
       handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.14).
-- [ ] S14.15 The tests left by S14.13 and S14.14 pass the stall runs of dev/WORKFLOW.md: TrueAsync's 15 of S14.13,
-      `internal/069`, `reactor/017`, `scope/156`, `socket_ext/005`, and the 60 that hang only when every tick stalls
-      (project file `s14/audit-2026-10-13/README.md`); `channel/126` with the channel bug it shows; the five that
-      need a test clock wait for Edmond's answer.
+- [x] S14.15 TrueAsync's 15 tests of S14.13, `internal/069` and `socket_ext/005` pass the stall runs of
+      dev/WORKFLOW.md.
+      done: the 17 pass the three stall runs, a 500 ms stall on the first 5 polls, no stall and 20 seeds on core -8
+      tier: T1 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.15).
+- [ ] S14.16 The rest of the 2026-10-13 test audit (project files `s14/audit-2026-10-13/`): `reactor/017` and
+      `scope/156` pass the stall runs; the 60 that hang only when every tick stalls; `channel/126` with the channel
+      bug it shows; tests that cannot fail and tests with several cases; the five that need a test clock wait for
+      Edmond's answer.
       tier: T1 · role: Critic
 
 ## S15 — Test layers of S2 not built yet  [ ]

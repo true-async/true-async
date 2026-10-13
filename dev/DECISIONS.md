@@ -3039,3 +3039,22 @@ stack options were shown with the code).
   with `every=4`, `polls=30` it also fails `internal/069`, `reactor/017`, `scope/156`, `socket_ext/005`.
   `internal/074-test_stall_wakes_due_timer_ahead_of_queue.phpt` checks the hook; `module/001-registration.phpt`
   and `module/002-info.phpt` list the three entries, as every lane builds the hooks. TrueAsync has no such hook.
+- 2026-10-13 S14.15: 17 tests whose output depended on the clock wait for the event instead (16 TrueAsync's,
+  one own); each passes the three stall runs of dev/WORKFLOW.md, a 500 ms stall on the first 5 polls, no stall,
+  and 20 seeds on core -8. Waits meant to end only by a cancel use `delay(100000)`; a wait for a coroutine to
+  park loops `suspend()` on a flag set right before it parks; a receiver that catches the wrong exception
+  records its class, so it fails by output instead of a hang. `exec/002` prints each child's output and exit
+  code: its children wrote to a pipe already closed and exited 255 (plain PHP does the same), which `%a` hid;
+  they now wait for a release file instead of a timer. `sleep/006` prints in a fixed order with lower bounds
+  only: whether `sleep()` blocks is `io_provider/002`'s case. Left: `scope/025` keeps a catch that cannot run;
+  `await/069`, `coroutine/038`, `iterate/018` hold several cases each; `gc/023` passes too if no run happens.
+- 2026-10-13 S14.15, the files: `await/069-await_manual_vs_timeout_cancel.phpt`,
+  `channel/052-channel_many_in_scope_dispose.phpt`, `channel/057-channel_two_channels_two_groups.phpt`,
+  `channel/059-channel_taskgroup_cancel.phpt`, `channel/070-channel_foreach_close_during_iteration.phpt`,
+  `coroutine/038-coroutine_isSuspended_after_finish.phpt`, `exec/002-proc_open_multiple.phpt`,
+  `gc/023-gc_threshold_untouched_by_a_run_that_found_nothing.phpt`,
+  `internal/069-iterator_stopped_during_move_stays_stopped.phpt`, `iterate/018-iterate_traversable_concurrency.phpt`,
+  `scope/025-scope_awaitAfterCancellation_error_handler.phpt`, `signal/013-signal_pcntl_registered_after.phpt`,
+  `signal/014-signal_pcntl_registered_before.phpt`, `sleep/006-all_sleep_functions_comparison.phpt`,
+  `socket_ext/005-socket_accept_multiple.phpt`, `stream/012-concurrent_socket_operations.phpt`,
+  `stream/032-stream_select_null_timeout.phpt`.

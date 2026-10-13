@@ -9,32 +9,42 @@ use Async\Scope;
 use function Async\spawn;
 use function Async\delay;
 use function Async\await;
+use function Async\suspend;
 
 $scope = new Scope();
 $reasons = [];
+$parked = 0;
 
-$scope->spawn(function () use (&$reasons) {
+$scope->spawn(function () use (&$reasons, &$parked) {
     $channels = [];
     for ($i = 0; $i < 20; $i++) {
         $channels[$i] = new Channel(0, 0, 0);
     }
     $count = 0;
     for ($i = 0; $i < 20; $i++) {
-        spawn(function () use ($channels, $i, &$reasons, &$count) {
+        spawn(function () use ($channels, $i, &$reasons, &$count, &$parked) {
             try {
+                $parked++;
                 $channels[$i]->recv();
             } catch (ChannelException $e) {
                 $reasons[$i] = $e->reason->name;
                 $count++;
+            } catch (\Throwable $e) {
+                // Recorded, so a wrong exception fails by its output instead of a hang.
+                $reasons[$i] = get_class($e);
             }
         });
     }
-    delay(200); // wait until scope dispose hits us
+    delay(100000); // wait until scope dispose hits us
 });
 
-spawn(function () use ($scope) { delay(40); $scope->dispose(); });
+await(spawn(function () use ($scope, &$parked) {
+    while ($parked < 20) suspend();
+    $scope->dispose();
+}));
 
-await(spawn(function () { delay(250); }));
+// The receivers catch after the dispose has woken them.
+while (count($reasons) < 20) suspend();
 
 $all_disposed = (count($reasons) === 20);
 foreach ($reasons as $r) {

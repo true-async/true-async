@@ -16,6 +16,7 @@ if (!$sockets) {
 }
 
 list($sock1, $sock2) = $sockets;
+$worker_finished = false;
 
 // Coroutine using stream_select with null timeout (infinite wait)
 $selector = spawn(function() use ($sock2) {
@@ -44,10 +45,12 @@ $selector = spawn(function() use ($sock2) {
     return "selector completed";
 });
 
-// Writer coroutine - writes after a small delay
-$writer = spawn(function() use ($sock1) {
-    // Small delay to ensure selector starts first
-    \Async\delay(50);
+// Writer coroutine - writes after the worker finished
+$writer = spawn(function() use ($sock1, &$worker_finished) {
+    // The worker's line comes from its own timer: wait for the line, not for a longer timer
+    while (!$worker_finished) {
+        \Async\delay(1);
+    }
 
     echo "Writer: writing data\n";
     fwrite($sock1, "test data from writer");
@@ -59,10 +62,11 @@ $writer = spawn(function() use ($sock1) {
 });
 
 // Worker to demonstrate parallel execution
-$worker = spawn(function() {
+$worker = spawn(function() use (&$worker_finished) {
     echo "Worker: executing during stream_select\n";
     \Async\delay(10);
     echo "Worker: finished\n";
+    $worker_finished = true;
     return "worker completed";
 });
 

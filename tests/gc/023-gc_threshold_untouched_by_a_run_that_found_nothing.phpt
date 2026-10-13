@@ -6,8 +6,8 @@ zend.enable_gc=1
 <?php
 
 use function Async\await;
-use function Async\delay;
 use function Async\spawn;
+use function Async\suspend;
 
 // The buffer fills with objects that are alive but suspected of cycles, which
 // hands a collection to the GC coroutine. They are then released outright, so
@@ -24,7 +24,9 @@ await(spawn(function () {
 
     $keep = null;
 
-    delay(1);
+    // The queued run goes first while this coroutine is parked. A timer here
+    // could wake it in place first, and its end would root what the run finds.
+    suspend();
 }));
 
 $status = gc_status();

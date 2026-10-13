@@ -12,6 +12,7 @@ if (!extension_loaded('sockets')) {
 use function Async\spawn;
 use function Async\await_all_or_fail;
 use function Async\delay;
+use function Async\suspend;
 
 echo "Start\n";
 
@@ -19,6 +20,7 @@ echo "Start\n";
 $output = [];
 
 $port = null;
+$connected = 0;
 
 // Server coroutine
 $server = spawn(function() use (&$port, &$output) {
@@ -55,24 +57,28 @@ $server = spawn(function() use (&$port, &$output) {
 // Multiple client coroutines
 $clients = [];
 for ($i = 1; $i <= 3; $i++) {
-    $clients[] = spawn(function() use (&$port, $i, &$output) {
+    $clients[] = spawn(function() use (&$port, $i, &$output, &$connected) {
 
-        for ($ii = 0; $ii < 3 && $port === null; $ii++) {
-            delay(10);
+        // The server sets the port before it parks in socket_accept()
+        while ($port === null) {
+            suspend();
         }
 
         if(empty($port)) {
             throw new Exception("Server port is not provided...");
         }
 
-        // Small delay to stagger connections
-        delay($i);
+        // Connect in turn: the server answers the clients in the order it accepts them
+        while ($connected < $i - 1) {
+            delay(1);
+        }
 
         $output[] = "Client$i: connecting";
         $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
 
         if (socket_connect($socket, '127.0.0.1', $port)) {
             $output[] = "Client$i: connected";
+            $connected++;
             $data = socket_read($socket, 1024);
             $output[] = "Client$i: received '$data'";
         }

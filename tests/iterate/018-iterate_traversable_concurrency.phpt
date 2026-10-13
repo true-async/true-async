@@ -4,7 +4,7 @@ iterate() - concurrency applies to Traversable, not only to arrays
 <?php
 
 use function Async\spawn;
-use function Async\delay;
+use function Async\suspend;
 use function Async\iterate;
 
 function items(int $n): Generator
@@ -26,16 +26,19 @@ spawn(function () {
 
         $active = 0;
         $peak = 0;
+        $entered = 0;
         $seen = [];
 
-        iterate($make(), function ($value) use (&$active, &$peak, &$seen) {
+        iterate($make(), function ($value) use (&$active, &$peak, &$entered, &$seen) {
             $active++;
+            $entered++;
 
             if ($active > $peak) {
                 $peak = $active;
             }
 
-            delay(20);
+            // Stay until all four are in or no value is left, not on a timer that may wake one early.
+            while ($active < 4 && $entered < 8) suspend();
             $seen[] = $value;
             $active--;
         }, concurrency: 4);

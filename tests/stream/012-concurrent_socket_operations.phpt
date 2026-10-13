@@ -16,6 +16,7 @@ echo "Creating socket pair\n";
 
 // Array to collect output from spawn functions
 $output = [];
+$received = 0;
 
 $sockets = create_socket_pair();
 if (!$sockets) {
@@ -26,7 +27,7 @@ if (!$sockets) {
 list($write_sock, $read_sock) = $sockets;
 
 // Consumer coroutine
-$consumer = spawn(function() use ($read_sock, &$output) {
+$consumer = spawn(function() use ($read_sock, &$output, &$received) {
     $messages = [];
     $attempts = 0;
     
@@ -36,6 +37,7 @@ $consumer = spawn(function() use ($read_sock, &$output) {
         if ($data !== false && $data !== '') {
             $output[] = "Consumer: Received data: '" . trim($data) . "'";
             $messages[] = trim($data);
+            $received++;
             
             // Check if we got all messages
             if (count($messages) >= 3) {
@@ -51,13 +53,16 @@ $consumer = spawn(function() use ($read_sock, &$output) {
     $output[] = "Consumer: Total messages received: " . count($messages);
 });
 
-$producer = spawn(function() use ($write_sock, &$output) {
+$producer = spawn(function() use ($write_sock, &$output, &$received) {
 
-    // Send multiple messages with delays
+    // Send multiple messages, each after the previous one was read: two in the socket come out of one fread()
     for ($i = 1; $i <= 3; $i++) {
         $output[] = "Producer: Sending message $i";
         fwrite($write_sock, "message$i\n");
-        delay(50);
+
+        while ($received < $i) {
+            delay(1);
+        }
     }
 
     fclose($write_sock);

@@ -20,21 +20,32 @@ use function Async\await;
 use function Async\delay;
 use function Async\signal;
 use function Async\spawn;
+use function Async\suspend;
 
-spawn(function () {
-    $sig = await(signal(Signal::SIGUSR1));
+$watching = false;
+$received = false;
+
+spawn(function () use (&$watching, &$received) {
+    $signal = signal(Signal::SIGUSR1);
+    $watching = true;
+    $sig = await($signal);
     echo "async: {$sig->name}\n";
+    $received = true;
 });
 
-spawn(function () {
-    delay(50);
+spawn(function () use (&$watching, &$received) {
+    while (!$watching) {
+        suspend();
+    }
     pcntl_signal(SIGUSR1, function () {
         echo "pcntl\n";
     });
 
     delay(200);
     posix_kill(posix_getpid(), SIGUSR1);
-    delay(100);
+    while (!$received) {
+        delay(1);
+    }
     pcntl_signal_dispatch();
     echo "end\n";
 });

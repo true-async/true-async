@@ -5,7 +5,7 @@ Channel: foreach ends cleanly when the channel is closed while the consumer is p
 
 use function Async\spawn;
 use function Async\await;
-use function Async\delay;
+use function Async\suspend;
 
 echo "start\n";
 
@@ -13,20 +13,22 @@ echo "start\n";
 // It used to stop the loop but leave that exception pending, so it escaped foreach() uncaught --
 // and surfaced against the producer's close(), which had done nothing wrong.
 $channel = new Async\Channel(2);
+$got = 0;
 
-$consumer = spawn(function () use ($channel) {
+$consumer = spawn(function () use ($channel, &$got) {
     foreach ($channel as $value) {
         echo "got: $value\n";
+        $got++;
     }
 
     echo "loop finished normally\n";
 });
 
-$producer = spawn(function () use ($channel) {
-    delay(20);
+$producer = spawn(function () use ($channel, &$got) {
     $channel->send('a');
     $channel->send('b');
-    delay(20);
+    // The consumer has both values once it counts two; it then parks for the next.
+    while ($got < 2) suspend();
     $channel->close();
     echo "producer closed\n";
 });

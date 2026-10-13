@@ -9,14 +9,17 @@ use Async\TaskGroup;
 use function Async\spawn;
 use function Async\delay;
 use function Async\await;
+use function Async\suspend;
 
 $group = new TaskGroup(concurrency: 4);
 $results = [];
+$parked = false;
 
-$group->spawn(function () use (&$results) {
+$group->spawn(function () use (&$results, &$parked) {
     $ch = new Channel(0, 0, 0);
-    spawn(function () use (&$ch, &$results) {
+    spawn(function () use (&$ch, &$results, &$parked) {
         try {
+            $parked = true;
             $ch->recv();
             $results['recv'] = 'FAIL_RETURNED';
         } catch (\Throwable $e) {
@@ -24,12 +27,15 @@ $group->spawn(function () use (&$results) {
                 (property_exists($e, 'reason') ? $e->reason->name : $e->getMessage());
         }
     });
-    delay(200);
+    delay(100000);
 });
 
-spawn(function () use ($group) { delay(40); $group->cancel(); });
+await(spawn(function () use ($group, &$parked) {
+    while (!$parked) suspend();
+    $group->cancel();
+}));
 
-await(spawn(function () { delay(200); }));
+while (!isset($results['recv'])) suspend();
 
 foreach ($results as $k => $v) echo "$k=$v\n";
 echo "ok\n";
