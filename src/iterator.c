@@ -149,6 +149,12 @@ static void iterator_release_coroutine(async_iterator_t *iterator, async_corouti
 
 	/* The leaving worker still keeps the scope alive here. */
 	async_scope_finally_run_end(iterator->scope);
+
+	if (iterator->end_handler != NULL) {
+		iterator->end_handler(iterator, worker, has_run);
+		return;
+	}
+
 	iterator_end_worker(iterator, worker, has_run);
 }
 
@@ -544,4 +550,337 @@ static void iterator_worker_entry(void)
 bool async_iterator_run_in_coroutine(async_iterator_t *iterator)
 {
 	return iterator_worker_spawn(iterator) != NULL;
+}
+
+///////////////////////////////////////////////////////////////////
+/// iterate()
+///////////////////////////////////////////////////////////////////
+
+/* iterate()'s walk (S9-iterate.md 3). The caller holds a reference of its own to the microtask, as TrueAsync's
+ * async.c:1066; while it is parked, its waker's block owns that reference. */
+typedef struct
+{
+	async_iterator_t iterator;
+	async_wait_block_t block;
+	/* The caller's one record, in the scope's callbacks while it is parked. */
+	async_coroutine_event_callback_t record;
+	/* In the scope's callbacks for the whole call: it takes the route's errors, and a scope without an object goes
+	 * with its last coroutine, maybe before the caller runs again, and its free clears `iterator.scope` here. */
+	async_event_callback_t scope_callback;
+	zend_object *route_error; /* the first error of the scope's route */
+	bool cancel_pending;
+} iterate_walk_t;
+
+/* A member's end wakes the caller once the subtree has no coroutine left, or as the scope's teardown fires the
+ * record (`event` NULL); an error is the subscriber's. The enqueue unlinks the wait (D26). */
+static void
+iterate_record_wake(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
+{
+	(void) result;
+
+	const async_coroutine_event_callback_t *record = (async_coroutine_event_callback_t *) callback;
+
+	if (exception != NULL ||
+		(record->event != NULL && async_scope_has_coroutines((const async_scope_t *) target, NULL))) {
+		return;
+	}
+
+	async_scheduler_enqueue(&record->coroutine->coroutine, NULL, false);
+}
+
+static zend_string *iterate_record_info(const async_coroutine_event_callback_t *record)
+{
+	const async_scope_t *scope = (const async_scope_t *) record->event;
+
+	if (UNEXPECTED(scope->filename == NULL)) {
+		return zend_string_init(ZEND_STRL("iterate()"), 0);
+	}
+
+	return zend_strpprintf(0, "iterate() at %s:%" PRIu32, ZSTR_VAL(scope->filename), scope->lineno);
+}
+
+/* The coroutines of the iterator's scope end the wait. */
+static void iterate_record_collector_target(const async_coroutine_event_callback_t *record,
+											async_collector_t *collector)
+{
+	async_scope_collector_completion_target((const async_scope_t *) record->event, collector);
+}
+
+static const async_wait_kind_t iterate_wait_kind = {
+	.info = iterate_record_info,
+	.collector_target = iterate_record_collector_target,
+};
+
+/* As awaitCompletion() takes it; a later one goes unobserved. A cancel's notify is left to the caller's waker. */
+static void
+iterate_scope_error(async_awaitable_t *target, async_event_callback_t *callback, void *result, zend_object *exception)
+{
+	(void) target;
+	(void) result;
+
+	if (exception == NULL || instanceof_function(exception->ce, async_ce_cancellation)) {
+		return;
+	}
+
+	iterate_walk_t *walk = (iterate_walk_t *) ((char *) callback - offsetof(iterate_walk_t, scope_callback));
+
+	GC_ADDREF(exception);
+
+	if (EXPECTED(walk->route_error == NULL)) {
+		walk->route_error = exception;
+	} else {
+		async_unobserved_exception_add(exception);
+	}
+}
+
+static void iterate_scope_freed(async_event_callback_t *callback, async_awaitable_t *target)
+{
+	(void) target;
+
+	iterate_walk_t *walk = (iterate_walk_t *) ((char *) callback - offsetof(iterate_walk_t, scope_callback));
+
+	walk->iterator.scope = NULL;
+}
+
+/* After the last callback, the coroutines the callbacks spawned that still run are cancelled with TrueAsync's
+ * message when `cancel_pending` (async.c:1083-1094). The last worker gives them one turn first, as TrueAsync's
+ * caller runs after the coroutines queued before its completion event (reference test 012); the caller stays
+ * parked meanwhile, and the scope's subscriber stops an error they end with. As TrueAsync's, the cancel comes
+ * whatever the walk ended with, a cancellation of the worker included; only an exit leaves them to the shutdown's
+ * cancel. A scope cancelled before, safely from above or by the walk's error, keeps what a cancel left running:
+ * those are cancelled again, never safely. */
+static void iterate_walk_end(async_iterator_t *iterator, async_coroutine_t *worker, const bool has_run)
+{
+	const iterate_walk_t *walk = (iterate_walk_t *) iterator;
+	async_scope_t *const scope = iterator->scope;
+
+	if (!walk->cancel_pending || !async_scope_has_coroutines(scope, worker)) {
+		return;
+	}
+
+	if (has_run && EG(exception) == NULL && async_scheduler_enqueue(&worker->coroutine, NULL, false)) {
+		ZEND_ASYNC_SUSPEND();
+	}
+
+	if (UNEXPECTED(EG(exception) != NULL && async_is_exit_object(EG(exception))) ||
+		!async_scope_has_coroutines(scope, worker)) {
+		return;
+	}
+
+	zend_object *worker_exception = NULL;
+
+	async_exception_save_fast(&EG(exception), &worker_exception);
+
+	zend_object *const cancellation =
+			async_new_exception(async_ce_cancellation, "Cancellation of pending coroutines after iterator completion");
+
+	if (UNEXPECTED(scope->event.flags & ASYNC_SCOPE_F_CANCELLED)) {
+		async_scope_cancel_remaining(scope, cancellation);
+		OBJ_RELEASE(cancellation);
+	} else {
+		async_scope_cancel(scope, cancellation, true, false);
+	}
+
+	async_exception_restore_fast(&EG(exception), &worker_exception);
+}
+
+/* The caller lets go of the walk: the scope keeps what still runs, an exception the walk ends with later goes to
+ * its last worker as without an owner, and the caller's reference goes, which may free the walk. */
+static void iterate_walk_release(iterate_walk_t *walk)
+{
+	walk->iterator.end_handler = NULL;
+
+	/* The workers left keep the scope. */
+	if (walk->iterator.scope != NULL) {
+		async_callbacks_remove(&walk->iterator.scope->event.callbacks, &walk->scope_callback);
+	}
+
+	if (UNEXPECTED(walk->route_error != NULL)) {
+		zend_object *const route_error = walk->route_error;
+		walk->route_error = NULL;
+		OBJ_RELEASE(route_error);
+	}
+
+	ZEND_ASYNC_MICROTASK_RELEASE(&walk->iterator.microtask);
+}
+
+static void iterate_block_unlink(async_wait_block_t *block)
+{
+	iterate_walk_t *walk = (iterate_walk_t *) ((char *) block - offsetof(iterate_walk_t, block));
+
+	async_wait_record_unlink(&walk->record);
+}
+
+/* The caller's frame never runs again (a bailout, the request's end). */
+static void iterate_block_release(async_wait_block_t *block)
+{
+	iterate_walk_release((iterate_walk_t *) ((char *) block - offsetof(iterate_walk_t, block)));
+}
+
+static void iterate_block_walk(async_wait_block_t *block,
+							   void (*visit)(const async_coroutine_event_callback_t *record, void *arg),
+							   void *arg)
+{
+	const iterate_walk_t *walk = (iterate_walk_t *) ((char *) block - offsetof(iterate_walk_t, block));
+
+	if (walk->record.event != NULL) {
+		visit(&walk->record, arg);
+	}
+}
+
+static const async_wait_block_ops_t iterate_block_ops = {
+	.unlink = iterate_block_unlink,
+	.release = iterate_block_release,
+	.walk = iterate_block_walk,
+};
+
+/* Parks the caller until no coroutine of the iterator's scope is left, or its waker brings an error, which stays
+ * pending. */
+static void iterate_wait(iterate_walk_t *walk, async_coroutine_t *waiter)
+{
+	async_scope_t *const scope = walk->iterator.scope;
+
+	async_callbacks_reserve(&scope->event.callbacks, 1);
+	async_wait_link(
+			&walk->record, waiter, (async_awaitable_t *) &scope->event, &iterate_wait_kind, iterate_record_wake);
+	waiter->waker.block = &walk->block;
+
+	ZEND_ASYNC_SUSPEND();
+
+	async_wait_take_block(waiter);
+}
+
+void async_iterate(async_coroutine_t *waiter,
+				   zval *iterable,
+				   zend_fcall_t *fcall,
+				   const unsigned int concurrency,
+				   const bool cancel_pending)
+{
+	/* First: a block it releases may run a destructor that suspends or throws. */
+	async_wait_end(waiter);
+
+	if (UNEXPECTED(EG(exception) != NULL)) {
+		ZEND_ASYNC_FCALL_FREE(fcall);
+		return;
+	}
+
+	zval array;
+	zend_object_iterator *zend_iterator = NULL;
+
+	ZVAL_UNDEF(&array);
+
+	/* A copy: the walk's hash iterator never sees the caller's array. */
+	if (Z_TYPE_P(iterable) == IS_ARRAY) {
+		ZVAL_ARR(&array, zend_array_dup(Z_ARRVAL_P(iterable)));
+	} else {
+		zend_iterator = Z_OBJCE_P(iterable)->get_iterator(Z_OBJCE_P(iterable), iterable, 0);
+
+		if (UNEXPECTED(zend_iterator == NULL)) {
+			if (EG(exception) == NULL) {
+				zend_throw_exception(async_ce_async_exception, "Failed to create iterator", 0);
+			}
+
+			ZEND_ASYNC_FCALL_FREE(fcall);
+			return;
+		}
+	}
+
+	/* As async.c:1016: every scope inherits DISPOSE_SAFELY from the global one, and a cancel of the walk would
+	 * leave its started coroutines running as zombies. */
+	async_scope_t *const scope = async_scope_new(async_scope_current());
+
+	scope->event.flags &= ~ASYNC_SCOPE_F_DISPOSE_SAFELY;
+
+	iterate_walk_t *const walk = (iterate_walk_t *) async_iterator_new(zend_iterator == NULL ? &array : NULL,
+																	   zend_iterator,
+																	   fcall,
+																	   NULL,
+																	   scope,
+																	   concurrency,
+																	   false,
+																	   sizeof(iterate_walk_t));
+
+	zval_ptr_dtor(&array);
+
+	walk->iterator.end_handler = iterate_walk_end;
+	walk->block.ops = &iterate_block_ops;
+	walk->cancel_pending = cancel_pending;
+	walk->scope_callback.flags = ASYNC_CALLBACK_F_TAKES_ERROR;
+	walk->scope_callback.callback = iterate_scope_error;
+	walk->scope_callback.dispose = iterate_scope_freed;
+	async_callbacks_reserve(&scope->event.callbacks, 1);
+	async_callbacks_push_reserved(&scope->event.callbacks, &walk->scope_callback);
+	ZEND_ASYNC_MICROTASK_ADDREF(&walk->iterator.microtask);
+
+	if (UNEXPECTED(!async_iterator_run_in_coroutine(&walk->iterator))) {
+		/* A refused worker's discard may have freed the scope, which its subscriber records. */
+		async_scope_t *const scope_left = walk->iterator.scope;
+
+		/* The creator's reference, then the caller's. */
+		ZEND_ASYNC_MICROTASK_RELEASE(&walk->iterator.microtask);
+		iterate_walk_release(walk);
+
+		if (scope_left != NULL) {
+			async_scope_release_owner(scope_left);
+		}
+
+		return;
+	}
+
+	zend_object *caller_error = NULL;
+	zend_object *second_error = NULL;
+
+	/* An enqueue other than the record's wakes the caller early: it waits again. Its first error cancels the
+	 * walk, and the caller waits until the scope's coroutines end (S9-iterate.md, question 1); an exit or a
+	 * second error leaves at once. */
+	while (walk->iterator.scope != NULL && async_scope_has_coroutines(walk->iterator.scope, NULL)) {
+		iterate_wait(walk, waiter);
+
+		zend_object *const error = EG(exception);
+
+		if (EXPECTED(error == NULL)) {
+			continue;
+		}
+
+		GC_ADDREF(error);
+		zend_clear_exception();
+
+		if (UNEXPECTED(caller_error != NULL || async_is_exit_object(error))) {
+			second_error = error;
+			break;
+		}
+
+		caller_error = error;
+
+		if (walk->iterator.scope != NULL) {
+			async_scope_cancel_remaining(walk->iterator.scope, caller_error);
+		}
+	}
+
+	zend_object *const walk_exception = walk->iterator.exception;
+
+	walk->iterator.exception = NULL;
+
+	zend_object *const route_error = walk->route_error;
+
+	walk->route_error = NULL;
+	iterate_walk_release(walk);
+
+	/* As pool_take()'s: the walk's exception over the route's errors, a cancellation of the caller on top,
+	 * an exit over all (async.c:1137-1153). */
+	async_exception_settle(walk_exception, route_error);
+
+	if (UNEXPECTED(caller_error != NULL)) {
+		zend_object *const walk_error = EG(exception);
+
+		EG(exception) = NULL;
+		async_exception_settle(caller_error, walk_error);
+	}
+
+	/* A second cancel only ends the wait; an exit stays the outcome. */
+	if (UNEXPECTED(second_error != NULL && caller_error != NULL && !async_is_exit_object(second_error))) {
+		OBJ_RELEASE(second_error);
+	} else {
+		async_exception_merge(second_error);
+	}
 }

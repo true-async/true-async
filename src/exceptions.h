@@ -33,4 +33,14 @@ zend_object *async_new_exception(zend_class_entry *exception_ce, const char *for
 /* Appends `exception` to the composite's getExceptions(), with a reference of its own. */
 void async_composite_exception_add_exception(zend_object *composite, zend_object *exception);
 
+/* Puts `under`, an exception set aside, beneath the pending one; either may be NULL. An exit wins and drops
+ * the other, as it takes no previous. A pending exception held elsewhere too (a scope cancel thrown into
+ * each coroutine of the scope, a Future's stored error) is left unchanged, and `under` goes unobserved. */
+void async_exception_merge(zend_object *under);
+
+/* Makes `first` pending with `second` under it, unless only `second` is a cancellation, which goes on top: a
+ * cancelled caller must not run on behind a catch of another exception. Either may be NULL; nothing is pending
+ * on entry. */
+void async_exception_settle(zend_object *first, zend_object *second);
+
 #endif /* TRUE_ASYNC_EXCEPTIONS_H */

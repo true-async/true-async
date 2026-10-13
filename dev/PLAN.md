@@ -1750,10 +1750,16 @@ Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, 
         a spawned coroutine's error during the walk ends the request, two leaks. Critic: 7 findings fixed in the note
         (DISPOSE_SAFELY cleared as `async.c:1016`, the record's target and owner, a bailout during the wait, the
         exception merge). Edmond answered question 1 at 03:38: B, a cancel of the caller stops the walk.
-- [ ] S9.40 The layer 6 block of `tests/lists/S9.txt` and `iterate()` (note sections 3, 5).
+- [x] S9.40 The layer 6 block of `tests/lists/S9.txt` and `iterate()` (note sections 3, 5).
       done: the 20 reference tests pass on debug and ASAN; own tests for each row of note sections 2 and 6 and
         for question 1's answer
       tier: T2 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S9.40, note section 3 "As built"): 20 reference tests and 32
+        own (`tests/iterate/020`-`051`) on core `async-core-io-2026-10-13-2`. Debug 1982 PASS, ASAN 1956 PASS, 0
+        unexpected. First Critic: a child's error while the cancelled caller waits in the queue ended the request
+        (fixed by a scope subscriber with the new `ASYNC_CALLBACK_F_TAKES_ERROR`, `049`), `$cancelPending` after a
+        safe cancel from above could hang (`050`); two findings did not reproduce. Second Critic: a freed scope
+        read on a refused spawn, `$cancelPending` skipped when the last worker ended cancelled (`051`), note text.
 - [ ] S9.41 Layer 6 review and its documentation in `true-async-doc`.
       done: Critic over S9.40, coverage, Mull, 100 fuzz seeds, B23, a doc page with note section 6's errors corrected
       tier: T2 · role: Critic

@@ -98,6 +98,9 @@ typedef void (*async_event_callback_dispose_fn)(async_event_callback_t *callback
  * leave it linked, and its waiting frame removes it after its suspend returns; when that frame never
  * runs again, its kind's abort removes it and clears `event` (dev/plans/S9-channel.md, section 3). */
 #define ASYNC_CALLBACK_F_FRAME_UNLINKS (1u << 3)
+/* A subscriber that takes the errors a scope's route brings, as a parked waiter does: the notify counts it
+ * as a wait record, so the route stops at the scope (iterate()'s, dev/plans/S9-iterate.md, section 3). */
+#define ASYNC_CALLBACK_F_TAKES_ERROR (1u << 4)
 /* Bits 8-31 of a record's flags belong to its kind. */
 #define ASYNC_CALLBACK_F_KIND_SHIFT 8
 
@@ -216,7 +219,7 @@ bool async_callbacks_remove(async_callbacks_vector_t *vector, async_event_callba
  * a callback leaves the vector marked, so later notifies of it run nothing (as in TrueAsync). A vector
  * already being notified further up the stack is not notified again. The caller holds a reference
  * to `target` for the call (async_coroutine_finalize does), so no callback frees the vector. True
- * when it called a wait record: a coroutine was parked on `target`. */
+ * when it called a wait record, a coroutine parked on `target`, or a subscriber that takes errors. */
 bool async_callbacks_notify(async_awaitable_t *target,
 							async_callbacks_vector_t *vector,
 							void *result,

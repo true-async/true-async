@@ -123,6 +123,28 @@ each gives.
 is a `ValueError` (section 6, item 1); the array is duplicated, as the test hook does, so the walk's hash iterator
 never sees the caller's array.
 
+**As built (S9.40).** The caller parks on one record with a wait block of its own (`src/iterator.c`, `iterate_wait()`)
+and wakes only when the scope has no coroutine left, by its own waker, or by the scope's teardown; the hook knows no
+waiter and only does `$cancelPending`. Three points differ from the design above:
+- The record is unlinked by every wake (D26), so it cannot stop a route error while the caller waits in the queue
+  (`tests/iterate/049`). A second subscriber stays in the scope's callbacks for the whole call: it takes the route's
+  errors, marked by the new `ASYNC_CALLBACK_F_TAKES_ERROR` that `async_callbacks_notify()` counts as a record, and
+  clears `iterator.scope` when a scope without an object goes with its last coroutine.
+- The last worker gives the coroutines the callbacks spawned one turn before the `$cancelPending` cancel, as
+  TrueAsync's caller runs after the coroutines queued before its completion event (reference test 012); a child's
+  error in that turn still stops at the scope (`048`). A scope cancelled before, safely from above or by the walk's
+  error, is cancelled again with `async_scope_cancel_remaining()`, so a zombie a safe cancel left does not hang the
+  call (`050`). A last worker that never ran cancels at once, without the turn.
+- A safe cancel from above leaves the caller and the walk running to their end as zombies (`025`); an unsafe one
+  is the B path (`038`). After `exit()` the graceful shutdown's cancellation takes the B path too; an exit object
+  (D16's unwinding) leaves at once, and the same sweep cancels the walk.
+- The `$cancelPending` cancel comes whatever the last worker ends with, its own cancellation included (`051`), as
+  TrueAsync's; an exit leaves the coroutines to the shutdown's cancel.
+- A cancellation that another coroutine still holds gets nothing chained under it (S9.36's rule): the walk's
+  exception and the route errors then go to the unobserved exceptions.
+The merge of S9.36 moved from `src/pool.c` to `src/exceptions.c` as `async_exception_settle()` and
+`async_exception_merge()`, for both users.
+
 ## 4. Garbage collection and the collector
 
 The iterator holds the array or the `Traversable` and the callable; no PHP object holds the iterator, so PHP's GC

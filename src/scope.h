@@ -198,6 +198,14 @@ void async_scope_collector_reach(async_collector_t *collector, async_coroutine_t
  * scope's object can be released. */
 void async_scope_collector_bound_channel_reach(async_collector_t *collector, async_scope_t *scope, uint32_t node);
 
+/* For a wait kind's collector_target whose record waits until no coroutine of `scope`'s subtree runs: any of
+ * them, zombies included, may end the wait (S9-scope.md 6). */
+void async_scope_collector_completion_target(const async_scope_t *scope, async_collector_t *collector);
+
+/* A coroutine of `scope` other than `except` (NULL: none), or one of its child scopes, has not finished, zombies
+ * included. */
+bool async_scope_has_coroutines(const async_scope_t *scope, const async_coroutine_t *except);
+
 /* Starts the callable in a new coroutine of `scope`, the body of spawn(), Scope::spawn() and
  * spawn_with(): the cache comes from Z_PARAM_FUNC_NO_TRAMPOLINE_FREE and goes with the coroutine, or
  * is released on refusal. A `spawn_strategy` has its hooks called around the enqueue. Returns the

@@ -2858,3 +2858,19 @@ stack options were shown with the code).
   `tests/io/042-pipe_timeout_concurrent_coroutines.phpt`, `tests/io/043-pipe_fread_timeout.phpt` carry
   `xfail-on:pocs-win(S8.9)`. Why: the S8.6 Critic: a timed-out overlapped READ cancelled at its completion loses
   its bytes, and the provider-less paths still wait; a readiness wait first, as on Unix, is S8.9.
+- 2026-10-13 S9.40, `iterate()`'s scope has a subscriber for the whole call that takes the route's errors, marked
+  `ASYNC_CALLBACK_F_TAKES_ERROR`, which `async_callbacks_notify()` counts as a wait record; the caller's record only
+  wakes it. Why: an enqueue unlinks the record (D26), and a child's error while the cancelled caller waits in the
+  queue went past the iterator's scope and ended the request (`tests/iterate/049-child_error_while_cancelled_caller_is_queued.phpt`,
+  the S9.40 Critic). TrueAsync stops no such error at the scope (S9.39, i22).
+- 2026-10-13 S9.40, with `$cancelPending` the last worker yields once before cancelling the coroutines the callbacks
+  spawned, whatever it ends with but an exit, and a scope already cancelled (safely from above, or by the walk's error) is cancelled again with
+  `async_scope_cancel_remaining()`. Why: reference test 012 lets them run first, as TrueAsync's caller runs after
+  them; a zombie that a safe cancel left otherwise hangs the call
+  (`tests/iterate/050-cancel_pending_after_safe_scope_cancel.phpt`,
+  `tests/iterate/051-cancel_pending_after_worker_cancelled.phpt`, both Critics).
+- 2026-10-13 S9.40, a second cancel of `iterate()`'s caller only ends its wait and is dropped: the first cancel stays
+  the outcome, with the walk's errors beneath; an exit stays the outcome over all. A route error after the first one
+  goes to the unobserved exceptions. S9.36's merge moved from `src/pool.c` to `src/exceptions.c`
+  (`async_exception_settle()`, `async_exception_merge()`). Why: one rule for both users; a second cancellation printed
+  as "Uncaught" otherwise (`tests/iterate/043-second_caller_cancel_leaves_at_once.phpt`).

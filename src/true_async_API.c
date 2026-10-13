@@ -154,12 +154,12 @@ bool async_callbacks_notify(async_awaitable_t *target,
 	 * vector. A bailout out of a callback leaves the vector marked, as in TrueAsync: the scheduler's
 	 * bailout handling unwinds every unfinished coroutine itself, waiters included (TrueAsync's
 	 * bailout_all_coroutines()). */
-	bool is_record_called = false;
+	bool is_taken = false;
 
 	while (vector->cursor < vector->length) {
 		async_event_callback_t *callback = async_callbacks_slots(vector)[vector->cursor++];
 		/* Read before the call, which may free a heap subscriber. */
-		is_record_called |= (callback->flags & ASYNC_CALLBACK_F_RECORD) != 0;
+		is_taken |= (callback->flags & (ASYNC_CALLBACK_F_RECORD | ASYNC_CALLBACK_F_TAKES_ERROR)) != 0;
 		callback->callback(target, callback, result, exception);
 
 		if (UNEXPECTED(EG(exception) != NULL)) {
@@ -172,7 +172,7 @@ bool async_callbacks_notify(async_awaitable_t *target,
 
 	async_exception_restore_fast(&EG(exception), &saved_exception);
 
-	return is_record_called;
+	return is_taken;
 }
 
 void async_callbacks_free(async_awaitable_t *target, async_callbacks_vector_t *vector)

@@ -27,6 +27,9 @@ typedef struct _async_iterator_s async_iterator_t;
 /* Called for an element; FAILURE or an exception stops the walk. */
 typedef zend_result (*async_iterator_handler_t)(async_iterator_t *iterator, zval *current, zval *key);
 typedef void (*async_iterator_dtor_t)(async_iterator_t *iterator);
+/* Called as the last worker leaves, `worker` still in the iterator's scope; one that ran calls it in its body,
+ * where it may suspend. The walk's exception stays in the iterator for the owner. */
+typedef void (*async_iterator_end_handler_t)(async_iterator_t *iterator, async_coroutine_t *worker, bool has_run);
 
 typedef enum
 {
@@ -51,8 +54,10 @@ struct _async_iterator_s
 	 * limit while another waits for its first run. */
 	unsigned int active_coroutines;
 	/* What stopped the walk, or what an owner's handler left; the worker that leaves last ends with it,
-	 * where TrueAsync notifies a completion event. A cancellation or an exit stays the worker's. */
+	 * where TrueAsync notifies a completion event, unless `end_handler` is set. A cancellation or an exit
+	 * stays the worker's. */
 	zend_object *exception;
+	async_iterator_end_handler_t end_handler; /* NULL: none */
 	async_iterator_handler_t handler;
 	zend_fcall_t *fcall; /* a callable called as fn($value, $key) instead of `handler`; the iterator's */
 	zval array;          /* the walked array, a reference of the iterator's; UNDEF for a Traversable */
@@ -78,5 +83,12 @@ async_iterator_t *async_iterator_new(zval *array,
 /* Walks the elements in a new worker, which takes the creator's reference. False when the worker
  * cannot be spawned; the reference is the caller's then. */
 bool async_iterator_run_in_coroutine(async_iterator_t *iterator);
+
+/* Async\iterate() (dev/plans/S9-iterate.md): calls `fcall` (taken) for each element of `iterable` in a new
+ * child scope of the current one, at most `concurrency` at a time, and returns once no coroutine of that
+ * scope is left, its pending ones cancelled after the walk when `cancel_pending`. Throws what stopped the
+ * walk; a cancel of `waiter` stops it too. */
+void async_iterate(
+		async_coroutine_t *waiter, zval *iterable, zend_fcall_t *fcall, unsigned int concurrency, bool cancel_pending);
 
 #endif /* TRUE_ASYNC_ITERATOR_H */

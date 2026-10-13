@@ -183,21 +183,26 @@ scope_is_completed(const async_scope_t *scope, const bool with_zombies, const as
 
 /* A coroutine of the scope or of its child scopes has not finished, zombies included, whatever the
  * scope's state: what awaitAfterCancellation() waits for. */
-static bool scope_has_coroutines(const async_scope_t *scope)
+bool async_scope_has_coroutines(const async_scope_t *scope, const async_coroutine_t *except)
 {
-	if (scope->coroutines.length > 0) {
+	const uint32_t except_count = except != NULL && except->scope == scope ? 1 : 0;
+
+	if (scope->coroutines.length > except_count) {
 		return true;
 	}
 
 	for (uint32_t i = 0; i < scope->child_scopes.length; i++) {
-		const async_scope_t *child_scope = scope->child_scopes.data[i];
-
-		if (scope_has_coroutines(child_scope)) {
+		if (async_scope_has_coroutines(scope->child_scopes.data[i], NULL)) {
 			return true;
 		}
 	}
 
 	return false;
+}
+
+static zend_always_inline bool scope_has_coroutines(const async_scope_t *scope)
+{
+	return async_scope_has_coroutines(scope, NULL);
 }
 
 static bool scope_has_user_values(const async_scope_t *scope)
@@ -1727,9 +1732,8 @@ scope_report_completion_sources(const async_scope_t *scope, async_collector_t *c
 	}
 }
 
-static void scope_record_collector_target(const async_coroutine_event_callback_t *record, async_collector_t *collector)
+void async_scope_collector_completion_target(const async_scope_t *scope, async_collector_t *collector)
 {
-	const async_scope_t *scope = (const async_scope_t *) record->event;
 	bool is_new_node;
 	const uint32_t node = async_collector_report_reach_target(collector, &scope->event, &is_new_node);
 
@@ -1782,6 +1786,11 @@ void async_scope_collector_bound_channel_reach(async_collector_t *collector, asy
 	if (UNEXPECTED(is_cancelled && scope_dispose_timer_is_armed(scope))) {
 		async_collector_report_live_reach(collector, node);
 	}
+}
+
+static void scope_record_collector_target(const async_coroutine_event_callback_t *record, async_collector_t *collector)
+{
+	async_scope_collector_completion_target((const async_scope_t *) record->event, collector);
 }
 
 static const async_wait_kind_t async_wait_kind_scope = {

@@ -18,6 +18,8 @@
 #include "zend_exceptions.h"
 #include "exceptions.h"
 #include "exceptions_arginfo.h"
+#include "coroutine.h"
+#include "scheduler.h"
 
 zend_class_entry *async_ce_cancellation = NULL;
 zend_class_entry *async_ce_operation_canceled = NULL;
@@ -117,4 +119,51 @@ void async_register_exceptions_ce(void)
 	async_ce_service_unavailable_exception = register_class_Async_ServiceUnavailableException(async_ce_async_exception);
 	async_ce_deadlock_error = register_class_Async_DeadlockError(zend_ce_error);
 	async_ce_composite_exception = register_class_Async_CompositeException(zend_ce_exception);
+}
+
+void async_exception_merge(zend_object *under)
+{
+	zend_object *const pending = EG(exception);
+
+	if (under == NULL) {
+		return;
+	}
+
+	if (pending == NULL) {
+		EG(exception) = under;
+		return;
+	}
+
+	if (UNEXPECTED(async_is_exit_object(pending))) {
+		OBJ_RELEASE(under);
+		return;
+	}
+
+	if (UNEXPECTED(async_is_exit_object(under))) {
+		EG(exception) = under;
+		OBJ_RELEASE(pending);
+		return;
+	}
+
+	if (UNEXPECTED(GC_REFCOUNT(pending) > 1)) {
+		async_unobserved_exception_add(under);
+		return;
+	}
+
+	zend_exception_set_previous(pending, under);
+}
+
+void async_exception_settle(zend_object *first, zend_object *second)
+{
+	ZEND_ASSERT(EG(exception) == NULL);
+
+	if (UNEXPECTED(first != NULL && second != NULL && instanceof_function(second->ce, async_ce_cancellation) &&
+				   !instanceof_function(first->ce, async_ce_cancellation))) {
+		EG(exception) = second;
+		async_exception_merge(first);
+		return;
+	}
+
+	EG(exception) = first;
+	async_exception_merge(second);
 }

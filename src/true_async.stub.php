@@ -151,6 +151,18 @@ function get_deadlocked_coroutines(): array {}
  */
 function graceful_shutdown(?AsyncCancellation $cancellationError = null): void {}
 
+/**
+ * Calls `$callback($value, $key)` for each element of `$iterable` in coroutines of a new child scope of the
+ * current one, at most `$concurrency` at a time (0: no limit), and returns once the walk and the coroutines
+ * the callbacks spawned have ended; those still running after the last callback are cancelled when
+ * `$cancelPending`. A callback that returns false stops the walk, and the running ones finish. An exception
+ * of a callback, of the iterable or of a spawned coroutine stops the walk, cancels the scope and is thrown;
+ * a cancellation of the caller cancels the scope too, waits until it ends and is thrown.
+ *
+ * @throws \ValueError When `$concurrency` is below 0 or above 4294967295.
+ */
+function iterate(iterable $iterable, callable $callback, int $concurrency = 0, bool $cancelPending = true): void {}
+
 /** The state of a circuit breaker. */
 enum CircuitBreakerState
 {

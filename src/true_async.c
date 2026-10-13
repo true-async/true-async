@@ -28,6 +28,7 @@
 #include "exceptions.h"
 #include "await.h"
 #include "future.h"
+#include "iterator.h"
 #include "scheduler.h"
 #include "scope.h"
 #include "task_group.h"
@@ -699,6 +700,44 @@ ZEND_FUNCTION(Async_graceful_shutdown)
 	THROW_IF_UNAVAILABLE();
 
 	async_scheduler_graceful_shutdown(cancellation);
+}
+
+/* TrueAsync's async.c:962-1161 on the iterator core (dev/plans/S9-iterate.md); a `$concurrency` out of range is
+ * refused, where TrueAsync casts it to unsigned int. */
+ZEND_FUNCTION(Async_iterate)
+{
+	zval *iterable;
+	zend_fcall_info fci;
+	zend_fcall_info_cache fcc;
+	zend_long concurrency = 0;
+	bool cancel_pending = true;
+
+	THROW_IF_UNAVAILABLE();
+
+	ZEND_PARSE_PARAMETERS_START(2, 4)
+		Z_PARAM_ITERABLE(iterable)
+		Z_PARAM_FUNC(fci, fcc)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_LONG(concurrency)
+		Z_PARAM_BOOL(cancel_pending)
+	ZEND_PARSE_PARAMETERS_END();
+
+	if (UNEXPECTED(concurrency < 0 || concurrency > UINT_MAX)) {
+		zend_argument_value_error(3, "must be between 0 and %u", UINT_MAX);
+		RETURN_THROWS();
+	}
+
+	async_coroutine_t *waiter = (async_coroutine_t *) ZEND_ASYNC_CURRENT_COROUTINE;
+
+	/* A finished coroutine is still current while finalize releases what it held. */
+	if (UNEXPECTED(waiter == NULL || ZEND_COROUTINE_IS_FINISHED(&waiter->coroutine))) {
+		zend_throw_error(NULL, "Cannot switch coroutines in the current execution context");
+		RETURN_THROWS();
+	}
+
+	ZEND_ASYNC_FCALL_DEFINE(fcall, fci, fcc, fci.params, fci.param_count, fci.named_params);
+
+	async_iterate(waiter, iterable, fcall, (unsigned int) concurrency, cancel_pending);
 }
 
 /* clang-format off */

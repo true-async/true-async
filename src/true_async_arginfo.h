@@ -1,5 +1,5 @@
 /* This is a generated file, edit true_async.stub.php instead.
- * Stub hash: 33086c1369ebfd39068d3b71421fd8648a5831a8 */
+ * Stub hash: 8bb7d6494cc6e3fedb3ddf157aac8816dc7d1427 */
 
 #include "zend_enum.h"
 
@@ -96,6 +96,13 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_Async_graceful_shutdown, 0, 0, I
 	ZEND_ARG_OBJ_INFO_WITH_DEFAULT_VALUE(0, cancellationError, Async\\AsyncCancellation, 1, "null")
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_Async_iterate, 0, 2, IS_VOID, 0)
+	ZEND_ARG_OBJ_TYPE_MASK(0, iterable, Traversable, MAY_BE_ARRAY, NULL)
+	ZEND_ARG_TYPE_INFO(0, callback, IS_CALLABLE, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, concurrency, IS_LONG, 0, "0")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, cancelPending, _IS_BOOL, 0, "true")
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_Async_Completable_cancel, 0, 0, IS_VOID, 0)
 	ZEND_ARG_OBJ_INFO_WITH_DEFAULT_VALUE(0, cancellation, Async\\AsyncCancellation, 1, "null")
 ZEND_END_ARG_INFO()
@@ -147,6 +154,7 @@ ZEND_FUNCTION(Async_request_context);
 ZEND_FUNCTION(Async_get_coroutines);
 ZEND_FUNCTION(Async_get_deadlocked_coroutines);
 ZEND_FUNCTION(Async_graceful_shutdown);
+ZEND_FUNCTION(Async_iterate);
 
 static const zend_function_entry ext_functions[] = {
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "spawn"), zif_Async_spawn, arginfo_Async_spawn, 0, NULL, NULL)
@@ -171,6 +179,7 @@ static const zend_function_entry ext_functions[] = {
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "get_coroutines"), zif_Async_get_coroutines, arginfo_Async_get_coroutines, 0, NULL, NULL)
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "get_deadlocked_coroutines"), zif_Async_get_deadlocked_coroutines, arginfo_Async_get_deadlocked_coroutines, 0, NULL, NULL)
 	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "graceful_shutdown"), zif_Async_graceful_shutdown, arginfo_Async_graceful_shutdown, 0, NULL, NULL)
+	ZEND_RAW_FENTRY(ZEND_NS_NAME("Async", "iterate"), zif_Async_iterate, arginfo_Async_iterate, 0, NULL, NULL)
 	ZEND_FE_END
 };
 
