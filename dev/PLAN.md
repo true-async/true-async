@@ -2252,6 +2252,12 @@ Tests: interleaved
       tier: T1 · role: Critic
       handoff: done 2026-10-12, 87 tests (DECISIONS 2026-10-12 S14.9 lists them, the idioms and the tests kept).
         A loop on an event turns a regression into run-tests' timeout instead of a wrong line.
+- [x] S14.10 S9.42's `iterate/061`, `062` and `063` wait for the spawned child's park instead of `delay(1)`
+      (`iterate/061` failed once in S8.12's full `pocs-dbg` run).
+      done: with gdb stopping the process 150 ms before each timer poll of a park, the old tests fail on every
+        run and the new ones pass; `tests/iterate` 64 PASS on `pocs-dbg`, the three clean on 100 seeds
+      tier: T1 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S14.10).
 
 ## S15 — Test layers of S2 not built yet  [ ]
 

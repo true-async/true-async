@@ -6,14 +6,17 @@ iterate(): an exception two coroutines the callback spawned rethrow is thrown on
 use function Async\delay;
 use function Async\iterate;
 use function Async\spawn;
+use function Async\suspend;
 
 $exception = new Exception('shared');
+$started = 0;
 
 try {
-    iterate([1], function () use ($exception) {
+    iterate([1], function () use ($exception, &$started) {
         for ($i = 0; $i < 2; $i++) {
-            spawn(function () use ($exception) {
+            spawn(function () use ($exception, &$started) {
                 try {
+                    $started++;
                     delay(10000);
                 } finally {
                     throw $exception;
@@ -21,7 +24,10 @@ try {
             });
         }
 
-        delay(1);
+        while ($started < 2) {
+            suspend();
+        }
+
         throw new Exception('callback');
     });
 } catch (Exception $caught) {

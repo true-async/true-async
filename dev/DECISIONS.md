@@ -2935,3 +2935,12 @@ stack options were shown with the code).
 - 2026-10-13 S8.12, the core takes bukka's merged connect-started fix (`7022e9af819`) as a pick on `io-hooks-fixes`,
   not bukka's whole head (that is S13.2). Why: the core's first version sent a Poll op, bukka's test expects the
   flagged Connect op, and the core should carry what bukka merged.
+- 2026-10-13 S14.10: `iterate/061-callback_exception_rethrown_by_child_not_uncaught.phpt`,
+  `iterate/062-exception_rethrown_by_two_children_not_uncaught.phpt` and
+  `iterate/063-previous_of_callback_exception_rethrown_not_uncaught.phpt` (S9.42) waited for the spawned child to
+  park in its `try` with `delay(1)` in the callback; the callback now loops `suspend()` until the child sets a flag
+  (a count in 062) right before its park. Why: the worker's park polls the due timers before it pops the queue when
+  100 ms have passed since the last poll (S14.9); a process stopped that long after `delay(1)` armed its timer
+  wakes the worker ahead of the queued child, the walk's error cancels the child unstarted and its `finally` never
+  runs. With gdb holding the process 150 ms before each such poll, the old tests lose that line (061, 063) and the
+  previous (062) on every run; the new ones pass. `pool/147` waits on nothing.

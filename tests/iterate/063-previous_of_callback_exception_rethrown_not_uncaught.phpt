@@ -6,14 +6,17 @@ iterate(): the previous of a callback's exception, rethrown by a coroutine the c
 use function Async\delay;
 use function Async\iterate;
 use function Async\spawn;
+use function Async\suspend;
 
 $inner = new Exception('inner');
 $outer = new RuntimeException('outer', 0, $inner);
+$started = false;
 
 try {
-    iterate([1], function () use ($inner, $outer) {
-        spawn(function () use ($inner) {
+    iterate([1], function () use ($inner, $outer, &$started) {
+        spawn(function () use ($inner, &$started) {
             try {
+                $started = true;
                 delay(10000);
             } finally {
                 echo "child rethrows\n";
@@ -21,7 +24,10 @@ try {
             }
         });
 
-        delay(1);
+        while (!$started) {
+            suspend();
+        }
+
         throw $outer;
     });
 } catch (RuntimeException $caught) {
