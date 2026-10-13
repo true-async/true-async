@@ -2921,3 +2921,14 @@ stack options were shown with the code).
   previous, so a spawned coroutine's later error that is not in its chain prints at request end, by S9.36's rule for
   any shared exception; a walk's later exception still chains the earlier one under it, as TrueAsync and PHP's
   `finally` do. Why: that error reached no `catch`; the merge leaves shared objects unchanged (S9.36).
+- 2026-10-13 S9.43: S9 layer 7 is TrueAsync's `Async\FileSystemWatcher` (`dev/plans/S9-fs-watcher.md`): on Linux one
+  inotify descriptor per request, waited for with the POLL op on the reactor's `own` list, a parked iterator counted as
+  a wait; Windows on a directory-change op requested from bukka and ior; macOS and the BSDs refused until a CI line
+  builds there. Why: bukka's API and ior have no filesystem op; 128 inotify instances per user by default.
+- 2026-10-13 S9.43, departures decided here (note section 6): an open watcher keeps nothing waiting unless iterated
+  (TrueAsync hangs on a deadlock, the script's end and `exit()`, probes f1, f9, f10); a second constructor is an
+  `Error` (f13); the root's removal closes the watcher (f7); arguments are checked (`Z_PARAM_PATH`, `open_basedir`,
+  timings, extensions); buffers on the request allocator; a monitoring error and an inotify overflow are reported;
+  subdirectories added with `IN_DONT_FOLLOW`, their name-less events dropped. `$extensions` without a debounce is
+  question 1 of the note. Why: Edmond's rules of 2026-10-12 (catch a programmer's error when the check is small) and
+  2026-10-13 (a TrueAsync bug is not copied).

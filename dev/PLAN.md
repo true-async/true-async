@@ -1,6 +1,6 @@
 # PLAN — TrueAsync rebuilt as a regular PHP extension
 
-Updated: 2026-10-12 · Active: per stage, under its `Tier:` line (Parallel tracks)
+Updated: 2026-10-13 · Active: per stage, under its `Tier:` line (Parallel tracks)
 
 Destination: `true-async/true-async`, an ordinary PHP extension written from scratch, with no
 php-src patches of its own. It stands on the scheduler RFC (php/php-src#22561) and bukka's IO
@@ -77,6 +77,9 @@ true-async/
   exit is held there and a `return` in that block drops it; a destructor that throws while an exit is
   pending replaces it, and an exit with an exception pending makes `UnwindExit::$previous` (a
   deprecation). A separate php-src fix if wanted; the scripts are in the S8.1d PR text's "Not changed".
+- FileSystemWatcher on macOS and the BSDs (S9 layer 7, not in the first version): no CI line builds the extension
+  there. The path is a kqueue descriptor on the POLL op with `EVFILT_VNODE` and a directory listing diffed per change
+  to name the entry, as TrueAsync's reactor does for the BSDs (`dev/plans/S9-fs-watcher.md` section 3).
 - Stream concurrency: the IO hooks freeze a whole stream (review B1); today's TrueAsync allows
   duplex and close-from-another-coroutine.
 
@@ -1245,13 +1248,16 @@ Layer 5 done when: S9.txt's layer 5 block passes on debug and ASAN; the S3-S7 li
 Layer 6, iterators: `Async\iterate()` on S9.6's iterator core, the ITERATE wait kind, the caller's cancellation
 (`dev/plans/S9-iterate.md`).
 Layer 6 done when: S9.txt's layer 6 block passes on debug and ASAN; the S3-S7 lists and layers 1-5 pass as before.
-FileSystemWatcher and runtime information have no plan yet: each gets its steps when Edmond agrees its plan, and S9
-is not closed before they have them (S14.4).
+Layer 7, FileSystemWatcher: `Async\FileSystemWatcher` over a per-request inotify descriptor on the POLL op, the
+WATCHER wait kind, Windows on a directory-change op requested from bukka and ior (`dev/plans/S9-fs-watcher.md`); its
+steps come when Edmond agrees the note.
+Runtime information has no plan yet: it gets its steps when Edmond agrees its plan, and S9 is not closed before it
+has them (S14.4).
 Tier: T2. Roles: Critic and Sage on S9.1, Critic after S9.6 (S9.7).
 Tests: interleaved
 Base: be20b82
 Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, dev/plans/S9-taskgroup.md,
-  dev/plans/S9-pool.md
+  dev/plans/S9-pool.md, dev/plans/S9-iterate.md, dev/plans/S9-fs-watcher.md
 
 - [x] S9.1 Design note `dev/plans/S9-scope.md` and the frozen list `tests/lists/S9.txt` (layer 1).
       done: the note and the list pushed; every Critic finding fixed or answered in the note;
@@ -1842,6 +1848,20 @@ Notes: dev/plans/S9-scope.md, dev/plans/S9-context.md, dev/plans/S9-channel.md, 
         the destructor) also printed "Uncaught" with exit code 255 (`iterate/061`-`063`, `pool/147`). Known limit: a
         second route error a later walk exception wraps still prints. On CORE_REF `dcb1ea7d64d`: debug 1995 PASS,
         ASAN 1969 PASS, 0 unexpected; iterate and pool 212 PASS on debug after the second Critic's fixes.
+- [x] S9.43 Design note `dev/plans/S9-fs-watcher.md` (layer 7, FileSystemWatcher).
+      done: the note pushed; every Critic finding fixed or answered in the note
+      tier: T2 · role: Critic
+      handoff: done 2026-10-13 (DECISIONS 2026-10-13 S9.43): Linux reads inotify itself on the POLL op, one
+        descriptor per request; Windows needs a directory-change op from bukka and ior (S9.45); macOS and the BSDs
+        refused in the first version. Probes on the reference build (`/mnt/project-files/s9/probes/s9.fswatch/`,
+        f1-f16): an open watcher keeps the request alive (a deadlock, the script's end and `exit()` hang), a second
+        constructor leaks a watch, a removed root leaves `foreach` waiting, `$extensions` works only with debounce.
+        Departures in note section 6 decided by Edmond's rules. Critic: 10 findings fixed in the note (parked
+        iterators counted as waits instead of moving the op between lists, the fork rebuild before `own`
+        is resubmitted, the teardown after a fatal error, a shared watch descriptor per watcher, prefix and root,
+        subdirectories' own events dropped, the overflow event's rules); `$extensions` without a debounce became
+        question 1. Second Critic: the counter of its own (the fork zeroes the triggers'), the fork
+        re-arms the same op as the wakeup. The note waits for Edmond's agreement and his answer.
 
 ## S10 — Beyond the RFCs  [x]
 
